@@ -1,5 +1,7 @@
 # omicsApp
 
+[![R-CMD-check](https://github.com/puweilin/omicsApp/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/puweilin/omicsApp/actions/workflows/R-CMD-check.yaml)
+
 A multi-omics analysis platform for proteomics and transcriptomics data,
 providing a unified analysis engine plus a modern Shiny web interface.
 

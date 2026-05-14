@@ -1,0 +1,56 @@
+# R CMD check workflow for packages/omicsCore.
+#
+# Adapted from r-lib/actions/examples/check-standard.yaml. We pin to
+# ubuntu-latest + R-release for a fast, free baseline; expand the matrix
+# later if we start caring about R-devel or macOS regressions.
+#
+# Suggests-not-installed is downgraded to a NOTE (not WARNING) so the
+# build does not go red whenever a heavy Bioconductor dependency
+# temporarily fails to install on the runner.
+name: R-CMD-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/omicsCore/**"
+      - ".github/workflows/R-CMD-check.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/omicsCore/**"
+      - ".github/workflows/R-CMD-check.yaml"
+  workflow_dispatch:
+
+jobs:
+  R-CMD-check:
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+      _R_CHECK_FORCE_SUGGESTS_: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: packages/omicsCore
+          extra-packages: |
+            any::rcmdcheck
+            any::devtools
+          needs: check
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          working-directory: packages/omicsCore
+          upload-snapshots: true
+          args: 'c("--no-manual", "--as-cran")'
