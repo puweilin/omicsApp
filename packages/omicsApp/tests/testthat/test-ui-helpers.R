@@ -192,3 +192,33 @@ test_that("file_row() omits optional slots when not provided", {
   # the muted sub-line is also gone
   expect_false(grepl("font-size:11.5px", html, fixed = TRUE))
 })
+
+# ---- slice 2D helpers ------------------------------------------------
+
+test_that("param_group() wraps an <h4> title and children in .param-group", {
+  html <- render_html(param_group(
+    "Thresholds",
+    shiny::sliderInput("fdr", "adj.P", min = 0, max = 1, value = 0.05)
+  ))
+  expect_match(html, 'class="param-group"', fixed = TRUE)
+  expect_match(html, "<h4>Thresholds</h4>", fixed = TRUE)
+  # The child control must be rendered inside the group.
+  expect_match(html, 'id="fdr"', fixed = TRUE)
+})
+
+test_that("param_group() accepts multiple children", {
+  html <- render_html(param_group(
+    "Contrast",
+    shiny::selectInput("ctrl", "Control", choices = "G1"),
+    shiny::selectInput("case", "Case",    choices = "G2")
+  ))
+  expect_match(html, 'id="ctrl"', fixed = TRUE)
+  expect_match(html, 'id="case"', fixed = TRUE)
+})
+
+test_that("legend_swatch() emits the swatch span with the given color", {
+  html <- render_html(legend_swatch("G1", "var(--brand-600)"))
+  expect_match(html, 'class="swatch"', fixed = TRUE)
+  expect_match(html, "background:var(--brand-600)", fixed = TRUE)
+  expect_match(html, "G1", fixed = TRUE)
+})

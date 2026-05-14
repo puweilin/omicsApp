@@ -155,6 +155,33 @@ example_project <- function() {
   )
 }
 
+#' Build a demo QC `analysis_bundle`
+#'
+#' Returns `omicsCore::run_qc()` on the proteomics demo input with
+#' ~5% of cells set to NA so the QC view (slice 2D) has something
+#' visible in the missingness panel. Outlier detection is forced to
+#' `"iqr"` so we don't depend on the optional WGCNA suggest.
+#'
+#' @return An `analysis_bundle` from [omicsCore::run_qc()].
+#'
+#' @keywords internal
+#' @noRd
+example_qc_bundle <- function() {
+  input <- example_input("proteomics")
+  expr  <- input$expr_mat
+  set.seed(2026L + 3L)
+  n_cells <- length(expr)
+  na_idx  <- sample.int(n_cells, size = ceiling(0.05 * n_cells))
+  expr[na_idx] <- NA_real_
+  input$expr_mat <- expr
+
+  omicsCore::run_qc(
+    input,
+    missing_threshold = 0.5,
+    outlier_method    = "iqr"
+  )
+}
+
 # ---- internal symbol pools -------------------------------------------
 
 # Recognisable-looking symbols for the demo. Recycled if `n` exceeds the

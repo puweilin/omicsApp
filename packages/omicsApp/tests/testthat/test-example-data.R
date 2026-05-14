@@ -59,3 +59,23 @@ test_that("example_project() carries both proteomics and rnaseq experiments", {
   expect_identical(p$experiments$proteomics$omics_type, "proteomics")
   expect_identical(p$experiments$rnaseq$omics_type,     "rnaseq")
 })
+
+test_that("example_qc_bundle() returns a populated QC analysis_bundle", {
+  b <- example_qc_bundle()
+  expect_true(omicsCore::is_analysis_bundle(b))
+  expect_identical(b$analysis_name, "run_qc")
+  # The injected ~5% NAs must surface in the per-feature missing-rate
+  # table so the missingness panel has something to draw.
+  miss <- b$results$qc_summary$missingness$feature_metrics
+  expect_s3_class(miss, "data.frame")
+  expect_true(any(miss$missing_rate > 0))
+})
+
+test_that("example_qc_bundle() is deterministic", {
+  a <- example_qc_bundle()
+  b <- example_qc_bundle()
+  expect_identical(
+    a$results$qc_summary$missingness$feature_metrics$missing_rate,
+    b$results$qc_summary$missingness$feature_metrics$missing_rate
+  )
+})

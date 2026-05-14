@@ -333,3 +333,54 @@ file_row <- function(name, meta = NULL, size = NULL,
     if (!is.null(size)) htmltools::tags$div(class = "meta", size)
   )
 }
+
+# ---- diff-view sidebar widgets --------------------------------------
+
+#' Single labelled group inside a `.param-stack` sidebar
+#'
+#' Wraps a section header (`<h4>`) and arbitrary form controls in
+#' the `.param-group` block defined by `styles.scss`. Used by the
+#' Diff view (slice 2D) to lay out the Method / Contrast /
+#' Covariates / Thresholds groups.
+#'
+#' Reference markup: `mockup/index.html:761-810`.
+#'
+#' @param title Group label (uppercased by CSS).
+#' @param ... Form controls (selectInput / sliderInput / switches).
+#'
+#' @return A `<div class="param-group">` tag.
+#'
+#' @keywords internal
+#' @noRd
+param_group <- function(title, ...) {
+  htmltools::tags$div(
+    class = "param-group",
+    htmltools::tags$h4(title),
+    ...
+  )
+}
+
+#' Inline legend chip
+#'
+#' Renders `<span><span class="swatch" .../>{label}</span>` for use
+#' inside a `.legend` row. Centralising it keeps the inline-style
+#' sprawl out of the view modules.
+#'
+#' Reference markup: `mockup/index.html:840-845`.
+#'
+#' @param label Legend text.
+#' @param color CSS color or `var(--brand-600)`-style variable.
+#'
+#' @return A `<span>` tag.
+#'
+#' @keywords internal
+#' @noRd
+legend_swatch <- function(label, color) {
+  htmltools::tags$span(
+    htmltools::tags$span(
+      class = "swatch",
+      style = sprintf("background:%s", color)
+    ),
+    label
+  )
+}
