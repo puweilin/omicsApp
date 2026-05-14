@@ -155,6 +155,181 @@ example_project <- function() {
   )
 }
 
+#' Build a demo enrichment-result `data.frame`
+#'
+#' Hand-rolled 15-row GSEA-style enrichment table over MSigDB Hallmark
+#' names. Matches the standard `enrich_result_df` schema used by
+#' [omicsCore::run_enrichment()] so the Enrich view (slice 2E) can
+#' render a dotplot and table without dragging Bioconductor deps
+#' (`clusterProfiler`, `msigdbr`) into the demo path.
+#'
+#' Effect (NES) is a mix of positive and negative; p-values are
+#' deliberately tiny so every row clears default thresholds.
+#'
+#' @return A `data.frame` carrying the standard enrichment columns.
+#'
+#' @keywords internal
+#' @noRd
+example_enrich_table <- function() {
+  pathways <- c(
+    "Inflammatory response",
+    "TNFA signaling via NFKB",
+    "IL6 JAK STAT3 signaling",
+    "Epithelial mesenchymal transition",
+    "Complement",
+    "Oxidative phosphorylation",
+    "Myogenesis",
+    "Apical junction",
+    "Hypoxia",
+    "Apoptosis",
+    "Interferon gamma response",
+    "KRAS signaling up",
+    "Adipogenesis",
+    "Fatty acid metabolism",
+    "MYC targets v1"
+  )
+  ids <- c(
+    "HALLMARK_INFLAMMATORY_RESPONSE",
+    "HALLMARK_TNFA_SIGNALING_VIA_NFKB",
+    "HALLMARK_IL6_JAK_STAT3_SIGNALING",
+    "HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION",
+    "HALLMARK_COMPLEMENT",
+    "HALLMARK_OXIDATIVE_PHOSPHORYLATION",
+    "HALLMARK_MYOGENESIS",
+    "HALLMARK_APICAL_JUNCTION",
+    "HALLMARK_HYPOXIA",
+    "HALLMARK_APOPTOSIS",
+    "HALLMARK_INTERFERON_GAMMA_RESPONSE",
+    "HALLMARK_KRAS_SIGNALING_UP",
+    "HALLMARK_ADIPOGENESIS",
+    "HALLMARK_FATTY_ACID_METABOLISM",
+    "HALLMARK_MYC_TARGETS_V1"
+  )
+  set.seed(2026L + 4L)
+  n <- length(pathways)
+  nes <- c(2.31, 2.18, 2.04, 1.92, 1.81, -1.74, -1.61, -1.52,
+           1.45, 1.38, 1.92, 1.55, -1.42, -1.30, 1.20)
+  p_value     <- 10 ^ -seq(from = 8, by = -0.35, length.out = n)
+  adj_p_value <- p_value * 1.5
+  gene_set_size <- as.integer(c(200, 200, 87, 200, 200, 200, 200, 200,
+                                200, 161, 200, 200, 200, 158, 200))
+  overlap_size  <- as.integer(c(52, 48, 31, 46, 42, 38, 35, 33,
+                                39, 36, 41, 28, 30, 22, 26))
+  data.frame(
+    database      = "hallmark",
+    result_type   = "gsea",
+    comparison    = "G2_vs_G1",
+    pathway_id    = ids,
+    pathway_name  = pathways,
+    effect        = nes,
+    effect_type   = "nes",
+    direction     = ifelse(nes >= 0, "up", "down"),
+    p_value       = p_value,
+    adj_p_value   = adj_p_value,
+    q_value       = adj_p_value,
+    gene_set_size = gene_set_size,
+    overlap_size  = overlap_size,
+    overlap_features = NA_character_,
+    leading_features = NA_character_,
+    source_label  = "gsea_hallmark",
+    stringsAsFactors = FALSE
+  )
+}
+
+#' Build demo integration tables (concordance + ActivePathways)
+#'
+#' Hand-rolled fixtures for the Integration view (slice 2E). Avoids
+#' the live `omicsCore::run_integration()` calls so the demo path
+#' doesn't depend on `ActivePathways` (Bioconductor Suggests).
+#'
+#' Returns a list:
+#'
+#' * `concordance_df` — feature-level data frame with effect sizes from
+#'   both omics layers (`effect_a` = RNA log2FC, `effect_b` = protein
+#'   log2FC), their difference, a p-value pair, and the four-quadrant
+#'   concordance label (`up_up`, `down_down`, `up_down`, `down_up`,
+#'   `ns`). ~60 rows so the dual-volcano and scatter cards have
+#'   something to render.
+#' * `active_pathways_df` — pathway-level data frame with per-omics
+#'   p-values (`p_a` = protein, `p_b` = RNA) and a combined p-value,
+#'   matching the six pathways shown in the mockup. All rows are
+#'   `direction = "shared"` since the mockup only displays shared
+#'   findings.
+#'
+#' @return Named list with `concordance_df` and `active_pathways_df`.
+#'
+#' @keywords internal
+#' @noRd
+example_integration_tables <- function() {
+  set.seed(2026L + 5L)
+  n_feat <- 60L
+  symbols <- example_protein_symbols(n_feat)
+  feat_ids <- sprintf("F%03d", seq_len(n_feat))
+
+  # Concordant signal on the first 30 features (split up/down), the
+  # remaining 30 are noise around zero so the scatter shows a clear
+  # diagonal cloud plus an "ns" centre.
+  rna   <- c(stats::rnorm(15, mean =  1.8, sd = 0.5),
+             stats::rnorm(15, mean = -1.6, sd = 0.5),
+             stats::rnorm(30, mean =  0.0, sd = 0.45))
+  prot  <- c(rna[1:15]  + stats::rnorm(15, mean =  0.2, sd = 0.4),
+             rna[16:30] + stats::rnorm(15, mean = -0.2, sd = 0.4),
+             stats::rnorm(30, mean =  0.0, sd = 0.5))
+
+  effect_diff <- prot - rna
+  p_value     <- 10 ^ -stats::runif(n_feat, min = 1.0, max = 8.0)
+  # Strengthen the seeded signal so significance follows the design.
+  p_value[1:30] <- p_value[1:30] / 1e3
+  adj_p_value   <- pmin(p_value * 1.4, 1)
+
+  thr <- 0.5  # log2FC threshold for quadrant labels
+  quadrant <- ifelse(rna >  thr & prot >  thr, "up_up",
+              ifelse(rna < -thr & prot < -thr, "down_down",
+              ifelse(rna >  thr & prot < -thr, "up_down",
+              ifelse(rna < -thr & prot >  thr, "down_up", "ns"))))
+
+  concordance_df <- data.frame(
+    feature_id     = feat_ids,
+    feature_symbol = symbols,
+    effect_a       = rna,
+    effect_b       = prot,
+    effect_diff    = effect_diff,
+    p_value        = p_value,
+    adj_p_value    = adj_p_value,
+    quadrant       = quadrant,
+    stringsAsFactors = FALSE
+  )
+
+  active_pathways_df <- data.frame(
+    pathway_id = c(
+      "R-HSA-IL6_SIGNALING",
+      "R-HSA-SASP",
+      "R-HSA-ECM_ORGANIZATION",
+      "R-HSA-COLLAGEN_BIOSYNTHESIS",
+      "R-HSA-INNATE_IMMUNE_SYSTEM",
+      "R-HSA-OX_PHOS"
+    ),
+    pathway_name = c(
+      "Interleukin-6 signaling",
+      "Senescence-associated secretory phenotype",
+      "Extracellular matrix organization",
+      "Collagen biosynthesis",
+      "Innate immune system",
+      "Oxidative phosphorylation"
+    ),
+    p_a        = c(1.2e-12, 8.6e-09, 2.4e-08, 5.8e-08, 3.1e-06, 3.5e-06),
+    p_b        = c(4.1e-08, 2.0e-07, 7.8e-06, 1.2e-05, 8.4e-05, 2.1e-04),
+    p_combined = c(3.4e-18, 2.1e-14, 9.5e-12, 3.0e-11, 1.6e-08, 4.2e-08),
+    direction  = "shared",
+    stringsAsFactors = FALSE
+  )
+
+  list(
+    concordance_df     = concordance_df,
+    active_pathways_df = active_pathways_df
+  )
+}
+
 #' Build a demo QC `analysis_bundle`
 #'
 #' Returns `omicsCore::run_qc()` on the proteomics demo input with

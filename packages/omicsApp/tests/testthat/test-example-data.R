@@ -79,3 +79,67 @@ test_that("example_qc_bundle() is deterministic", {
     b$results$qc_summary$missingness$feature_metrics$missing_rate
   )
 })
+
+# ---- slice 2E fixtures ------------------------------------------------
+
+test_that("example_enrich_table() matches the enrich_result_df schema", {
+  df <- example_enrich_table()
+  expect_s3_class(df, "data.frame")
+  expect_equal(nrow(df), 15L)
+  required <- c("database", "result_type", "comparison", "pathway_id",
+                "pathway_name", "effect", "effect_type", "direction",
+                "p_value", "adj_p_value", "q_value", "gene_set_size",
+                "overlap_size", "overlap_features", "leading_features",
+                "source_label")
+  expect_true(all(required %in% colnames(df)))
+  expect_equal(unique(df$database), "hallmark")
+  expect_equal(unique(df$result_type), "gsea")
+  expect_equal(unique(df$effect_type), "nes")
+  expect_setequal(unique(df$direction), c("up", "down"))
+  # All rows clear a strict significance bar so the dotplot has signal.
+  expect_true(all(df$adj_p_value < 0.01))
+  # NES sign agrees with the direction column.
+  expect_true(all(ifelse(df$effect >= 0, "up", "down") == df$direction))
+})
+
+test_that("example_enrich_table() is deterministic", {
+  a <- example_enrich_table()
+  b <- example_enrich_table()
+  expect_identical(a, b)
+})
+
+test_that("example_integration_tables() returns the expected list", {
+  tt <- example_integration_tables()
+  expect_named(tt, c("concordance_df", "active_pathways_df"))
+
+  conc <- tt$concordance_df
+  expect_s3_class(conc, "data.frame")
+  expect_equal(nrow(conc), 60L)
+  expect_true(all(c("feature_id", "feature_symbol", "effect_a", "effect_b",
+                    "effect_diff", "p_value", "adj_p_value", "quadrant")
+                  %in% colnames(conc)))
+  expect_true(all(conc$quadrant %in%
+                  c("up_up", "down_down", "up_down", "down_up", "ns")))
+  # The seeded signal in features 1-15 / 16-30 must surface as the
+  # dominant concordant quadrants — the dual-volcano / scatter rely on
+  # this for visual interpretability.
+  expect_gte(sum(conc$quadrant == "up_up"),     5L)
+  expect_gte(sum(conc$quadrant == "down_down"), 5L)
+
+  ap <- tt$active_pathways_df
+  expect_s3_class(ap, "data.frame")
+  expect_equal(nrow(ap), 6L)
+  expect_true(all(c("pathway_id", "pathway_name",
+                    "p_a", "p_b", "p_combined", "direction")
+                  %in% colnames(ap)))
+  expect_true(all(ap$p_combined > 0 & ap$p_combined < 1))
+  # Brown's combined p must be at least as significant as the smaller
+  # per-omics p for each row (a basic sanity check on the fixture).
+  expect_true(all(ap$p_combined <= pmin(ap$p_a, ap$p_b)))
+})
+
+test_that("example_integration_tables() is deterministic", {
+  a <- example_integration_tables()
+  b <- example_integration_tables()
+  expect_identical(a, b)
+})
