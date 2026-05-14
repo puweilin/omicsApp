@@ -47,7 +47,9 @@ test_that("omicsApp boots and all 7 views render", {
 
   for (id in names(expected)) {
     app$click(selector = paste0("#", id))
-    app$wait_for_idle(timeout = 1000)
+    # 5s headroom: diff view runs limma on the proteomics fixture
+    # at first visit and that takes ~2.5s on commodity hardware.
+    app$wait_for_idle(timeout = 5000)
     # The hidden tabsetPanel mounts all 7 view bodies at once, so we
     # must scope to `.tab-pane.active` to read only the visible title.
     title <- app$get_text(".tab-pane.active .page-title")

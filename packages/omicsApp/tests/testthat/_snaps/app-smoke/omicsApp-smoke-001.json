@@ -16,6 +16,7 @@
     },
     "diff-case": "G2",
     "diff-control": "G1",
+    "diff-covariates": null,
     "diff-fc_cut": 1,
     "diff-fdr_cut": 0.05,
     "diff-group_col": "group",
@@ -102,7 +103,7 @@
       ]
     },
     "diff-label_top": false,
-    "diff-method": "limma",
+    "diff-method": "auto",
     "diff-rerun": 0,
     "enrich-hits_cell_clicked": {
 
