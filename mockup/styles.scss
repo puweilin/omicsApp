@@ -1,0 +1,120 @@
+// =============================================================
+// omicsApp design tokens
+// -------------------------------------------------------------
+// This SCSS file mirrors the CSS custom properties inlined in
+// mockup/index.html. It will be moved to
+//   packages/omicsApp/inst/app/www/styles.scss
+// during Phase 2 and compiled via {sass} or rsass at app startup.
+// =============================================================
+
+// -------- Brand --------
+$brand-700: #1F2D6E;
+$brand-600: #2C3E99;
+$brand-500: #3D52B8;
+$brand-100: #E7EAF6;
+$accent-600: #14A085;
+$accent-500: #1FBF9E;
+$accent-100: #DEF5EE;
+
+// -------- Semantic (omics) --------
+$omics-up:      #C0392B;
+$omics-up-50:   #FAE5E2;
+$omics-down:    #2C3E99;
+$omics-down-50: #E2E6F1;
+$omics-ns:      #9AA3AE;
+
+// distinct hues per omics layer for the omics-tab indicator
+$omics-proteomics: #8E44AD;
+$omics-rnaseq:     $accent-500;
+$omics-integration: linear-gradient(45deg, $omics-proteomics 50%, $omics-rnaseq 50%);
+
+// -------- Surfaces --------
+$bg:            #F5F6FA;
+$card:          #FFFFFF;
+$card-hover:    #FAFBFD;
+$sidebar:       #161A26;
+$sidebar-hover: #1F2433;
+$sidebar-active: $brand-600;
+
+// -------- Text --------
+$fg-1:           #0F1320;   // primary
+$fg-2:           #3F4654;   // secondary
+$fg-3:           #6B7280;   // muted
+$fg-on-dark:     #E8EAF0;
+$fg-on-dark-muted: #8A93A6;
+
+// -------- Borders --------
+$border:        #E5E7EB;
+$border-strong: #D1D5DB;
+
+// -------- Status --------
+$status-ok:    #10B981;
+$status-warn:  #F59E0B;
+$status-err:   #EF4444;
+$status-info:  #3B82F6;
+
+// -------- Shadows --------
+$shadow-sm: 0 1px 2px  rgba(15,19,32,.04);
+$shadow-md: 0 4px 14px rgba(15,19,32,.06);
+$shadow-lg: 0 16px 40px rgba(15,19,32,.10);
+
+// -------- Radii --------
+$r-sm: 4px;
+$r-md: 8px;
+$r-lg: 12px;
+$r-xl: 16px;
+$r-pill: 999px;
+
+// -------- Spacing --------
+$space-1: 4px;
+$space-2: 8px;
+$space-3: 12px;
+$space-4: 16px;
+$space-5: 24px;
+$space-6: 32px;
+$space-7: 48px;
+
+// -------- Typography --------
+$font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+            'Helvetica Neue', Arial, sans-serif;
+$font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+$font-size-base:  13.5px;
+$font-size-sm:    12px;
+$font-size-xs:    11px;
+$font-size-title: 22px;
+$font-size-stat:  26px;
+$line-height:     1.5;
+
+// -------- Z-index --------
+$z-header:  10;
+$z-sidebar: 9;
+$z-modal:   100;
+$z-toast:   110;
+
+// =============================================================
+// Bootstrap 5 / bslib variable overrides
+// -------------------------------------------------------------
+// When wiring into bslib via bs_theme(), pass these as named args:
+//
+//   bslib::bs_theme(
+//     version = 5,
+//     bg = "#F5F6FA", fg = "#0F1320",
+//     primary   = "#2C3E99",
+//     secondary = "#14A085",
+//     success   = "#10B981",
+//     info      = "#3B82F6",
+//     warning   = "#F59E0B",
+//     danger    = "#EF4444",
+//     "body-bg"     = "#F5F6FA",
+//     "body-color"  = "#0F1320",
+//     "border-color"= "#E5E7EB",
+//     "border-radius"= "8px",
+//     "font-family-base"= "Inter, system-ui, sans-serif",
+//     "font-family-monospace"= "'JetBrains Mono', monospace",
+//     "card-border-color"= "#E5E7EB",
+//     "card-cap-bg" = "#FFFFFF"
+//   )
+//
+// Phase 2 will codify this in `R/app_theme.R`.
+// =============================================================
