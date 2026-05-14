@@ -6,7 +6,7 @@ OPTIONAL_GROUPS <- list(
   rnaseq      = c("DESeq2", "edgeR", "tximport", "GenomicFeatures"),
   proteomics  = c("limma", "missForest", "pcaMethods"),
   enrichment  = c("clusterProfiler", "msigdbr", "fgsea", "GSVA"),
-  imputation  = c("missForest", "pcaMethods"),
+  imputation  = c("impute", "missForest", "pcaMethods"),
   viz         = c("ComplexHeatmap", "circlize", "ggrepel", "patchwork", "ggpubr"),
   persistence = c("qs2")
 )
@@ -15,7 +15,8 @@ OPTIONAL_GROUPS <- list(
 # pick the right installer when `pak` is not available.
 BIOC_PACKAGES <- c(
   "DESeq2", "edgeR", "limma", "tximport", "GenomicFeatures",
-  "clusterProfiler", "fgsea", "GSVA", "ComplexHeatmap", "pcaMethods"
+  "clusterProfiler", "fgsea", "GSVA", "ComplexHeatmap", "pcaMethods",
+  "impute"
 )
 
 #' Resolve a Suggests group into its package list

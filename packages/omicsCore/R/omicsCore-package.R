@@ -10,6 +10,7 @@
 #' surface.
 #'
 #' @keywords internal
+#' @importFrom rlang .data
 #' @importFrom stats complete.cases setNames
 #' @importFrom utils install.packages menu
 "_PACKAGE"
