@@ -10,4 +10,6 @@
 #' surface.
 #'
 #' @keywords internal
+#' @importFrom stats complete.cases setNames
+#' @importFrom utils install.packages menu
 "_PACKAGE"
