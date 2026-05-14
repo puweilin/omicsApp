@@ -53,7 +53,7 @@ app_server <- function(input, output, session) {
   # ---- view modules ---------------------------------------------------
   project_view_server("project", current_project = current_project)
   imported_input <- import_view_server("import")
-  qc_view_server("qc")
+  qc_view_server("qc", current_project = current_project)
   diff_view_server("diff")
   enrich_view_server("enrich")
   integration_view_server("integration")

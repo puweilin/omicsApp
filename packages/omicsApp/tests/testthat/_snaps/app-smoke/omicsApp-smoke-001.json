@@ -293,6 +293,8 @@
     "nav_qc": 1,
     "nav_report": 1,
     "plotly_afterplot-A": "\"diff-volcano\"",
+    "qc-missing_threshold": 0.5,
+    "qc-outlier_method": "iqr",
     "view": "report"
   }
 }
