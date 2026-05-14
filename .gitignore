@@ -1,0 +1,33 @@
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+*.tar.gz
+*.Rproj
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# pkgdown / docs build
+docs/_site/
+docs/*.html
+!docs/export-manifest.html
+
+# Package build artifacts
+**/inst/doc/
+**/man-roxygen/
+**/.Rd2pdf*
+
+# User caches
+.omicsApp/
+.omicsCore/
+
+# Renv (local lock if user adds it)
+renv/

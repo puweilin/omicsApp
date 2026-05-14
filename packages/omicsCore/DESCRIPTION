@@ -1,0 +1,60 @@
+Package: omicsCore
+Title: Multi-Omics Analysis Engine for Proteomics, Transcriptomics, and Integration
+Version: 0.0.0.9000
+Authors@R:
+    person("Weilin", "Pu", email = "puweilin@gmail.com", role = c("aut", "cre"))
+Description: A unified, headless analysis engine for proteomics and
+    transcriptomics workflows. Provides quality control, differential
+    expression (DESeq2, edgeR, limma, t-test backends), pathway
+    enrichment (ORA, GSEA, GSVA), and dual-omics integration. Designed
+    as a stateless, function-based API consumed by the omicsApp Shiny
+    frontend or directly from R scripts. Heavy Bioconductor dependencies
+    are listed in Suggests and loaded on demand.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends:
+    R (>= 4.2)
+Imports:
+    R6,
+    cli,
+    rlang,
+    vctrs,
+    tibble,
+    dplyr,
+    tidyr,
+    stringr,
+    readxl,
+    openxlsx,
+    jsonlite,
+    fs,
+    glue,
+    ggplot2,
+    scales
+Suggests:
+    DESeq2,
+    edgeR,
+    limma,
+    clusterProfiler,
+    msigdbr,
+    fgsea,
+    GSVA,
+    ComplexHeatmap,
+    circlize,
+    ggrepel,
+    patchwork,
+    ggpubr,
+    missForest,
+    pcaMethods,
+    tximport,
+    GenomicFeatures,
+    qs2,
+    here,
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+Config/testthat/edition: 3
+URL: https://github.com/puweilin/omicsApp
+BugReports: https://github.com/puweilin/omicsApp/issues

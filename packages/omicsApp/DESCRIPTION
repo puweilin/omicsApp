@@ -1,0 +1,44 @@
+Package: omicsApp
+Title: Shiny Web Interface for Multi-Omics Analysis
+Version: 0.0.0.9000
+Authors@R:
+    person("Weilin", "Pu", email = "puweilin@gmail.com", role = c("aut", "cre"))
+Description: A modern Shiny application providing interactive visualization
+    and analysis for proteomics and transcriptomics data, powered by the
+    omicsCore engine. Features smart input parsing (auto-detects expression
+    matrix, sample metadata, and feature annotation), dual-omics integration
+    views (RNA-Protein correlation, joint pathway enrichment), and cached
+    reactive pipelines for responsive UI on commodity hardware.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends:
+    R (>= 4.2)
+Imports:
+    omicsCore,
+    shiny (>= 1.8.0),
+    bslib (>= 0.7.0),
+    bsicons,
+    htmltools,
+    plotly,
+    DT,
+    shinyWidgets,
+    shinyjs,
+    promises,
+    future,
+    cachem,
+    memoise,
+    rlang,
+    cli,
+    fs
+Remotes:
+    local::../omicsCore
+Suggests:
+    testthat (>= 3.0.0),
+    shinytest2,
+    knitr,
+    rmarkdown
+Config/testthat/edition: 3
+URL: https://github.com/puweilin/omicsApp
+BugReports: https://github.com/puweilin/omicsApp/issues
