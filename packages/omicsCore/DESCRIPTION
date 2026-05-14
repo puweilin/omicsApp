@@ -32,13 +32,15 @@ Imports:
     fs,
     glue,
     ggplot2,
-    scales
+    scales,
+    methods
 Suggests:
     DESeq2,
     edgeR,
     limma,
     S4Vectors,
     clusterProfiler,
+    enrichplot,
     msigdbr,
     fgsea,
     GSVA,
