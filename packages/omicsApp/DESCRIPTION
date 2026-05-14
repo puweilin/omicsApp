@@ -12,7 +12,7 @@ Description: A modern Shiny application providing interactive visualization
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Depends:
     R (>= 4.2)
 Imports:
@@ -20,6 +20,7 @@ Imports:
     shiny (>= 1.8.0),
     bslib (>= 0.7.0),
     bsicons,
+    sass,
     htmltools,
     plotly,
     DT,

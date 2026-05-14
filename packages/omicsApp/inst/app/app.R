@@ -1,23 +1,15 @@
-# Placeholder Shiny app for Phase 0.
-# Phase 2 will replace this with the modular bslib-based UI.
+# Shiny entry point for omicsApp.
+#
+# `omicsApp::launch()` runs `shiny::runApp()` against this directory.
+# Everything that defines the UI / server lives in the package's
+# `R/` folder so it benefits from roxygen, R CMD check, and reuse
+# from tests. Keep this file thin: build UI, attach shinyjs, hand
+# both halves to `shinyApp()`.
 
-library(shiny)
-library(bslib)
-
-ui <- page_fluid(
-  theme = bs_theme(version = 5, bootswatch = "minty"),
-  card(
-    card_header("omicsApp"),
-    card_body(
-      h3("Phase 0 skeleton"),
-      p("The full multi-omics analysis interface will be implemented in Phase 2."),
-      p("See ", tags$code("docs/export-manifest.md"), " for the planned API.")
-    )
-  )
+shiny::shinyApp(
+  ui = htmltools::tagList(
+    shinyjs::useShinyjs(),
+    omicsApp:::app_ui()
+  ),
+  server = omicsApp:::app_server
 )
-
-server <- function(input, output, session) {
-  # No reactives yet.
-}
-
-shinyApp(ui, server)
