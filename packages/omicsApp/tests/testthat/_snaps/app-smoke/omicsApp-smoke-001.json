@@ -205,6 +205,9 @@
     "header_export": 0,
     "header_run": 0,
     "header_settings": 0,
+    "import-confirm": 0,
+    "import-file": null,
+    "import-omics_type": "proteomics",
     "integration-ap_table_cell_clicked": {
 
     },
