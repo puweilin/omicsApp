@@ -1,16 +1,15 @@
 #' Top-level server for omicsApp
 #'
-#' Phase 2 slice 2A scaffold. Wires the 7 hand-rolled sidebar
-#' `actionLink`s to a `reactiveVal("current_view")` that drives both:
-#'   * the hidden [shiny::tabsetPanel()] in `app_ui()`, via
-#'     [shiny::updateTabsetPanel()], and
-#'   * the `.active` class on the matching nav item, via
-#'     [shinyjs::addClass()] / [shinyjs::removeClass()].
+#' Owns the shared app state:
+#'   * `current_view` (slice 2A) — which view tab is active.
+#'   * `current_project` (slice 3B) — the live `omics_project`, or
+#'     `NULL` if the user hasn't imported anything yet. Every view
+#'     reads this and falls back to fixture data when it is `NULL`.
 #'
-#' All view modules are mounted on session start so their UI is
-#' rendered once. The 2A stubs have empty servers, but the call sites
-#' below stay in place so 2B-2F can fill them in with real reactive
-#' wiring without touching this file.
+#' All view modules are mounted on session start. Modules that need
+#' the project state receive it as a reactive argument (slice 3B
+#' wires this for project + import; later slices add qc, diff,
+#' enrich, integration, report).
 #'
 #' @param input,output,session Shiny session triplet.
 #'
@@ -45,12 +44,48 @@ app_server <- function(input, output, session) {
     shinyjs::addClass(id = paste0("nav_", v), class = "active")
   }, ignoreInit = TRUE)
 
+  # ---- shared project state ------------------------------------------
+  # NULL = no user data yet, views fall back to example_*().
+  # Non-NULL = an omics_project built from one or more confirmed
+  # omics_input objects emitted by the Import view.
+  current_project <- shiny::reactiveVal(NULL)
+
   # ---- view modules ---------------------------------------------------
-  project_view_server("project")
-  import_view_server("import")
+  project_view_server("project", current_project = current_project)
+  imported_input <- import_view_server("import")
   qc_view_server("qc")
   diff_view_server("diff")
   enrich_view_server("enrich")
   integration_view_server("integration")
   report_view_server("report")
+
+  # Every time the Import view confirms a fresh omics_input, fold it
+  # into the project under a tag derived from its omics_type. Repeated
+  # imports of the same omics_type replace the existing layer; new
+  # omics_types extend the project. The Project view re-renders
+  # automatically because it observes `current_project`.
+  shiny::observe({
+    inp <- imported_input()
+    if (is.null(inp)) return()
+    proj <- current_project()
+    tag <- inp$omics_type %||% "experiment"
+    if (is.null(proj)) {
+      proj <- omicsCore::omics_project(
+        name        = "User project",
+        experiments = stats::setNames(list(inp), tag)
+      )
+    } else {
+      # `add_experiment()` rejects duplicate tags, so drop any
+      # existing layer of this omics_type first.
+      if (tag %in% omicsCore::experiment_tags(proj)) {
+        proj <- omicsCore::remove_experiment(proj, tag)
+      }
+      proj <- omicsCore::add_experiment(proj, name = tag, input = inp)
+    }
+    current_project(proj)
+  })
 }
+
+# ---- internal helpers ------------------------------------------------
+
+`%||%` <- function(a, b) if (is.null(a)) b else a
