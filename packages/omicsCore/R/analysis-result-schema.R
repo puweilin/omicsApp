@@ -136,3 +136,75 @@ check_enrich_result_schema <- function(result_df) {
   }
   invisible(TRUE)
 }
+
+#' Standardized integration result columns
+#'
+#' All [run_integration()] methods return a `data.frame` with these columns
+#' so downstream visualisation and reporting code can treat correlation,
+#' concordance, and pathway integration uniformly.
+#'
+#' `effect` carries the method-specific score (Pearson/Spearman r, the
+#' difference of effect sizes for concordance, or the combined -log10(p)
+#' for ActivePathways) and `effect_type` records which one. `direction`
+#' is `"concordant"` / `"discordant"` for concordance, `"positive"` /
+#' `"negative"` for correlation, and `"shared"` / `"unique"` for pathway
+#' integration. `quadrant` is filled for concordance (e.g. `"up_up"`).
+#'
+#' @keywords internal
+INTEGRATION_RESULT_REQUIRED_COLS <- c(
+  "feature_id",
+  "feature_symbol",
+  "result_type",
+  "experiments",
+  "comparison",
+  "effect",
+  "effect_type",
+  "statistic",
+  "statistic_type",
+  "p_value",
+  "adj_p_value",
+  "direction",
+  "quadrant",
+  "is_significant",
+  "source_label"
+)
+
+#' Create an empty integration result template
+#'
+#' @return Empty `data.frame` following the standardized integration schema.
+#' @keywords internal
+new_integration_result_template <- function() {
+  data.frame(
+    feature_id = character(0),
+    feature_symbol = character(0),
+    result_type = character(0),
+    experiments = character(0),
+    comparison = character(0),
+    effect = numeric(0),
+    effect_type = character(0),
+    statistic = numeric(0),
+    statistic_type = character(0),
+    p_value = numeric(0),
+    adj_p_value = numeric(0),
+    direction = character(0),
+    quadrant = character(0),
+    is_significant = logical(0),
+    source_label = character(0),
+    stringsAsFactors = FALSE
+  )
+}
+
+#' Validate the standard integration result schema
+#'
+#' @param result_df Data frame to validate.
+#'
+#' @return Invisibly returns `TRUE` on success.
+#' @keywords internal
+check_integration_result_schema <- function(result_df) {
+  missing_cols <- setdiff(INTEGRATION_RESULT_REQUIRED_COLS, colnames(result_df))
+  if (length(missing_cols) > 0) {
+    stop("Missing required integration result columns: ",
+         paste(missing_cols, collapse = ", "))
+  }
+  invisible(TRUE)
+}
