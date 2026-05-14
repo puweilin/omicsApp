@@ -37,6 +37,7 @@ Suggests:
     DESeq2,
     edgeR,
     limma,
+    S4Vectors,
     clusterProfiler,
     msigdbr,
     fgsea,
