@@ -174,3 +174,162 @@ confidence_bar <- function(value, accent = c("ok", "warn", "err", "brand")) {
     )
   )
 }
+
+# ---- import-wizard widgets ------------------------------------------
+
+#' Single step in a `.steps` wizard strip
+#'
+#' Emits `<div class="step {state}">` containing a small numbered
+#' badge and a (label, desc) pair. `state = "done"` swaps the number
+#' for a check glyph so a strip of steps reads at a glance.
+#'
+#' Reference markup: `mockup/index.html:573-587`.
+#'
+#' @param index Step number (rendered as text when `state != "done"`).
+#' @param label One-line step name.
+#' @param desc Optional sub-line describing the step's current state.
+#' @param state One of `"pending"`, `"active"`, `"done"`. The pending
+#'   state adds no extra class — that matches the bare `<div class=
+#'   "step">` in the mockup.
+#'
+#' @return A `<div class="step ...">` tag.
+#'
+#' @keywords internal
+#' @noRd
+step_item <- function(index, label, desc = NULL,
+                      state = c("pending", "active", "done")) {
+  state <- match.arg(state)
+  classes <- c("step", if (state != "pending") state)
+  ix_text <- if (state == "done") "\u2713" else as.character(index)
+  htmltools::tags$div(
+    class = paste(classes, collapse = " "),
+    htmltools::tags$div(class = "ix", ix_text),
+    htmltools::tags$div(
+      htmltools::tags$div(class = "label", label),
+      if (!is.null(desc)) htmltools::tags$div(class = "desc", desc)
+    )
+  )
+}
+
+#' One row inside the "Inferred schema" card on the Import view
+#'
+#' Lays out the five-column grid the mockup uses: index tag, title
+#' and description, role pill, confidence bar + percent, action slot.
+#' Reuses `pill()` for the role tag and `confidence_bar()` for the
+#' fill so a single visual rule governs both widgets.
+#'
+#' Reference markup: `mockup/index.html:633-664`.
+#'
+#' @param ix Short index tag (e.g. `"S1"`).
+#' @param title Bold one-liner describing the inferred role.
+#' @param desc Optional secondary line with the parse evidence.
+#' @param role Pill text (e.g. `"expression matrix"`).
+#' @param confidence Numeric in `[0, 1]`; passed through to
+#'   `confidence_bar()` and rendered as `XX%` next to the bar.
+#' @param accent One of `"ok"`, `"warn"`, `"err"`, `"brand"` —
+#'   forwarded to `confidence_bar()`.
+#' @param role_kind One of `"info"`, `"ok"`, `"warn"`, `"up"`,
+#'   `"down"`, `"ns"` — forwarded to `pill()`.
+#' @param actions Optional tag (typically a button) rendered in the
+#'   right-most slot. `NULL` leaves the cell empty.
+#'
+#' @return A `<div class="schema-row">` tag.
+#'
+#' @keywords internal
+#' @noRd
+schema_row <- function(ix, title, desc = NULL, role, confidence,
+                       accent    = c("ok", "warn", "err", "brand"),
+                       role_kind = c("info", "ok", "warn", "up", "down", "ns"),
+                       actions   = NULL) {
+  accent    <- match.arg(accent)
+  role_kind <- match.arg(role_kind)
+  if (!is.numeric(confidence) || length(confidence) != 1L || is.na(confidence)) {
+    stop("`confidence` must be a numeric scalar.", call. = FALSE)
+  }
+  pct <- max(0, min(100, round(100 * confidence)))
+  htmltools::tags$div(
+    class = "schema-row",
+    htmltools::tags$div(class = "ix", ix),
+    htmltools::tags$div(
+      htmltools::tags$div(class = "title", title),
+      if (!is.null(desc)) htmltools::tags$div(class = "desc", desc)
+    ),
+    pill(role, kind = role_kind),
+    htmltools::tags$div(
+      class = "conf",
+      confidence_bar(confidence, accent = accent),
+      htmltools::tags$span(
+        class = "text-mono",
+        style = "font-size:11px",
+        sprintf("%d%%", pct)
+      )
+    ),
+    actions
+  )
+}
+
+#' Inline notice / alert block
+#'
+#' Emits `<div class="notice notice-{kind}">` with a leading bsicon
+#' and a (title, detail) body. Used in the Import view to flag
+#' schema warnings and elsewhere for inline status messages.
+#'
+#' Reference markup: `mockup/index.html:666-674`.
+#'
+#' @param title Bold lead line.
+#' @param detail Optional secondary line rendered in `.muted`.
+#' @param kind One of `"info"`, `"warn"`. Picks the background colour
+#'   and the leading icon (`info-circle` vs `exclamation-triangle`).
+#'
+#' @return A `<div class="notice ...">` tag.
+#'
+#' @keywords internal
+#' @noRd
+notice <- function(title, detail = NULL, kind = c("info", "warn")) {
+  kind <- match.arg(kind)
+  icon_name <- switch(kind,
+                      info = "info-circle",
+                      warn = "exclamation-triangle")
+  htmltools::tags$div(
+    class = paste0("notice notice-", kind),
+    bsicons::bs_icon(icon_name, class = "icon"),
+    htmltools::tags$div(
+      htmltools::tags$strong(title),
+      if (!is.null(detail)) htmltools::tags$div(class = "muted", detail)
+    )
+  )
+}
+
+#' Single uploaded-file row in the Import view's file list
+#'
+#' Renders `<div class="file-row">` with a leading icon, a name +
+#' optional sub-line, and a right-aligned size label.
+#'
+#' Reference markup: `mockup/index.html:595-610`.
+#'
+#' @param name File name (rendered in `.name`).
+#' @param meta Optional sub-line (rendered in muted text).
+#' @param size Optional right-aligned size string (rendered in
+#'   monospace via `.meta`).
+#' @param icon Leading icon tag. Defaults to a bsicon file glyph.
+#'
+#' @return A `<div class="file-row">` tag.
+#'
+#' @keywords internal
+#' @noRd
+file_row <- function(name, meta = NULL, size = NULL,
+                     icon = bsicons::bs_icon("file-earmark-text", class = "icon")) {
+  htmltools::tags$div(
+    class = "file-row",
+    icon,
+    htmltools::tags$div(
+      htmltools::tags$div(class = "name", name),
+      if (!is.null(meta)) htmltools::tags$div(
+        class = "muted",
+        style = "font-size:11.5px",
+        meta
+      )
+    ),
+    if (!is.null(size)) htmltools::tags$div(class = "meta", size)
+  )
+}
