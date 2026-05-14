@@ -27,6 +27,7 @@ Other diff:
 \code{\link{filter_diff_results}()},
 \code{\link{make_ranked_features}()},
 \code{\link{plot_feature_expression}()},
+\code{\link{plot_heatmap}()},
 \code{\link{plot_pca}()},
 \code{\link{plot_volcano}()},
 \code{\link{run_diff}()},

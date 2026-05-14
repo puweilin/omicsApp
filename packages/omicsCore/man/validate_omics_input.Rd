@@ -25,6 +25,7 @@ Other omics_input:
 \code{\link{select_complete_cases}()},
 \code{\link{subset_omics}()},
 \code{\link{subset_omics_features}()},
-\code{\link{subset_omics_samples}()}
+\code{\link{subset_omics_samples}()},
+\code{\link{summarize_omics}()}
 }
 \concept{omics_input}

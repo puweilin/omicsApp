@@ -23,6 +23,7 @@ Other omics_input:
 \code{\link{subset_omics}()},
 \code{\link{subset_omics_features}()},
 \code{\link{subset_omics_samples}()},
+\code{\link{summarize_omics}()},
 \code{\link{validate_omics_input}()}
 }
 \concept{omics_input}
