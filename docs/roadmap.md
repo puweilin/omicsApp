@@ -51,6 +51,8 @@ New additions in Phase 1:
 
 **Phase 1 done when:** `R CMD check --as-cran packages/omicsCore` returns 0 errors / 0 warnings; all current CHISSS analyses can be reproduced via `library(omicsCore)` without sourcing the legacy bootstrap.
 
+> **Status: met.** Validation script at `CHISSS/scripts/validation/cheek_g2_vs_g1_omicscore.R` reproduces the legacy Cheek G2-vs-G1 limma-with-age-adjustment diff (Pearson r = 1.000 on log2FC and -log10 p-values; volcano + heatmap + export_bundle all round-trip).
+
 **Phase 2 done when:** `omicsApp::launch()` opens a styled multi-page UI with all 7 views navigable, populated by built-in example data, no business logic yet.
 
 **Phase 3 done when:** A new user can: upload an Excel file → smart-parse → QC → run diff → see volcano + enrichment + integration → download a report — without writing any R code.
