@@ -53,13 +53,30 @@ app_server <- function(input, output, session) {
   # ---- view modules ---------------------------------------------------
   project_view_server("project", current_project = current_project)
   imported_input <- import_view_server("import")
-  qc_view_server("qc", current_project = current_project)
+  qc_bundle <- qc_view_server("qc", current_project = current_project)
   diff_bundle <- diff_view_server("diff", current_project = current_project)
   enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle)
-  integration_view_server("integration",
+  integration_bundle <- integration_view_server("integration",
                           current_project = current_project,
                           diff_bundle     = diff_bundle)
-  report_view_server("report")
+  report_view_server("report", current_project = current_project)
+
+  # Attach analysis bundles to the project whenever any bundle changes,
+  # so that export_report() can walk names(project$bundles).
+  shiny::observe({
+    proj <- current_project()
+    if (is.null(proj)) return()
+    b <- list()
+    qb <- qc_bundle()
+    if (!is.null(qb)) b$qc <- qb
+    db <- diff_bundle()
+    if (!is.null(db)) b$diff <- db
+    eb <- enrich_bundle()
+    if (!is.null(eb)) b$enrich <- eb
+    ib <- integration_bundle()
+    if (!is.null(ib)) b$integration <- ib
+    proj$bundles <- b
+  })
 
   # Every time the Import view confirms a fresh omics_input, fold it
   # into the project under a tag derived from its omics_type. Repeated

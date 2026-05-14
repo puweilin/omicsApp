@@ -244,6 +244,9 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         caption
       )
     })
+
+    # Expose the QC bundle for slice 3F (report).
+    shiny::reactive(last_bundle())
   })
 }
 
