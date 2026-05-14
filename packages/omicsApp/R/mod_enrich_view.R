@@ -1,11 +1,11 @@
 #' Pathway enrichment view module
 #'
-#' Slice 2E: pathway dotplot (left) and enriched-sets DT (right) from
-#' a synthetic GSEA-style fixture (`example_enrich_table()`). The
-#' inline ORA / GSEA / GSVA tab strip mirrors the mockup but is inert
-#' in this slice — clicking does nothing. Live
-#' `omicsCore::run_enrichment()` invocations are deferred until the
-#' Bioconductor-suggest gating story is settled.
+#' Slice 3E: takes a live `diff_bundle` from the Differential
+#' view and runs `omicsCore::run_enrichment()` against it
+#' (ORA or GSEA, against an MSigDB database). The Re-run button
+#' gates the call per slice-3 convention. When clusterProfiler is
+#' missing we fall back to `example_enrich_table()` and surface a
+#' notice with the install hint.
 #'
 #' Reference markup: `omicsApp/mockup/index.html:918-964`.
 #'
@@ -16,36 +16,150 @@ enrich_view_ui <- function(id) {
   ns <- shiny::NS(id)
 
   htmltools::tagList(
-    view_header(
-      title    = "Pathway enrichment",
-      subtitle = "Proteomics \u00B7 G2 vs G1 \u00B7 MSigDB Hallmark \u00B7 15 sets shown"
-    ),
+    shiny::uiOutput(ns("header")),
+    shiny::uiOutput(ns("notices")),
     htmltools::tags$div(
-      class = "inline-tabs",
-      htmltools::tags$button(type = "button",
-                             class = "inline-tab active", "ORA"),
-      htmltools::tags$button(type = "button",
-                             class = "inline-tab", "GSEA"),
-      htmltools::tags$button(type = "button",
-                             class = "inline-tab", "GSVA")
-    ),
-    htmltools::tags$div(
-      class = "row-grid r-7-5",
-      enrich_dot_card(ns),
-      enrich_hits_card(ns)
+      class = "row-grid r-3-9",
+      enrich_params_card(ns),
+      htmltools::tags$div(
+        htmltools::tags$div(
+          class = "row-grid r-7-5",
+          enrich_dot_card(ns),
+          enrich_hits_card(ns)
+        )
+      )
     )
   )
 }
 
 #' @rdname enrich_view_ui
+#' @param diff_bundle Reactive (or reactiveVal) yielding the
+#'   live differential `analysis_bundle` from the Diff view, or
+#'   `NULL`.
 #' @keywords internal
 #' @noRd
-enrich_view_server <- function(id) {
+enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
-    table_data <- shiny::reactive(example_enrich_table())
+
+    have_cp <- requireNamespace("clusterProfiler", quietly = TRUE)
+
+    enrich_bundle <- shiny::reactiveVal(NULL)
+    enrich_error  <- shiny::reactiveVal(NULL)
+    is_demo       <- shiny::reactiveVal(TRUE)
+
+    do_run <- function() {
+      db_arg <- input$database %||% "hallmark"
+      type   <- input$type %||% "ora"
+      dir_   <- input$direction %||% "both"
+      bundle <- diff_bundle()
+      if (is.null(bundle) || !have_cp) {
+        # Demo fallback: synthetic table re-shaped to match the
+        # standardized enrich schema.
+        enrich_error(if (!have_cp) {
+          paste0("clusterProfiler is not installed; showing the demo ",
+                 "fixture. Install with `omicsCore::install_optional",
+                 "('enrichment')`.")
+        } else NULL)
+        is_demo(TRUE)
+        enrich_bundle(NULL)
+        return(invisible())
+      }
+      result <- tryCatch({
+        omicsCore::run_enrichment(
+          diff_bundle = bundle,
+          type        = type,
+          database    = db_arg,
+          direction   = dir_
+        )
+      }, error = function(e) e)
+      if (inherits(result, "error")) {
+        enrich_error(conditionMessage(result))
+        is_demo(TRUE)
+        enrich_bundle(NULL)
+      } else {
+        enrich_error(NULL)
+        is_demo(FALSE)
+        enrich_bundle(result)
+      }
+    }
+
+    # Auto-run once on first diff_bundle change so the view lands
+    # populated; subsequent updates require Re-run.
+    shiny::observeEvent(diff_bundle(), {
+      do_run()
+    }, ignoreNULL = FALSE)
+    shiny::observeEvent(input$rerun, do_run())
+
+    # The table powering both the dot card and the hits card. In
+    # demo mode this is the static fixture; in live mode it's
+    # the enrichment bundle's standardized result data frame.
+    table_data <- shiny::reactive({
+      if (isTRUE(is_demo())) example_enrich_table()
+      else {
+        df <- enrich_bundle()$results$enrich_result_df
+        # Normalize column names so the existing dot/hits cards
+        # don't need to branch on schema. The standardized schema
+        # already has `pathway_name`, `effect`, `adj_p_value`,
+        # `overlap_size`, `gene_set_size`, `direction`.
+        df
+      }
+    })
+
+    output$header <- shiny::renderUI({
+      b <- enrich_bundle()
+      demo <- is_demo()
+      omics <- if (is.null(b)) "Proteomics"
+               else enrich_omics_display(b$input_info$omics_type)
+      method <- if (is.null(b)) "MSigDB Hallmark"
+                else sprintf("%s \u00B7 %s",
+                             toupper(b$params$type %||% "ora"),
+                             b$params$database %||% "hallmark")
+      view_header(
+        title    = "Pathway enrichment",
+        subtitle = htmltools::tagList(
+          omics,
+          htmltools::HTML(" &middot; "),
+          method,
+          htmltools::HTML(" &middot; "),
+          htmltools::tags$span(
+            class = "muted",
+            if (demo) "demo fixture (built-in)"
+            else "live result"
+          )
+        )
+      )
+    })
+
+    output$notices <- shiny::renderUI({
+      tagged <- htmltools::tagList()
+      err <- enrich_error()
+      if (!is.null(err)) {
+        tagged <- htmltools::tagAppendChild(
+          tagged,
+          notice(title  = if (!have_cp) "clusterProfiler unavailable"
+                          else "run_enrichment failed",
+                 detail = err,
+                 kind   = "warn")
+        )
+      }
+      if (is.null(diff_bundle()) && have_cp) {
+        tagged <- htmltools::tagAppendChild(
+          tagged,
+          notice(
+            title  = "Run a differential analysis first",
+            detail = paste0("This view enriches the top hits from the ",
+                            "Differential view. Showing the demo fixture ",
+                            "until a real bundle arrives."),
+            kind   = "info"
+          )
+        )
+      }
+      tagged
+    })
 
     output$dot <- shiny::renderPlot({
       df <- table_data()
+      shiny::req(nrow(df) > 0L)
       top <- df[order(df$adj_p_value), , drop = FALSE]
       top <- top[seq_len(min(12L, nrow(top))), , drop = FALSE]
       top$pathway_name <- factor(top$pathway_name,
@@ -73,13 +187,16 @@ enrich_view_server <- function(id) {
 
     output$hits <- DT::renderDT({
       df <- table_data()
+      shiny::req(nrow(df) > 0L)
       df <- df[order(df$adj_p_value), , drop = FALSE]
       out <- data.frame(
         Pathway   = df$pathway_name,
         NES       = sprintf("%+.2f", df$effect),
         `adj.P`   = signif(df$adj_p_value, 3),
         Direction = df$direction,
-        Overlap   = sprintf("%d/%d", df$overlap_size, df$gene_set_size),
+        Overlap   = sprintf("%d/%d",
+                            df$overlap_size %||% NA_integer_,
+                            df$gene_set_size %||% NA_integer_),
         check.names = FALSE,
         stringsAsFactors = FALSE
       )
@@ -96,14 +213,73 @@ enrich_view_server <- function(id) {
         )
       )
     }, server = TRUE)
+
+    # Expose the bundle for slice 3F (report).
+    shiny::reactive(enrich_bundle())
   })
 }
 
 # ---- internal helpers ------------------------------------------------
 
-# Same .data trick as mod_diff_view: silence R CMD check for the
-# tidy-eval column selectors in the dotplot ggplot.
 utils::globalVariables(".data")
+
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+enrich_omics_display <- function(t) {
+  switch(t %||% "",
+         proteomics = "Proteomics",
+         rnaseq     = "RNA-seq",
+         "\u2014")
+}
+
+enrich_params_card <- function(ns) {
+  bslib::card(
+    bslib::card_header(
+      htmltools::tags$h3(class = "card-title", "Parameters"),
+      htmltools::tags$span(class = "card-sub",
+                           "test type, database, direction")
+    ),
+    bslib::card_body(
+      htmltools::tags$div(
+        class = "param-stack",
+        param_group(
+          "Test",
+          shiny::radioButtons(
+            ns("type"), label = NULL,
+            choices  = c("ORA" = "ora", "GSEA" = "gsea"),
+            selected = "ora", inline = TRUE
+          )
+        ),
+        param_group(
+          "Database",
+          shiny::selectInput(
+            ns("database"), label = NULL,
+            choices  = c("hallmark", "kegg", "reactome",
+                         "go_bp", "go_mf", "go_cc",
+                         "wikipathways"),
+            selected = "hallmark"
+          )
+        ),
+        param_group(
+          "Direction",
+          shiny::radioButtons(
+            ns("direction"), label = NULL,
+            choices  = c("both", "up", "down"),
+            selected = "both", inline = TRUE
+          )
+        ),
+        htmltools::tags$div(
+          style = "margin-top:8px",
+          shiny::actionButton(
+            ns("rerun"), "Re-run",
+            class = "btn btn-primary",
+            style = "width:100%"
+          )
+        )
+      )
+    )
+  )
+}
 
 enrich_dot_card <- function(ns) {
   bslib::card(

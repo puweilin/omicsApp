@@ -55,8 +55,10 @@ app_server <- function(input, output, session) {
   imported_input <- import_view_server("import")
   qc_view_server("qc", current_project = current_project)
   diff_bundle <- diff_view_server("diff", current_project = current_project)
-  enrich_view_server("enrich")
-  integration_view_server("integration")
+  enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle)
+  integration_view_server("integration",
+                          current_project = current_project,
+                          diff_bundle     = diff_bundle)
   report_view_server("report")
 
   # Every time the Import view confirms a fresh omics_input, fold it

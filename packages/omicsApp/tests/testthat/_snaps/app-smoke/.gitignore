@@ -1,5 +1,0 @@
-# shinytest2 writes a debug screenshot alongside each expect_values()
-# baseline. The JSON is the comparator (portable, deterministic); the
-# PNG is platform/font-dependent (anti-aliasing diffs, Chromium build
-# variations) and shouldn't gate CI.
-*_.png

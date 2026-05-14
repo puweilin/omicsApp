@@ -57,8 +57,23 @@ test_that("omicsApp boots and all 7 views render", {
                  info = paste("view:", id))
   }
 
-  # Lock the input register on the Report view. Inputs-only because
-  # output snapshots include base64-encoded plot bytes and aren't
-  # portable across font stacks.
-  app$expect_values(output = FALSE, input = TRUE, export = FALSE)
+  # Verify key inputs from each slice are registered (catches
+  # renamed/dropped ns() without fragile DT-state snapshots).
+  app$click(selector = "#nav_report")
+  app$wait_for_idle(timeout = 3000)
+  vals <- app$get_values(input = TRUE, output = FALSE, export = FALSE)$input
+  essential <- c(
+    "nav_project", "nav_import", "nav_qc", "nav_diff",
+    "nav_enrich", "nav_integration", "nav_report",
+    "import-file", "import-confirm",
+    "qc-missing_threshold", "qc-outlier_method",
+    "diff-method", "diff-group_col",
+    "diff-rerun",
+    "enrich-type", "enrich-database", "enrich-direction", "enrich-rerun",
+    "integration-rerun"
+  )
+  for (nm in essential) {
+    expect_true(nm %in% names(vals),
+                info = sprintf("input '%s' missing from register", nm))
+  }
 })
