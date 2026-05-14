@@ -67,7 +67,11 @@ standardize_enrich_result <- function(
     rep(NA_character_, n)
   }
   out$direction <- if (has_nes) {
-    ifelse(enrich_df$NES >= 0, "up", "down")
+    # NA NES (zero-variance pathway, or backend-returned NA) stays NA
+    # rather than collapsing to "down" via the default ifelse fallthrough.
+    nes <- as.numeric(enrich_df$NES)
+    ifelse(is.na(nes), NA_character_,
+           ifelse(nes >= 0, "up", "down"))
   } else {
     rep(default_direction, n)
   }

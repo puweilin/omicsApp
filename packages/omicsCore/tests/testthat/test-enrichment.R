@@ -114,7 +114,10 @@ test_that("run_enrichment GSEA returns a standardized bundle", {
   expect_true(all(ENRICH_RESULT_REQUIRED_COLS %in% colnames(res)))
   if (nrow(res) > 0L) {
     expect_equal(unique(res$result_type), "gsea")
-    expect_true(all(res$direction %in% c("up", "down")))
+    # NA NES (zero-variance pathway) maps to NA direction; up/down are
+    # the only other allowed values.
+    expect_true(all(res$direction %in% c("up", "down") |
+                    is.na(res$direction)))
   }
 })
 
