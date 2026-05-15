@@ -74,6 +74,12 @@ jobs:
           r-version: release
           use-public-rspm: true
 
+      # Install omicsCore's CRAN/Bioc Imports first so the local install below works.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: packages/omicsCore
+          needs: check
+
       - name: Install omicsCore from local source
         run: |
           R CMD INSTALL packages/omicsCore
