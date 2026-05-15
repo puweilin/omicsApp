@@ -30,7 +30,7 @@ Imports:
     promises,
     future
 Remotes:
-    local::../omicsCore
+    omicsCore=local::../omicsCore
 Suggests:
     testthat (>= 3.0.0),
     shinytest2,
