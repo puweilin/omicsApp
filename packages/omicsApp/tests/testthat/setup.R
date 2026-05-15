@@ -8,6 +8,9 @@ suppressPackageStartupMessages({
   library(shiny)
   library(htmltools)
   library(omicsCore)
+  if (requireNamespace("pkgload", quietly = TRUE)) {
+    pkgload::load_all("../..", quiet = TRUE)
+  }
 })
 
 # Helper: render a tag (or tagList) to HTML for snapshot-style asserts.

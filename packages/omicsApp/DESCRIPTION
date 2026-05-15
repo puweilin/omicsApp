@@ -37,7 +37,8 @@ Suggests:
     ggrepel,
     knitr,
     openxlsx,
-    rmarkdown
+    rmarkdown,
+    clusterProfiler
 Config/testthat/edition: 3
 URL: https://github.com/puweilin/omicsApp
 BugReports: https://github.com/puweilin/omicsApp/issues
