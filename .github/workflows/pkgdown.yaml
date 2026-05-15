@@ -1,0 +1,69 @@
+# Build and deploy pkgdown sites for omicsCore and omicsApp to gh-pages.
+#
+# Triggers on push to main when either package changes.
+# Both sites are nested under /omicsCore/ and /omicsApp/ on the
+# gh-pages branch so GitHub Pages serves them as:
+#   https://<owner>.github.io/omicsApp/omicsCore/
+#   https://<owner>.github.io/omicsApp/omicsApp/
+name: pkgdown
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/omicsCore/**"
+      - "packages/omicsApp/**"
+      - ".github/workflows/pkgdown.yaml"
+  workflow_dispatch:
+
+jobs:
+  pkgdown:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: packages/omicsCore
+          extra-packages: |
+            any::pkgdown
+          needs: check
+
+      - name: Build omicsCore pkgdown site
+        run: |
+          Rscript -e 'pkgdown::build_site("packages/omicsCore")'
+        shell: bash
+
+      - name: Build omicsApp pkgdown site
+        run: |
+          R CMD INSTALL packages/omicsCore
+          Rscript -e 'pkgdown::build_site("packages/omicsApp")'
+        shell: bash
+
+      - name: Stage docs for deploy
+        run: |
+          mkdir -p gh-pages-deploy/omicsCore
+          mkdir -p gh-pages-deploy/omicsApp
+          cp -R packages/omicsCore/docs/* gh-pages-deploy/omicsCore/
+          cp -R packages/omicsApp/docs/* gh-pages-deploy/omicsApp/
+          touch gh-pages-deploy/.nojekyll
+        shell: bash
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: gh-pages-deploy
+          publish_branch: gh-pages
+          force_orphan: true

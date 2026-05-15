@@ -1,0 +1,26 @@
+destination: docs
+url: https://chisss.github.io/omicsApp/
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, reference, news]
+    right: [search, github]
+  components:
+    intro:
+      text: Introduction
+      href: index.html
+    reference:
+      text: Reference
+      href: reference/index.html
+    news:
+      text: Changelog
+      href: news/index.html
+
+reference:
+- title: App entry point
+  desc: Launch the application
+  contents:
+  - omicsApp-package
+  - launch

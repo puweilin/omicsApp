@@ -1,0 +1,139 @@
+destination: docs
+url: https://chisss.github.io/omicsCore/
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, reference, news]
+    right: [search, github]
+  components:
+    intro:
+      text: Introduction
+      href: index.html
+    reference:
+      text: Reference
+      href: reference/index.html
+    news:
+      text: Changelog
+      href: news/index.html
+
+reference:
+- title: Data I/O
+  desc: Smart input parser and import report
+  contents:
+  - read_omics
+  - omics_input
+  - is_omics_input
+  - new_omics_input
+  - new_import_report
+  - is_import_report
+  - import_report_sheets
+  - import_report_warnings
+  - validate_omics_input
+
+- title: Project container
+  desc: Multi-omics project class
+  contents:
+  - omics_project
+  - is_omics_project
+  - add_experiment
+  - remove_experiment
+  - experiment_tags
+  - load_project
+  - save_project
+
+- title: Preprocessing
+  desc: Filter, impute, normalize, and subset
+  contents:
+  - impute_matrix
+  - winsorize_counts
+  - drop_meta_na
+  - select_complete_cases
+  - subset_omics
+  - subset_omics_features
+  - subset_omics_samples
+  - summarize_omics
+
+- title: Quality control
+  desc: Missingness and outlier detection
+  contents:
+  - qc_missingness
+  - qc_outliers
+
+- title: Analysis pipelines
+  desc: Run QC, differential, enrichment, and integration
+  contents:
+  - run_qc
+  - run_diff
+  - run_diff_continuous
+  - run_enrichment
+  - run_integration
+  - run_gsva
+
+- title: Results
+  desc: Work with analysis bundles and filter results
+  contents:
+  - is_analysis_bundle
+  - new_analysis_bundle
+  - filter_diff_results
+  - filter_enrich_results
+  - make_ranked_features
+
+- title: Gene sets
+  desc: List available MSigDB gene sets
+  contents:
+  - list_gene_sets
+
+- title: Visualization
+  desc: QC, differential, enrichment, and integration plots
+  contents:
+  - plot_qc
+  - plot_pca
+  - plot_heatmap
+  - plot_volcano
+  - plot_ma
+  - plot_feature_expression
+  - plot_enrichment
+  - plot_gsea
+  - plot_gsva_heatmap
+  - plot_integration
+  - theme_omicsCore
+
+- title: Export
+  desc: Save results and render reports
+  contents:
+  - export_report
+  - export_bundle
+  - install_optional
+  - check_install
+
+- title: Internal
+  desc: Low-level helpers, backend engines, S3 methods, and constants
+  contents:
+  - starts_with("check_")
+  - starts_with("standardize_")
+  - starts_with("run_limma")
+  - starts_with("run_deseq2")
+  - starts_with("run_edger")
+  - starts_with("run_lm")
+  - starts_with("run_ttest")
+  - starts_with("validate_")
+  - starts_with("print.")
+  - starts_with("new_diff")
+  - starts_with("new_enrich")
+  - starts_with("new_integration")
+  - starts_with("new_artifact")
+  - starts_with("DIFF_RESULT")
+  - starts_with("ENRICH_RESULT")
+  - starts_with("INTEGRATION_RESULT")
+  - starts_with("IMPORT_REPORT")
+  - classify_sheet_role
+  - detect_id_columns
+  - detect_orientation
+  - add_import_warning
+  - merge_artifact_registries
+  - register_artifact
+  - resolve_install_group
+  - omicsCore-package
+  - omicsCore-constants
