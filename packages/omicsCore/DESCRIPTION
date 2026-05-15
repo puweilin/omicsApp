@@ -18,22 +18,16 @@ RoxygenNote: 7.3.3
 Depends:
     R (>= 4.2)
 Imports:
-    R6,
-    cli,
-    rlang,
-    vctrs,
     tibble,
     dplyr,
-    tidyr,
     stringr,
     readxl,
     openxlsx,
     jsonlite,
-    fs,
-    glue,
     ggplot2,
     scales,
     methods,
+    rlang,
     limma,
     clusterProfiler,
     msigdbr,

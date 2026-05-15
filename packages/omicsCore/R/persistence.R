@@ -66,8 +66,7 @@ save_project <- function(project, path, overwrite = FALSE) {
 
   tmp <- paste0(path, ".tmp")
   on.exit(if (file.exists(tmp)) file.remove(tmp), add = TRUE)
-  qs2 <- asNamespace("qs2")
-  qs2$qs_save(payload, file = tmp)
+  qs2::qs_save(payload, file = tmp)
   ok <- file.rename(tmp, path)
   if (!isTRUE(ok)) {
     stop("Failed to rename '", tmp, "' to '", path, "'.")
@@ -96,8 +95,7 @@ load_project <- function(path) {
     stop("File does not exist: ", path)
   }
   ensure_qs2()
-  qs2 <- asNamespace("qs2")
-  payload <- qs2$qs_read(path)
+  payload <- qs2::qs_read(path)
 
   if (!is.list(payload) ||
       !all(c("schema_version", "payload") %in% names(payload))) {
