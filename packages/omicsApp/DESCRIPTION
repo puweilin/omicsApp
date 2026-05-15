@@ -28,12 +28,7 @@ Imports:
     shinyWidgets,
     shinyjs,
     promises,
-    future,
-    cachem,
-    memoise,
-    rlang,
-    cli,
-    fs
+    future
 Remotes:
     local::../omicsCore
 Suggests:
