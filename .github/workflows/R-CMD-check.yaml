@@ -75,10 +75,13 @@ jobs:
           use-public-rspm: true
 
       # Install omicsCore's CRAN/Bioc Imports first so the local install below works.
+      # cache: false — check-omicscore already caches these, and concurrent
+      # cache saves from parallel jobs cause 10+ minutes of retry churn.
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           working-directory: packages/omicsCore
           needs: check
+          cache: false
 
       - name: Install omicsCore from local source
         run: |
@@ -92,6 +95,7 @@ jobs:
             any::rcmdcheck
             any::devtools
           needs: check
+          cache: false
 
       - uses: r-lib/actions/check-r-package@v2
         with:
