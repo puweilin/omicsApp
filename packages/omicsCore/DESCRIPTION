@@ -33,15 +33,16 @@ Imports:
     glue,
     ggplot2,
     scales,
-    methods
+    methods,
+    limma,
+    clusterProfiler,
+    msigdbr,
+    qs2
 Suggests:
     DESeq2,
     edgeR,
-    limma,
     S4Vectors,
-    clusterProfiler,
     enrichplot,
-    msigdbr,
     fgsea,
     GSVA,
     ActivePathways,
@@ -55,7 +56,6 @@ Suggests:
     pcaMethods,
     tximport,
     GenomicFeatures,
-    qs2,
     here,
     testthat (>= 3.0.0),
     knitr,

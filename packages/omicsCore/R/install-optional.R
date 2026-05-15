@@ -2,20 +2,24 @@
 # packages that the corresponding analysis backend needs at runtime. Heavy
 # Bioconductor packages live here (not in Imports) so that a fresh
 # `install.packages("omicsCore")` stays slim on restricted environments.
+#
+# Note: `limma`, `clusterProfiler`, `msigdbr`, and `qs2` are now in Imports
+# (auto-installed with omicsCore) — they are required by the default
+# differential-expression, enrichment, and persistence paths.
 OPTIONAL_GROUPS <- list(
   rnaseq      = c("DESeq2", "edgeR", "tximport", "GenomicFeatures"),
-  proteomics  = c("limma", "missForest", "pcaMethods"),
-  enrichment  = c("clusterProfiler", "msigdbr", "fgsea", "GSVA"),
+  proteomics  = c("missForest", "pcaMethods"),
+  enrichment  = c("fgsea", "GSVA"),
   imputation  = c("impute", "missForest", "pcaMethods"),
   viz         = c("ComplexHeatmap", "circlize", "ggrepel", "patchwork", "ggpubr"),
-  persistence = c("qs2")
+  persistence = character(0)
 )
 
 # Packages we expect to find on Bioconductor (rather than CRAN). Used to
 # pick the right installer when `pak` is not available.
 BIOC_PACKAGES <- c(
-  "DESeq2", "edgeR", "limma", "tximport", "GenomicFeatures",
-  "clusterProfiler", "fgsea", "GSVA", "ComplexHeatmap", "pcaMethods",
+  "DESeq2", "edgeR", "tximport", "GenomicFeatures",
+  "fgsea", "GSVA", "ComplexHeatmap", "pcaMethods",
   "impute"
 )
 

@@ -18,6 +18,7 @@ Thumbs.db
 # pkgdown / docs build
 docs/_site/
 docs/*.html
+packages/*/docs/
 !docs/export-manifest.html
 
 # Package build artifacts
