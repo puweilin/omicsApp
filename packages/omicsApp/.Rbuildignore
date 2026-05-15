@@ -5,3 +5,4 @@
 ^\.github$
 ^\.DS_Store$
 ^docs$
+^_pkgdown\.yml$
