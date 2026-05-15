@@ -111,35 +111,39 @@ integration_view_server <- function(id,
       } else {
         "auto"
       }
-      result <- tryCatch({
-        sec_diff <- omicsCore::run_diff(
-          input         = info$secondary,
-          method        = sec_method,
-          analysis_type = "group",
-          group_col     = info$group_col,
-          control_group = info$control,
-          case_group    = info$case
-        )
-        diff_bundles <- stats::setNames(
-          list(primary, sec_diff),
-          c(info$primary_tag, info$secondary_tag)
-        )
-        omicsCore::run_integration(
-          project      = proj,
-          method       = "concordance",
-          experiments  = c(info$primary_tag, info$secondary_tag),
-          diff_bundles = diff_bundles
-        )
-      }, error = function(e) e)
-      if (inherits(result, "error")) {
-        integration_error(conditionMessage(result))
-        is_demo(TRUE)
-        integration_bundle(NULL)
-      } else {
-        integration_error(NULL)
-        is_demo(FALSE)
-        integration_bundle(result)
-      }
+      run_async(
+        function() {
+          sec_diff <- omicsCore::run_diff(
+            input         = info$secondary,
+            method        = sec_method,
+            analysis_type = "group",
+            group_col     = info$group_col,
+            control_group = info$control,
+            case_group    = info$case
+          )
+          diff_bundles <- stats::setNames(
+            list(primary, sec_diff),
+            c(info$primary_tag, info$secondary_tag)
+          )
+          omicsCore::run_integration(
+            project      = proj,
+            method       = "concordance",
+            experiments  = c(info$primary_tag, info$secondary_tag),
+            diff_bundles = diff_bundles
+          )
+        },
+        on_success = function(result) {
+          integration_error(NULL)
+          is_demo(FALSE)
+          integration_bundle(result)
+        },
+        on_error = function(msg) {
+          integration_error(msg)
+          is_demo(TRUE)
+          integration_bundle(NULL)
+        },
+        message = "Running multi-omics integration..."
+      )
     }
 
     shiny::observeEvent(input$rerun, do_run())

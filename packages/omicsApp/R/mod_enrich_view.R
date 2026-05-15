@@ -64,23 +64,27 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL)) {
         enrich_bundle(NULL)
         return(invisible())
       }
-      result <- tryCatch({
-        omicsCore::run_enrichment(
-          diff_bundle = bundle,
-          type        = type,
-          database    = db_arg,
-          direction   = dir_
-        )
-      }, error = function(e) e)
-      if (inherits(result, "error")) {
-        enrich_error(conditionMessage(result))
-        is_demo(TRUE)
-        enrich_bundle(NULL)
-      } else {
-        enrich_error(NULL)
-        is_demo(FALSE)
-        enrich_bundle(result)
-      }
+      run_async(
+        function() {
+          omicsCore::run_enrichment(
+            diff_bundle = bundle,
+            type        = type,
+            database    = db_arg,
+            direction   = dir_
+          )
+        },
+        on_success = function(result) {
+          enrich_error(NULL)
+          is_demo(FALSE)
+          enrich_bundle(result)
+        },
+        on_error = function(msg) {
+          enrich_error(msg)
+          is_demo(TRUE)
+          enrich_bundle(NULL)
+        },
+        message = "Running pathway enrichment..."
+      )
     }
 
     # Auto-run once on first diff_bundle change so the view lands

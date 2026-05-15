@@ -149,23 +149,27 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         diff_error("Pick a group column with distinct Control and Case levels.")
         return(invisible())
       }
-      bundle <- tryCatch({
-        omicsCore::run_diff(
-          input         = a$input,
-          method        = method,
-          analysis_type = "group",
-          group_col     = group_col,
-          control_group = control,
-          case_group    = case,
-          covariates    = if (length(covariates)) covariates else NULL
-        )
-      }, error = function(e) e)
-      if (inherits(bundle, "error")) {
-        diff_error(conditionMessage(bundle))
-      } else {
-        diff_error(NULL)
-        diff_bundle(bundle)
-      }
+      run_async(
+        function() {
+          omicsCore::run_diff(
+            input         = a$input,
+            method        = method,
+            analysis_type = "group",
+            group_col     = group_col,
+            control_group = control,
+            case_group    = case,
+            covariates    = if (length(covariates)) covariates else NULL
+          )
+        },
+        on_success = function(bundle) {
+          diff_error(NULL)
+          diff_bundle(bundle)
+        },
+        on_error = function(msg) {
+          diff_error(msg)
+        },
+        message = "Running differential analysis..."
+      )
     }
 
     # Initial population: fire as soon as the active() reactive
