@@ -4,7 +4,7 @@
 \alias{export_script}
 \title{Export a project's analysis history as a runnable R script}
 \usage{
-export_script(project, path = NULL, include_plots = FALSE)
+export_script(project, path = NULL, include_plots = TRUE)
 }
 \arguments{
 \item{project}{An \code{\link[=is_omics_project]{omics_project}}.}
@@ -12,8 +12,10 @@ export_script(project, path = NULL, include_plots = FALSE)
 \item{path}{Optional file to write to. The lines are returned either
 way.}
 
-\item{include_plots}{Whether to append plotting calls. Off by default
-because the figures in the app are not yet drawn by these functions.}
+\item{include_plots}{Whether to append the plotting calls. On by
+default: the Shiny views draw through these same functions, so the
+figures the script produces are the figures the user was looking
+at. Set \code{FALSE} for a script that only recomputes the numbers.}
 }
 \value{
 Character vector of script lines, invisibly when \code{path} is

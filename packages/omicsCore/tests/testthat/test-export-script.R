@@ -154,14 +154,55 @@ test_that("export_script writes to disk when given a path", {
   expect_equal(readLines(path), lines)
 })
 
-test_that("plotting calls are opt-in", {
+test_that("figures are emitted by default and can be turned off", {
   proj <- fixture_project("raw/x.xlsx")
   proj$bundles <- list(diff = new_analysis_bundle("run_diff",
     input_info = list(omics_type = "proteomics"),
     params = list(method = "limma")))
-  expect_false(any(grepl("plot_volcano", export_script(proj))))
-  expect_true(any(grepl("plot_volcano",
-                        export_script(proj, include_plots = TRUE))))
+  # The views draw through these same functions now, so the script's
+  # figures are the ones the user was looking at.
+  expect_true(any(grepl("plot_volcano", export_script(proj))))
+  expect_false(any(grepl("plot_volcano",
+                         export_script(proj, include_plots = FALSE))))
+})
+
+test_that("each analysis emits the figure its view shows", {
+  proj <- fixture_project("raw/x.xlsx")
+  proj$bundles <- list(
+    qc = new_analysis_bundle("run_qc", list(omics_type = "proteomics"),
+           params = list(impute_method = "half_min")),
+    diff = new_analysis_bundle("run_diff", list(omics_type = "proteomics"),
+             params = list(method = "limma")),
+    enrich = new_analysis_bundle("run_enrichment",
+               list(omics_type = "proteomics"),
+               params = list(type = "ora", database = "hallmark")),
+    integration = new_analysis_bundle("run_integration",
+                    list(omics_type = c("rnaseq", "proteomics")),
+                    params = list(method = "concordance",
+                                  experiments = c("rnaseq", "proteomics")))
+  )
+  txt <- paste(export_script(proj), collapse = "\n")
+  for (call in c('plot_qc(qc, view = "pca")',
+                 'plot_qc(qc, view = "missing")',
+                 "plot_volcano(diff)",
+                 'plot_enrichment(enrich, view = "dot", top_n = 12L)',
+                 'plot_integration(integration, view = "dual_volcano")',
+                 'plot_integration(integration, view = "effect_pair")')) {
+    expect_match(txt, call, fixed = TRUE)
+  }
+})
+
+test_that("the volcano is drawn as the analysis defined significance", {
+  proj <- fixture_project("raw/x.xlsx")
+  proj$bundles <- list(diff = new_analysis_bundle("run_diff",
+    input_info = list(omics_type = "proteomics"),
+    params = list(method = "limma")))
+  txt <- paste(export_script(proj), collapse = "\n")
+  # The app's sliders are a reading aid, not part of the analysis, and
+  # they are not recorded on the bundle. Emitting them would put a
+  # number in the script that nothing in the report justifies.
+  expect_false(grepl("p_threshold", txt, fixed = TRUE))
+  expect_match(txt, "do not change the analysis", fixed = TRUE)
 })
 
 # ---- round trip -------------------------------------------------------

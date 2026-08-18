@@ -148,8 +148,10 @@ script_input_var <- function(tag, n_experiments) {
 #' @param project An [`omics_project`][is_omics_project()].
 #' @param path Optional file to write to. The lines are returned either
 #'   way.
-#' @param include_plots Whether to append plotting calls. Off by default
-#'   because the figures in the app are not yet drawn by these functions.
+#' @param include_plots Whether to append the plotting calls. On by
+#'   default: the Shiny views draw through these same functions, so the
+#'   figures the script produces are the figures the user was looking
+#'   at. Set `FALSE` for a script that only recomputes the numbers.
 #'
 #' @return Character vector of script lines, invisibly when `path` is
 #'   given.
@@ -159,7 +161,7 @@ script_input_var <- function(tag, n_experiments) {
 #' \dontrun{
 #'   export_script(project, "reproduce.R")
 #' }
-export_script <- function(project, path = NULL, include_plots = FALSE) {
+export_script <- function(project, path = NULL, include_plots = TRUE) {
   if (!is_omics_project(project)) {
     stop("`project` must be an `omics_project`.")
   }
@@ -281,9 +283,26 @@ export_script <- function(project, path = NULL, include_plots = FALSE) {
 
   if (isTRUE(include_plots)) {
     lines <- c(lines, section("Figures"))
-    if (!is.null(bundles$qc))     lines <- c(lines, "plot_qc(qc, view = \"pca\")")
-    if (!is.null(bundles$diff))   lines <- c(lines, "plot_volcano(diff)")
-    if (!is.null(bundles$enrich)) lines <- c(lines, "plot_enrichment(enrich, view = \"dot\")")
+    if (!is.null(bundles$qc)) {
+      lines <- c(lines,
+                 'plot_qc(qc, view = "pca")',
+                 'plot_qc(qc, view = "missing")')
+    }
+    if (!is.null(bundles$diff)) {
+      lines <- c(lines,
+        "# The app's threshold sliders re-colour the volcano for reading;",
+        "# they do not change the analysis. This draws significance as",
+        "# `run_diff()` determined it, which is the version worth citing.",
+        "plot_volcano(diff)")
+    }
+    if (!is.null(bundles$enrich)) {
+      lines <- c(lines, 'plot_enrichment(enrich, view = "dot", top_n = 12L)')
+    }
+    if (!is.null(bundles$integration)) {
+      lines <- c(lines,
+                 'plot_integration(integration, view = "dual_volcano")',
+                 'plot_integration(integration, view = "effect_pair")')
+    }
   }
 
   lines <- c(lines, section("Session"), "sessionInfo()")
