@@ -266,13 +266,28 @@ import_view_server <- function(id,
       proj$experiments[[tag]]
     }
 
+    # Archive the upload alongside the parsed input. Only on commit:
+    # parsing happens on every file pick and radio change, most of which
+    # the user never confirms. Archiving failing must not stop the
+    # import, so its outcome is surfaced but not acted on.
+    commit <- function(cand) {
+      f <- input$file
+      if (!is.null(f)) {
+        res <- store_raw_upload(f$datapath, f$name, cand$source_fingerprint)
+        if (!isTRUE(res$ok) && grepl("quota", res$message, fixed = TRUE)) {
+          shiny::showNotification(res$message, type = "warning", duration = 8)
+        }
+      }
+      confirmed_input(cand)
+    }
+
     shiny::observeEvent(input$confirm, {
       shiny::req(parse_ok())
       cand <- parsed()$input
       existing <- layer_being_replaced(cand)
 
       if (is.null(existing)) {
-        confirmed_input(cand)
+        commit(cand)
         return()
       }
       if (fingerprints_match(existing, cand)) {
@@ -291,7 +306,7 @@ import_view_server <- function(id,
     shiny::observeEvent(input$confirm_replace, {
       shiny::removeModal()
       shiny::req(parse_ok())
-      confirmed_input(parsed()$input)
+      commit(parsed()$input)
     })
 
     # ---- module return ------------------------------------------------

@@ -263,6 +263,70 @@ test_that("autosave still writes when the store is over quota", {
   }, quota_gb = 1e-9)
 })
 
+# ---- raw upload archive -----------------------------------------------
+
+write_upload <- function(content = "a,b\n1,2\n") {
+  path <- tempfile(fileext = ".csv")
+  writeLines(content, path)
+  path
+}
+
+test_that("an upload is archived under the raw directory", {
+  with_temp_store({
+    src <- write_upload(); on.exit(unlink(src), add = TRUE)
+    res <- store_raw_upload(src, "cheek.csv", "abc123def456789:proteomics:x")
+    expect_true(res$ok)
+    expect_true(file.exists(res$path))
+    expect_equal(dirname(res$path), raw_dir())
+    expect_match(basename(res$path), "^cheek__abc123def456\\.csv$")
+  })
+})
+
+test_that("archiving the same upload twice does not duplicate it", {
+  with_temp_store({
+    src <- write_upload(); on.exit(unlink(src), add = TRUE)
+    fp <- "abc123def456789:proteomics:x"
+    first <- store_raw_upload(src, "cheek.csv", fp)
+    second <- store_raw_upload(src, "cheek.csv", fp)
+    expect_true(second$ok)
+    expect_equal(second$path, first$path)
+    expect_length(list.files(raw_dir()), 1L)
+  })
+})
+
+test_that("archiving is skipped at quota but reports why", {
+  with_temp_store({
+    src <- write_upload(); on.exit(unlink(src), add = TRUE)
+    writeBin(raw(2048), file.path(omicsapp_data_dir(), "ballast.bin"))
+    res <- store_raw_upload(src, "cheek.csv", "deadbeefcafe:proteomics:x")
+    expect_false(res$ok)
+    expect_match(res$message, "quota")
+  }, quota_gb = 1e-9)
+})
+
+test_that("archiving fails soft on a missing file or fingerprint", {
+  with_temp_store({
+    src <- write_upload(); on.exit(unlink(src), add = TRUE)
+    expect_false(store_raw_upload(tempfile(), "x.csv", "fp")$ok)
+    expect_false(store_raw_upload(src, "x.csv", NULL)$ok)
+    # An import must never be blocked by the archive step.
+    expect_no_error(store_raw_upload(NULL, NULL, NULL))
+  })
+})
+
+test_that("archived uploads do not show up as saved projects", {
+  skip_if_not_installed("qs2")
+  with_temp_store({
+    src <- write_upload(); on.exit(unlink(src), add = TRUE)
+    store_raw_upload(src, "cheek.csv", "abc123def456:proteomics:x")
+    store_save_project(tiny_project(), slug = "real-project")
+    expect_equal(list_saved_projects()$slug, "real-project")
+    # ...but they do count against the quota, since they really do grow
+    # the store.
+    expect_gt(data_dir_usage_bytes(), 0)
+  })
+})
+
 # ---- autosave wiring --------------------------------------------------
 #
 # `wire_autosave()` is the only path deciding whether a recycled

@@ -405,6 +405,82 @@ autosave_mtime <- function(dir = omicsapp_data_dir()) {
   file.info(path)$mtime
 }
 
+#' Directory holding archived raw uploads
+#'
+#' @param dir Project directory.
+#' @param create Whether to create the directory when it does not exist.
+#'
+#' @return Absolute path to the `raw/` sub-directory.
+#' @keywords internal
+#' @noRd
+raw_dir <- function(dir = omicsapp_data_dir(), create = TRUE) {
+  path <- file.path(dir, "raw")
+  if (isTRUE(create) && !dir.exists(path)) {
+    dir.create(path, recursive = TRUE, showWarnings = FALSE)
+  }
+  path
+}
+
+#' Archive the file an import was parsed from
+#'
+#' `.omp` carries the parsed matrices, which is enough to keep working,
+#' but not enough to answer "what did the file we started from look
+#' like?" — a question that outlives the session, and that a methods
+#' section eventually asks. Keeping the upload closes that gap.
+#'
+#' The stored name is derived from the fingerprint, so re-importing the
+#' same file twice is idempotent rather than accumulating copies.
+#'
+#' Unlike the autosave snapshot this genuinely grows the store, so it is
+#' subject to quota — and it fails soft: archiving is a convenience, and
+#' losing it must never block an import the user is in the middle of.
+#'
+#' @param path Path to the uploaded file (Shiny's temp copy).
+#' @param name Original file name, used for the readable part of the
+#'   stored name.
+#' @param fingerprint Fingerprint from `input_fingerprint()`.
+#' @param dir Project directory.
+#'
+#' @return A list with `ok`, `path`, and `message`.
+#' @keywords internal
+#' @noRd
+store_raw_upload <- function(path, name, fingerprint,
+                             dir = omicsapp_data_dir()) {
+  skip <- function(msg) list(ok = FALSE, path = NA_character_, message = msg)
+  if (is.null(path) || !nzchar(path) || !file.exists(path)) {
+    return(skip("No uploaded file to archive."))
+  }
+  if (is.null(fingerprint) || is.na(fingerprint)) {
+    return(skip("Upload has no fingerprint; not archived."))
+  }
+  digest <- substr(sub(":.*$", "", fingerprint), 1L, 12L)
+  stem <- project_slug(tools::file_path_sans_ext(name %||% "upload"))
+  if (is.na(stem)) stem <- "upload"
+  ext <- tools::file_ext(name %||% "")
+  target <- file.path(raw_dir(dir),
+                      paste0(stem, "__", digest,
+                             if (nzchar(ext)) paste0(".", ext) else ""))
+  if (file.exists(target)) {
+    return(list(ok = TRUE, path = target,
+                message = "Already archived."))
+  }
+  if (quota_exceeded(dir)) {
+    return(skip(sprintf(
+      "Storage quota reached (%s); the raw file was not archived.",
+      usage_label(dir)
+    )))
+  }
+  tryCatch(
+    {
+      ok <- file.copy(path, target, overwrite = FALSE)
+      if (!isTRUE(ok)) return(skip("Could not archive the raw file."))
+      list(ok = TRUE, path = target, message = "Raw file archived.")
+    },
+    error = function(e) skip(paste0("Could not archive the raw file: ",
+                                    conditionMessage(e)))
+  )
+}
+
 #' Snapshot a project to disk whenever it changes
 #'
 #' Every import and every completed analysis lands a new value on
