@@ -60,7 +60,8 @@ qc_view_ui <- function(id) {
 #'   live `omics_project` or `NULL`.
 #' @keywords internal
 #' @noRd
-qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
+qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
+                           invalidate = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Active experiment selection. When the user has a real project,
@@ -92,6 +93,14 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     # plots stay visible.
     last_bundle <- shiny::reactiveVal(NULL)
     last_error  <- shiny::reactiveVal(NULL)
+
+    # The layer this result was computed on has been replaced, so the
+    # result is no longer about anything in the project. NULL is the
+    # module's own start-up state, so this only rewinds it.
+    shiny::observeEvent(invalidate(), {
+      last_bundle(NULL)
+      last_error(NULL)
+    }, ignoreInit = TRUE)
 
     shiny::observe({
       a <- active()

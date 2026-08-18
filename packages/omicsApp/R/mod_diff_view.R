@@ -40,7 +40,8 @@ diff_view_ui <- function(id) {
 #'   live `omics_project` or `NULL`.
 #' @keywords internal
 #' @noRd
-diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
+diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
+                             invalidate = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Active experiment: prefer proteomics, then the first layer
@@ -131,6 +132,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     # changes only take effect on Re-run.
     diff_bundle <- shiny::reactiveVal(NULL)
     diff_error  <- shiny::reactiveVal(NULL)
+
+    # The layer this result was computed on has been replaced, so the
+    # result is no longer about anything in the project. NULL is the
+    # module's own start-up state, so this only rewinds it.
+    shiny::observeEvent(invalidate(), {
+      diff_bundle(NULL)
+      diff_error(NULL)
+    }, ignoreInit = TRUE)
 
     do_run <- function() {
       a <- active()

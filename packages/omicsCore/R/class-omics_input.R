@@ -21,6 +21,11 @@
 #' @param normalized_mat Optional normalized matrix carried alongside `expr_mat`.
 #' @param raw_object Optional upstream raw object (e.g. a `DESeqDataSet` or
 #'   `SummarizedExperiment`) preserved for reference.
+#' @param source_fingerprint Optional string identifying the file this
+#'   input was parsed from. Callers that re-import into a live project use
+#'   it to tell "the user picked the same file again" from "the data
+#'   changed"; analyses computed on the previous data are only valid for
+#'   the former. `NULL` for inputs built directly from matrices.
 #'
 #' @return An object of class `omics_input`.
 #' @export
@@ -42,7 +47,8 @@ omics_input <- function(
   assay_type = NULL,
   raw_mat = NULL,
   normalized_mat = NULL,
-  raw_object = NULL
+  raw_object = NULL,
+  source_fingerprint = NULL
 ) {
   x <- new_omics_input(
     omics_type = omics_type,
@@ -52,7 +58,8 @@ omics_input <- function(
     feature_df = feature_df,
     raw_mat = raw_mat,
     normalized_mat = normalized_mat,
-    raw_object = raw_object
+    raw_object = raw_object,
+    source_fingerprint = source_fingerprint
   )
   validate_omics_input(x)
   x
@@ -76,7 +83,8 @@ new_omics_input <- function(
   feature_df,
   raw_mat = NULL,
   normalized_mat = NULL,
-  raw_object = NULL
+  raw_object = NULL,
+  source_fingerprint = NULL
 ) {
   if (!is.matrix(expr_mat) && !is.data.frame(expr_mat)) {
     stop("`expr_mat` must be a matrix or data.frame.")
@@ -99,7 +107,8 @@ new_omics_input <- function(
       normalized_mat = normalized_mat,
       meta_df = meta_df,
       feature_df = feature_df,
-      raw_object = raw_object
+      raw_object = raw_object,
+      source_fingerprint = source_fingerprint
     ),
     class = "omics_input"
   )

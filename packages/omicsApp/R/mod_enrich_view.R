@@ -38,7 +38,8 @@ enrich_view_ui <- function(id) {
 #'   `NULL`.
 #' @keywords internal
 #' @noRd
-enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL)) {
+enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
+                               invalidate = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     have_cp <- requireNamespace("clusterProfiler", quietly = TRUE)
@@ -46,6 +47,15 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL)) {
     enrich_bundle <- shiny::reactiveVal(NULL)
     enrich_error  <- shiny::reactiveVal(NULL)
     is_demo       <- shiny::reactiveVal(TRUE)
+
+    # The layer the upstream diff was computed on has been replaced, so
+    # this enrichment is no longer about anything in the project. Back
+    # to the module's own start-up state.
+    shiny::observeEvent(invalidate(), {
+      enrich_bundle(NULL)
+      enrich_error(NULL)
+      is_demo(TRUE)
+    }, ignoreInit = TRUE)
 
     do_run <- function() {
       db_arg <- input$database %||% "hallmark"

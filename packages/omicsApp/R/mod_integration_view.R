@@ -49,7 +49,8 @@ integration_view_ui <- function(id) {
 #' @noRd
 integration_view_server <- function(id,
                                     current_project = shiny::reactiveVal(NULL),
-                                    diff_bundle = shiny::reactiveVal(NULL)) {
+                                    diff_bundle = shiny::reactiveVal(NULL),
+                                    invalidate = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Decide whether we can run real concordance integration. We
@@ -92,6 +93,15 @@ integration_view_server <- function(id,
     integration_bundle <- shiny::reactiveVal(NULL)
     integration_error  <- shiny::reactiveVal(NULL)
     is_demo            <- shiny::reactiveVal(TRUE)
+
+    # One of the layers this integration spanned has been replaced, so
+    # the pairing it reports no longer exists. Back to the module's own
+    # start-up state.
+    shiny::observeEvent(invalidate(), {
+      integration_bundle(NULL)
+      integration_error(NULL)
+      is_demo(TRUE)
+    }, ignoreInit = TRUE)
 
     do_run <- function() {
       info <- can_run()

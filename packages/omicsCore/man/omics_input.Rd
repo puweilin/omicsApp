@@ -12,7 +12,8 @@ omics_input(
   assay_type = NULL,
   raw_mat = NULL,
   normalized_mat = NULL,
-  raw_object = NULL
+  raw_object = NULL,
+  source_fingerprint = NULL
 )
 }
 \arguments{
@@ -35,6 +36,12 @@ samples. A \code{data.frame} is coerced to a matrix.}
 
 \item{raw_object}{Optional upstream raw object (e.g. a \code{DESeqDataSet} or
 \code{SummarizedExperiment}) preserved for reference.}
+
+\item{source_fingerprint}{Optional string identifying the file this
+input was parsed from. Callers that re-import into a live project use
+it to tell "the user picked the same file again" from "the data
+changed"; analyses computed on the previous data are only valid for
+the former. \code{NULL} for inputs built directly from matrices.}
 }
 \value{
 An object of class \code{omics_input}.

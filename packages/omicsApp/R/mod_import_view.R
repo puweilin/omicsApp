@@ -41,9 +41,13 @@ import_view_ui <- function(id) {
 }
 
 #' @rdname import_view_ui
+#' @param current_project Reactive yielding the live `omics_project` or
+#'   `NULL`. Read only, to tell a first import from one that would
+#'   replace a layer other analyses were computed on.
 #' @keywords internal
 #' @noRd
-import_view_server <- function(id) {
+import_view_server <- function(id,
+                               current_project = shiny::reactiveVal(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -84,6 +88,12 @@ import_view_server <- function(id) {
       # Stamp the user-visible source name so the schema card shows
       # the original filename, not the tempfile path Shiny gave us.
       out$report$source <- f$name
+      # Fingerprint the upload so Confirm can tell a genuinely new
+      # dataset from the same file picked twice.
+      if (!is.null(out$input)) {
+        out$input$source_fingerprint <-
+          input_fingerprint(f$datapath, omics_type, assay_type)
+      }
       parsed(out)
       # New upload (or radio change) always resets the confirmed state
       # so the user has to re-confirm against the rebuilt input.
@@ -236,7 +246,50 @@ import_view_server <- function(id) {
       NULL
     })
 
+    # ---- confirm, guarded when it would replace live data -------------
+    # Committing an input whose omics_type already exists in the project
+    # replaces that layer, and every analysis computed on it becomes
+    # meaningless. Three cases, only the last of which is destructive:
+    #
+    #   no such layer yet     -> commit straight away
+    #   same file re-selected -> nothing changed, keep the results
+    #   different data        -> ask first, then commit and clear
+    #
+    # The middle case is why the fingerprint is worth carrying: a
+    # mis-click that re-picks the same file must not cost the user an
+    # afternoon of analysis.
+    layer_being_replaced <- function(cand) {
+      proj <- current_project()
+      if (is.null(proj) || is.null(cand)) return(NULL)
+      tag <- cand$omics_type %||% "experiment"
+      if (!tag %in% names(proj$experiments)) return(NULL)
+      proj$experiments[[tag]]
+    }
+
     shiny::observeEvent(input$confirm, {
+      shiny::req(parse_ok())
+      cand <- parsed()$input
+      existing <- layer_being_replaced(cand)
+
+      if (is.null(existing)) {
+        confirmed_input(cand)
+        return()
+      }
+      if (fingerprints_match(existing, cand)) {
+        shiny::showNotification(
+          "That is the file already loaded \u2014 nothing to re-import.",
+          type = "message"
+        )
+        return()
+      }
+      shiny::showModal(
+        replace_layer_modal(ns, cand$omics_type %||% "experiment",
+                            current_project())
+      )
+    })
+
+    shiny::observeEvent(input$confirm_replace, {
+      shiny::removeModal()
       shiny::req(parse_ok())
       confirmed_input(parsed()$input)
     })
@@ -250,6 +303,71 @@ import_view_server <- function(id) {
 
 # Tiny `%||%` so the module doesn't pull rlang in just for one operator.
 `%||%` <- function(a, b) if (is.null(a)) b else a
+
+# Identity of an upload. The file digest alone is not enough: the same
+# workbook imported as proteomics and as RNA-seq yields two different
+# inputs, so the parse settings are part of what makes it "the same".
+input_fingerprint <- function(path, omics_type, assay_type) {
+  digest <- unname(tools::md5sum(path))
+  if (is.na(digest)) return(NULL)
+  paste(digest, omics_type %||% "", assay_type %||% "", sep = ":")
+}
+
+# Both sides must carry a fingerprint for a match to mean anything. An
+# input built straight from matrices has none, and two missing values
+# are not evidence of sameness — treat that as "assume it changed",
+# which costs a confirmation click rather than an afternoon of results.
+fingerprints_match <- function(existing, candidate) {
+  a <- existing$source_fingerprint
+  b <- candidate$source_fingerprint
+  !is.null(a) && !is.null(b) && identical(a, b)
+}
+
+# Human-readable names for the bundles about to be discarded, so the
+# dialog names what is at stake rather than saying "analyses".
+BUNDLE_LABELS <- c(
+  qc          = "Quality control",
+  diff        = "Differential analysis",
+  enrich      = "Pathway enrichment",
+  integration = "Multi-omics integration"
+)
+
+replace_layer_modal <- function(ns, tag, project) {
+  bundles <- names(project$bundles %||% list())
+  losing <- if (length(bundles) == 0L) {
+    htmltools::tags$p(
+      class = "muted",
+      "No analyses have been run on the current data yet."
+    )
+  } else {
+    htmltools::tagList(
+      htmltools::tags$p("These results were computed on the current data ",
+                        "and will be cleared:"),
+      htmltools::tags$ul(
+        lapply(bundles, function(b) {
+          htmltools::tags$li(unname(BUNDLE_LABELS[b]) %||% b)
+        })
+      )
+    )
+  }
+  shiny::modalDialog(
+    title = sprintf("Replace the %s layer?", tag),
+    losing,
+    htmltools::tags$p(
+      class = "muted",
+      style = "font-size:12px",
+      "The uploaded file differs from the one currently loaded. Keeping ",
+      "results computed on the previous data would misreport them as ",
+      "belonging to the new data."
+    ),
+    easyClose = FALSE,
+    footer = htmltools::tagList(
+      shiny::modalButton("Cancel"),
+      shiny::actionButton(ns("confirm_replace"), "Replace and clear",
+                          class = "btn btn-danger")
+    )
+  )
+}
 
 format_file_size <- function(bytes) {
   if (is.null(bytes) || !is.finite(bytes)) return("")

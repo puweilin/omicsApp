@@ -50,6 +50,14 @@ app_server <- function(input, output, session) {
   # omics_input objects emitted by the Import view.
   current_project <- shiny::reactiveVal(NULL)
 
+  # Bumped whenever an import replaces an existing omics layer. The
+  # analysis views own their own bundles, so `app_server()` cannot clear
+  # them directly — this is the signal they watch. Without it a bundle
+  # computed on the replaced data is re-attached by the observer below
+  # and ends up in both the report and the autosave, presented as if it
+  # belonged to the data that just arrived.
+  layer_generation <- shiny::reactiveVal(0L)
+
   # ---- header: project picker ----------------------------------------
   output$project_picker <- shiny::renderUI({
     proj <- current_project()
@@ -72,13 +80,18 @@ app_server <- function(input, output, session) {
 
   # ---- view modules ---------------------------------------------------
   project_view_server("project", current_project = current_project)
-  imported_input <- import_view_server("import")
-  qc_bundle <- qc_view_server("qc", current_project = current_project)
-  diff_bundle <- diff_view_server("diff", current_project = current_project)
-  enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle)
+  imported_input <- import_view_server("import",
+                        current_project = current_project)
+  qc_bundle <- qc_view_server("qc", current_project = current_project,
+                              invalidate = layer_generation)
+  diff_bundle <- diff_view_server("diff", current_project = current_project,
+                                  invalidate = layer_generation)
+  enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
+                                      invalidate = layer_generation)
   integration_bundle <- integration_view_server("integration",
                           current_project = current_project,
-                          diff_bundle     = diff_bundle)
+                          diff_bundle     = diff_bundle,
+                          invalidate      = layer_generation)
   report_view_server("report", current_project = current_project)
 
   # Attach analysis bundles to the project whenever any bundle changes,
@@ -128,9 +141,15 @@ app_server <- function(input, output, session) {
       # existing layer of this omics_type first. Bundles computed on
       # the replaced layer are also dropped since their input is now
       # gone — leaving them around shows stale results in the report.
+      #
+      # Clearing `proj$bundles` is not enough on its own: the analysis
+      # views still hold what they computed and the bundle-attach
+      # observer would put it straight back. Bumping the generation is
+      # what actually tells them to let go.
       if (tag %in% omicsCore::experiment_tags(proj)) {
         proj <- omicsCore::remove_experiment(proj, tag)
         if (!is.null(proj$bundles)) proj$bundles <- list()
+        layer_generation(shiny::isolate(layer_generation()) + 1L)
       }
       proj <- omicsCore::add_experiment(proj, name = tag, input = inp)
       if (is.null(proj$bundles)) proj$bundles <- list()
