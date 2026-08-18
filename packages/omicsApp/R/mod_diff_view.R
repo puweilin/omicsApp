@@ -317,46 +317,20 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     })
 
     output$volcano <- plotly::renderPlotly({
-      df <- marked()
-      df$.neglog10p <- -log10(pmax(df$adj_p_value, .Machine$double.xmin))
-      df$.sig <- ifelse(df$is_significant, "significant", "ns")
-      ranked <- df[order(df$adj_p_value, na.last = NA), , drop = FALSE]
-      label_n <- if (isTRUE(input$label_top)) 20L else 0L
-      top_ids <- if (label_n > 0L) utils::head(ranked$feature_id, label_n) else character(0)
-      df$.label <- ifelse(df$feature_id %in% top_ids,
-                          df$feature_symbol, NA_character_)
-
-      p <- ggplot2::ggplot(
-        df,
-        ggplot2::aes(x = .data$effect, y = .data$.neglog10p,
-                     color = .data$.sig,
-                     text = sprintf(
-                       "%s\neffect: %+.2f\nadj.P: %.2g",
-                       .data$feature_symbol, .data$effect, .data$adj_p_value
-                     ))
-      ) +
-        ggplot2::geom_point(alpha = 0.85, size = 1.8) +
-        ggplot2::scale_color_manual(
-          values = c(ns = omics_colors$ns, significant = omics_colors$up),
-          name = NULL
-        ) +
-        ggplot2::geom_hline(yintercept = -log10(fdr_cut_d()),
-                            linetype = "dashed", color = omics_colors$ns) +
-        ggplot2::geom_vline(xintercept = c(-fc_cut_d(), fc_cut_d()),
-                            linetype = "dashed", color = omics_colors$ns) +
-        ggplot2::labs(x = "log2 fold change", y = "-log10(adj.P)")
-
-      if (any(!is.na(df$.label)) && requireNamespace("ggrepel", quietly = TRUE)) {
-        p <- p + ggrepel::geom_text_repel(
-          data = df,
-          mapping = ggplot2::aes(x = .data$effect, y = .data$.neglog10p,
-                                 label = .data$.label),
-          size = 3, color = omics_colors$fg_dark,
-          max.overlaps = Inf, na.rm = TRUE, inherit.aes = FALSE
-        )
-      }
-
-      plotly::ggplotly(p, tooltip = "text") |>
+      b <- diff_bundle()
+      shiny::req(b)
+      # Drawn by omicsCore so this figure, the one in an exported
+      # report, and the one an exported script reproduces are the same
+      # figure. The thresholds come from the sliders, and plot_volcano()
+      # re-derives significance from them, so the points re-colour
+      # rather than only the dashed rules moving.
+      p <- omicsCore::plot_volcano(
+        b,
+        top_n            = if (isTRUE(input$label_top)) 20L else 0L,
+        p_threshold      = fdr_cut_d(),
+        effect_threshold = fc_cut_d()
+      )
+      plotly::ggplotly(p) |>
         plotly::config(displaylogo = FALSE,
                        modeBarButtonsToRemove = c("lasso2d", "select2d"))
     })

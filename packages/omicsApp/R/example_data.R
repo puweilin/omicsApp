@@ -116,6 +116,35 @@ example_input <- function(omics_type = c("proteomics", "rnaseq")) {
 # Private cache for the demo fixtures, shared by every demo view.
 .example_cache <- new.env(parent = emptyenv())
 
+# The demo views draw through the same `omicsCore::plot_*()` dispatchers
+# as the live ones, which take bundles rather than data frames. Wrapping
+# the fixtures keeps both paths on one set of drawing code -- when the
+# demo has its own, the two drift and the demo stops resembling what
+# users get.
+example_enrich_bundle <- function() {
+  if (!is.null(.example_cache$enrich)) return(.example_cache$enrich)
+  .example_cache$enrich <- omicsCore::new_analysis_bundle(
+    analysis_name = "run_enrichment",
+    input_info = list(omics_type = "proteomics"),
+    params = list(type = "gsea", database = "hallmark", organism = "Hs",
+                  direction = "both", comparison = "G2_vs_G1"),
+    results = list(enrich_result_df = example_enrich_table())
+  )
+}
+
+example_integration_bundle <- function() {
+  if (!is.null(.example_cache$integration)) return(.example_cache$integration)
+  .example_cache$integration <- omicsCore::new_analysis_bundle(
+    analysis_name = "run_integration",
+    input_info = list(omics_type = c("rnaseq", "proteomics")),
+    params = list(method = "concordance",
+                  experiments = c("rnaseq", "proteomics"),
+                  by = "feature_symbol"),
+    results = list(
+      integration_df = example_integration_tables()$concordance_df)
+  )
+}
+
 # Cached accessor for the demo proteomics input. Used by both
 # `example_diff_bundle()` and `example_qc_bundle()` (and the diff
 # view's contrast UI when no project is loaded) so all demo views
@@ -314,6 +343,23 @@ example_integration_tables <- function() {
     p_value        = p_value,
     adj_p_value    = adj_p_value,
     quadrant       = quadrant,
+    # The columns below carry no extra information -- they exist so the
+    # fixture satisfies INTEGRATION_RESULT_REQUIRED_COLS and can be
+    # plotted by `omicsCore::plot_integration()`. Without them the demo
+    # would need its own drawing code, and a demo drawn by different
+    # code from the live view is a demo that can quietly stop matching
+    # what users actually get.
+    result_type    = "concordance",
+    experiments    = "rnaseq vs proteomics",
+    comparison     = "G2_vs_G1",
+    # The schema defines `effect` as effect_a - effect_b.
+    effect         = rna - prot,
+    effect_type    = "log2fc_difference",
+    statistic      = rna - prot,
+    statistic_type = "difference",
+    direction      = ifelse(rna - prot >= 0, "up", "down"),
+    is_significant = adj_p_value < 0.05,
+    source_label   = "demo fixture",
     stringsAsFactors = FALSE
   )
 

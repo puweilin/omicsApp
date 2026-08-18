@@ -37,6 +37,24 @@ plot_volcano <- function(
     levels = c("ns", "significant")
   )
 
+  # A caller that supplies thresholds is asking for those thresholds,
+  # not the ones the analysis was run with. Re-deriving here is what
+  # lets a threshold control re-colour the points rather than only move
+  # the dashed rules -- leaving `is_significant` alone would draw a
+  # cloud whose colours contradict the lines through it.
+  if (!missing(p_threshold) || !missing(effect_threshold)) {
+    sig <- rep(TRUE, nrow(df))
+    if (!is.null(p_threshold)) {
+      sig <- sig & df[[p_col]] < p_threshold
+    }
+    if (!is.null(effect_threshold)) {
+      sig <- sig & abs(df$effect) > effect_threshold
+    }
+    sig[is.na(sig)] <- FALSE
+    df$.sig <- factor(ifelse(sig, "significant", "ns"),
+                      levels = c("ns", "significant"))
+  }
+
   # Choose label set: union of forced labels and top_n by p-basis.
   ranked <- df[order(df[[p_col]], na.last = NA), , drop = FALSE]
   top_ids <- utils::head(ranked$feature_id, top_n)
@@ -52,12 +70,12 @@ plot_volcano <- function(
                                     color = .data$.sig)) +
     ggplot2::geom_point(alpha = 0.75, size = 1.6, na.rm = TRUE) +
     ggplot2::scale_color_manual(
-      values = c(ns = "#9AA3AE", significant = "#C0392B"),
+      values = c(ns = omics_colors$ns, significant = omics_colors$up),
       name = NULL
     ) +
     ggplot2::geom_hline(
       yintercept = -log10(p_threshold),
-      linetype = "dashed", color = "#9AA3AE"
+      linetype = "dashed", color = omics_colors$ns
     ) +
     ggplot2::labs(
       title = "Volcano",
@@ -70,7 +88,7 @@ plot_volcano <- function(
   if (!is.null(effect_threshold)) {
     p <- p + ggplot2::geom_vline(
       xintercept = c(-effect_threshold, effect_threshold),
-      linetype = "dashed", color = "#9AA3AE"
+      linetype = "dashed", color = omics_colors$ns
     )
   }
 
@@ -117,10 +135,10 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL) {
                                     color = .data$.sig)) +
     ggplot2::geom_point(alpha = 0.75, size = 1.6, na.rm = TRUE) +
     ggplot2::scale_color_manual(
-      values = c(ns = "#9AA3AE", significant = "#C0392B"),
+      values = c(ns = omics_colors$ns, significant = omics_colors$up),
       name = NULL
     ) +
-    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "#9AA3AE") +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = omics_colors$ns) +
     ggplot2::labs(
       title = "MA plot",
       subtitle = volcano_subtitle(bundle),
@@ -325,7 +343,7 @@ add_repel_layer <- function(df, x, y, label_col) {
       data = df,
       mapping = ggplot2::aes(x = .data[[x]], y = .data[[y]],
                              label = .data[[label_col]]),
-      size = 3, color = "#1A2541", max.overlaps = Inf,
+      size = 3, color = omics_colors$fg_dark, max.overlaps = Inf,
       na.rm = TRUE, inherit.aes = FALSE
     )
   } else {
@@ -333,7 +351,7 @@ add_repel_layer <- function(df, x, y, label_col) {
       data = df,
       mapping = ggplot2::aes(x = .data[[x]], y = .data[[y]],
                              label = .data[[label_col]]),
-      size = 3, color = "#1A2541",
+      size = 3, color = omics_colors$fg_dark,
       vjust = -0.6, na.rm = TRUE, inherit.aes = FALSE
     )
   }

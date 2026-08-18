@@ -31,6 +31,12 @@ jobs:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
       _R_CHECK_FORCE_SUGGESTS_: false
+      # Tests that spawn a subprocess are skip_on_cran()'d, because CRAN
+      # forbids them. R CMD check does not set NOT_CRAN, so without this
+      # the export_script() round trip -- the only test that proves an
+      # exported script actually reproduces its analysis -- would be
+      # silently skipped on every CI run.
+      NOT_CRAN: true
 
     steps:
       - uses: actions/checkout@v4

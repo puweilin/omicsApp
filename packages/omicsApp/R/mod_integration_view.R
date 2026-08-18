@@ -239,8 +239,9 @@ integration_view_server <- function(id,
       df <- conc_df()
       shiny::req(nrow(df) > 0L)
       paired_n <- nrow(df)
-      quad_col <- if ("quadrant" %in% names(df)) df$quadrant
-                  else integration_derive_quadrant(df)
+      # `quadrant` is required by the integration result schema, so both
+      # a live bundle and the demo fixture carry it.
+      quad_col <- df$quadrant
       up_n   <- sum(quad_col == "up_up",     na.rm = TRUE)
       down_n <- sum(quad_col == "down_down", na.rm = TRUE)
       a_col <- if ("effect_a" %in% names(df)) df$effect_a else df$effect
@@ -280,52 +281,22 @@ integration_view_server <- function(id,
       )
     })
 
+    # As with the other views, demo and live share one dispatcher.
+    plot_bundle <- shiny::reactive({
+      if (isTRUE(is_demo())) example_integration_bundle()
+      else integration_bundle()
+    })
+
     output$dual <- shiny::renderPlot({
-      df <- conc_df()
-      shiny::req(nrow(df) > 0L)
-      df <- integration_fill_effect_diff(df)
-      df$.neglog10p <- -log10(pmax(df$adj_p_value, .Machine$double.xmin))
-      df$.quad <- if ("quadrant" %in% names(df)) df$quadrant
-                  else integration_derive_quadrant(df)
-      ggplot2::ggplot(
-        df,
-        ggplot2::aes(x = .data$effect_diff,
-                     y = .data$.neglog10p,
-                     color = .data$.quad)
-      ) +
-        ggplot2::geom_point(alpha = 0.85, size = 2) +
-        ggplot2::scale_color_manual(values = integration_quadrant_colors()) +
-        ggplot2::geom_vline(xintercept = 0, linetype = "dashed",
-                            color = omics_colors$ns) +
-        ggplot2::labs(x = "log2FC(A) - log2FC(B)",
-                      y = "-log10(adj.P)",
-                      color = NULL) +
-        ggplot2::theme_minimal(base_size = 12) +
-        ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
+      b <- plot_bundle()
+      shiny::req(b)
+      omicsCore::plot_integration(b, view = "dual_volcano")
     })
 
     output$scatter <- shiny::renderPlot({
-      df <- conc_df()
-      shiny::req(nrow(df) > 0L)
-      df <- integration_fill_effects(df)
-      df$.quad <- if ("quadrant" %in% names(df)) df$quadrant
-                  else integration_derive_quadrant(df)
-      ggplot2::ggplot(
-        df,
-        ggplot2::aes(x = .data$effect_a,
-                     y = .data$effect_b,
-                     color = .data$.quad)
-      ) +
-        ggplot2::geom_abline(slope = 1, intercept = 0,
-                             linetype = "dashed", color = omics_colors$ns) +
-        ggplot2::geom_hline(yintercept = 0, color = omics_colors$border) +
-        ggplot2::geom_vline(xintercept = 0, color = omics_colors$border) +
-        ggplot2::geom_point(alpha = 0.85, size = 2) +
-        ggplot2::scale_color_manual(values = integration_quadrant_colors()) +
-        ggplot2::labs(x = "log2FC A", y = "log2FC B",
-                      color = NULL) +
-        ggplot2::theme_minimal(base_size = 12) +
-        ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
+      b <- plot_bundle()
+      shiny::req(b)
+      omicsCore::plot_integration(b, view = "effect_pair")
     })
 
     # ActivePathways panels stay on the synthetic fixture in
@@ -404,42 +375,9 @@ utils::globalVariables(".data")
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
-integration_quadrant_colors <- function() {
-  c(up_up     = omics_colors$conc_up_up,
-    down_down = omics_colors$conc_down_down,
-    up_down   = omics_colors$conc_up_down,
-    down_up   = omics_colors$conc_down_up,
-    ns        = omics_colors$ns)
-}
-
-# The concordance result's standardized schema stores
-# `effect = effect_a - effect_b` in `effect`, not `effect_diff`.
-# The fixture pre-computes `effect_diff`. Normalize both.
-integration_fill_effect_diff <- function(df) {
-  if (!"effect_diff" %in% names(df) && "effect" %in% names(df)) {
-    df$effect_diff <- df$effect
-  }
-  df
-}
-
-# Same idea: the standardized schema doesn't carry effect_a / b
-# directly. For demo plots from concordance bundles we recover
-# them from raw_a / raw_b when present; otherwise leave NA.
-integration_fill_effects <- function(df) {
-  if ("effect_a" %in% names(df) && "effect_b" %in% names(df)) return(df)
-  df$effect_a <- df$raw_a %||% df$effect %||% NA_real_
-  df$effect_b <- df$raw_b %||% (df$effect_a - (df$effect %||% 0))
-  df
-}
-
-integration_derive_quadrant <- function(df) {
-  dir_a <- if ("direction_a" %in% names(df)) df$direction_a
-           else sign(df$effect_a %||% df$effect %||% 0)
-  dir_b <- if ("direction_b" %in% names(df)) df$direction_b
-           else sign(df$effect_b %||% 0)
-  to_label <- function(s) ifelse(s > 0, "up", ifelse(s < 0, "down", "ns"))
-  paste0(to_label(dir_a), "_", to_label(dir_b))
-}
+# The quadrant palette and the effect-recovery helpers moved to
+# omicsCore alongside `plot_integration()`, which is now the only thing
+# that needed them.
 
 integration_dual_card <- function(ns) {
   bslib::card(

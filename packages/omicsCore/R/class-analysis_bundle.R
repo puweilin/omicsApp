@@ -15,7 +15,8 @@
 #' @param warnings Character vector of warning messages.
 #'
 #' @return An object of class `analysis_bundle`.
-#' @keywords internal
+#' @export
+#' @family analysis_bundle
 new_analysis_bundle <- function(
   analysis_name,
   input_info = list(),

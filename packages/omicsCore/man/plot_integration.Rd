@@ -6,7 +6,7 @@
 \usage{
 plot_integration(
   bundle,
-  view = c("scatter", "dual_volcano", "quadrant", "dotplot"),
+  view = c("scatter", "dual_volcano", "effect_pair", "quadrant", "dotplot"),
   top_n = 20L,
   label_features = NULL,
   p_cutoff = 0.05

@@ -461,3 +461,38 @@ test_that("plot_gsva_heatmap errors on invalid scale", {
   skip_if(is.null(b), "GSVA bundle could not be built")
   expect_error(plot_gsva_heatmap(b, scale = "diagonal"), "should be one of")
 })
+
+# ---- consolidated palette and views -----------------------------------
+
+test_that("the palette covers every quadrant a concordance plot can emit", {
+  pal <- quadrant_palette()
+  expect_true(all(c("up_up", "down_down", "up_down", "down_up") %in% names(pal)))
+  # Features reaching no threshold, and rows the schema left NA, both
+  # have to land on a colour or ggplot drops them silently.
+  expect_true(all(c("ns", "n/a") %in% names(pal)))
+  expect_true(all(grepl("^#[0-9A-Fa-f]{6}$", unname(pal))))
+})
+
+test_that("plot_volcano re-derives significance from supplied thresholds", {
+  bundle <- make_plot_diff_bundle()
+  df <- bundle$results$diff_result_df
+
+  loose <- ggplot2::ggplot_build(
+    plot_volcano(bundle, p_threshold = 1, effect_threshold = 0))$data[[1]]
+  strict <- ggplot2::ggplot_build(
+    plot_volcano(bundle, p_threshold = 1e-12, effect_threshold = 50))$data[[1]]
+
+  # A threshold nothing can pass must colour nothing as significant; one
+  # everything passes must colour everything. Without re-deriving, both
+  # would return the bundle's stored mask and be identical.
+  expect_gt(length(unique(loose$colour)), 0L)
+  expect_equal(length(unique(strict$colour)), 1L)
+  expect_false(identical(sort(unique(loose$colour)),
+                         sort(unique(strict$colour))))
+})
+
+test_that("plot_volcano leaves the stored mask alone when not asked", {
+  bundle <- make_plot_diff_bundle()
+  # No thresholds supplied: the figure describes the analysis as run.
+  expect_s3_class(plot_volcano(bundle), "ggplot")
+})

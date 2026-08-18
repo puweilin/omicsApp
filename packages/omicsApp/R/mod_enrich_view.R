@@ -169,33 +169,18 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       tagged
     })
 
+    # Both paths hand a bundle to the same dispatcher. When the demo
+    # had its own drawing code it was free to drift from the live view,
+    # and a demo that no longer resembles the product is worse than no
+    # demo.
+    plot_bundle <- shiny::reactive({
+      if (isTRUE(is_demo())) example_enrich_bundle() else enrich_bundle()
+    })
+
     output$dot <- shiny::renderPlot({
-      df <- table_data()
-      shiny::req(nrow(df) > 0L)
-      top <- df[order(df$adj_p_value), , drop = FALSE]
-      top <- top[seq_len(min(12L, nrow(top))), , drop = FALSE]
-      top$pathway_name <- factor(top$pathway_name,
-                                 levels = rev(top$pathway_name))
-      ggplot2::ggplot(
-        top,
-        ggplot2::aes(x = .data$effect,
-                     y = .data$pathway_name,
-                     size = .data$overlap_size,
-                     color = -log10(.data$adj_p_value))
-      ) +
-        ggplot2::geom_point() +
-        ggplot2::scale_color_gradient(low = omics_colors$scale_low,
-                                      high = omics_colors$scale_high) +
-        ggplot2::geom_vline(xintercept = 0, linetype = "dashed",
-                            color = omics_colors$ns) +
-        ggplot2::labs(x = "NES", y = NULL,
-                      size = "Overlap",
-                      color = "-log10(adj.P)") +
-        ggplot2::theme_minimal(base_size = 12) +
-        ggplot2::theme(
-          panel.grid.minor = ggplot2::element_blank(),
-          axis.text.y = ggplot2::element_text(color = omics_colors$fg_dark)
-        )
+      b <- plot_bundle()
+      shiny::req(b)
+      omicsCore::plot_enrichment(b, view = "dot", top_n = 12L)
     })
 
     output$hits <- DT::renderDT({

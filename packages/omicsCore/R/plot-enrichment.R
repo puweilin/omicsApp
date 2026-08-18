@@ -140,21 +140,40 @@ empty_enrich_plot <- function(label) {
 plot_enrich_dot <- function(df, p_col) {
   df$.label <- truncate_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df[[p_col]])]))
-  ggplot2::ggplot(
+
+  # Effect (NES for GSEA, log2 odds for ORA) says which direction a
+  # pathway moved; overlap size only says how many genes were in it.
+  # Prefer the former when the result carries it, and fall back
+  # otherwise so an ORA result without an effect column still plots.
+  has_effect <- "effect" %in% names(df) && any(is.finite(df$effect))
+  x_aes <- if (has_effect) "effect" else "overlap_size"
+  df$.signif <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
+
+  p <- ggplot2::ggplot(
     df,
-    ggplot2::aes(x = .data$overlap_size, y = .data$.label,
-                 size = .data$overlap_size, color = .data[[p_col]])
+    ggplot2::aes(x = .data[[x_aes]], y = .data$.label,
+                 size = .data$overlap_size, color = .data$.signif)
   ) +
     ggplot2::geom_point(na.rm = TRUE) +
     ggplot2::facet_wrap(~ .data$database, scales = "free", ncol = 1) +
-    ggplot2::scale_color_gradient(low = "#C0392B", high = "#9AA3AE", name = p_col) +
+    # Low to high significance, matching the volcano: a reader who has
+    # learnt one colour scale reads the other without relearning it.
+    ggplot2::scale_color_gradient(low = omics_colors$scale_low,
+                                  high = omics_colors$scale_high,
+                                  name = paste0("-log10(", p_col, ")")) +
     ggplot2::scale_size_continuous(range = c(2, 6), name = "overlap") +
     ggplot2::labs(
       title = "Enrichment",
-      x = "overlap size",
+      x = if (has_effect) "effect" else "overlap size",
       y = NULL
     ) +
     theme_omicsCore()
+
+  if (has_effect) {
+    p <- p + ggplot2::geom_vline(xintercept = 0, linetype = "dashed",
+                                 color = omics_colors$ns)
+  }
+  p
 }
 
 plot_enrich_bar <- function(df, p_col) {
@@ -188,11 +207,11 @@ plot_enrich_gsea_dot <- function(df, p_col) {
                  size = .data$gene_set_size, color = .data[[p_col]])
   ) +
     ggplot2::geom_point(na.rm = TRUE) +
-    ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = "#9AA3AE") +
+    ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = omics_colors$ns) +
     ggplot2::facet_grid(rows = ggplot2::vars(.data$database),
                         cols = ggplot2::vars(.data$direction),
                         scales = "free_y") +
-    ggplot2::scale_color_gradient(low = "#C0392B", high = "#9AA3AE", name = p_col) +
+    ggplot2::scale_color_gradient(low = omics_colors$up, high = omics_colors$ns, name = p_col) +
     ggplot2::scale_size_continuous(range = c(2, 6), name = "set size") +
     ggplot2::labs(
       title = "GSEA",

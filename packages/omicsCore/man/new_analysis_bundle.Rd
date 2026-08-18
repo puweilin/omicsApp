@@ -39,4 +39,4 @@ function in \code{omicsCore} (QC, differential, enrichment, integration). It
 bundles results, parameter provenance, artifact registry, and informational
 messages so downstream code (and the Shiny UI) can consume them uniformly.
 }
-\keyword{internal}
+\concept{analysis_bundle}
