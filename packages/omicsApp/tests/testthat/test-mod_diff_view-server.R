@@ -102,3 +102,43 @@ test_that("diff view surfaces validation errors instead of crashing", {
     }
   )
 })
+
+# ---- method gating ----------------------------------------------------
+
+test_that("the demo (proteomics) view hides the count engines", {
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(NULL)),
+    {
+      html <- render_html(output$ui_method)
+      expect_match(html, "limma", fixed = TRUE)
+      # Offering DESeq2 for intensities would let a user produce a full,
+      # plausible, meaningless result table with no warning.
+      expect_false(grepl("deseq2", html, fixed = TRUE))
+      expect_false(grepl("edger", html, fixed = TRUE))
+      expect_match(render_html(output$method_note), "hidden", fixed = TRUE)
+    }
+  )
+})
+
+test_that("a raw-count layer offers the count engines instead", {
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("readxl")
+  xlsx <- tempfile(fileext = ".xlsx"); on.exit(unlink(xlsx), add = TRUE)
+  write_tiny_omics_xlsx(xlsx)
+  inp <- omicsCore::read_omics(xlsx, omics_type = "rnaseq",
+                               assay_type = "raw_count")$input
+  proj <- omicsCore::omics_project("counts",
+                                   experiments = list(rnaseq = inp))
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(proj)),
+    {
+      html <- render_html(output$ui_method)
+      expect_match(html, "deseq2", fixed = TRUE)
+      expect_match(html, "edger", fixed = TRUE)
+      # limma here has no voom step, so counts are not its business.
+      expect_false(grepl(">limma<", html, fixed = TRUE))
+    }
+  )
+})

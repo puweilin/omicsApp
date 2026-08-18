@@ -61,6 +61,34 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     })
 
+    # Method dropdown, restricted to the engines whose assumptions the
+    # active layer meets. DESeq2 handed continuous intensities does not
+    # error: it rounds them to integers and reports p-values for a
+    # negative-binomial model the data never fitted. Nothing downstream
+    # can tell that apart from a real result, so the guard has to be
+    # here, at the point of choosing.
+    output$ui_method <- shiny::renderUI({
+      a <- active()
+      inp <- if (a$is_demo) example_proteomics_input() else a$input
+      choices <- omicsCore::applicable_diff_methods(inp)
+      shiny::selectInput(session$ns("method"), label = NULL,
+                         choices = choices, selected = "auto")
+    })
+
+    output$method_note <- shiny::renderUI({
+      a <- active()
+      inp <- if (a$is_demo) example_proteomics_input() else a$input
+      dropped <- setdiff(omicsCore::SUPPORTED_DIFF_METHODS,
+                         omicsCore::applicable_diff_methods(inp))
+      if (length(dropped) == 0L) return(NULL)
+      htmltools::tags$div(
+        class = "muted", style = "font-size:11.5px;padding-top:4px",
+        sprintf("%s hidden: not valid for %s data.",
+                paste(dropped, collapse = ", "),
+                inp$assay_type %||% inp$omics_type)
+      )
+    })
+
     # Group column dropdown: any meta_df column with >= 2 unique
     # non-NA values (continuous columns like `age` are excluded
     # for the simple "control vs case" UI in this slice).
@@ -403,11 +431,11 @@ diff_params_card <- function(ns) {
         class = "param-stack",
         param_group(
           "Method",
-          shiny::selectInput(
-            ns("method"), label = NULL,
-            choices  = c("auto", "limma", "deseq2", "edger", "ttest", "lm"),
-            selected = "auto"
-          )
+          # Rendered server-side: which engines are valid depends on the
+          # active layer's assay, and offering an invalid one produces a
+          # complete, plausible, meaningless result table.
+          shiny::uiOutput(ns("ui_method")),
+          shiny::uiOutput(ns("method_note"))
         ),
         param_group(
           "Contrast",

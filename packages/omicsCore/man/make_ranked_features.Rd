@@ -29,6 +29,8 @@ feature labels are dropped, keeping the first occurrence after the sort.
 }
 \seealso{
 Other diff: 
+\code{\link{SUPPORTED_DIFF_METHODS}},
+\code{\link{applicable_diff_methods}()},
 \code{\link{filter_diff_results}()},
 \code{\link{plot_feature_expression}()},
 \code{\link{plot_heatmap}()},

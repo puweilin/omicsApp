@@ -37,6 +37,8 @@ Convenience wrapper around \code{\link[=run_diff]{run_diff()}} that pins
 }
 \seealso{
 Other diff: 
+\code{\link{SUPPORTED_DIFF_METHODS}},
+\code{\link{applicable_diff_methods}()},
 \code{\link{filter_diff_results}()},
 \code{\link{make_ranked_features}()},
 \code{\link{plot_feature_expression}()},

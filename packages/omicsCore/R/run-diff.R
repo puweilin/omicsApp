@@ -2,8 +2,59 @@
 # backend-specific functions in diff-ttest.R / diff-lm.R / diff-limma.R /
 # diff-deseq2.R / diff-edger.R and wraps the result in an analysis_bundle.
 
+#' Differential backends this package implements
+#'
+#' Every value [run_diff()] accepts for `method`. Which of them are
+#' *appropriate* for a given dataset is a narrower question — see
+#' [applicable_diff_methods()].
+#'
+#' @format Character vector.
+#' @export
+#' @family diff
 SUPPORTED_DIFF_METHODS <- c("auto", "deseq2", "edger", "limma", "ttest", "lm")
-SUPPORTED_DIFF_ANALYSIS_TYPES <- c("group", "continuous", "anova")
+
+# `SUPPORTED_DIFF_ANALYSIS_TYPES` lives in constants.R. It used to be
+# defined here as well, with the same value; whichever file collates
+# last won, which is not a way to hold a constant.
+
+#' Differential methods that are valid for an input
+#'
+#' `SUPPORTED_DIFF_METHODS` lists every backend that exists;
+#' this lists the ones whose assumptions the data actually meets.
+#'
+#' DESeq2 and edgeR model raw counts as negative binomial. Given
+#' continuous intensities they do not refuse — DESeq2 rounds to integers
+#' ("converting counts to integer mode") and reports p-values for a
+#' model the data never fitted. Conversely, this package's limma backend
+#' does not apply voom, so it has no business being handed raw counts.
+#' Both mistakes produce a full, plausible result table and no error,
+#' which is the failure mode worth engineering against.
+#'
+#' Written next to `auto_select_diff_method()` on purpose: one decides
+#' what to run by default and the other what a caller may choose, and
+#' the two disagreeing would be its own bug.
+#'
+#' @param input An [`omics_input`][omics_input()].
+#' @param analysis_type One of [SUPPORTED_DIFF_ANALYSIS_TYPES].
+#'
+#' @return Character vector of method names, always including `"auto"`.
+#' @export
+#' @family diff
+#' @examples
+#' \dontrun{
+#'   applicable_diff_methods(rnaseq_counts_input)  # deseq2, edger, ...
+#'   applicable_diff_methods(proteomics_input)     # limma, ttest, lm
+#' }
+applicable_diff_methods <- function(input, analysis_type = "group") {
+  is_counts <- identical(input$omics_type, "rnaseq") &&
+    identical(input$assay_type, "raw_count")
+  methods <- if (is_counts) c("deseq2", "edger") else c("limma", "ttest", "lm")
+  # Only the regression backends carry a continuous predictor.
+  if (identical(analysis_type, "continuous")) {
+    methods <- intersect(methods, c("limma", "lm"))
+  }
+  c("auto", methods)
+}
 
 # Auto-pick a method given omics_type + analysis_type. If the preferred
 # Bioconductor backend is not installed, fall back to base-R (ttest/lm) and

@@ -37,6 +37,8 @@ absolute-effect and model-fit thresholds. Returns the filtered table with
 }
 \seealso{
 Other diff: 
+\code{\link{SUPPORTED_DIFF_METHODS}},
+\code{\link{applicable_diff_methods}()},
 \code{\link{make_ranked_features}()},
 \code{\link{plot_feature_expression}()},
 \code{\link{plot_heatmap}()},
