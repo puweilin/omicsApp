@@ -13,7 +13,8 @@ omics_input(
   raw_mat = NULL,
   normalized_mat = NULL,
   raw_object = NULL,
-  source_fingerprint = NULL
+  source_fingerprint = NULL,
+  source_path = NULL
 )
 }
 \arguments{
@@ -42,6 +43,10 @@ input was parsed from. Callers that re-import into a live project use
 it to tell "the user picked the same file again" from "the data
 changed"; analyses computed on the previous data are only valid for
 the former. \code{NULL} for inputs built directly from matrices.}
+
+\item{source_path}{Optional path to the archived copy of that file.
+\code{\link[=export_script]{export_script()}} points its \code{read_omics()} line at it, which is
+what makes an exported script runnable rather than illustrative.}
 }
 \value{
 An object of class \code{omics_input}.

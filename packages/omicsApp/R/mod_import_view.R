@@ -274,7 +274,13 @@ import_view_server <- function(id,
       f <- input$file
       if (!is.null(f)) {
         res <- store_raw_upload(f$datapath, f$name, cand$source_fingerprint)
-        if (!isTRUE(res$ok) && grepl("quota", res$message, fixed = TRUE)) {
+        if (isTRUE(res$ok)) {
+          # Recorded so `omicsCore::export_script()` can point its
+          # read_omics() line at a file that exists, which is the
+          # difference between a script that runs and one that only
+          # documents what was run.
+          cand$source_path <- res$path
+        } else if (grepl("quota", res$message, fixed = TRUE)) {
           shiny::showNotification(res$message, type = "warning", duration = 8)
         }
       }

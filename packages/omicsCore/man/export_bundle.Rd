@@ -66,6 +66,7 @@ code can keep tracking every file from one entry point.
 \seealso{
 Other persistence: 
 \code{\link{export_report}()},
+\code{\link{export_script}()},
 \code{\link{load_project}()},
 \code{\link{save_project}()}
 }

@@ -24,6 +24,7 @@ Requires the \code{qs2} package; install it with \code{install_optional("persist
 Other persistence: 
 \code{\link{export_bundle}()},
 \code{\link{export_report}()},
+\code{\link{export_script}()},
 \code{\link{save_project}()}
 }
 \concept{persistence}

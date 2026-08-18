@@ -69,13 +69,34 @@ impute_knn <- function(mat, k = 10, ...) {
   out
 }
 
-impute_missforest <- function(mat, maxiter = 10, ntree = 100, ...) {
+impute_missforest <- function(mat, maxiter = 10, ntree = 100,
+                              seed = 1234L, ...) {
   if (!requireNamespace("missForest", quietly = TRUE)) {
     stop(
       "Package 'missForest' is required for method = 'missforest'. ",
       "Install it with: omicsCore::install_optional('imputation').",
       call. = FALSE
     )
+  }
+  # Random-forest imputation draws bootstrap samples, so without a fixed
+  # seed the same matrix imputes to slightly different values on every
+  # run -- and every downstream p-value moves with it. That would make a
+  # script exported by `export_script()` produce numbers that disagree
+  # with the report it was generated from. Every other backend here is
+  # already deterministic; this is the one that was not.
+  #
+  # The caller's RNG stream is restored afterwards: a library function
+  # has no business resetting the sequence its caller was drawing from.
+  if (!is.null(seed)) {
+    if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+      old_seed <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+      on.exit(assign(".Random.seed", old_seed, envir = globalenv()),
+              add = TRUE)
+    } else {
+      on.exit(suppressWarnings(rm(".Random.seed", envir = globalenv())),
+              add = TRUE)
+    }
+    set.seed(seed)
   }
   # missForest imputes columns; transpose so each row is one observation.
   df <- as.data.frame(t(mat))

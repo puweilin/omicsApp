@@ -18,7 +18,8 @@ report_view_ui <- function(id) {
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
     shiny::uiOutput(ns("notices")),
-    shiny::uiOutput(ns("bundle_cards"))
+    shiny::uiOutput(ns("bundle_cards")),
+    shiny::uiOutput(ns("script_card"))
   )
 }
 
@@ -239,6 +240,73 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         sprintf("%s_report.pdf", gsub("[^A-Za-z0-9_.-]+", "_", nm))
       },
       content = function(file) do_export(file, "pdf")
+    )
+
+    # ---- reproducibility script ---------------------------------------
+    # Shown inline rather than offered only as a download: the point of
+    # this is that a reader can check what ran, and a file they have to
+    # download first is a file most people will not open.
+    script_lines <- shiny::reactive({
+      proj <- current_project()
+      if (is.null(proj)) return(NULL)
+      tryCatch(
+        omicsCore::export_script(proj),
+        error = function(e) paste("# Could not build the script:",
+                                  conditionMessage(e))
+      )
+    })
+
+    output$script_card <- shiny::renderUI({
+      lines <- script_lines()
+      if (is.null(lines)) {
+        return(bslib::card(
+          bslib::card_header(
+            htmltools::tags$h3(class = "card-title", "Analysis code")
+          ),
+          bslib::card_body(
+            htmltools::tags$div(
+              class = "muted", style = "font-size:13px",
+              "Import data and run an analysis to see the code that produced it."
+            )
+          )
+        ))
+      }
+      bslib::card(
+        bslib::card_header(
+          htmltools::tags$h3(class = "card-title", "Analysis code"),
+          htmltools::tags$span(
+            class = "card-sub",
+            "The calls that produced this project, as they were resolved"
+          )
+        ),
+        bslib::card_body(
+          htmltools::tags$div(
+            style = "display:flex;justify-content:flex-end;padding-bottom:8px",
+            shiny::downloadButton(session$ns("download_script"), "Download .R",
+                                  class = "btn btn-sm btn-primary")
+          ),
+          htmltools::tags$pre(
+            class = "text-mono",
+            style = paste("max-height:460px;overflow:auto;font-size:12px",
+                          "background:var(--bg);padding:12px;border:1px solid",
+                          "var(--border);border-radius:6px", sep = ";"),
+            paste(lines, collapse = "\n")
+          )
+        )
+      )
+    })
+
+    output$download_script <- shiny::downloadHandler(
+      filename = function() {
+        proj <- current_project()
+        nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
+        sprintf("%s_analysis.R", gsub("[^A-Za-z0-9_.-]+", "_", nm))
+      },
+      content = function(file) {
+        lines <- script_lines()
+        shiny::req(lines)
+        writeLines(lines, file)
+      }
     )
   })
 }

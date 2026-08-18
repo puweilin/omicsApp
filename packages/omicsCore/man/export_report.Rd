@@ -53,6 +53,7 @@ Requires the \code{rmarkdown} package.
 \seealso{
 Other persistence: 
 \code{\link{export_bundle}()},
+\code{\link{export_script}()},
 \code{\link{load_project}()},
 \code{\link{save_project}()}
 }
