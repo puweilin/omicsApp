@@ -185,6 +185,10 @@ project_slug <- function(name) {
   slug <- gsub("^[._]+", "", slug)
   slug <- gsub("[._]+$", "", slug)
   slug <- truncate_bytes(slug, 80L)
+  # Again after truncating: the cut can land on a dot, and `<stem>.` +
+  # ".omp" gives `stem..omp` -- the double-dot shape stripped earlier
+  # for safety, reintroduced by the length cap.
+  slug <- gsub("[._]+$", "", slug)
   # Belt and braces against a future edit to the rules above
   # reintroducing traversal. Deliberately *not* `basename()`: that
   # converts to the native encoding and therefore throws outright on a
@@ -523,6 +527,11 @@ wire_autosave <- function(current_project, writer = store_autosave) {
   invisible(shiny::observe({
     proj <- current_project()
     if (is.null(proj)) return()
-    writer(proj)
+    # `store_autosave()` already swallows its own failures, but the
+    # invariant belongs here too: an observer that throws is destroyed,
+    # so one unlucky write would silently switch autosaving off for the
+    # rest of the session -- the failure mode this whole path exists to
+    # prevent, arrived at by a different road.
+    tryCatch(writer(proj), error = function(e) NULL)
   }))
 }

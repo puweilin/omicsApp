@@ -46,6 +46,13 @@ SUPPORTED_DIFF_METHODS <- c("auto", "deseq2", "edger", "limma", "ttest", "lm")
 #'   applicable_diff_methods(proteomics_input)     # limma, ttest, lm
 #' }
 applicable_diff_methods <- function(input, analysis_type = "group") {
+  # Validated rather than duck-typed: this answer gates which engines a
+  # user may run, and quietly returning the continuous set for a NULL or
+  # a mistyped variable would hand back a plausible answer to a question
+  # that was never asked.
+  if (!is_omics_input(input)) {
+    stop("`input` must be an `omics_input`.")
+  }
   is_counts <- identical(input$omics_type, "rnaseq") &&
     identical(input$assay_type, "raw_count")
   methods <- if (is_counts) c("deseq2", "edger") else c("limma", "ttest", "lm")

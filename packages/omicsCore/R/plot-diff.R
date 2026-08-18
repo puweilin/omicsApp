@@ -42,7 +42,13 @@ plot_volcano <- function(
   # lets a threshold control re-colour the points rather than only move
   # the dashed rules -- leaving `is_significant` alone would draw a
   # cloud whose colours contradict the lines through it.
-  if (!missing(p_threshold) || !missing(effect_threshold)) {
+  # Only when a threshold was actually given. `missing()` alone is not
+  # enough: an explicit `p_threshold = NULL` is not missing, and taking
+  # this branch with both thresholds NULL would leave every feature
+  # coloured significant.
+  supplied <- (!missing(p_threshold) && !is.null(p_threshold)) ||
+    (!missing(effect_threshold) && !is.null(effect_threshold))
+  if (supplied) {
     sig <- rep(TRUE, nrow(df))
     if (!is.null(p_threshold)) {
       sig <- sig & df[[p_col]] < p_threshold
@@ -73,10 +79,6 @@ plot_volcano <- function(
       values = c(ns = omics_colors$ns, significant = omics_colors$up),
       name = NULL
     ) +
-    ggplot2::geom_hline(
-      yintercept = -log10(p_threshold),
-      linetype = "dashed", color = omics_colors$ns
-    ) +
     ggplot2::labs(
       title = "Volcano",
       subtitle = volcano_subtitle(bundle),
@@ -85,6 +87,15 @@ plot_volcano <- function(
     ) +
     theme_omicsCore()
 
+  # Both rules are conditional. `p_threshold = NULL` means "do not draw
+  # one", and drawing it unconditionally made an explicit NULL crash in
+  # log10() rather than doing the obvious thing.
+  if (!is.null(p_threshold)) {
+    p <- p + ggplot2::geom_hline(
+      yintercept = -log10(p_threshold),
+      linetype = "dashed", color = omics_colors$ns
+    )
+  }
   if (!is.null(effect_threshold)) {
     p <- p + ggplot2::geom_vline(
       xintercept = c(-effect_threshold, effect_threshold),
@@ -317,8 +328,17 @@ volcano_subtitle <- function(bundle) {
   paste0("method = ", method, "  |  comparison = ", comparison)
 }
 
+# An axis label is read off the first row, which is not there when every
+# feature was filtered out upstream. That is an empty plot to draw, not
+# an error to raise -- the caller asked for a figure of nothing, and a
+# subscript error tells them nothing about why.
+first_or_na <- function(x) {
+  if (is.null(x) || length(x) == 0L) return(NA_character_)
+  x[[1L]]
+}
+
 volcano_xlab <- function(bundle) {
-  effect_type <- bundle$results$diff_result_df$effect_type[[1L]]
+  effect_type <- first_or_na(bundle$results$diff_result_df$effect_type)
   if (is.na(effect_type)) return("effect")
   switch(effect_type,
     log2FC = "log2 fold change",
@@ -332,7 +352,7 @@ volcano_xlab <- function(bundle) {
 }
 
 ma_xlab <- function(bundle) {
-  omics_type <- bundle$results$diff_result_df$omics_type[[1L]]
+  omics_type <- first_or_na(bundle$results$diff_result_df$omics_type)
   if (identical(omics_type, "rnaseq")) "log CPM (base_mean)" else "mean expression"
 }
 

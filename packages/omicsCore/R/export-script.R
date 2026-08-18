@@ -46,10 +46,19 @@ render_value <- function(x) {
   if (is.null(x)) return("NULL")
   if (!is.atomic(x) || length(x) == 0L) return(NA_character_)
   out <- paste(deparse(x, width.cutoff = 500L), collapse = "")
-  # `deparse()` will happily emit `structure(...)` or `<environment>`
-  # for things that are not literals. Those would not re-run, so the
-  # caller turns them into a NOTE instead.
-  if (grepl("structure\\(|<|function", out)) return(NA_character_)
+  # Whether this is usable source is decided by trying it, not by
+  # pattern-matching the text. An earlier version rejected anything
+  # containing "<", which quietly dropped legitimate arguments -- a
+  # group label like "<30" is an ordinary thing for a cohort study to
+  # carry, and losing it produced an incomplete call rather than a
+  # wrong one only by luck.
+  #
+  # `out` is the deparse of a value already in hand, so evaluating it
+  # introduces nothing the caller did not already have; baseenv() keeps
+  # it away from anything else.
+  ok <- tryCatch(identical(eval(parse(text = out), envir = baseenv()), x),
+                 error = function(e) FALSE)
+  if (!isTRUE(ok)) return(NA_character_)
   out
 }
 
@@ -223,6 +232,22 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
 
   bundles <- project$bundles %||% list()
 
+  # A project can carry analyses without carrying the data they ran on:
+  # `omics_project(experiments = list())` is legal, and a hand-built or
+  # partially-restored project can reach here. Emitting the analysis
+  # calls anyway would produce a script that references an `input` no
+  # line defines and fails somewhere inside run_diff(). Name the gap and
+  # fail at an obvious line instead.
+  if (n_exp == 0L && length(bundles) > 0L) {
+    notes <- c(notes, paste(
+      "this project carries analyses but no imported data, so the script",
+      "cannot run as written -- supply `input` yourself."))
+    lines <- c(lines, section("Input"),
+               "# The project held no experiment to read from.",
+               "input <- NULL  # <- supply the omics_input these analyses used")
+    input_vars[["__missing__"]] <- "input"
+  }
+
   emit <- function(key, title, fn_name, fn, first, var) {
     bundle <- bundles[[key]]
     if (is.null(bundle)) return(NULL)
@@ -258,15 +283,20 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
   }
   if (!is.null(bundles$integration)) {
     lines <- c(lines, section("Multi-omics integration"))
-    lines <- c(lines, "project <- omics_project(",
-               sprintf("  name        = %s", render_value(project$name %||% "project")),
-               sprintf("  experiments = list(%s)",
-                       paste(sprintf("%s = %s", names(input_vars),
-                                     unname(input_vars)), collapse = ", ")),
-               ")")
-    # `omics_project()` takes name and experiments in that order; the
-    # comma belongs after the first argument.
-    lines <- sub("^  name(\\s+)= (.*)$", "  name\\1= \\2,", lines)
+    # Built as its own block rather than by rewriting `lines` after the
+    # fact: an earlier version ran a sub() over every line to append the
+    # comma, which would have edited any other line that happened to
+    # start with a `name` argument.
+    lines <- c(
+      lines,
+      "project <- omics_project(",
+      sprintf("  name        = %s,",
+              render_value(project$name %||% "project")),
+      sprintf("  experiments = list(%s)",
+              paste(sprintf("%s = %s", names(input_vars),
+                            unname(input_vars)), collapse = ", ")),
+      ")"
+    )
     call <- render_call("run_integration", "project",
                         bundles$integration$params %||% list(),
                         script_arg_names(run_integration),
