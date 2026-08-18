@@ -50,6 +50,26 @@ app_server <- function(input, output, session) {
   # omics_input objects emitted by the Import view.
   current_project <- shiny::reactiveVal(NULL)
 
+  # ---- header: project picker ----------------------------------------
+  output$project_picker <- shiny::renderUI({
+    proj <- current_project()
+    if (is.null(proj)) {
+      name <- "(no project loaded)"
+      icon <- bsicons::bs_icon("collection")
+    } else {
+      name <- proj$name %||% "Unnamed project"
+      icon <- bsicons::bs_icon("collection-fill")
+    }
+    htmltools::tags$div(
+      class = "project-picker",
+      icon,
+      htmltools::tags$div(
+        htmltools::tags$span(class = "label-sm", "Project"),
+        htmltools::tags$span(name)
+      )
+    )
+  })
+
   # ---- view modules ---------------------------------------------------
   project_view_server("project", current_project = current_project)
   imported_input <- import_view_server("import")
@@ -62,7 +82,10 @@ app_server <- function(input, output, session) {
   report_view_server("report", current_project = current_project)
 
   # Attach analysis bundles to the project whenever any bundle changes,
-  # so that export_report() can walk names(project$bundles).
+  # so that export_report() can walk names(project$bundles). We assign
+  # back through `current_project(proj)` to propagate the change — a
+  # direct `proj$bundles <- b` mutation would NOT invalidate the
+  # reactiveVal, leaving the report view stuck on stale bundle status.
   shiny::observe({
     proj <- current_project()
     if (is.null(proj)) return()
@@ -75,7 +98,9 @@ app_server <- function(input, output, session) {
     if (!is.null(eb)) b$enrich <- eb
     ib <- integration_bundle()
     if (!is.null(ib)) b$integration <- ib
+    if (identical(proj$bundles, b)) return()
     proj$bundles <- b
+    current_project(proj)
   })
 
   # Every time the Import view confirms a fresh omics_input, fold it
@@ -83,7 +108,11 @@ app_server <- function(input, output, session) {
   # imports of the same omics_type replace the existing layer; new
   # omics_types extend the project. The Project view re-renders
   # automatically because it observes `current_project`.
-  shiny::observe({
+  #
+  # `priority = 10` ensures this fires before the bundle-attach observer
+  # in the same flush cycle, so bundles always attach to the freshest
+  # project rather than the old one.
+  shiny::observeEvent(imported_input(), {
     inp <- imported_input()
     if (is.null(inp)) return()
     proj <- current_project()
@@ -93,16 +122,21 @@ app_server <- function(input, output, session) {
         name        = "User project",
         experiments = stats::setNames(list(inp), tag)
       )
+      proj$bundles <- list()
     } else {
       # `add_experiment()` rejects duplicate tags, so drop any
-      # existing layer of this omics_type first.
+      # existing layer of this omics_type first. Bundles computed on
+      # the replaced layer are also dropped since their input is now
+      # gone — leaving them around shows stale results in the report.
       if (tag %in% omicsCore::experiment_tags(proj)) {
         proj <- omicsCore::remove_experiment(proj, tag)
+        if (!is.null(proj$bundles)) proj$bundles <- list()
       }
       proj <- omicsCore::add_experiment(proj, name = tag, input = inp)
+      if (is.null(proj$bundles)) proj$bundles <- list()
     }
     current_project(proj)
-  })
+  }, priority = 10L)
 }
 
 # ---- internal helpers ------------------------------------------------

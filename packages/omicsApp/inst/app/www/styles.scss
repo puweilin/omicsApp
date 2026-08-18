@@ -87,7 +87,6 @@ $status-info:  #3B82F6;
 
   --shadow-sm: 0 1px 2px rgba(15,19,32,.04);
   --shadow-md: 0 4px 14px rgba(15,19,32,.06);
-  --shadow-lg: 0 16px 40px rgba(15,19,32,.10);
 
   --r-sm: 4px;
   --r-md: 8px;
@@ -95,16 +94,12 @@ $status-info:  #3B82F6;
   --r-xl: 16px;
   --r-pill: 999px;
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
 }
 
 // =============================================================
 // Header chrome (rendered in page_sidebar(title = ...))
 // =============================================================
-.app-brand {
-  display: flex; align-items: center; gap: 10px;
-}
 .app-brand-logo {
   width: 30px; height: 30px;
   border-radius: 8px;
@@ -126,57 +121,28 @@ $status-info:  #3B82F6;
   border-radius: var(--r-md);
   background: var(--card);
   font-weight: 500;
-  cursor: pointer;
 }
-.project-picker:hover { background: var(--card-hover); }
 .project-picker .label-sm {
   color: var(--fg-3); font-size: 11px; text-transform: uppercase;
   letter-spacing: .04em; margin-right: 6px;
 }
 
-.omics-tabs {
-  display: inline-flex; gap: 4px;
-  background: var(--bg);
-  border-radius: var(--r-md);
-  padding: 3px;
-}
-.omics-tab {
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-weight: 500;
-  font-size: 12.5px;
-  color: var(--fg-2);
-  border: 0;
-  background: transparent;
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.omics-tab.active {
-  background: var(--card); color: var(--fg-1); box-shadow: var(--shadow-sm);
-}
-.omics-tab .dot { width: 7px; height: 7px; border-radius: 50%; }
-.omics-tab[data-omics="proteomics"] .dot { background: #8E44AD; }
-.omics-tab[data-omics="rnaseq"]     .dot { background: var(--accent-500); }
-.omics-tab[data-omics="integration"] .dot {
-  background: linear-gradient(45deg, #8E44AD 50%, var(--accent-500) 50%);
-}
-
-.app-header-actions {
-  display: inline-flex; gap: 8px; align-items: center;
-  margin-left: auto;
-}
-
 // =============================================================
 // Buttons (supplements Bootstrap's .btn)
 // =============================================================
-.btn-icon {
-  width: 32px; height: 32px; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: var(--r-md);
+// `.btn-ghost`: transparent button with subtle border, used for
+// secondary header actions (Integration "Mapping" / "Export",
+// Report "Generate PDF").
+.btn-ghost {
   background: transparent;
-  border: 0;
+  border: 1px solid var(--border);
   color: var(--fg-2);
 }
-.btn-icon:hover { background: var(--bg); color: var(--fg-1); }
+.btn-ghost:hover {
+  background: var(--bg);
+  border-color: var(--border-strong);
+  color: var(--fg-1);
+}
 
 // =============================================================
 // Sidebar nav (rendered inside bslib::sidebar())
@@ -209,22 +175,9 @@ $status-info:  #3B82F6;
 }
 .nav-item.active {
   background: var(--sidebar-active);
-  color: #FFFFFF;
-}
-.nav-item.active:hover { color: #FFFFFF; }
-.nav-item .badge-count {
-  margin-left: auto;
-  background: var(--sidebar-hover);
   color: var(--fg-on-dark);
-  font-size: 10.5px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
 }
-.nav-item.active .badge-count {
-  background: rgba(255, 255, 255, .18);
-  color: #FFFFFF;
-}
+.nav-item.active:hover { color: var(--fg-on-dark); }
 
 .sidebar-footer {
   margin-top: auto;
@@ -263,14 +216,10 @@ $status-info:  #3B82F6;
 // Cards
 // -------------------------------------------------------------
 // bslib::card() already supplies .card / .card-header / .card-body.
-// These rules add the mockup's helper variants without redefining
-// the base .card box (avoids fighting Bootstrap).
+// .card-title / .card-sub style the header content set by R code.
 // =============================================================
-.card-pad     { padding: 18px 20px; }
-.card-actions { margin-left: auto; display: flex; gap: 6px; }
 .card-title   { font-size: 13.5px; font-weight: 600; margin: 0; }
 .card-sub     { color: var(--fg-3); font-size: 12px; margin-left: 8px; }
-.card.outline { box-shadow: none; }
 
 // =============================================================
 // Stat cards
@@ -289,9 +238,6 @@ $status-info:  #3B82F6;
 }
 .stat-value.mono { font-family: var(--font-mono); }
 .stat-trend { font-size: 12px; margin-top: 6px; color: var(--fg-3); }
-.stat-trend.up   { color: var(--omics-up); }
-.stat-trend.down { color: var(--omics-down); }
-.stat-trend .ico { font-size: 10px; }
 .stat-card.accent-up    { border-top: 3px solid var(--omics-up); }
 .stat-card.accent-down  { border-top: 3px solid var(--omics-down); }
 .stat-card.accent-ok    { border-top: 3px solid var(--ok); }
@@ -305,8 +251,6 @@ $status-info:  #3B82F6;
 .row-grid.r-6-6 { grid-template-columns: 6fr 6fr; }
 .row-grid.r-4-8 { grid-template-columns: 4fr 8fr; }
 .row-grid.r-3-9 { grid-template-columns: 3fr 9fr; }
-.row-grid.r-3   { grid-template-columns: repeat(3, 1fr); }
-.row-grid.r-2   { grid-template-columns: repeat(2, 1fr); }
 
 // =============================================================
 // Tables
@@ -324,7 +268,6 @@ table.tbl tbody tr:hover { background: #FBFCFE; }
 table.tbl td.num, table.tbl th.num {
   text-align: right; font-family: var(--font-mono); font-size: 12px;
 }
-table.tbl .gene { font-weight: 600; }
 
 // =============================================================
 // Pills (status / direction tags)
@@ -344,53 +287,7 @@ table.tbl .gene { font-weight: 600; }
 .pill-info { background: var(--brand-100);     color: var(--brand-600); }
 
 // =============================================================
-// Form controls (.input / .select)
-// -------------------------------------------------------------
-// Bootstrap's .form-control gives a similar look; these supplement
-// markup that follows the mockup exactly.
-// =============================================================
-label.field {
-  display: block; font-size: 11.5px; font-weight: 500;
-  color: var(--fg-2); margin-bottom: 4px;
-}
-.input, .select {
-  width: 100%;
-  padding: 7px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  font: inherit; font-size: 13px;
-  background: var(--card); color: var(--fg-1);
-}
-.input:focus, .select:focus {
-  outline: 2px solid var(--brand-100);
-  border-color: var(--brand-500);
-}
-.range-row { display: flex; align-items: center; gap: 10px; }
-.range-row input[type=range] { flex: 1; accent-color: var(--brand-600); }
-.range-val {
-  width: 56px; text-align: right;
-  font-family: var(--font-mono); font-size: 12px; color: var(--fg-2);
-}
-
-.switch { position: relative; display: inline-block; width: 32px; height: 18px; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.switch .track {
-  position: absolute; inset: 0;
-  background: var(--border-strong);
-  border-radius: var(--r-pill);
-  transition: .2s;
-}
-.switch .track:before {
-  content: ""; position: absolute; left: 2px; top: 2px;
-  width: 14px; height: 14px; background: white;
-  border-radius: 50%; transition: .2s;
-  box-shadow: var(--shadow-sm);
-}
-.switch input:checked + .track          { background: var(--brand-600); }
-.switch input:checked + .track:before   { transform: translateX(14px); }
-
-// =============================================================
-// Steps (multi-step wizard header)
+// Steps (multi-step wizard header — Import view)
 // =============================================================
 .steps { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; }
 .step {
@@ -414,27 +311,8 @@ label.field {
 .step-arrow       { color: var(--fg-3); }
 
 // =============================================================
-// Dropzone (file upload)
+// File row (Import view)
 // =============================================================
-.dropzone {
-  border: 2px dashed var(--border-strong);
-  border-radius: var(--r-xl);
-  padding: 36px 24px;
-  text-align: center;
-  background: #FCFDFF;
-  transition: all .15s;
-}
-.dropzone:hover { border-color: var(--brand-500); background: #F6F9FF; }
-.dropzone .icon-lg {
-  width: 36px; height: 36px;
-  color: var(--brand-600);
-  margin-bottom: 10px;
-}
-
-// =============================================================
-// File chip / file list
-// =============================================================
-.file-tree { display: flex; flex-direction: column; gap: 6px; }
 .file-row {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px;
@@ -449,20 +327,7 @@ label.field {
 }
 
 // =============================================================
-// Plot toolbar overlay
-// =============================================================
-.plot { position: relative; }
-.plot-toolbar {
-  position: absolute; top: 8px; right: 8px;
-  display: flex; gap: 4px;
-}
-.plot-toolbar .btn-icon {
-  background: rgba(255, 255, 255, .85);
-  border: 1px solid var(--border);
-}
-
-// =============================================================
-// Inferred schema row (Import view)
+// Inferred schema row (Import / Report views)
 // =============================================================
 .schema-row {
   display: grid;
@@ -533,50 +398,10 @@ label.field {
 }
 
 // =============================================================
-// Inline tabs (within a view)
-// =============================================================
-.inline-tabs {
-  display: flex; gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 14px;
-}
-.inline-tab {
-  padding: 9px 14px;
-  font-size: 13px;
-  color: var(--fg-3);
-  border: 0;
-  background: transparent;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  cursor: pointer;
-}
-.inline-tab:hover { color: var(--fg-1); }
-.inline-tab.active {
-  color: var(--brand-600);
-  border-color: var(--brand-600);
-  font-weight: 500;
-}
-
-// =============================================================
 // Misc helpers
 // =============================================================
 .muted     { color: var(--fg-3); }
-.text-mono { font-family: var(--font-mono); }
-.kbd {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 1px 6px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  color: var(--fg-2);
-}
-.divider {
-  height: 1px;
-  background: var(--border);
-  margin: 14px 0;
-}
+.text-mono { font-family: var(--font-mono); font-size: 12px; }
 .placeholder-pad {
   padding: 60px 40px;
   text-align: center;
@@ -586,4 +411,25 @@ label.field {
   font-weight: 500;
   margin: 0 0 6px;
   color: var(--fg-2);
+}
+
+// =============================================================
+// Responsive breakpoints
+// -------------------------------------------------------------
+// Below 1100px the two-column row-grid layouts (parameter rail
+// next to plots, dual plots, etc.) collapse to a single column so
+// the app remains usable on tablets and narrow desktops. The
+// sidebar is left to bslib's own responsive behaviour.
+// =============================================================
+@media (max-width: 1100px) {
+  .row-grid.r-7-5,
+  .row-grid.r-6-6,
+  .row-grid.r-4-8,
+  .row-grid.r-3-9 { grid-template-columns: 1fr; }
+  .stat-grid      { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .stat-grid      { grid-template-columns: 1fr; }
+  .page-head      { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .page-actions   { margin-left: 0; }
 }

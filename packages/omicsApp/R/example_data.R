@@ -124,9 +124,27 @@ example_input <- function(omics_type = c("proteomics", "rnaseq")) {
 #'
 #' @keywords internal
 #' @noRd
+#' @keywords internal
+#' @noRd
+.example_cache <- new.env(parent = emptyenv())
+
+# Cached accessor for the demo proteomics input. Used by both
+# `example_diff_bundle()` and `example_qc_bundle()` (and the diff
+# view's contrast UI when no project is loaded) so all demo views
+# operate on the same synthetic dataset — otherwise each call to
+# `example_input("proteomics")` reseeded and produced different
+# matrices, leaving the QC and Diff demos visibly inconsistent.
+example_proteomics_input <- function() {
+  if (!is.null(.example_cache$proteomics_input)) {
+    return(.example_cache$proteomics_input)
+  }
+  .example_cache$proteomics_input <- example_input("proteomics")
+}
+
 example_diff_bundle <- function() {
-  omicsCore::run_diff(
-    example_input("proteomics"),
+  if (!is.null(.example_cache$diff)) return(.example_cache$diff)
+  .example_cache$diff <- omicsCore::run_diff(
+    example_proteomics_input(),
     method         = "limma",
     analysis_type  = "group",
     group_col      = "group",
@@ -149,7 +167,7 @@ example_project <- function() {
   omicsCore::omics_project(
     name = "CHISSS demo \u00B7 Cheek \u00B7 G2 vs G1",
     experiments = list(
-      proteomics = example_input("proteomics"),
+      proteomics = example_proteomics_input(),
       rnaseq     = example_input("rnaseq")
     )
   )
@@ -342,7 +360,8 @@ example_integration_tables <- function() {
 #' @keywords internal
 #' @noRd
 example_qc_bundle <- function() {
-  input <- example_input("proteomics")
+  if (!is.null(.example_cache$qc)) return(.example_cache$qc)
+  input <- example_proteomics_input()
   expr  <- input$expr_mat
   set.seed(2026L + 3L)
   n_cells <- length(expr)
@@ -350,7 +369,7 @@ example_qc_bundle <- function() {
   expr[na_idx] <- NA_real_
   input$expr_mat <- expr
 
-  omicsCore::run_qc(
+  .example_cache$qc <- omicsCore::run_qc(
     input,
     missing_threshold = 0.5,
     outlier_method    = "iqr"

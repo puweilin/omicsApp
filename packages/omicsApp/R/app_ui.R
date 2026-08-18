@@ -29,20 +29,17 @@ app_ui <- function() {
       gap = 2,
       app_sidebar_content()
     ),
-    htmltools::tags$div(
-      class = "app-main",
-      shiny::tabsetPanel(
-        id = "view",
-        type = "hidden",
-        selected = "project",
-        shiny::tabPanelBody("project",     project_view_ui("project")),
-        shiny::tabPanelBody("import",      import_view_ui("import")),
-        shiny::tabPanelBody("qc",          qc_view_ui("qc")),
-        shiny::tabPanelBody("diff",        diff_view_ui("diff")),
-        shiny::tabPanelBody("enrich",      enrich_view_ui("enrich")),
-        shiny::tabPanelBody("integration", integration_view_ui("integration")),
-        shiny::tabPanelBody("report",      report_view_ui("report"))
-      )
+    shiny::tabsetPanel(
+      id = "view",
+      type = "hidden",
+      selected = "project",
+      shiny::tabPanelBody("project",     project_view_ui("project")),
+      shiny::tabPanelBody("import",      import_view_ui("import")),
+      shiny::tabPanelBody("qc",          qc_view_ui("qc")),
+      shiny::tabPanelBody("diff",        diff_view_ui("diff")),
+      shiny::tabPanelBody("enrich",      enrich_view_ui("enrich")),
+      shiny::tabPanelBody("integration", integration_view_ui("integration")),
+      shiny::tabPanelBody("report",      report_view_ui("report"))
     )
   )
 }
@@ -110,49 +107,9 @@ nav_item <- function(input_id, label, icon = NULL, active = FALSE) {
 # ---- header contents --------------------------------------------------
 
 app_header <- function() {
-  htmltools::tagList(
-    htmltools::tags$div(
-      class = "project-picker",
-      bsicons::bs_icon("collection"),
-      htmltools::tags$div(
-        htmltools::tags$span(class = "label-sm", "Project"),
-        htmltools::tags$span("(no project loaded)")
-      ),
-      bsicons::bs_icon("chevron-down")
-    ),
-    htmltools::tags$div(
-      class = "omics-tabs",
-      htmltools::tags$button(
-        class = "omics-tab active", `data-omics` = "proteomics",
-        htmltools::tags$span(class = "dot"), "Proteomics"
-      ),
-      htmltools::tags$button(
-        class = "omics-tab", `data-omics` = "rnaseq",
-        htmltools::tags$span(class = "dot"), "RNA-seq"
-      ),
-      htmltools::tags$button(
-        class = "omics-tab", `data-omics` = "integration",
-        htmltools::tags$span(class = "dot"), "Integrated"
-      )
-    ),
-    htmltools::tags$div(
-      class = "app-header-actions",
-      shiny::actionButton(
-        "header_export", "Export",
-        icon = bsicons::bs_icon("download"),
-        class = "btn btn-outline-secondary"
-      ),
-      shiny::actionButton(
-        "header_run", "Run analysis",
-        icon = bsicons::bs_icon("play-fill"),
-        class = "btn btn-primary"
-      ),
-      shiny::actionButton(
-        "header_settings", label = NULL,
-        icon = bsicons::bs_icon("gear"),
-        class = "btn-icon",
-        title = "Settings"
-      )
-    )
-  )
+  # The header shows just the project status. Earlier mockups had
+  # Export / Run / Settings buttons here, but they had no server
+  # bindings — the Re-run button on each analysis view and the
+  # downloads in the Report view cover those affordances already.
+  shiny::uiOutput("project_picker")
 }

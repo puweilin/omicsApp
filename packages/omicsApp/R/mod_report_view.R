@@ -201,19 +201,35 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     })
 
     # ---- download handlers --------------------------------------------
+    # `export_report` is wrapped in tryCatch + showNotification so a
+    # failure inside the rmarkdown render surfaces as a banner instead
+    # of an opaque Shiny error overlay.
+    do_export <- function(file, format) {
+      shiny::req(have_rmd)
+      proj <- current_project()
+      shiny::req(proj)
+      tryCatch(
+        omicsCore::export_report(proj, file, format = format,
+                                 overwrite = TRUE),
+        error = function(e) {
+          shiny::showNotification(
+            sprintf("Report export failed (%s): %s",
+                    format, conditionMessage(e)),
+            type = "error",
+            duration = 8
+          )
+          stop(e)
+        }
+      )
+    }
+
     output$download_html <- shiny::downloadHandler(
       filename = function() {
         proj <- current_project()
         nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
         sprintf("%s_report.html", gsub("[^A-Za-z0-9_.-]+", "_", nm))
       },
-      content = function(file) {
-        shiny::req(have_rmd)
-        proj <- current_project()
-        shiny::req(proj)
-        omicsCore::export_report(proj, file, format = "html",
-                                 overwrite = TRUE)
-      }
+      content = function(file) do_export(file, "html")
     )
 
     output$download_pdf <- shiny::downloadHandler(
@@ -222,13 +238,7 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
         sprintf("%s_report.pdf", gsub("[^A-Za-z0-9_.-]+", "_", nm))
       },
-      content = function(file) {
-        shiny::req(have_rmd)
-        proj <- current_project()
-        shiny::req(proj)
-        omicsCore::export_report(proj, file, format = "pdf",
-                                 overwrite = TRUE)
-      }
+      content = function(file) do_export(file, "pdf")
     )
   })
 }

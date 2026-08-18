@@ -8,7 +8,8 @@ suppressPackageStartupMessages({
   library(shiny)
   library(htmltools)
   library(omicsCore)
-  if (requireNamespace("pkgload", quietly = TRUE)) {
+  if (requireNamespace("pkgload", quietly = TRUE) &&
+      file.exists("../../DESCRIPTION")) {
     pkgload::load_all("../..", quiet = TRUE)
   }
 })

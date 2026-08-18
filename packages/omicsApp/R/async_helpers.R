@@ -23,6 +23,18 @@ run_async <- function(func, on_success, on_error, message = "Running...") {
   progress <- shiny::Progress$new()
   progress$set(message = message, value = 0.3)
 
+  # Belt-and-braces close: if the session terminates before the
+  # promise settles, onSessionEnded fires and we release the
+  # progress handle. Using `tryCatch` around close() makes a
+  # second call (from the promise handler below) a no-op.
+  close_progress <- function() {
+    tryCatch(progress$close(), error = function(e) NULL)
+  }
+  session <- shiny::getDefaultReactiveDomain()
+  if (!is.null(session)) {
+    session$onSessionEnded(close_progress)
+  }
+
   f <- future::future({
     tryCatch(func(), error = function(e) e)
   }, seed = TRUE)
@@ -35,11 +47,11 @@ run_async <- function(func, on_success, on_error, message = "Running...") {
       } else {
         on_success(result)
       }
-      progress$close()
+      close_progress()
     },
     onRejected = function(err) {
       on_error(conditionMessage(err))
-      progress$close()
+      close_progress()
     }
   )
 }

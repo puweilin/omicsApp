@@ -16,8 +16,8 @@ test_that("diff view falls back to example_diff_bundle when project is NULL", {
     diff_view_server,
     args = list(current_project = current_project),
     {
-      # Touch one input to force a flush so the init observer runs.
-      session$setInputs(fdr_cut = 0.05, fc_cut = 1)
+      # Demo bundle no longer auto-populates on init; Re-run triggers it.
+      session$setInputs(rerun = 1)
       b <- diff_bundle()
       expect_s3_class(b, "analysis_bundle")
       expect_identical(b$analysis_name, "run_diff")

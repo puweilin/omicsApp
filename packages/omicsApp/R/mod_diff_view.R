@@ -65,7 +65,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     # for the simple "control vs case" UI in this slice).
     output$ui_group_col <- shiny::renderUI({
       a <- active()
-      meta <- if (a$is_demo) example_input("proteomics")$meta_df
+      meta <- if (a$is_demo) example_proteomics_input()$meta_df
               else a$input$meta_df
       cands <- names(meta)[vapply(meta, function(col) {
         u <- unique(stats::na.omit(col))
@@ -82,7 +82,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     # Reactive level set for the chosen group column.
     levels_ <- shiny::reactive({
       a <- active()
-      meta <- if (a$is_demo) example_input("proteomics")$meta_df
+      meta <- if (a$is_demo) example_proteomics_input()$meta_df
               else a$input$meta_df
       gc <- input$group_col
       if (is.null(gc) || !(gc %in% names(meta))) return(character(0))
@@ -110,7 +110,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
 
     output$ui_covariates <- shiny::renderUI({
       a <- active()
-      meta <- if (a$is_demo) example_input("proteomics")$meta_df
+      meta <- if (a$is_demo) example_proteomics_input()$meta_df
               else a$input$meta_df
       gc <- input$group_col %||% ""
       cands <- setdiff(names(meta), c(gc, "sample_id"))
@@ -177,7 +177,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     # we attempt a default-contrast run.
     shiny::observeEvent(active(), {
       do_run()
-    }, ignoreNULL = FALSE)
+    }, ignoreInit = TRUE)
 
     # Re-run button is the user-driven path. bindEvent semantics
     # via observeEvent: any change to the controls *not* gated on
@@ -189,14 +189,19 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
 
     # Slider-derived significance mask. Shared by stat cards,
     # volcano, and top-hits table; recomputed on slider change
-    # without re-running the full diff.
+    # without re-running the full diff. The thresholds are
+    # debounced so a slider drag fires one mask update instead of
+    # one per pixel.
+    fdr_cut_d <- shiny::debounce(shiny::reactive(input$fdr_cut %||% 0.05), 250)
+    fc_cut_d  <- shiny::debounce(shiny::reactive(input$fc_cut  %||% 1),    250)
+
     marked <- shiny::reactive({
       shiny::req(diff_bundle())
       df <- diff_bundle()$results$diff_result_df
       df$is_significant <- !is.na(df$adj_p_value) &
                            !is.na(df$effect) &
-                           df$adj_p_value < (input$fdr_cut %||% 0.05) &
-                           abs(df$effect)  > (input$fc_cut  %||% 1)
+                           df$adj_p_value < fdr_cut_d() &
+                           abs(df$effect)  > fc_cut_d()
       df
     })
 
@@ -283,14 +288,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
           label  = sprintf("Up in %s", input$case %||% "case"),
           value  = up_n,
           trend  = sprintf("effect > %.2f \u00B7 adj.P < %.3f",
-                           input$fc_cut %||% 1, input$fdr_cut %||% 0.05),
+                           fc_cut_d(), fdr_cut_d()),
           accent = "up"
         ),
         stat_card(
           label  = sprintf("Down in %s", input$case %||% "case"),
           value  = down_n,
           trend  = sprintf("effect < -%.2f \u00B7 adj.P < %.3f",
-                           input$fc_cut %||% 1, input$fdr_cut %||% 0.05),
+                           fc_cut_d(), fdr_cut_d()),
           accent = "down"
         ),
         stat_card(
@@ -323,14 +328,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       ) +
         ggplot2::geom_point(alpha = 0.85, size = 1.8) +
         ggplot2::scale_color_manual(
-          values = c(ns = "#9AA3AE", significant = "#C0392B"),
+          values = c(ns = omics_colors$ns, significant = omics_colors$up),
           name = NULL
         ) +
-        ggplot2::geom_hline(yintercept = -log10(input$fdr_cut %||% 0.05),
-                            linetype = "dashed", color = "#9AA3AE") +
-        ggplot2::geom_vline(xintercept = c(-(input$fc_cut %||% 1),
-                                             (input$fc_cut %||% 1)),
-                            linetype = "dashed", color = "#9AA3AE") +
+        ggplot2::geom_hline(yintercept = -log10(fdr_cut_d()),
+                            linetype = "dashed", color = omics_colors$ns) +
+        ggplot2::geom_vline(xintercept = c(-fc_cut_d(), fc_cut_d()),
+                            linetype = "dashed", color = omics_colors$ns) +
         ggplot2::labs(x = "log2 fold change", y = "-log10(adj.P)")
 
       if (any(!is.na(df$.label)) && requireNamespace("ggrepel", quietly = TRUE)) {
@@ -338,7 +342,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
           data = df,
           mapping = ggplot2::aes(x = .data$effect, y = .data$.neglog10p,
                                  label = .data$.label),
-          size = 3, color = "#1A2541",
+          size = 3, color = omics_colors$fg_dark,
           max.overlaps = Inf, na.rm = TRUE, inherit.aes = FALSE
         )
       }
@@ -470,8 +474,8 @@ diff_volcano_card <- function(ns) {
       plotly::plotlyOutput(ns("volcano"), height = "360px"),
       htmltools::tags$div(
         class = "legend",
-        legend_swatch("significant", "#C0392B"),
-        legend_swatch("ns", "#9AA3AE"),
+        legend_swatch("significant", omics_colors$up),
+        legend_swatch("ns", omics_colors$ns),
         htmltools::tags$span(class = "muted",
                              style = "font-size:12px",
                              "dashed lines mirror the slider thresholds")

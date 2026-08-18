@@ -91,22 +91,20 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL)) {
     # populated; subsequent updates require Re-run.
     shiny::observeEvent(diff_bundle(), {
       do_run()
-    }, ignoreNULL = FALSE)
+    }, ignoreInit = TRUE)
     shiny::observeEvent(input$rerun, do_run())
 
     # The table powering both the dot card and the hits card. In
     # demo mode this is the static fixture; in live mode it's
-    # the enrichment bundle's standardized result data frame.
+    # the enrichment bundle's standardized result data frame. We
+    # guard the live path with `req()` so a transient NULL during
+    # an async flush doesn't crash the reactive graph (downstream
+    # renderers also `req()` on `nrow(df) > 0`).
     table_data <- shiny::reactive({
-      if (isTRUE(is_demo())) example_enrich_table()
-      else {
-        df <- enrich_bundle()$results$enrich_result_df
-        # Normalize column names so the existing dot/hits cards
-        # don't need to branch on schema. The standardized schema
-        # already has `pathway_name`, `effect`, `adj_p_value`,
-        # `overlap_size`, `gene_set_size`, `direction`.
-        df
-      }
+      if (isTRUE(is_demo())) return(example_enrich_table())
+      b <- enrich_bundle()
+      shiny::req(b)
+      b$results$enrich_result_df
     })
 
     output$header <- shiny::renderUI({
@@ -176,16 +174,17 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL)) {
                      color = -log10(.data$adj_p_value))
       ) +
         ggplot2::geom_point() +
-        ggplot2::scale_color_gradient(low = "#9AA3AE", high = "#C0392B") +
+        ggplot2::scale_color_gradient(low = omics_colors$scale_low,
+                                      high = omics_colors$scale_high) +
         ggplot2::geom_vline(xintercept = 0, linetype = "dashed",
-                            color = "#9AA3AE") +
+                            color = omics_colors$ns) +
         ggplot2::labs(x = "NES", y = NULL,
                       size = "Overlap",
                       color = "-log10(adj.P)") +
         ggplot2::theme_minimal(base_size = 12) +
         ggplot2::theme(
           panel.grid.minor = ggplot2::element_blank(),
-          axis.text.y = ggplot2::element_text(color = "#1A2541")
+          axis.text.y = ggplot2::element_text(color = omics_colors$fg_dark)
         )
     })
 

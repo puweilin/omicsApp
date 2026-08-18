@@ -150,13 +150,21 @@ integration_view_server <- function(id,
     shiny::observeEvent(can_run(), {
       # Auto-run as soon as prerequisites become true; observers
       # higher up (project change, new diff bundle) drive this.
+      # `ignoreInit = TRUE` keeps this quiet on session start —
+      # otherwise the first evaluation of can_run() (=FALSE) would
+      # fire `is_demo(TRUE)` unnecessarily and, combined with a
+      # Re-run click in the same flush, could double-run do_run().
       if (isTRUE(can_run()$ok)) do_run() else is_demo(TRUE)
-    })
+    }, ignoreInit = TRUE)
 
-    # Data sources shared by stats + plots.
+    # Data sources shared by stats + plots. `req(b)` guards against
+    # the transient NULL window between an async run's start and
+    # completion in live mode.
     conc_df <- shiny::reactive({
-      if (isTRUE(is_demo())) example_integration_tables()$concordance_df
-      else integration_bundle()$results$integration_df
+      if (isTRUE(is_demo())) return(example_integration_tables()$concordance_df)
+      b <- integration_bundle()
+      shiny::req(b)
+      b$results$integration_df
     })
 
     output$header <- shiny::renderUI({
@@ -278,7 +286,7 @@ integration_view_server <- function(id,
         ggplot2::geom_point(alpha = 0.85, size = 2) +
         ggplot2::scale_color_manual(values = integration_quadrant_colors()) +
         ggplot2::geom_vline(xintercept = 0, linetype = "dashed",
-                            color = "#9AA3AE") +
+                            color = omics_colors$ns) +
         ggplot2::labs(x = "log2FC(A) - log2FC(B)",
                       y = "-log10(adj.P)",
                       color = NULL) +
@@ -299,9 +307,9 @@ integration_view_server <- function(id,
                      color = .data$.quad)
       ) +
         ggplot2::geom_abline(slope = 1, intercept = 0,
-                             linetype = "dashed", color = "#9AA3AE") +
-        ggplot2::geom_hline(yintercept = 0, color = "#E5E7EB") +
-        ggplot2::geom_vline(xintercept = 0, color = "#E5E7EB") +
+                             linetype = "dashed", color = omics_colors$ns) +
+        ggplot2::geom_hline(yintercept = 0, color = omics_colors$border) +
+        ggplot2::geom_vline(xintercept = 0, color = omics_colors$border) +
         ggplot2::geom_point(alpha = 0.85, size = 2) +
         ggplot2::scale_color_manual(values = integration_quadrant_colors()) +
         ggplot2::labs(x = "log2FC A", y = "log2FC B",
@@ -339,15 +347,15 @@ integration_view_server <- function(id,
                      color = .data$direction)
       ) +
         ggplot2::geom_point() +
-        ggplot2::scale_color_manual(values = c(shared = "#1F4E96",
-                                               unique = "#9AA3AE")) +
+        ggplot2::scale_color_manual(values = c(shared = omics_colors$shared,
+                                               unique = omics_colors$unique_)) +
         ggplot2::scale_size_continuous(range = c(3, 10)) +
         ggplot2::labs(x = NULL, y = NULL,
                       size = "-log10(p)", color = NULL) +
         ggplot2::theme_minimal(base_size = 12) +
         ggplot2::theme(
           panel.grid.minor = ggplot2::element_blank(),
-          axis.text.y = ggplot2::element_text(color = "#1A2541")
+          axis.text.y = ggplot2::element_text(color = omics_colors$fg_dark)
         )
     })
 
@@ -387,11 +395,11 @@ utils::globalVariables(".data")
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 integration_quadrant_colors <- function() {
-  c(up_up     = "#C0392B",
-    down_down = "#1F4E96",
-    up_down   = "#E0A030",
-    down_up   = "#7A4FA0",
-    ns        = "#9AA3AE")
+  c(up_up     = omics_colors$conc_up_up,
+    down_down = omics_colors$conc_down_down,
+    up_down   = omics_colors$conc_up_down,
+    down_up   = omics_colors$conc_down_up,
+    ns        = omics_colors$ns)
 }
 
 # The concordance result's standardized schema stores

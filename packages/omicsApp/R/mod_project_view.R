@@ -227,7 +227,7 @@ project_activity_card <- function(project, is_demo = TRUE) {
                          ncol(example_input("rnaseq")$expr_mat))),
           bullet("--ok",        "Imported Proteomics experiment",
                  sprintf("%d samples \u00B7 just now",
-                         ncol(example_input("proteomics")$expr_mat))),
+                         ncol(example_proteomics_input()$expr_mat))),
           bullet("--accent-500","Created demo project",
                  "CHISSS \u00B7 Cheek \u00B7 G2 vs G1 \u00B7 just now")
         )
