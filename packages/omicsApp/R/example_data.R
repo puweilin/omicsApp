@@ -113,19 +113,7 @@ example_input <- function(omics_type = c("proteomics", "rnaseq")) {
   )
 }
 
-#' Build a demo `analysis_bundle` (limma diff, G2 vs G1, age-adjusted)
-#'
-#' Runs the same contrast that the Phase 1 validation script exercises
-#' (`scripts/validation/cheek_g2_vs_g1_omicscore.R`) so any regression
-#' in the limma path that escapes omicsCore's own tests will also surface
-#' here.
-#'
-#' @return An `analysis_bundle` from [omicsCore::run_diff()].
-#'
-#' @keywords internal
-#' @noRd
-#' @keywords internal
-#' @noRd
+# Private cache for the demo fixtures, shared by every demo view.
 .example_cache <- new.env(parent = emptyenv())
 
 # Cached accessor for the demo proteomics input. Used by both
@@ -141,6 +129,17 @@ example_proteomics_input <- function() {
   .example_cache$proteomics_input <- example_input("proteomics")
 }
 
+#' Build a demo `analysis_bundle` (limma diff, G2 vs G1, age-adjusted)
+#'
+#' Runs the same contrast that the Phase 1 validation script exercises
+#' (`scripts/validation/cheek_g2_vs_g1_omicscore.R`) so any regression
+#' in the limma path that escapes omicsCore's own tests will also surface
+#' here.
+#'
+#' @return An `analysis_bundle` from [omicsCore::run_diff()].
+#'
+#' @keywords internal
+#' @noRd
 example_diff_bundle <- function() {
   if (!is.null(.example_cache$diff)) return(.example_cache$diff)
   .example_cache$diff <- omicsCore::run_diff(

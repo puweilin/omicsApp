@@ -17,6 +17,13 @@ Checks structural consistency between matrices and metadata: dimension
 matches, presence of row/column names, presence of \code{feature_id}, and
 membership of sample IDs in \code{meta_df}.
 }
+\details{
+\code{omics_type} is checked against \link{SUPPORTED_OMICS_TYPES} but only
+\emph{warns} when it does not match. omicsCore is a general engine and
+callers may legitimately drive it with a modality the shipped
+analysis dispatchers do not know about yet. The warning exists to
+catch typos (\code{"proteomcis"}), not to gate extensibility.
+}
 \seealso{
 Other omics_input: 
 \code{\link{drop_meta_na}()},

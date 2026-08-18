@@ -20,7 +20,8 @@ project_view_ui <- function(id) {
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
     shiny::uiOutput(ns("stats")),
-    shiny::uiOutput(ns("body"))
+    shiny::uiOutput(ns("body")),
+    shiny::uiOutput(ns("storage"))
   )
 }
 
@@ -132,10 +133,174 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) 
         project_activity_card(r$project, is_demo = r$is_demo)
       )
     })
+
+    # ---- saved-project store -----------------------------------------
+    # `store_tick` is bumped after every mutation so the card re-reads
+    # the directory. Reading it inside the reactives below is what makes
+    # them invalidate; the value itself is never used.
+    store_tick <- shiny::reactiveVal(0L)
+    bump_store <- function() {
+      store_tick(shiny::isolate(store_tick()) + 1L)
+    }
+
+    saved_projects <- shiny::reactive({
+      store_tick()
+      list_saved_projects()
+    })
+
+    autosave_stamp <- shiny::reactive({
+      store_tick()
+      autosave_mtime()
+    })
+
+    output$storage <- shiny::renderUI({
+      saved <- saved_projects()
+      stamp <- autosave_stamp()
+      have_project <- !is.null(current_project())
+      choices <- if (nrow(saved) == 0L) character(0) else saved$slug
+
+      htmltools::tags$div(
+        class = "row-grid r-7-5",
+        bslib::card(
+          bslib::card_header(
+            htmltools::tags$h3(class = "card-title", "My projects"),
+            htmltools::tags$span(class = "card-sub", usage_label())
+          ),
+          bslib::card_body(
+            if (length(choices) == 0L) {
+              htmltools::tags$div(
+                class = "muted", style = "font-size:13px;padding:4px 0 10px",
+                "No saved projects yet. Save the current one to keep it ",
+                "across sessions."
+              )
+            } else {
+              htmltools::tagList(
+                shiny::selectInput(session$ns("saved_pick"), label = NULL,
+                                   choices = choices, selectize = FALSE,
+                                   size = min(6L, length(choices))),
+                htmltools::tags$div(
+                  style = "display:flex;gap:8px",
+                  shiny::actionButton(session$ns("open_project"), "Open",
+                                      class = "btn btn-sm btn-primary"),
+                  shiny::actionButton(session$ns("delete_project"), "Delete",
+                                      class = "btn btn-sm btn-outline-danger")
+                ),
+                saved_projects_table(saved)
+              )
+            }
+          )
+        ),
+        bslib::card(
+          bslib::card_header(
+            htmltools::tags$h3(class = "card-title", "Save / restore")
+          ),
+          bslib::card_body(
+            shiny::textInput(session$ns("save_name"), "Project name",
+                             placeholder = "e.g. cheek_G2_vs_G1"),
+            shiny::checkboxInput(session$ns("save_overwrite"),
+                                 "Overwrite if it exists", value = FALSE),
+            shiny::actionButton(session$ns("save_project"), "Save as\u2026",
+                                class = "btn btn-sm btn-primary"),
+            if (!have_project) {
+              htmltools::tags$div(
+                class = "muted", style = "font-size:12px;padding-top:8px",
+                "The built-in demo cannot be saved \u2014 import a file first."
+              )
+            },
+            if (!is.null(stamp)) {
+              htmltools::tagList(
+                htmltools::tags$hr(),
+                htmltools::tags$div(
+                  class = "muted", style = "font-size:12px;padding-bottom:6px",
+                  sprintf("Autosave from %s",
+                          format(stamp, "%Y-%m-%d %H:%M"))
+                ),
+                shiny::actionButton(session$ns("restore_autosave"),
+                                    "Restore last session",
+                                    class = "btn btn-sm btn-outline-primary")
+              )
+            }
+          )
+        )
+      )
+    })
+
+    shiny::observeEvent(input$save_project, {
+      proj <- current_project()
+      if (is.null(proj)) {
+        shiny::showNotification(
+          "Nothing to save yet \u2014 import a file first.", type = "warning")
+        return()
+      }
+      res <- store_save_project(
+        proj,
+        slug      = project_slug(input$save_name %||% ""),
+        overwrite = isTRUE(input$save_overwrite)
+      )
+      shiny::showNotification(res$message,
+                              type = if (isTRUE(res$ok)) "message" else "error")
+      if (isTRUE(res$ok)) bump_store()
+    })
+
+    shiny::observeEvent(input$open_project, {
+      res <- store_load_project(input$saved_pick %||% NA_character_)
+      shiny::showNotification(res$message,
+                              type = if (isTRUE(res$ok)) "message" else "error")
+      if (isTRUE(res$ok)) current_project(res$project)
+    })
+
+    shiny::observeEvent(input$delete_project, {
+      res <- store_delete_project(input$saved_pick %||% NA_character_)
+      shiny::showNotification(res$message,
+                              type = if (isTRUE(res$ok)) "message" else "error")
+      if (isTRUE(res$ok)) bump_store()
+    })
+
+    shiny::observeEvent(input$restore_autosave, {
+      proj <- store_read_autosave()
+      if (is.null(proj)) {
+        shiny::showNotification("No readable autosave found.", type = "error")
+        return()
+      }
+      current_project(proj)
+      shiny::showNotification("Restored the last autosaved session.",
+                              type = "message")
+    })
   })
 }
 
 # ---- internal helpers ------------------------------------------------
+
+# Compact listing under the project picker: size and last-modified for
+# each saved `.omp`, so a user can tell two similarly-named projects
+# apart before opening one.
+saved_projects_table <- function(saved) {
+  if (!is.data.frame(saved) || nrow(saved) == 0L) return(NULL)
+  htmltools::tags$table(
+    class = "tbl",
+    style = "margin-top:12px",
+    htmltools::tags$thead(
+      htmltools::tags$tr(
+        htmltools::tags$th("Project"),
+        htmltools::tags$th(class = "num", "Size"),
+        htmltools::tags$th("Modified")
+      )
+    ),
+    htmltools::tags$tbody(
+      lapply(seq_len(nrow(saved)), function(i) {
+        htmltools::tags$tr(
+          htmltools::tags$td(
+            htmltools::tags$span(class = "text-mono", saved$slug[[i]])),
+          htmltools::tags$td(class = "num",
+                             sprintf("%.1f MB", saved$size_mb[[i]])),
+          htmltools::tags$td(
+            class = "muted",
+            format(saved$modified[[i]], "%Y-%m-%d %H:%M"))
+        )
+      })
+    )
+  )
+}
 
 # Human-readable display label for an omics_input layer.
 project_omics_label <- function(x) {

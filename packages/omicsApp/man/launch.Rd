@@ -9,18 +9,29 @@ launch(
   host = "127.0.0.1",
   project = NULL,
   launch.browser = interactive(),
+  workers = 2L,
+  max_upload_mb = 500,
   ...
 )
 }
 \arguments{
 \item{port}{Integer port number. If \code{NULL} (default), Shiny chooses a free port.}
 
-\item{host}{Host address to bind to. Default \code{"127.0.0.1"} (local only).}
+\item{host}{Host address to bind to. Default \code{"127.0.0.1"} (local only).
+Use \code{"0.0.0.0"} when running inside a container behind a proxy.}
 
 \item{project}{Optional path to an existing \code{.omp} project file to open on startup.}
 
 \item{launch.browser}{Logical. If \code{TRUE} (default), open the app in the user's
 default browser. Set to \code{FALSE} for headless server environments.}
+
+\item{workers}{Integer number of background workers for asynchronous
+analyses. \code{0} keeps the current \code{future} plan untouched (useful in
+tests, where \code{sequential} is what we want).}
+
+\item{max_upload_mb}{Maximum accepted upload size in megabytes. Shiny's
+built-in default is 5 MB, which is below the size of a typical omics
+expression workbook.}
 
 \item{...}{Additional arguments passed to \code{\link[shiny:runApp]{shiny::runApp()}}.}
 }
@@ -30,3 +41,24 @@ Invisible \code{NULL}. Called for its side effect (starts the Shiny server).
 \description{
 Starts the multi-omics analysis web interface.
 }
+\section{Running as a multi-user server}{
+Two settings matter when omicsApp is served rather than run on a
+laptop, and both default to laptop-friendly values:
+\itemize{
+\item \code{host = "0.0.0.0"} binds all interfaces so a reverse proxy (or a
+container port mapping) can reach the app. Keep the default
+\code{"127.0.0.1"} for local use.
+\item \code{workers} controls how many background R processes long analyses
+are offloaded to. Without this, \code{future::future()} in
+\code{run_async()} falls back to the \code{sequential} plan and every
+computation blocks the Shiny event loop — one user running
+DESeq2 freezes every other session sharing the process.
+}
+
+On Linux (including inside a container) \code{workers > 0} selects
+\code{future::multicore}, which forks and therefore shares the parent's
+expression matrices copy-on-write. Where forking is unavailable or
+unsafe — Windows, RStudio — it falls back to \code{future::multisession},
+which serialises captured data to each worker instead.
+}
+

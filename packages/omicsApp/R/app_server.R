@@ -137,6 +137,19 @@ app_server <- function(input, output, session) {
     }
     current_project(proj)
   }, priority = 10L)
+
+  # ---- autosave -------------------------------------------------------
+  # This is what makes an aggressive container-recycling policy safe: a
+  # reaped session costs the user a page reload, not an afternoon of
+  # analysis. Failures are swallowed inside `store_autosave()` — a full
+  # disk must not interrupt the analysis in progress.
+  #
+  # Wired to the project *state* rather than to each analysis-completion
+  # *event*: `current_project` is updated by the bundle-attach observer
+  # above, so an observer firing on the same flush as a finished bundle
+  # would read the project from before that bundle was folded in, and
+  # persist a snapshot missing the very result that triggered it.
+  wire_autosave(current_project)
 }
 
 # ---- internal helpers ------------------------------------------------

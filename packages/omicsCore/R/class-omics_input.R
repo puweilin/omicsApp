@@ -122,6 +122,12 @@ is_omics_input <- function(x) {
 #' matches, presence of row/column names, presence of `feature_id`, and
 #' membership of sample IDs in `meta_df`.
 #'
+#' `omics_type` is checked against [SUPPORTED_OMICS_TYPES] but only
+#' *warns* when it does not match. omicsCore is a general engine and
+#' callers may legitimately drive it with a modality the shipped
+#' analysis dispatchers do not know about yet. The warning exists to
+#' catch typos (`"proteomcis"`), not to gate extensibility.
+#'
 #' @param x Object expected to inherit from `omics_input`.
 #'
 #' @return Invisibly returns `TRUE` on success; otherwise raises an error.
@@ -138,6 +144,20 @@ validate_omics_input <- function(x) {
   missing_fields <- setdiff(required_fields, names(x))
   if (length(missing_fields) > 0) {
     stop("Missing fields in `omics_input`: ", paste(missing_fields, collapse = ", "))
+  }
+
+  omics_type <- x$omics_type
+  if (!is.character(omics_type) || length(omics_type) != 1L ||
+      is.na(omics_type) || !nzchar(omics_type)) {
+    stop("`omics_type` must be a non-empty single string.")
+  }
+  if (!omics_type %in% SUPPORTED_OMICS_TYPES) {
+    warning(
+      "Unrecognised `omics_type`: '", omics_type, "'. Known types are ",
+      paste(sprintf("'%s'", SUPPORTED_OMICS_TYPES), collapse = ", "),
+      ". Analysis dispatchers may fall back to generic defaults.",
+      call. = FALSE
+    )
   }
 
   expr_mat <- x$expr_mat

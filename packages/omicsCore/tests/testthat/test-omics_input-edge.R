@@ -103,15 +103,38 @@ test_that("omics_input errors when features not in feature_df", {
                "nrow\\(expr_mat\\).*nrow\\(feature_df\\)|Not all features")
 })
 
-test_that("omics_input allows custom omics_type strings", {
+test_that("omics_input allows custom omics_type strings but warns", {
   mat <- matrix(1:12, nrow = 3, dimnames = list(paste0("g", 1:3), paste0("s", 1:4)))
   meta <- data.frame(group = 1:4, row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:3))
-  # non-standard omics_type strings are allowed at construction
-  inp <- omics_input(mat, meta, feat, omics_type = "custom_type",
-                     assay_type = "custom")
+  # Non-standard omics_type strings still construct — omicsCore is a
+  # general engine — but validate_omics_input() warns so typos surface.
+  expect_warning(
+    inp <- omics_input(mat, meta, feat, omics_type = "custom_type",
+                       assay_type = "custom"),
+    "Unrecognised `omics_type`"
+  )
   expect_equal(inp$omics_type, "custom_type")
   expect_equal(inp$assay_type, "custom")
+})
+
+test_that("omics_input rejects a missing or empty omics_type", {
+  mat <- matrix(1:12, nrow = 3, dimnames = list(paste0("g", 1:3), paste0("s", 1:4)))
+  meta <- data.frame(group = 1:4, row.names = paste0("s", 1:4))
+  feat <- data.frame(feature_id = paste0("g", 1:3))
+  expect_error(omics_input(mat, meta, feat, omics_type = ""),
+               "non-empty single string")
+  expect_error(omics_input(mat, meta, feat, omics_type = NA_character_),
+               "non-empty single string")
+})
+
+test_that("supported omics types validate without a warning", {
+  mat <- matrix(1:12, nrow = 3, dimnames = list(paste0("g", 1:3), paste0("s", 1:4)))
+  meta <- data.frame(group = 1:4, row.names = paste0("s", 1:4))
+  feat <- data.frame(feature_id = paste0("g", 1:3))
+  for (type in c("proteomics", "rnaseq")) {
+    expect_no_warning(omics_input(mat, meta, feat, omics_type = type))
+  }
 })
 
 test_that("omics_input keeps rownames matching column order", {
