@@ -87,6 +87,58 @@ cache_set <- function(key, value) {
   invisible(value)
 }
 
+# ---- on-disk cache ------------------------------------------------------
+#
+# The first `msigdbr()` call in a process pays ~10s to lazy-load the
+# package's data, which every user of a fresh container would otherwise
+# pay before their first enrichment. Pointing `OMICSCORE_GENESET_CACHE`
+# at a directory of pre-built tables removes that: the deploy image
+# bakes them in at build time (see deploy/docker/prewarm_genesets.R).
+#
+# The cached tables carry only the columns this file actually reads.
+# Dropping the rest takes GO:BP from 106 MB to 23 MB in memory and
+# 2.4 MB on disk, which matters when several collections sit resident
+# in every one of a handful of per-user containers.
+GENESET_CACHE_COLUMNS <- c("gs_name", "gene_symbol",
+                           "gs_description", "gs_id")
+
+geneset_cache_dir <- function() {
+  dir <- Sys.getenv("OMICSCORE_GENESET_CACHE", "")
+  if (!nzchar(dir) || !dir.exists(dir)) return(NULL)
+  dir
+}
+
+#' Path of the cache file for one database / organism pair
+#'
+#' @param dir Cache directory.
+#' @param database Normalised database key.
+#' @param organism Normalised organism name.
+#'
+#' @return A file path.
+#' @keywords internal
+#' @noRd
+geneset_cache_file <- function(dir, database, organism) {
+  file.path(dir, sprintf("%s__%s.qs2", database,
+                         gsub("[^A-Za-z0-9]+", "_", organism)))
+}
+
+# Fails soft in every direction: a missing directory, an absent file, no
+# qs2, a truncated write, or a table from an older column contract all
+# just mean "no cache", and the caller falls back to msigdbr. A stale
+# cache costs 10 seconds, never a wrong answer.
+read_geneset_cache <- function(database, organism) {
+  dir <- geneset_cache_dir()
+  if (is.null(dir)) return(NULL)
+  if (!requireNamespace("qs2", quietly = TRUE)) return(NULL)
+  path <- geneset_cache_file(dir, database, organism)
+  if (!file.exists(path)) return(NULL)
+  df <- tryCatch(qs2::qs_read(path), error = function(e) NULL)
+  if (!is.data.frame(df) || nrow(df) == 0L) return(NULL)
+  has_gene <- any(c("gene_symbol", "human_gene_symbol") %in% colnames(df))
+  if (!("gs_name" %in% colnames(df)) || !has_gene) return(NULL)
+  df
+}
+
 # ---- msigdbr fetch ------------------------------------------------------
 
 fetch_msigdbr_table <- function(database, organism) {
@@ -95,6 +147,12 @@ fetch_msigdbr_table <- function(database, organism) {
   cache_key <- paste0("msig::", database, "::", organism)
   hit <- cache_get(cache_key)
   if (!is.null(hit)) return(hit)
+
+  cached <- read_geneset_cache(database, organism)
+  if (!is.null(cached)) {
+    cache_set(cache_key, cached)
+    return(cached)
+  }
 
   cfg <- DB_MSIGDBR_MAP[[database]]
   msig_args <- names(formals(msigdbr::msigdbr))

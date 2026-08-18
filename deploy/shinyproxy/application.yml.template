@@ -1,0 +1,90 @@
+# ShinyProxy configuration for omicsApp.
+#
+# Copy to application.yml on the server, fill in the users, and keep it
+# out of git -- .gitignore already excludes application.yml. Even in a
+# private repository a password committed once stays in the history.
+#
+#   cp application.yml.template application.yml
+#   chmod 600 application.yml
+#
+# Verify against your ShinyProxy version: `minimum-seats-available` is
+# 3.x syntax (2.x used `container-pre-initialization`), and bcrypt
+# password support should be confirmed with one test login before you
+# hash the rest.
+
+proxy:
+  port: 8080
+  # Bind to localhost only; nginx terminates the connection from users.
+  bind-address: 127.0.0.1
+
+  # ---- authentication -------------------------------------------------
+  # No self-registration by design: adding a user is a deliberate act
+  # (see deploy/scripts/add_user.sh), which for a handful of colleagues
+  # is a feature rather than a limitation.
+  authentication: simple
+  admin-groups: [admins]
+  users:
+    - name: puweilin
+      # htpasswd -bnBC 10 "" 'the-password' | tr -d ':\n'
+      password: "{bcrypt}REPLACE_ME"
+      groups: [admins]
+    # - name: colleague
+    #   password: "{bcrypt}REPLACE_ME"
+    #   groups: [lab]
+
+  # ---- session lifecycle ----------------------------------------------
+  # ShinyProxy has no idle detection: a tab left open counts as active
+  # forever. heartbeat-timeout therefore only catches a *closed* tab,
+  # and max-lifetime is the only thing that reclaims a forgotten one.
+  #
+  # 30 minutes rather than the 60s default: a laptop lid, a lift, or a
+  # VPN reconnect must not cost a session. The app autosaves on every
+  # project change, so a reaped container costs a page reload.
+  heartbeat-rate: 10000
+  heartbeat-timeout: 1800000
+
+  # 24h, not 8h: max-lifetime stops a container regardless of whether
+  # someone is using it, so a short value would cut off a long working
+  # day mid-analysis.
+  default-proxy-max-lifetime: 1440
+  default-stop-proxy-on-logout: true
+
+  docker:
+    internal-networking: true
+
+  specs:
+    - id: omicsapp
+      display-name: Multi-omics analysis
+      description: Proteomics and transcriptomics QC, differential analysis, enrichment, and integration
+      container-image: omicsapp:1.0
+      container-network: sp-net
+      port: 3838
+      # A single analysis holds the matrices plus every computed bundle.
+      # 6g is generous for 20k x 60; raise it before raising the number
+      # of users if the data grows.
+      container-memory-limit: 6g
+      container-cpu-limit: 2
+      # #{proxy.userId} is substituted per login -- this is what makes
+      # each user's projects private. The host directory must exist and
+      # be owned by uid 1001 *before* first login: Docker creates a
+      # missing bind-mount source as root, and the container cannot
+      # write to it. deploy/scripts/add_user.sh does this.
+      container-volumes:
+        - "/srv/omicsapp/users/#{proxy.userId}:/data"
+      container-env:
+        OMICSAPP_QUOTA_GB: "50"
+      access-groups: [lab, admins]
+      # Keep one container warm so the first user of the day does not
+      # wait for a 7 GB image to start. 3.x syntax.
+      minimum-seats-available: 1
+
+logging:
+  file:
+    name: /var/log/shinyproxy/shinyproxy.log
+
+server:
+  servlet:
+    session:
+      # Must not be shorter than proxy.heartbeat-timeout above, or the
+      # session expires first and the longer heartbeat never applies.
+      timeout: 2h

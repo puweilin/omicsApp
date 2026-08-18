@@ -1,0 +1,25 @@
+# Build context is the repository root (see deploy/docker/Dockerfile),
+# so everything not needed to install the two packages is excluded --
+# otherwise the whole git history and the mockups ship to the daemon on
+# every build.
+.git
+.github
+.claude
+docs
+mockup
+.DS_Store
+
+# deploy/ is kept: prewarm_genesets.R is COPY'd. Nothing else in it is.
+deploy/nginx
+deploy/scripts
+deploy/shinyproxy
+deploy/README.md
+
+# R build artefacts
+**/.Rproj.user
+**/*.Rproj
+**/*.Rcheck
+**/*.tar.gz
+**/.Rhistory
+**/.RData
+packages/*/docs

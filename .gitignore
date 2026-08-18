@@ -32,3 +32,7 @@ packages/*/docs/
 
 # Renv (local lock if user adds it)
 renv/
+
+# Deployment secrets — the template is committed, the filled-in file is not.
+deploy/shinyproxy/application.yml
+.env
