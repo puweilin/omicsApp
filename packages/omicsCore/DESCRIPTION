@@ -52,6 +52,7 @@ Suggests:
     GenomicFeatures,
     here,
     testthat (>= 3.0.0),
+    withr,
     knitr,
     rmarkdown
 Config/testthat/edition: 3
