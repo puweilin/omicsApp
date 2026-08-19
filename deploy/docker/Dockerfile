@@ -65,10 +65,24 @@ COPY packages/omicsApp /tmp/omicsApp
 RUN R CMD INSTALL --no-docs /tmp/omicsApp && rm -rf /tmp/omicsApp
 
 # ---- 7. runtime --------------------------------------------------------
-# uid 1001 must match the owner of the per-user host directories that
-# ShinyProxy bind-mounts at /data (see deploy/scripts/add_user.sh).
-RUN useradd --create-home --uid 1001 omics \
-    && mkdir -p /data && chown omics:omics /data
+# The container writes into a host directory through a bind mount, and
+# the kernel decides whether it may by comparing *numbers*: the uid of
+# the process against the uid owning the directory. Names do not enter
+# into it -- "omics" exists only inside this image.
+#
+# With root on the host you leave this alone and chown the directories
+# to 1001 (deploy/scripts/add_user.sh). Without root you cannot chown to
+# a uid you do not own, so build the image as your own uid instead and
+# the numbers match without any chown:
+#
+#   docker build --build-arg APP_UID=$(id -u) -t omicsapp:1.0 -f deploy/docker/Dockerfile .
+#
+# Getting this wrong is quiet: the app reports "could not save" and
+# carries on, so the user's work simply never persists.
+ARG APP_UID=1001
+RUN useradd --create-home --uid ${APP_UID} omics \
+    && mkdir -p /data /data/raw \
+    && chown -R omics:omics /data
 
 # One BLAS thread per worker. Without this each of the `workers`
 # background processes opens as many threads as there are cores, and a

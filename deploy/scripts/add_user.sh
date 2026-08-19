@@ -1,25 +1,45 @@
 #!/usr/bin/env bash
 #
-# Provision a user's private project directory and print the entry to
-# paste into application.yml.
+# Provision a user's private directories and print the entry to paste
+# into application.yml.
 #
 #   sudo deploy/scripts/add_user.sh alice
 #
-# The directory has to exist, with the right owner, *before* the user
-# first logs in. ShinyProxy bind-mounts it into the container, and
+# The directories have to exist, with the right owner, *before* the user
+# first logs in. ShinyProxy bind-mounts them into the container, and
 # Docker creates a missing bind-mount source owned by root -- the
-# container runs as uid 1001 and would silently fail to write, leaving
-# the user unable to save anything.
+# container runs unprivileged and would silently fail to write, leaving
+# the user unable to save anything and nothing on screen to say why.
+#
+# Two directories, because they are used differently: projects are small
+# and touched on every save, archived uploads are bulk and written once.
+# Set RAW_ROOT to put the second on another disk, or leave it unset to
+# keep everything together.
+#
+#   USERS_ROOT   projects            default /srv/omicsapp/users
+#   RAW_ROOT     archived uploads    unset = live under USERS_ROOT
+#   CONTAINER_UID  must match the image's APP_UID build arg
 
 set -euo pipefail
 
 USERS_ROOT="${OMICSAPP_USERS_ROOT:-/srv/omicsapp/users}"
-CONTAINER_UID=1001
-CONTAINER_GID=1001
+RAW_ROOT="${OMICSAPP_RAW_ROOT:-}"
+CONTAINER_UID="${APP_UID:-1001}"
+CONTAINER_GID="${APP_GID:-$CONTAINER_UID}"
 
 usage() {
-    echo "usage: $0 <username>" >&2
-    echo "  creates ${USERS_ROOT}/<username> owned by ${CONTAINER_UID}:${CONTAINER_GID}" >&2
+    cat >&2 <<USAGE
+usage: $0 <username>
+
+  creates ${USERS_ROOT}/<username>
+$([ -n "$RAW_ROOT" ] && echo "      and ${RAW_ROOT}/<username>")
+  owned by ${CONTAINER_UID}:${CONTAINER_GID}, mode 700
+
+environment:
+  OMICSAPP_USERS_ROOT   project directory root (default ${USERS_ROOT})
+  OMICSAPP_RAW_ROOT     archive root on another disk (default: under USERS_ROOT)
+  APP_UID               container uid (default 1001; must match the image)
+USAGE
     exit 2
 }
 
@@ -32,13 +52,24 @@ case "$USERNAME" in
     ""|*/*|*..*|.*) echo "error: invalid username '$USERNAME'" >&2; exit 1 ;;
 esac
 
-TARGET="${USERS_ROOT}/${USERNAME}"
+make_dir() {
+    local target="$1" label="$2"
+    if [ -e "$target" ]; then
+        echo "note: ${target} already exists; leaving it untouched."
+        return
+    fi
+    install -d -o "$CONTAINER_UID" -g "$CONTAINER_GID" -m 700 "$target"
+    echo "created ${target}  (${label}, owner ${CONTAINER_UID}:${CONTAINER_GID}, mode 700)"
+}
 
-if [ -e "$TARGET" ]; then
-    echo "note: ${TARGET} already exists; leaving it untouched."
+make_dir "${USERS_ROOT}/${USERNAME}" "projects"
+if [ -n "$RAW_ROOT" ]; then
+    make_dir "${RAW_ROOT}/${USERNAME}" "archived uploads"
 else
-    install -d -o "$CONTAINER_UID" -g "$CONTAINER_GID" -m 700 "$TARGET"
-    echo "created ${TARGET} (owner ${CONTAINER_UID}:${CONTAINER_GID}, mode 700)"
+    # Without a separate root the app creates raw/ under the project
+    # directory on first upload; nothing to do here.
+    echo "note: OMICSAPP_RAW_ROOT unset; uploads will be archived under"
+    echo "      ${USERS_ROOT}/${USERNAME}/raw on the same disk."
 fi
 
 echo

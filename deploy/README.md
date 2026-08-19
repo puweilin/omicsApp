@@ -94,9 +94,14 @@ docker run --rm omicsapp:1.0 \
 
 ```bash
 docker network create sp-net
-sudo mkdir -p /srv/omicsapp/users
-sudo deploy/scripts/add_user.sh puweilin   # once per user
+sudo mkdir -p /srv/omicsapp/users            # SSD
+sudo mkdir -p /mnt/hdd/omicsapp/raw          # HDD, if splitting
+sudo OMICSAPP_RAW_ROOT=/mnt/hdd/omicsapp/raw \
+     deploy/scripts/add_user.sh puweilin     # once per user
 ```
+
+See [Storage layout](#storage-layout) for what belongs on which disk.
+Leave `OMICSAPP_RAW_ROOT` unset to keep everything on one.
 
 ### 5. ShinyProxy
 
@@ -148,10 +153,18 @@ colleague to check.
 `deploy/docker/` fails on those lines. Use `build_image.sh`, or pass
 `-f deploy/docker/Dockerfile .` yourself.
 
-**Create a user's directory before their first login.** Docker creates a
-missing bind-mount source owned by `root`; the container runs as uid
-1001 and then cannot write, so the user silently loses the ability to
-save anything. `add_user.sh` handles this.
+**Create a user's directories before their first login.** Docker creates
+a missing bind-mount source owned by `root`; the container runs
+unprivileged and then cannot write, so the user silently loses the
+ability to save anything — the app reports a failed save and carries on.
+`add_user.sh` handles this.
+
+**The container uid and the directory owner must match.** The kernel
+compares numbers, not names: `omics` inside the image and any account on
+the host are unrelated. The default is 1001 on both sides. If you built
+with `APP_UID=$(id -u)` because you have no root, pass the same value to
+`add_user.sh`, or the two halves will disagree and produce exactly the
+silent failure above.
 
 **Never commit `application.yml`.** `.gitignore` excludes it. Git history
 is permanent, and a private repository still gets cloned to laptops.
@@ -168,6 +181,42 @@ a restart, so do it when nobody is mid-analysis.
 `minimum-seats-available` is 3.x syntax (2.x used
 `container-pre-initialization`), and the `{bcrypt}` password prefix is
 worth confirming with one test login before hashing everyone's password.
+
+## Storage layout
+
+Measured, on a 20k feature by 60 sample workbook: a `.omp` project file
+is **5.9 MB**, the raw upload it came from is **20 MB**, and one full
+analysis produces about **45 MB** all told. At three analyses a day that
+is **50–75 GB a year**.
+
+| What | Growth | Access | Disk |
+|---|---|---|---|
+| `.omp` project files | ~35 GB/yr | Read and written on every save, open, and finished analysis | **SSD** |
+| `raw/` archived uploads | ~15 GB/yr | Written once, almost never read | **HDD** |
+| Docker images and layers | 7 GB, fixed | Read on every container start | **SSD, not negotiable** |
+| Backups | mirrors the above | Nightly | **HDD** |
+
+Two things worth knowing before moving anything:
+
+**There is no capacity pressure on the SSD.** 75 GB a year against 4 TB
+is fifty years. Splitting the archive onto the HDD is about putting bulk
+where bulk belongs, not about running out of room.
+
+**The latency cost of the HDD is small but not zero.** A `.omp` write is
+0.06 s on SSD and most of that is serialisation rather than I/O; a
+spinning disk adds roughly 40–70 ms. Autosave fires five to seven times
+per workflow, so projects on the HDD would be felt slightly. Archived
+uploads are written once and never re-read, so they cost nothing there.
+
+**`/var/lib/docker` must stay on the SSD.** The image is 7 GB and every
+container start reads from it; a build is heavy random I/O. This is the
+one placement that is not a preference.
+
+One clarification on the 7 GB, because it changes the arithmetic: image
+layers are **read-only and shared**. Four concurrent containers do not
+use 4 × 7 GB — there is one copy on disk, and each container adds only
+its writable layer, which stays tiny here because all data goes to bind
+mounts rather than into the container.
 
 ## Resources
 
@@ -191,14 +240,20 @@ worth confirming with one test login before hashing everyone's password.
 
 ## Operations
 
-**Backup.** `/srv/omicsapp/users` is the whole of it. `.omp` files are
-the irreplaceable part — raw uploads are usually still obtainable from
-the instrument, but the analysis parameters encoded in a project are
-not.
+**Backup — do this on day one.** Losing a disk is far likelier than any
+attack, and `.omp` files are the irreplaceable part: a raw upload can
+usually be exported from the instrument again, the analysis parameters
+encoded in a project cannot.
 
 ```bash
-rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp-users/
+# Nightly, e.g. from cron. The 60 TB HDD is the obvious target.
+rsync -a --delete /srv/omicsapp/users/ /mnt/hdd/omicsapp-backup/users/
+rsync -a --delete /mnt/hdd/omicsapp/raw/ /mnt/hdd/omicsapp-backup/raw/
 ```
+
+Backing the archive up onto the same disk it lives on protects against
+deletion but not against that disk failing. If the raw archive matters
+to you, send it somewhere else as well.
 
 **Keeping KEGG current.** The image bakes the MSigDB tables in, and the
 `kegg` table among them is the 2011 `KEGG_LEGACY` snapshot (186 human
@@ -241,3 +296,37 @@ deploy/scripts/build_image.sh omicsapp:1.1
 **Where the logs are.** ShinyProxy writes to
 `/var/log/shinyproxy/shinyproxy.log`; a container's own R output is in
 `docker logs <container>`.
+
+## Hardening, once it works
+
+Leave these until the acceptance checklist passes. First deployments go
+wrong for ordinary reasons, and every extra variable is one more
+candidate.
+
+**Give ShinyProxy its own account.** The official package runs it as
+root. It does not need to be — it needs to reach the Docker socket,
+which is group membership, not privilege:
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin shinyproxy
+sudo usermod -aG docker shinyproxy
+sudo chown shinyproxy /etc/shinyproxy/application.yml
+# then, in the systemd unit:  User=shinyproxy   Group=docker
+```
+
+A dedicated account rather than a person's: a stolen SSH key should not
+hand over the service, and a compromised service should not reach
+someone's files.
+
+Be clear about what this buys, though. **Membership of the `docker`
+group is equivalent to root** — anything that can reach the socket can
+ask the daemon to start a privileged container mounting the host's
+filesystem. So this raises the cost of a ShinyProxy vulnerability by a
+step; it is not a boundary.
+
+The boundary is one layer down, and it is already in place: containers
+run unprivileged, and the Docker socket is not mounted into any of them.
+Those two are what a compromise in one of the image's 224 R packages
+would run into. Keep them, and rebuild the image periodically so those
+packages get their patches — dependencies age whether or not anyone is
+watching.

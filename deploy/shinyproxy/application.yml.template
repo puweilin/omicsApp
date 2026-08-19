@@ -66,11 +66,27 @@ proxy:
       container-cpu-limit: 2
       # #{proxy.userId} is substituted per login -- this is what makes
       # each user's projects private. The host directory must exist and
-      # be owned by uid 1001 *before* first login: Docker creates a
-      # missing bind-mount source as root, and the container cannot
-      # write to it. deploy/scripts/add_user.sh does this.
+      # be owned by the container's uid *before* first login: Docker
+      # creates a missing bind-mount source as root, and the container
+      # cannot write to it. deploy/scripts/add_user.sh does this.
+      #
+      # Two mounts, split by how the data is used:
+      #
+      #   /data      project files. Small (~5 MB each, ~35 GB/year) and
+      #              read and written every time a user saves, opens or
+      #              finishes an analysis. Wants the SSD.
+      #   /data/raw  archived uploads. Bulk (~15 GB/year), written once
+      #              and almost never read again. Belongs on the HDD.
+      #
+      # Docker sorts bind mounts by depth, so the parent mounts first
+      # and the nested one lands on top; the app sees one directory tree
+      # and needs no configuration for the split.
+      #
+      # To keep everything on one disk instead, delete the second line.
+      # The application creates `raw/` under /data by itself.
       container-volumes:
         - "/srv/omicsapp/users/#{proxy.userId}:/data"
+        - "/mnt/hdd/omicsapp/raw/#{proxy.userId}:/data/raw"
       container-env:
         OMICSAPP_QUOTA_GB: "50"
       access-groups: [lab, admins]
