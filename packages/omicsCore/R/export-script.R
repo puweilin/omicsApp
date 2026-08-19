@@ -320,9 +320,9 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     }
     if (!is.null(bundles$diff)) {
       lines <- c(lines,
-        "# The app's threshold sliders re-colour the volcano for reading;",
-        "# they do not change the analysis. This draws significance as",
-        "# `run_diff()` determined it, which is the version worth citing.",
+        "# Drawn at plot_volcano()'s default cut, which is the figure the",
+        "# app shows: its threshold sliders filter the hit table, not this.",
+        "# The cut is printed in the plot's caption.",
         "plot_volcano(diff)")
     }
     if (!is.null(bundles$enrich)) {

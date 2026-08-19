@@ -142,3 +142,52 @@ test_that("a raw-count layer offers the count engines instead", {
     }
   )
 })
+
+# ---- the volcano is not driven by the sliders -------------------------
+
+test_that("the volcano does not depend on the threshold sliders", {
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(NULL)),
+    {
+      session$setInputs(rerun = 1)
+      shiny::req(diff_bundle())
+      caption_of <- function() {
+        p <- omicsCore::plot_volcano(
+          diff_bundle(),
+          top_n = if (isTRUE(input$label_top)) 20L else 0L)
+        ggplot2::ggplot_build(p)$plot$labels$caption
+      }
+      before <- caption_of()
+      session$setInputs(fdr_cut = 0.5, fc_cut = 0.1)
+      # The figure is the stable reference the hit table is read against;
+      # a screenshot of it must not depend on where a control was left.
+      expect_identical(caption_of(), before)
+      expect_match(before, "adj_p_value < 0.05", fixed = TRUE)
+    }
+  )
+})
+
+test_that("the sliders still drive the hit table", {
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(NULL)),
+    {
+      session$setInputs(rerun = 1, fdr_cut = 0.05, fc_cut = 1)
+      # The thresholds are debounced, so the mask only follows them once
+      # the window has passed. A real drag settles the same way.
+      session$elapse(300)
+      strict <- sum(marked()$is_significant)
+      session$setInputs(fdr_cut = 1, fc_cut = 0)
+      session$elapse(300)
+      # Sweeping a threshold is the useful thing to do to a table, and
+      # that is where it still happens.
+      expect_gt(sum(marked()$is_significant), strict)
+    }
+  )
+})
+
+test_that("the volcano card says the sliders do not reach it", {
+  html <- render_html(diff_volcano_card(function(x) x))
+  expect_match(html, "sliders filter the table", fixed = TRUE)
+})

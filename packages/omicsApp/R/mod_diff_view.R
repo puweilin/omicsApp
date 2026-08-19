@@ -347,16 +347,18 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     output$volcano <- plotly::renderPlotly({
       b <- diff_bundle()
       shiny::req(b)
-      # Drawn by omicsCore so this figure, the one in an exported
-      # report, and the one an exported script reproduces are the same
-      # figure. The thresholds come from the sliders, and plot_volcano()
-      # re-derives significance from them, so the points re-colour
-      # rather than only the dashed rules moving.
+      # Deliberately not given the slider values. The volcano is drawn
+      # at plot_volcano()'s own defaults, which is what an exported
+      # report and an exported script also produce -- so the figure a
+      # reader is shown is the figure they can reproduce, and a
+      # screenshot does not depend on where a control happened to be.
+      #
+      # The sliders still drive the hit table and the stat cards, where
+      # sweeping a threshold is the useful thing to do; the figure is
+      # the stable reference next to them.
       p <- omicsCore::plot_volcano(
         b,
-        top_n            = if (isTRUE(input$label_top)) 20L else 0L,
-        p_threshold      = fdr_cut_d(),
-        effect_threshold = fc_cut_d()
+        top_n = if (isTRUE(input$label_top)) 20L else 0L
       )
       plotly::ggplotly(p) |>
         plotly::config(displaylogo = FALSE,
@@ -478,8 +480,12 @@ diff_volcano_card <- function(ns) {
   bslib::card(
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Volcano"),
-      htmltools::tags$span(class = "card-sub",
-                           "drag to zoom \u00B7 double-click to reset")
+      # Says plainly that the thresholds do not reach this figure. The
+      # cut it was drawn at is in the plot's own caption, so a
+      # screenshot carries it too.
+      htmltools::tags$span(
+        class = "card-sub",
+        "fixed thresholds \u00B7 sliders filter the table below")
     ),
     bslib::card_body(
       plotly::plotlyOutput(ns("volcano"), height = "360px"),

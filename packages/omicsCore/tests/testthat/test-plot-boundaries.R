@@ -148,3 +148,82 @@ test_that("an integration bundle with no rows returns an empty plot", {
                            results = list(integration_df = df))
   expect_s3_class(plot_integration(b, view = "effect_pair"), "ggplot")
 })
+
+# ---- where "significant" comes from -----------------------------------
+#
+# Every run_diff() backend writes is_significant = FALSE and leaves the
+# judgement to whoever filters the result. A volcano that deferred to
+# that column drew one colour over data where a fifth of the features
+# cleared 0.05 -- and in a report that reads as a finding rather than as
+# a missing step.
+
+pb_split_diff <- function() {
+  set.seed(42)
+  n_sig <- 20L; n_null <- 80L; ns <- 20L
+  mat <- rbind(
+    matrix(c(rnorm(n_sig * ns / 2, 8, 1), rnorm(n_sig * ns / 2, 11, 1)),
+           nrow = n_sig),
+    matrix(rnorm(n_null * ns, 8, 1), nrow = n_null)
+  )
+  dimnames(mat) <- list(paste0("g", seq_len(n_sig + n_null)),
+                        paste0("s", seq_len(ns)))
+  meta <- data.frame(group = rep(c("A", "B"), each = ns / 2),
+                     row.names = colnames(mat))
+  feat <- data.frame(feature_id = rownames(mat),
+                     feature_symbol = rownames(mat))
+  inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
+                     assay_type = "intensity")
+  run_diff(inp, method = "limma", analysis_type = "group",
+           group_col = "group", control_group = "A", case_group = "B")
+}
+
+sig_counts <- function(p) {
+  table(factor(ggplot2::ggplot_build(p)$plot$data$.sig,
+               levels = c("ns", "significant")))
+}
+
+test_that("the default cut separates the features that clear it", {
+  skip_if_not_installed("limma")
+  b <- pb_split_diff()
+  df <- b$results$diff_result_df
+  # The premise of the regression: the bundle itself marks nothing.
+  expect_equal(sum(df$is_significant), 0L)
+  expect_gt(sum(df$adj_p_value < 0.05, na.rm = TRUE), 0L)
+
+  counts <- sig_counts(plot_volcano(b))
+  expect_equal(unname(counts[["significant"]]),
+               sum(df$adj_p_value < 0.05, na.rm = TRUE))
+  expect_gt(unname(counts[["ns"]]), 0L)
+})
+
+test_that("an effect threshold narrows the set further", {
+  skip_if_not_installed("limma")
+  b <- pb_split_diff()
+  loose <- sig_counts(plot_volcano(b))
+  tight <- sig_counts(plot_volcano(b, effect_threshold = 10))
+  expect_lt(unname(tight[["significant"]]), unname(loose[["significant"]]))
+})
+
+test_that("both thresholds NULL defers to the stored column", {
+  skip_if_not_installed("limma")
+  b <- pb_split_diff()
+  counts <- sig_counts(plot_volcano(b, p_threshold = NULL,
+                                    effect_threshold = NULL))
+  # Which run_diff() leaves FALSE -- "make no distinction" is a request
+  # the caller is allowed to make, and this is what it looks like.
+  expect_equal(unname(counts[["significant"]]), 0L)
+})
+
+test_that("the figure states the cut it was drawn at", {
+  skip_if_not_installed("limma")
+  b <- pb_split_diff()
+  cap <- function(p) ggplot2::ggplot_build(p)$plot$labels$caption
+  # A screenshot outlives the session that produced it, so the cut has
+  # to travel with the picture.
+  expect_match(cap(plot_volcano(b)), "adj_p_value < 0.05", fixed = TRUE)
+  expect_match(cap(plot_volcano(b, effect_threshold = 1.5)),
+               "|effect| > 1.5", fixed = TRUE)
+  expect_match(cap(plot_volcano(b, p_threshold = NULL,
+                                effect_threshold = NULL)),
+               "as recorded", fixed = TRUE)
+})

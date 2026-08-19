@@ -192,17 +192,18 @@ test_that("each analysis emits the figure its view shows", {
   }
 })
 
-test_that("the volcano is drawn as the analysis defined significance", {
+test_that("the volcano is emitted at the same cut the app draws", {
   proj <- fixture_project("raw/x.xlsx")
   proj$bundles <- list(diff = new_analysis_bundle("run_diff",
     input_info = list(omics_type = "proteomics"),
     params = list(method = "limma")))
   txt <- paste(export_script(proj), collapse = "\n")
-  # The app's sliders are a reading aid, not part of the analysis, and
-  # they are not recorded on the bundle. Emitting them would put a
-  # number in the script that nothing in the report justifies.
+  # The view passes no thresholds either, so `plot_volcano(diff)` here
+  # and the figure on screen are the same picture. Emitting a threshold
+  # would put a number in the script that no control in the app set.
   expect_false(grepl("p_threshold", txt, fixed = TRUE))
-  expect_match(txt, "do not change the analysis", fixed = TRUE)
+  expect_match(txt, "plot_volcano(diff)", fixed = TRUE)
+  expect_match(txt, "sliders filter the hit table", fixed = TRUE)
 })
 
 # ---- round trip -------------------------------------------------------

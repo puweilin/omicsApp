@@ -32,23 +32,19 @@ plot_volcano <- function(
 
   df <- result_df
   df$.neglog10p <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
-  df$.sig <- factor(
-    ifelse(isTRUE(any(df$is_significant)) & df$is_significant, "significant", "ns"),
-    levels = c("ns", "significant")
-  )
 
-  # A caller that supplies thresholds is asking for those thresholds,
-  # not the ones the analysis was run with. Re-deriving here is what
-  # lets a threshold control re-colour the points rather than only move
-  # the dashed rules -- leaving `is_significant` alone would draw a
-  # cloud whose colours contradict the lines through it.
-  # Only when a threshold was actually given. `missing()` alone is not
-  # enough: an explicit `p_threshold = NULL` is not missing, and taking
-  # this branch with both thresholds NULL would leave every feature
-  # coloured significant.
-  supplied <- (!missing(p_threshold) && !is.null(p_threshold)) ||
-    (!missing(effect_threshold) && !is.null(effect_threshold))
-  if (supplied) {
+  # Significance is decided here, from the thresholds this call was
+  # given -- not read off `is_significant`. Every run_diff() backend
+  # writes that column FALSE and leaves the judgement to whoever filters
+  # the result, so deferring to it drew a monochrome volcano of data
+  # where every feature cleared 0.05. In a report that is worse than
+  # useless: it looks like a finding.
+  #
+  # NULL for both thresholds means "make no distinction", and then the
+  # stored column is all there is to go on.
+  if (is.null(p_threshold) && is.null(effect_threshold)) {
+    sig <- !is.na(df$is_significant) & df$is_significant
+  } else {
     sig <- rep(TRUE, nrow(df))
     if (!is.null(p_threshold)) {
       sig <- sig & df[[p_col]] < p_threshold
@@ -57,9 +53,9 @@ plot_volcano <- function(
       sig <- sig & abs(df$effect) > effect_threshold
     }
     sig[is.na(sig)] <- FALSE
-    df$.sig <- factor(ifelse(sig, "significant", "ns"),
-                      levels = c("ns", "significant"))
   }
+  df$.sig <- factor(ifelse(sig, "significant", "ns"),
+                    levels = c("ns", "significant"))
 
   # Choose label set: union of forced labels and top_n by p-basis.
   ranked <- df[order(df[[p_col]], na.last = NA), , drop = FALSE]
@@ -82,6 +78,11 @@ plot_volcano <- function(
     ggplot2::labs(
       title = "Volcano",
       subtitle = volcano_subtitle(bundle),
+      # What "significant" meant here travels with the figure. Without
+      # it a reader has a two-coloured cloud and no way to know which
+      # cut produced it -- and a screenshot outlives the session that
+      # set the controls.
+      caption = threshold_caption(p_col, p_threshold, effect_threshold),
       x = volcano_xlab(bundle),
       y = paste0("-log10(", p_col, ")")
     ) +
@@ -326,6 +327,20 @@ volcano_subtitle <- function(bundle) {
   method <- bundle$params$method
   if (is.null(comparison) || is.null(method)) return(NULL)
   paste0("method = ", method, "  |  comparison = ", comparison)
+}
+
+threshold_caption <- function(p_col, p_threshold, effect_threshold) {
+  bits <- character(0)
+  if (!is.null(p_threshold)) {
+    bits <- c(bits, sprintf("%s < %g", p_col, p_threshold))
+  }
+  if (!is.null(effect_threshold)) {
+    bits <- c(bits, sprintf("|effect| > %g", effect_threshold))
+  }
+  if (length(bits) == 0L) {
+    return("significance as recorded on the result")
+  }
+  paste("significant:", paste(bits, collapse = ", "))
 }
 
 # An axis label is read off the first row, which is not there when every
