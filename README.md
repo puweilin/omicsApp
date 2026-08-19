@@ -20,7 +20,7 @@ This monorepo contains two R packages:
 2. **Fast interactive UI** — an analysis runs once and every view reads the resulting `analysis_bundle`, so moving a significance threshold re-masks the existing result rather than re-running it (the threshold sliders are debounced, so a drag costs one re-mask instead of one per pixel). Long-running steps are offloaded to a background `future` worker, and MSigDB gene sets load from an on-disk cache — ~11s to ~0.2s in a cold process.
 3. **Dual-omics native** — a project can hold both proteomics and RNA-seq experiments side by side, with integration views (RNA-Protein correlation, joint pathway enrichment).
 4. **Smart input parsing** — auto-detects expression matrix, sample metadata, and feature annotation across Excel sheets, CSV/TSV, MaxQuant, and Salmon outputs. User confirms inferred schema before running.
-5. **Runs in restricted environments** — no Docker, no system installs. `devtools::install_local()` to user library is the supported path.
+5. **Runs without privileges** — the packages need no Docker and no system installs; `devtools::install_local()` into a user library is the supported path on a locked-down machine. Where root *is* available, [`deploy/`](./deploy) additionally serves the app to a small group over the LAN, one container per logged-in user.
 
 ## Development workflow
 
