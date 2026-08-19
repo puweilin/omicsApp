@@ -26,31 +26,120 @@ memory cannot take anyone else down with it.
 
 ## First deployment
 
-```bash
-# 1. Build the image (30-60 min the first time)
-deploy/scripts/build_image.sh omicsapp:1.0
+Verify each step before starting the next. Standing the whole stack up
+and then finding it broken leaves five candidate causes; this order
+localises a failure to the step that caused it, and puts the two
+riskiest things first so an hour is not spent before finding out.
 
-# 2. Network and storage
+### 0. Decide what you are deploying
+
+The Dockerfile COPYs the **working tree**, not a commit, so whatever is
+checked out is what ships.
+
+```bash
+git checkout main
+git status --short   # must be empty, or the image matches no commit
+```
+
+### 1. Pre-flight (2 minutes, saves an hour)
+
+The base image tag is pinned in the Dockerfile but is worth confirming
+against what your host can actually pull, along with the R and
+Bioconductor versions it carries:
+
+```bash
+docker run --rm bioconductor/bioconductor_docker:RELEASE_3_20 \
+  R -q -e 'cat(R.version.string, "| Bioc", as.character(BiocManager::version()), "\n")'
+df -h /var/lib/docker   # image is 5-7 GB; build cache wants 2-3x that
+```
+
+### 2. Build (30-60 minutes)
+
+```bash
+deploy/scripts/build_image.sh omicsapp:1.0
+```
+
+A failure part way through is not a restart: Docker caches each layer,
+so a fix re-runs only from the layer that failed. The Bioconductor and
+LaTeX layers are the likely ones. Dropping the LaTeX layer costs the
+PDF report and saves 1.5 GB.
+
+### 3. Smoke-test the container on its own — do not skip
+
+This separates "does the app work" from "is ShinyProxy configured
+right". Debugging both at once is what makes a deployment take a day.
+
+```bash
+docker run --rm -p 3838:3838 -e OMICSAPP_DATA_DIR=/tmp/data omicsapp:1.0
+```
+
+Open `http://<host>:3838` and confirm all seven views render and the
+Report view shows an "Analysis code" card. Then check the two things
+that fail silently rather than loudly:
+
+```bash
+# Gene-set cache is in the image. Missing, the app still works -- it
+# just pays ~10s on every user's first enrichment, forever.
+docker run --rm omicsapp:1.0 \
+  R -q -e 'cat(length(list.files(Sys.getenv("OMICSCORE_GENESET_CACHE"))), "cached tables\n")'
+# expect 14
+
+# The future plan is parallel. Sequential means one user's DESeq2
+# freezes every other session, with nothing on screen to say so.
+docker run --rm omicsapp:1.0 \
+  R -q -e 'library(future); cat(class(future::plan())[2], "\n")'
+```
+
+### 4. Network and storage
+
+```bash
 docker network create sp-net
 sudo mkdir -p /srv/omicsapp/users
-sudo deploy/scripts/add_user.sh puweilin
+sudo deploy/scripts/add_user.sh puweilin   # once per user
+```
 
-# 3. ShinyProxy config
+### 5. ShinyProxy
+
+```bash
 sudo mkdir -p /etc/shinyproxy
 sudo cp deploy/shinyproxy/application.yml.template /etc/shinyproxy/application.yml
 sudo chmod 600 /etc/shinyproxy/application.yml
-# ...fill in the bcrypt password hashes, then start ShinyProxy
+htpasswd -bnBC 10 "" 'the-password' | tr -d ':\n'   # paste into proxy.users
+```
 
-# 4. nginx
+Log in with one test account before hashing everyone's password: the
+`{bcrypt}` prefix depends on the ShinyProxy version.
+
+### 6. nginx and firewall
+
+```bash
 sudo cp deploy/nginx/omicsapp.conf /etc/nginx/sites-available/omicsapp
 sudo ln -s /etc/nginx/sites-available/omicsapp /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-
-# 5. Firewall — restrict to the local subnet rather than opening the port
 sudo ufw allow from 192.168.51.0/24 to any port 80 proto tcp
 ```
 
 Users then reach the app at `http://192.168.51.52`.
+
+### 7. Acceptance
+
+Walk one real dataset through, checking each line:
+
+| Action | Expected |
+|---|---|
+| Upload, confirm import | Project appears |
+| Re-upload the **same** file | "already loaded" — nothing is cleared |
+| Upload a **different** file | Dialog naming the analyses that will be cleared |
+| Run QC and a differential analysis | Volcano is two-coloured; caption reads `adj_p_value < 0.05` |
+| Drag the FDR slider | Hit table changes, **volcano does not** |
+| Report view | "Analysis code" shows the calls; downloads as `.R` |
+| Project view, Save as | Appears under "My projects" |
+| Close the tab, log back in | "Restore last session" works |
+| `ls /srv/omicsapp/users/<user>/` | `.omp` files and a `raw/` directory |
+| **Two people run an analysis at once** | Neither waits for the other |
+
+The last row is the Phase 0 fix that mattered most; it needs a
+colleague to check.
 
 ## Things that will bite you
 
