@@ -186,8 +186,9 @@ test_that("the default cut separates the features that clear it", {
   skip_if_not_installed("limma")
   b <- pb_split_diff()
   df <- b$results$diff_result_df
-  # The premise of the regression: the bundle itself marks nothing.
-  expect_equal(sum(df$is_significant), 0L)
+  # The premise of the regression: the bundle answers nothing, so the
+  # colouring has to come from the threshold this call was given.
+  expect_true(all(is.na(df$is_significant)))
   expect_gt(sum(df$adj_p_value < 0.05, na.rm = TRUE), 0L)
 
   counts <- sig_counts(plot_volcano(b))
@@ -226,4 +227,49 @@ test_that("the figure states the cut it was drawn at", {
   expect_match(cap(plot_volcano(b, p_threshold = NULL,
                                 effect_threshold = NULL)),
                "as recorded", fixed = TRUE)
+})
+
+test_that("run_diff leaves significance unanswered rather than answering FALSE", {
+  skip_if_not_installed("limma")
+  b <- pb_split_diff()
+  df <- b$results$diff_result_df
+  # NA is the truth: no cutoff was supplied, so the question is open.
+  # FALSE was a claim -- "this feature is not significant" -- made about
+  # features with adj.P near zero, and two plot functions believed it.
+  expect_true(all(is.na(df$is_significant)))
+  expect_gt(sum(df$adj_p_value < 0.05, na.rm = TRUE), 0L)
+})
+
+test_that("filter_diff_results still answers TRUE on what it keeps", {
+  skip_if_not_installed("limma")
+  df <- pb_split_diff()$results$diff_result_df
+  filt <- filter_diff_results(df, p_cutoff = 0.05)
+  # Applying a cutoff is what turns the open question into an answer.
+  expect_true(all(filt$is_significant))
+  expect_lt(nrow(filt), nrow(df))
+})
+
+test_that("the MA plot decides significance the same way the volcano does", {
+  skip_if_not_installed("limma")
+  b <- pb_split_diff()
+  n_sig <- sum(b$results$diff_result_df$adj_p_value < 0.05, na.rm = TRUE)
+  counts <- table(factor(ggplot2::ggplot_build(plot_ma(b))$plot$data$.sig,
+                         levels = c("ns", "significant")))
+  # It read the same always-FALSE column and drew the same single
+  # colour; fixing one and not the other would have left the pair
+  # disagreeing about the same data.
+  expect_equal(unname(counts[["significant"]]), n_sig)
+  expect_match(ggplot2::ggplot_build(plot_ma(b))$plot$labels$caption,
+               "adj_p_value < 0.05", fixed = TRUE)
+})
+
+test_that("the MA plot honours a supplied threshold", {
+  skip_if_not_installed("limma")
+  b <- pb_split_diff()
+  loose <- table(factor(ggplot2::ggplot_build(plot_ma(b))$plot$data$.sig,
+                        levels = c("ns", "significant")))
+  tight <- table(factor(ggplot2::ggplot_build(
+    plot_ma(b, effect_threshold = 10))$plot$data$.sig,
+    levels = c("ns", "significant")))
+  expect_lt(unname(tight[["significant"]]), unname(loose[["significant"]]))
 })

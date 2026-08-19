@@ -4,7 +4,14 @@
 \alias{plot_ma}
 \title{MA plot for a diff bundle}
 \usage{
-plot_ma(bundle, top_n = 20, label_features = NULL)
+plot_ma(
+  bundle,
+  top_n = 20,
+  label_features = NULL,
+  p_basis = c("adjusted", "raw"),
+  effect_threshold = NULL,
+  p_threshold = 0.05
+)
 }
 \arguments{
 \item{bundle}{An \code{analysis_bundle} produced by \code{\link[=run_diff]{run_diff()}}.}
@@ -13,14 +20,25 @@ plot_ma(bundle, top_n = 20, label_features = NULL)
 
 \item{label_features}{Optional character vector of \code{feature_symbol} values
 to always label.}
+
+\item{p_basis}{Whether to threshold on the adjusted or raw p-value.}
+
+\item{effect_threshold}{Optional absolute-effect cutoff.}
+
+\item{p_threshold}{P-value cutoff, or \code{NULL} to make no distinction.}
 }
 \value{
 A \code{ggplot} object.
 }
 \description{
 Plots \code{effect} against \code{base_mean} so the user can spot effect-size
-biases concentrated at low- or high-expressed features. Significant
-features are highlighted via \code{is_significant}.
+biases concentrated at low- or high-expressed features.
+}
+\details{
+Which features count as significant is decided here, from the
+thresholds this call is given — the same contract as \code{\link[=plot_volcano]{plot_volcano()}},
+and for the same reason: \code{run_diff()} applies no cutoff, so its
+\code{is_significant} column is \code{NA} and has nothing to colour by.
 }
 \seealso{
 Other diff: 

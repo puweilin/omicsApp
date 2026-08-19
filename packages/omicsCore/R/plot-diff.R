@@ -33,29 +33,10 @@ plot_volcano <- function(
   df <- result_df
   df$.neglog10p <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
 
-  # Significance is decided here, from the thresholds this call was
-  # given -- not read off `is_significant`. Every run_diff() backend
-  # writes that column FALSE and leaves the judgement to whoever filters
-  # the result, so deferring to it drew a monochrome volcano of data
-  # where every feature cleared 0.05. In a report that is worse than
-  # useless: it looks like a finding.
-  #
-  # NULL for both thresholds means "make no distinction", and then the
-  # stored column is all there is to go on.
-  if (is.null(p_threshold) && is.null(effect_threshold)) {
-    sig <- !is.na(df$is_significant) & df$is_significant
-  } else {
-    sig <- rep(TRUE, nrow(df))
-    if (!is.null(p_threshold)) {
-      sig <- sig & df[[p_col]] < p_threshold
-    }
-    if (!is.null(effect_threshold)) {
-      sig <- sig & abs(df$effect) > effect_threshold
-    }
-    sig[is.na(sig)] <- FALSE
-  }
-  df$.sig <- factor(ifelse(sig, "significant", "ns"),
-                    levels = c("ns", "significant"))
+  df$.sig <- factor(
+    ifelse(diff_significance(df, p_col, p_threshold, effect_threshold),
+           "significant", "ns"),
+    levels = c("ns", "significant"))
 
   # Choose label set: union of forced labels and top_n by p-basis.
   ranked <- df[order(df[[p_col]], na.last = NA), , drop = FALSE]
@@ -110,26 +91,39 @@ plot_volcano <- function(
 #' MA plot for a diff bundle
 #'
 #' Plots `effect` against `base_mean` so the user can spot effect-size
-#' biases concentrated at low- or high-expressed features. Significant
-#' features are highlighted via `is_significant`.
+#' biases concentrated at low- or high-expressed features.
+#'
+#' Which features count as significant is decided here, from the
+#' thresholds this call is given — the same contract as [plot_volcano()],
+#' and for the same reason: `run_diff()` applies no cutoff, so its
+#' `is_significant` column is `NA` and has nothing to colour by.
 #'
 #' @param bundle An `analysis_bundle` produced by [run_diff()].
 #' @param top_n Number of top features to label.
 #' @param label_features Optional character vector of `feature_symbol` values
 #'   to always label.
+#' @param p_basis Whether to threshold on the adjusted or raw p-value.
+#' @param effect_threshold Optional absolute-effect cutoff.
+#' @param p_threshold P-value cutoff, or `NULL` to make no distinction.
 #'
 #' @return A `ggplot` object.
 #' @export
 #' @family diff
-plot_ma <- function(bundle, top_n = 20, label_features = NULL) {
+plot_ma <- function(bundle, top_n = 20, label_features = NULL,
+                    p_basis = c("adjusted", "raw"),
+                    effect_threshold = NULL,
+                    p_threshold = 0.05) {
   result_df <- diff_result_from_bundle(bundle)
   if (all(is.na(result_df$base_mean))) {
     stop("`base_mean` is all NA in this bundle; MA plot is not available.")
   }
+  p_basis <- match.arg(p_basis)
+  p_col <- resolve_p_col(result_df, p_preference = p_basis)
 
   df <- result_df
   df$.sig <- factor(
-    ifelse(isTRUE(any(df$is_significant)) & df$is_significant, "significant", "ns"),
+    ifelse(diff_significance(df, p_col, p_threshold, effect_threshold),
+           "significant", "ns"),
     levels = c("ns", "significant")
   )
 
@@ -154,6 +148,7 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL) {
     ggplot2::labs(
       title = "MA plot",
       subtitle = volcano_subtitle(bundle),
+      caption = threshold_caption(p_col, p_threshold, effect_threshold),
       x = ma_xlab(bundle),
       y = volcano_xlab(bundle)
     ) +
@@ -327,6 +322,37 @@ volcano_subtitle <- function(bundle) {
   method <- bundle$params$method
   if (is.null(comparison) || is.null(method)) return(NULL)
   paste0("method = ", method, "  |  comparison = ", comparison)
+}
+
+# Which features count as significant, decided from the thresholds the
+# caller gave rather than read off `is_significant`.
+#
+# `run_diff()` applies no cutoff -- it is not told one -- so it writes
+# that column NA: "no threshold was applied", which is the truth. It
+# used to write FALSE, which asserts "this feature is not significant"
+# about a feature with adj.P = 1e-30, and both the volcano and the MA
+# plot believed it and drew a single colour over data where a fifth of
+# the features cleared 0.05.
+#
+# The threshold belongs to whoever is asking. `run_integration()` takes
+# a `p_cutoff` and so its results carry a real answer; nothing hands one
+# to `run_diff()`, so the question is open until a figure or a filter
+# closes it -- and then that figure says which cut it used.
+diff_significance <- function(df, p_col, p_threshold, effect_threshold) {
+  if (is.null(p_threshold) && is.null(effect_threshold)) {
+    # Asked to make no distinction: the stored column is all there is,
+    # and NA there means the question was never answered.
+    return(!is.na(df$is_significant) & df$is_significant)
+  }
+  sig <- rep(TRUE, nrow(df))
+  if (!is.null(p_threshold)) {
+    sig <- sig & df[[p_col]] < p_threshold
+  }
+  if (!is.null(effect_threshold)) {
+    sig <- sig & abs(df$effect) > effect_threshold
+  }
+  sig[is.na(sig)] <- FALSE
+  sig
 }
 
 threshold_caption <- function(p_col, p_threshold, effect_threshold) {

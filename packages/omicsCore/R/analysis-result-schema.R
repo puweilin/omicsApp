@@ -22,6 +22,15 @@ DIFF_RESULT_REQUIRED_COLS <- c(
   "direction",
   "base_mean",
   "model_fit",
+  # `NA` until something applies a threshold. Significance is not a
+  # property of a feature, it is a property of a (feature, cutoff) pair,
+  # and `run_diff()` is never told a cutoff -- p < 0.05, adj.P < 0.05,
+  # with or without a fold-change floor are all defensible choices that
+  # belong to whoever is asking. `filter_diff_results()` sets it TRUE on
+  # the rows it keeps; a figure decides for itself and prints the cut it
+  # used. It used to be written FALSE, which asserted "not significant"
+  # about features with adj.P near zero and produced monochrome volcano
+  # and MA plots that read as findings.
   "is_significant"
 )
 

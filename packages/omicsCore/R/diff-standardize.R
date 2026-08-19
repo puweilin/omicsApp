@@ -65,7 +65,7 @@ standardize_limma_continuous_results <- function(
       ),
       base_mean = .data$AveExpr,
       model_fit = .data$adj_r_squared,
-      is_significant = FALSE
+      is_significant = NA
     )
 
   check_diff_result_schema(out)
@@ -119,7 +119,7 @@ standardize_limma_group_results <- function(
       ),
       base_mean = .data$AveExpr,
       model_fit = NA_real_,
-      is_significant = FALSE
+      is_significant = NA
     )
 
   check_diff_result_schema(out)
@@ -173,7 +173,7 @@ standardize_edger_group_results <- function(
       ),
       base_mean = .data$logCPM,
       model_fit = NA_real_,
-      is_significant = FALSE
+      is_significant = NA
     )
 
   check_diff_result_schema(out)
@@ -227,7 +227,7 @@ standardize_deseq2_group_results <- function(
       ),
       base_mean = .data$baseMean,
       model_fit = NA_real_,
-      is_significant = FALSE
+      is_significant = NA
     )
 
   check_diff_result_schema(out)
@@ -281,7 +281,7 @@ standardize_deseq2_continuous_results <- function(
       ),
       base_mean = .data$baseMean,
       model_fit = NA_real_,
-      is_significant = FALSE
+      is_significant = NA
     )
 
   check_diff_result_schema(out)
@@ -333,7 +333,7 @@ standardize_ttest_group_results <- function(
       ),
       base_mean = if (has_means) (.data$mean_ctrl + .data$mean_case) / 2 else NA_real_,
       model_fit = NA_real_,
-      is_significant = FALSE
+      is_significant = NA
     )
 
   check_diff_result_schema(out)
@@ -385,7 +385,7 @@ standardize_lm_group_results <- function(
       ),
       base_mean = .data$base_mean,
       model_fit = .data$adj_r_squared,
-      is_significant = FALSE
+      is_significant = NA
     )
 
   check_diff_result_schema(out)
@@ -437,7 +437,7 @@ standardize_lm_continuous_results <- function(
       ),
       base_mean = .data$base_mean,
       model_fit = .data$adj_r_squared,
-      is_significant = FALSE
+      is_significant = NA
     )
 
   check_diff_result_schema(out)
