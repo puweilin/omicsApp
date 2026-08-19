@@ -66,10 +66,10 @@ make_dir "${USERS_ROOT}/${USERNAME}" "projects"
 if [ -n "$RAW_ROOT" ]; then
     make_dir "${RAW_ROOT}/${USERNAME}" "archived uploads"
 else
-    # Without a separate root the app creates raw/ under the project
-    # directory on first upload; nothing to do here.
-    echo "note: OMICSAPP_RAW_ROOT unset; uploads will be archived under"
-    echo "      ${USERS_ROOT}/${USERNAME}/raw on the same disk."
+    # The default, and the deployed layout: everything on one disk. The
+    # app creates raw/ under the project directory on first upload, so
+    # there is nothing to do here.
+    echo "  archived uploads will go to ${USERS_ROOT}/${USERNAME}/raw"
 fi
 
 echo

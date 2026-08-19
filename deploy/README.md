@@ -94,14 +94,18 @@ docker run --rm omicsapp:1.0 \
 
 ```bash
 docker network create sp-net
-sudo mkdir -p /srv/omicsapp/users            # SSD
-sudo mkdir -p /mnt/hdd/omicsapp/raw          # HDD, if splitting
-sudo OMICSAPP_RAW_ROOT=/mnt/hdd/omicsapp/raw \
-     deploy/scripts/add_user.sh puweilin     # once per user
+sudo mkdir -p /srv/omicsapp/users            # /srv is the HDD
+sudo deploy/scripts/add_user.sh puweilin     # once per user
 ```
 
-See [Storage layout](#storage-layout) for what belongs on which disk.
-Leave `OMICSAPP_RAW_ROOT` unset to keep everything on one.
+Confirm `/srv` really is the HDD before creating anything — see
+[Storage layout](#storage-layout). Creating the directories on the
+system disk by mistake is easy to miss and awkward to undo once people
+have data in them.
+
+```bash
+df -h /srv    # should show the 60 TB volume, not the root filesystem
+```
 
 ### 5. ShinyProxy
 
@@ -184,39 +188,54 @@ worth confirming with one test login before hashing everyone's password.
 
 ## Storage layout
 
-Measured, on a 20k feature by 60 sample workbook: a `.omp` project file
-is **5.9 MB**, the raw upload it came from is **20 MB**, and one full
-analysis produces about **45 MB** all told. At three analyses a day that
-is **50–75 GB a year**.
+**All user data lives on the HDD, mounted at `/srv`. Docker's own
+storage stays on the SSD.**
 
-| What | Growth | Access | Disk |
+| What | Path | Disk | Why |
 |---|---|---|---|
-| `.omp` project files | ~35 GB/yr | Read and written on every save, open, and finished analysis | **SSD** |
-| `raw/` archived uploads | ~15 GB/yr | Written once, almost never read | **HDD** |
-| Docker images and layers | 7 GB, fixed | Read on every container start | **SSD, not negotiable** |
-| Backups | mirrors the above | Nightly | **HDD** |
+| Projects and archived uploads | `/srv/omicsapp/users/<user>/` | **HDD** | Grows forever; survives an OS reinstall untouched |
+| Docker images and layers | `/var/lib/docker` | **SSD** | Read on every container start; a build is heavy random I/O |
+| Backups | `/backup/omicsapp/` | **SSD** | A different physical disk from the data |
 
-Two things worth knowing before moving anything:
+Mount by UUID rather than device name — `/dev/sdb` is not stable across
+reboots, let alone across a reinstall:
 
-**There is no capacity pressure on the SSD.** 75 GB a year against 4 TB
-is fifty years. Splitting the archive onto the HDD is about putting bulk
-where bulk belongs, not about running out of room.
+```bash
+sudo blkid /dev/sdX1                       # note the UUID
+echo 'UUID=<uuid>  /srv  ext4  defaults  0 2' | sudo tee -a /etc/fstab
+sudo mount -a && df -h /srv
+```
 
-**The latency cost of the HDD is small but not zero.** A `.omp` write is
-0.06 s on SSD and most of that is serialisation rather than I/O; a
+Nothing else in this directory knows which disk it is on. That is
+deliberate: a path in a config file that encodes a physical disk has to
+be edited to move data, and the two drift.
+
+### Why the HDD, given the SSD has room
+
+There is no capacity pressure either way — 75 GB a year against 4 TB is
+fifty years. The reason is **an OS reinstall wipes the system disk**,
+and this machine is expected to be reinstalled. Data on a separate
+physical disk is simply not in the blast radius; data on an SSD
+partition depends on somebody remembering not to tick "format".
+
+The cost is measured and small. A `.omp` file is 5.9 MB and writing one
+takes 0.06 s on SSD, most of it serialisation rather than I/O; a
 spinning disk adds roughly 40–70 ms. Autosave fires five to seven times
-per workflow, so projects on the HDD would be felt slightly. Archived
-uploads are written once and never re-read, so they cost nothing there.
+across a full workflow, so the total is a few hundred milliseconds
+spread over a session that already spends seconds in `run_diff()`.
 
-**`/var/lib/docker` must stay on the SSD.** The image is 7 GB and every
-container start reads from it; a build is heavy random I/O. This is the
-one placement that is not a preference.
+### What the numbers mean
 
-One clarification on the 7 GB, because it changes the arithmetic: image
-layers are **read-only and shared**. Four concurrent containers do not
-use 4 × 7 GB — there is one copy on disk, and each container adds only
-its writable layer, which stays tiny here because all data goes to bind
-mounts rather than into the container.
+Measured on a 20k feature by 60 sample workbook: a `.omp` project file
+is **5.9 MB**, the raw upload it came from is **20 MB**, one full
+analysis produces about **45 MB**. Three analyses a day is **50–75 GB a
+year**, of which roughly 15 GB is archived uploads.
+
+On the 7 GB image, because it changes the arithmetic: layers are
+**read-only and shared**. Four concurrent containers do not use 4 × 7 GB
+— there is one copy on disk, and each container adds only its writable
+layer, which stays tiny because all data goes to the bind mount rather
+than into the container.
 
 ## Resources
 
@@ -245,15 +264,30 @@ attack, and `.omp` files are the irreplaceable part: a raw upload can
 usually be exported from the instrument again, the analysis parameters
 encoded in a project cannot.
 
+The data is on the HDD, so the backup goes to the **SSD** — a different
+physical disk, which is the point. There is ample room: 75 GB a year
+against 4 TB.
+
 ```bash
-# Nightly, e.g. from cron. The 60 TB HDD is the obvious target.
-rsync -a --delete /srv/omicsapp/users/ /mnt/hdd/omicsapp-backup/users/
-rsync -a --delete /mnt/hdd/omicsapp/raw/ /mnt/hdd/omicsapp-backup/raw/
+sudo mkdir -p /backup/omicsapp
+sudo rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp/users/
 ```
 
-Backing the archive up onto the same disk it lives on protects against
-deletion but not against that disk failing. If the raw archive matters
-to you, send it somewhere else as well.
+```cron
+# /etc/cron.d/omicsapp-backup — nightly at 02:30
+30 2 * * *  root  rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp/users/
+```
+
+Two things this does not cover, so decide about them explicitly:
+
+* **An OS reinstall wipes the SSD, and the backup with it.** The data
+  itself survives on the HDD, which is why it is there — but you would
+  be running without a backup until the SSD is repopulated. Copy
+  `/backup` somewhere else before reinstalling.
+* **`--delete` mirrors deletions.** A file removed on Monday is gone
+  from the backup on Tuesday. That is a mirror, not history; if you want
+  to recover a project someone deleted last week, use a snapshotting
+  filesystem or `rsync --link-dest` rotations instead.
 
 **Keeping KEGG current.** The image bakes the MSigDB tables in, and the
 `kegg` table among them is the 2011 `KEGG_LEGACY` snapshot (186 human
@@ -296,6 +330,49 @@ deploy/scripts/build_image.sh omicsapp:1.1
 **Where the logs are.** ShinyProxy writes to
 `/var/log/shinyproxy/shinyproxy.log`; a container's own R output is in
 `docker logs <container>`.
+
+## Reinstalling the host
+
+Almost nothing here depends on the host distribution. The image carries
+its own userland — R, 224 packages, the Bioconductor stack — so the host
+needs only Docker, nginx, rsync and `useradd`, which are the same on any
+recent Ubuntu. An image built on 24.04 runs unchanged on 22.04.
+
+Ubuntu has no downgrade path: 24.04 to 22.04 is a fresh install, and
+everything on the system disk goes.
+
+**Build the image before reinstalling, not after.** Building is the one
+step with real unknowns — an hour, and the first attempt usually turns
+up a package or version problem. The result is portable, so pay that
+cost once, while there is no time pressure:
+
+```bash
+# Before
+deploy/scripts/build_image.sh omicsapp:1.0
+docker save omicsapp:1.0 | gzip > /srv/backup/omicsapp-1.0.tar.gz
+
+# After
+gunzip -c /srv/backup/omicsapp-1.0.tar.gz | docker load
+```
+
+What to preserve, in order of how much it hurts to lose:
+
+| | Where | Note |
+|---|---|---|
+| User data | `/srv/omicsapp/users` | On the HDD; do not format that disk |
+| ShinyProxy config | `/etc/shinyproxy/application.yml` | Contains password hashes — copy with mode 600 |
+| The image | `docker save` | Rebuildable, but that is an hour |
+| nginx site | `/etc/nginx/sites-available/omicsapp` | Also in this repository |
+| The code | — | On GitHub; nothing to do |
+
+**The bigger risk is not this application.** Other people's work lives
+on that machine — conda environments, half-finished jobs, data that was
+never anywhere else. Ask each of them before the disk is touched;
+recovering our stack afterwards is an afternoon, recovering theirs may
+be impossible.
+
+After the reinstall, `/etc/fstab` needs the HDD entry again (by UUID)
+and the cron backup needs re-adding. Everything else is steps 4–7.
 
 ## Hardening, once it works
 
