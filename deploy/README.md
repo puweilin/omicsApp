@@ -185,7 +185,8 @@ worth confirming with one test login before hashing everyone's password.
 |---|---|---|
 | `OMICSAPP_DATA_DIR` | `/data` | Per-user project directory. Falls back to a temp dir when unset, so nothing writes to a home directory by surprise. |
 | `OMICSAPP_QUOTA_GB` | `50` | Soft quota. Invalid or unset means unlimited — a typo in the config must not lock a user out of their own data. |
-| `OMICSCORE_GENESET_CACHE` | `/opt/genesets` | Pre-built MSigDB tables. A missing or unreadable cache costs ~10s on first enrichment, never a wrong answer. |
+| `OMICSCORE_GENESET_CACHE` | `/opt/genesets` | Pre-built gene-set tables (MSigDB at build time, current KEGG after a refresh — see Operations). A missing or unreadable cache costs ~10s on first enrichment, never a wrong answer. |
+| `OMICSCORE_GENESET_TTL_DAYS` | `30` | Age at which a **live-sourced** KEGG cache re-fetches itself from KEGG REST on next use. `0` disables. Prewarmed MSigDB tables never trigger network calls. |
 | `OMP_NUM_THREADS` | `1` | One BLAS thread per worker. |
 
 ## Operations
@@ -198,6 +199,36 @@ not.
 ```bash
 rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp-users/
 ```
+
+**Keeping KEGG current.** The image bakes the MSigDB tables in, and the
+`kegg` table among them is the 2011 `KEGG_LEGACY` snapshot (186 human
+pathways; KEGG today has ~370). `omicsCore::refresh_geneset_cache()`
+replaces it with a live fetch from the KEGG REST API and re-snapshots
+the other databases from msigdbr. To keep that current without
+rebuilding images, move the cache onto a volume and refresh it on a
+schedule:
+
+```bash
+# one-time: seed the volume, then mount it in application.yml with
+#   container-volumes: [ ..., "/srv/omicsapp/genesets:/opt/genesets" ]
+mkdir -p /srv/omicsapp/genesets
+docker run --rm -v /srv/omicsapp/genesets:/opt/genesets omicsapp:1.0 \
+  R -q -e 'for (org in c("Hs","Mm")) omicsCore::refresh_geneset_cache(organism = org, force = TRUE)'
+```
+
+```bash
+# /etc/cron.d/omicsapp-genesets — monthly, 03:00 on the 1st
+0 3 1 * * root docker run --rm -v /srv/omicsapp/genesets:/opt/genesets omicsapp:1.0 R -q -e 'for (org in c("Hs","Mm")) omicsCore::refresh_geneset_cache(organism = org, force = TRUE)' >> /var/log/omicsapp-genesets.log 2>&1
+```
+
+The mount shadows the baked copy, which is why the seed run writes all
+databases, not just KEGG. A failed fetch keeps the previous file, so
+the worst case of a dead network on refresh night is a month-old table.
+Every result records which definitions it used
+(`bundle$params$geneset_sources`), and `omicsCore::geneset_cache_status()`
+shows what is live on disk. One caution: KEGG's license permits this
+per-query use but not redistribution — treat the volume as
+deployment-local data, never as something to publish or commit.
 
 **Rebuild after a code change.** Layers up to the package COPY are
 cached, so a rebuild is a couple of minutes rather than an hour.

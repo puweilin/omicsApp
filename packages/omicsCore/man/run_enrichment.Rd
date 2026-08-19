@@ -79,10 +79,12 @@ For GSVA-style sample-level scoring, see \code{\link[=run_gsva]{run_gsva()}}.
 \seealso{
 Other enrich: 
 \code{\link{filter_enrich_results}()},
+\code{\link{geneset_cache_status}()},
 \code{\link{list_gene_sets}()},
 \code{\link{plot_enrichment}()},
 \code{\link{plot_gsea}()},
 \code{\link{plot_gsva_heatmap}()},
+\code{\link{refresh_geneset_cache}()},
 \code{\link{run_gsva}()}
 }
 \concept{enrich}

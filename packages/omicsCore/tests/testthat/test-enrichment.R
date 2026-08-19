@@ -87,6 +87,17 @@ test_that("run_enrichment ORA returns a standardized bundle", {
   expect_equal(enr$params$type, "ora")
 })
 
+test_that("run_enrichment records which gene-set source produced it", {
+  skip_if_not_installed("clusterProfiler")
+  skip_if_not_installed("msigdbr")
+  b <- build_test_diff_bundle()
+  enr <- run_enrichment(b, type = "ora", database = "hallmark",
+                        direction = "both", p_cutoff = 0.1)
+  src <- enr$params$geneset_sources
+  expect_named(src, "hallmark")
+  expect_true(nzchar(src[["hallmark"]]))
+})
+
 test_that("run_enrichment ORA respects direction = 'up'", {
   skip_if_not_installed("clusterProfiler")
   skip_if_not_installed("msigdbr")

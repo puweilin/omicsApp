@@ -123,6 +123,14 @@ run_enrichment <- function(
   enrich_result_df <- dplyr::bind_rows(lapply(per_db, `[[`, "std"))
   check_enrich_result_schema(enrich_result_df)
 
+  # Which pathway definitions produced this result. Matters for `kegg`,
+  # where a refreshed cache holds current KEGG REST pathways while the
+  # fallback is the 2011 MSigDB KEGG_LEGACY snapshot.
+  geneset_sources <- stats::setNames(
+    vapply(databases, geneset_table_source, character(1L), organism = organism),
+    databases
+  )
+
   new_analysis_bundle(
     analysis_name = "run_enrichment",
     input_info = diff_bundle$input_info,
@@ -137,6 +145,7 @@ run_enrichment <- function(
       p_adjust_method = p_adjust_method,
       min_size = min_size,
       max_size = max_size,
+      geneset_sources = geneset_sources,
       comparison = diff_bundle$params$comparison
     ),
     results = list(

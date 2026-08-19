@@ -87,6 +87,13 @@ cache_set <- function(key, value) {
   invisible(value)
 }
 
+cache_drop <- function(key) {
+  if (exists(key, envir = .omicsCore_enrich_cache, inherits = FALSE)) {
+    rm(list = key, envir = .omicsCore_enrich_cache)
+  }
+  invisible(NULL)
+}
+
 # ---- on-disk cache ------------------------------------------------------
 #
 # The first `msigdbr()` call in a process pays ~10s to lazy-load the
@@ -98,13 +105,23 @@ cache_set <- function(key, value) {
 # The cached tables carry only the columns this file actually reads.
 # Dropping the rest takes GO:BP from 106 MB to 23 MB in memory and
 # 2.4 MB on disk, which matters when several collections sit resident
-# in every one of a handful of per-user containers.
+# in every one of a handful of per-user containers. Tables written by
+# refresh_geneset_cache() additionally carry `gs_source` (provenance).
 GENESET_CACHE_COLUMNS <- c("gs_name", "gene_symbol",
                            "gs_description", "gs_id")
 
-geneset_cache_dir <- function() {
+# OMICSCORE_GENESET_CACHE (explicit, wins when set) or a per-user cache
+# directory that refresh_geneset_cache() populates. Read mode returns NULL
+# when the resolved directory does not exist -- an env var pointing at a
+# missing directory is respected as "no cache", not silently redirected.
+geneset_cache_dir <- function(write = FALSE) {
   dir <- Sys.getenv("OMICSCORE_GENESET_CACHE", "")
-  if (!nzchar(dir) || !dir.exists(dir)) return(NULL)
+  if (!nzchar(dir)) dir <- tools::R_user_dir("omicsCore", which = "cache")
+  if (write) {
+    dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+    return(dir)
+  }
+  if (!dir.exists(dir)) return(NULL)
   dir
 }
 
@@ -150,14 +167,23 @@ fetch_msigdbr_table <- function(database, organism) {
 
   cached <- read_geneset_cache(database, organism)
   if (!is.null(cached)) {
+    if (identical(database, "kegg")) {
+      cached <- maybe_refresh_kegg_cache(cached, organism)
+    }
     cache_set(cache_key, cached)
     return(cached)
   }
 
+  df <- fetch_msigdbr_raw(database, organism)
+  cache_set(cache_key, df)
+  df
+}
+
+fetch_msigdbr_raw <- function(database, organism) {
   cfg <- DB_MSIGDBR_MAP[[database]]
   msig_args <- names(formals(msigdbr::msigdbr))
 
-  df <- if ("collection" %in% msig_args) {
+  if ("collection" %in% msig_args) {
     msigdbr::msigdbr(
       species = organism,
       collection = cfg$collection,
@@ -171,9 +197,6 @@ fetch_msigdbr_table <- function(database, organism) {
     }
     raw
   }
-
-  cache_set(cache_key, df)
-  df
 }
 
 # Build long-form (term, gene) and (term, name) tables in symbol space.

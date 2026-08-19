@@ -27,9 +27,11 @@ Bioconductor package.
 \seealso{
 Other enrich: 
 \code{\link{filter_enrich_results}()},
+\code{\link{geneset_cache_status}()},
 \code{\link{list_gene_sets}()},
 \code{\link{plot_enrichment}()},
 \code{\link{plot_gsva_heatmap}()},
+\code{\link{refresh_geneset_cache}()},
 \code{\link{run_enrichment}()},
 \code{\link{run_gsva}()}
 }

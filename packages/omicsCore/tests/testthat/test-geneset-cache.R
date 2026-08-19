@@ -12,11 +12,20 @@ with_cache_dir <- function(code, files = list(), set_env = TRUE) {
     if (is.character(value)) writeLines(value, path) else qs2::qs_save(value, path)
   }
   old <- Sys.getenv("OMICSCORE_GENESET_CACHE", unset = NA)
-  if (set_env) Sys.setenv(OMICSCORE_GENESET_CACHE = dir) else
+  old_user <- Sys.getenv("R_USER_CACHE_DIR", unset = NA)
+  if (set_env) {
+    Sys.setenv(OMICSCORE_GENESET_CACHE = dir)
+  } else {
+    # With the env var unset the reader falls back to R_user_dir(); point
+    # that somewhere empty so a populated real user cache can't leak in.
     Sys.unsetenv("OMICSCORE_GENESET_CACHE")
+    Sys.setenv(R_USER_CACHE_DIR = file.path(dir, "user-cache-unused"))
+  }
   on.exit({
     if (is.na(old)) Sys.unsetenv("OMICSCORE_GENESET_CACHE")
     else Sys.setenv(OMICSCORE_GENESET_CACHE = old)
+    if (is.na(old_user)) Sys.unsetenv("R_USER_CACHE_DIR")
+    else Sys.setenv(R_USER_CACHE_DIR = old_user)
     unlink(dir, recursive = TRUE)
   }, add = TRUE)
   force(code)
