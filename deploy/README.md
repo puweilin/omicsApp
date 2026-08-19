@@ -66,9 +66,19 @@ Confirm before continuing:
 
 ```bash
 docker run --rm hello-world     # daemon is up and you can reach it
+docker version --format '{{.Server.Version}}'
 systemctl status shinyproxy     # installed; will fail to start until configured
 nginx -v
 ```
+
+**On Ubuntu 22.04, check that engine version.** The application image is
+built on Ubuntu 24.04 (see below), so its glibc is newer than the host's
+— which is fine, except that Docker engines before 20.10.10 shipped a
+seccomp profile that blocked `clone3`, a syscall glibc 2.34+ uses. The
+symptom is not a clear error but a container that dies on start. If
+`docker.io` gives you anything older, install from Docker's own
+repository instead of Ubuntu's:
+<https://docs.docker.com/engine/install/ubuntu/>
 
 If you want to run `docker` without `sudo`, add yourself to the group
 and start a new login shell — but know that **membership of the `docker`
@@ -376,6 +386,19 @@ its own userland — R, 224 packages, the Bioconductor stack — so the host
 needs only Docker, nginx, rsync and `useradd`, which are the same on any
 recent Ubuntu. An image built on 24.04 runs unchanged on 22.04.
 
+It is worth being precise about *why*, because it also rules out an
+alternative that sounds safer than it is. The container's own operating
+system is fixed by the `FROM` line, not by the host:
+`bioconductor/bioconductor_docker:RELEASE_3_20` is **Ubuntu 24.04, with
+R 4.4.2 and Bioconductor 3.20**. Rebuilding on a 22.04 host produces the
+identical 24.04 container. So "build after the reinstall, on the system
+we will actually run" buys nothing — the same image either way — while
+moving the one slow, uncertain step to the moment when everybody is
+waiting for the machine.
+
+The host's only real contribution is the Docker engine, which is why
+step 1 asks you to check its version on 22.04.
+
 Ubuntu has no downgrade path: 24.04 to 22.04 is a fresh install, and
 everything on the system disk goes.
 
@@ -385,13 +408,26 @@ up a package or version problem. The result is portable, so pay that
 cost once, while there is no time pressure:
 
 ```bash
-# Before
+# Before. HDD=wherever the HDD is mounted *today* -- /srv is only that
+# mount point after the reinstall, and writing there beforehand puts the
+# archive on the disk about to be erased. Confirm, do not assume:
+df -h | grep -i -e sdb -e hdd        # find it
+HDD=/mnt/hdd                         # set it to what you just saw
+mkdir -p "$HDD/backup"
+
 deploy/scripts/build_image.sh omicsapp:1.0
-docker save omicsapp:1.0 | gzip > /srv/backup/omicsapp-1.0.tar.gz
+sudo docker save omicsapp:1.0 | gzip > "$HDD/backup/omicsapp-1.0.tar.gz"
+df -h "$HDD" && ls -lh "$HDD/backup"  # it is really there, and not on /
 
 # After
 gunzip -c /srv/backup/omicsapp-1.0.tar.gz | docker load
 ```
+
+The redirect above is deliberate: `>` is performed by *your* shell
+before `sudo` runs, so the archive is written as you, not as root. That
+is why the directory is created first — `sudo docker save > /some/root/path`
+fails with a permission error that appears to come from `sudo` and does
+not.
 
 What to preserve, in order of how much it hurts to lose:
 
