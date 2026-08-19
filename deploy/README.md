@@ -41,7 +41,45 @@ git checkout main
 git status --short   # must be empty, or the image matches no commit
 ```
 
-### 1. Pre-flight (2 minutes, saves an hour)
+### 1. Host prerequisites
+
+Four things, and only four — everything else the application needs is
+inside the image.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io nginx rsync
+sudo systemctl enable --now docker
+
+# ShinyProxy is a jar; the .deb installs it plus a systemd unit.
+# Check https://shinyproxy.io/downloads/ for the current version.
+sudo apt-get install -y openjdk-17-jre-headless
+wget https://github.com/openanalytics/shinyproxy/releases/download/v3.1.1/shinyproxy_3.1.1_amd64.deb
+sudo dpkg -i shinyproxy_3.1.1_amd64.deb
+
+# Optional: the mDNS hostname alias (see nginx/omicsapp.conf)
+sudo apt-get install -y avahi-daemon
+sudo hostnamectl set-hostname omics
+```
+
+Confirm before continuing:
+
+```bash
+docker run --rm hello-world     # daemon is up and you can reach it
+systemctl status shinyproxy     # installed; will fail to start until configured
+nginx -v
+```
+
+If you want to run `docker` without `sudo`, add yourself to the group
+and start a new login shell — but know that **membership of the `docker`
+group is equivalent to root**, since anything that can reach the daemon
+can ask it for a privileged container mounting the host filesystem:
+
+```bash
+sudo usermod -aG docker "$USER"
+```
+
+### 2. Pre-flight (2 minutes, saves an hour)
 
 The base image tag is pinned in the Dockerfile but is worth confirming
 against what your host can actually pull, along with the R and
@@ -53,7 +91,7 @@ docker run --rm bioconductor/bioconductor_docker:RELEASE_3_20 \
 df -h /var/lib/docker   # image is 5-7 GB; build cache wants 2-3x that
 ```
 
-### 2. Build (30-60 minutes)
+### 3. Build (30-60 minutes)
 
 ```bash
 deploy/scripts/build_image.sh omicsapp:1.0
@@ -64,7 +102,7 @@ so a fix re-runs only from the layer that failed. The Bioconductor and
 LaTeX layers are the likely ones. Dropping the LaTeX layer costs the
 PDF report and saves 1.5 GB.
 
-### 3. Smoke-test the container on its own — do not skip
+### 4. Smoke-test the container on its own — do not skip
 
 This separates "does the app work" from "is ShinyProxy configured
 right". Debugging both at once is what makes a deployment take a day.
@@ -90,7 +128,7 @@ docker run --rm omicsapp:1.0 \
   R -q -e 'library(future); cat(class(future::plan())[2], "\n")'
 ```
 
-### 4. Network and storage
+### 5. Network and storage
 
 ```bash
 docker network create sp-net
@@ -107,7 +145,7 @@ have data in them.
 df -h /srv    # should show the 60 TB volume, not the root filesystem
 ```
 
-### 5. ShinyProxy
+### 6. ShinyProxy
 
 ```bash
 sudo mkdir -p /etc/shinyproxy
@@ -119,7 +157,7 @@ htpasswd -bnBC 10 "" 'the-password' | tr -d ':\n'   # paste into proxy.users
 Log in with one test account before hashing everyone's password: the
 `{bcrypt}` prefix depends on the ShinyProxy version.
 
-### 6. nginx and firewall
+### 7. nginx and firewall
 
 ```bash
 sudo cp deploy/nginx/omicsapp.conf /etc/nginx/sites-available/omicsapp
@@ -130,7 +168,7 @@ sudo ufw allow from 192.168.51.0/24 to any port 80 proto tcp
 
 Users then reach the app at `http://192.168.51.52`.
 
-### 7. Acceptance
+### 8. Acceptance
 
 Walk one real dataset through, checking each line:
 
@@ -365,14 +403,25 @@ What to preserve, in order of how much it hurts to lose:
 | nginx site | `/etc/nginx/sites-available/omicsapp` | Also in this repository |
 | The code | — | On GitHub; nothing to do |
 
+Docker itself is **not** on that list. It lives on the system disk and
+goes with it, along with everything in `/var/lib/docker` — which is
+exactly why the image has to be exported to the HDD rather than left
+where Docker keeps it. Reinstalling the package is five minutes; the
+7 GB it used to hold is the hour.
+
 **The bigger risk is not this application.** Other people's work lives
 on that machine — conda environments, half-finished jobs, data that was
 never anywhere else. Ask each of them before the disk is touched;
 recovering our stack afterwards is an afternoon, recovering theirs may
 be impossible.
 
-After the reinstall, `/etc/fstab` needs the HDD entry again (by UUID)
-and the cron backup needs re-adding. Everything else is steps 4–7.
+After the reinstall the system disk is empty, so Docker, nginx and
+ShinyProxy all have to go back on — step 1 in full. `/etc/fstab` needs
+the HDD entry again by UUID, and the cron backup needs re-adding.
+
+What you skip is the expensive part: `docker load` replaces steps 2 and
+3, and the data is already sitting on `/srv`. Everything else is steps
+5 to 8, which is about half an hour.
 
 ## Hardening, once it works
 
