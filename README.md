@@ -37,6 +37,21 @@ devtools::install_local("packages/omicsApp")
 omicsApp::launch()
 ```
 
+### Tests
+
+```sh
+NOT_CRAN=true Rscript -e 'devtools::test("packages/omicsCore")'
+NOT_CRAN=true Rscript -e 'devtools::test("packages/omicsApp")'
+```
+
+`NOT_CRAN=true` matters: without it the golden test in
+`packages/omicsApp/tests/testthat/test-golden-raw-to-result.R` skips silently.
+That test runs the real SkinProteomics workbook from the raw file through
+import and normalization and checks the result against the legacy CHISSS
+pipeline. It looks for `data/SkinProteomics/Proteomics_Data.xlsx` by walking
+up from the working directory, or wherever `CHISSS_PROTEOMICS_XLSX` points; it
+skips when the file is absent, so a clone without the data still runs green.
+
 ## Status
 
 Pre-alpha. See [docs/export-manifest.md](./docs/export-manifest.md) for the planned public API and [docs/roadmap.md](./docs/roadmap.md) for the delivery plan.

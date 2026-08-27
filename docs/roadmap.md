@@ -52,9 +52,15 @@ New additions in Phase 1:
 **Phase 1 done when:** `R CMD check --as-cran packages/omicsCore` returns 0 errors / 0 warnings; all current CHISSS analyses can be reproduced via `library(omicsCore)` without sourcing the legacy bootstrap.
 
 > **Status: met.** Validation script at `CHISSS/scripts/validation/cheek_g2_vs_g1_omicscore.R` reproduces the legacy Cheek G2-vs-G1 limma-with-age-adjustment diff (Pearson r = 1.000 on log2FC and -log10 p-values; volcano + heatmap + export_bundle all round-trip).
+>
+> **Correction.** That validation started from `readRDS(legacy_rds)` → `manager$get_imputed()`, i.e. from data the legacy framework had already vsn-normalized and imputed. It proved the differential layer faithful and said nothing about the preprocessing layer — which had not been ported, because `R/data_input/*` (migration table above) became the import *wizard* (`read_omics()`, sheet classification) rather than the data *preparation* pipeline the R6 managers ran. Normalization lived in `data_input/proteomics/`, not in `qc/`, so porting "the QC layer" faithfully missed it.
+>
+> The gap is closed by `normalize_omics()` plus the `assay_type` vocabulary, and re-validated by `packages/omicsApp/tests/testthat/test-golden-raw-to-result.R`, which starts at the raw workbook so that nothing which only holds for pre-processed input can pass.
 
 **Phase 2 done when:** `omicsApp::launch()` opens a styled multi-page UI with all 7 views navigable, populated by built-in example data, no business logic yet.
 
-**Phase 3 done when:** A new user can: upload an Excel file → smart-parse → QC → run diff → see volcano + enrichment + integration → download a report — without writing any R code.
+**Phase 3 done when:** A new user can: upload an Excel file → smart-parse → **declare the value scale and normalize** → QC → run diff → see volcano + enrichment + integration → download a report — without writing any R code.
+
+> The normalization step is named here on purpose. The earlier wording went straight from smart-parse to QC, so nothing on the checklist ever asked where linear intensities become analysis-ready — and limma applies no transform of its own, so skipping it produces a full, plausible, wrong result table rather than an error.
 
 **Phase 4 done when:** UI is < 100 ms input latency on a 10k × 100 dataset; all `shinytest2` end-to-end tests pass; pkgdown sites deployed.
