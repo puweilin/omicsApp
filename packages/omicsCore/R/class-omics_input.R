@@ -214,6 +214,38 @@ canonical_assay_type <- function(assay_type) {
   assay_type
 }
 
+#' Guess an assay type from the values
+#'
+#' A starting point for an import wizard, not a verdict: it separates linear
+#' proteomics intensities from already-transformed ones by magnitude, the same
+#' heuristic [check_assay_scale()] uses, and assumes counts for RNA-seq because
+#' that is what gets uploaded. The caller is expected to show the guess and let
+#' the user correct it -- nothing else recovers the scale if this is wrong.
+#'
+#' @param expr_mat Expression matrix.
+#' @param omics_type Omics modality.
+#'
+#' @return A single assay type from [SUPPORTED_ASSAY_TYPES], or `NA_character_`
+#'   for a modality with no vocabulary.
+#' @export
+#' @family omics_input
+#' @examples
+#' infer_assay_type(matrix(2^rnorm(40, 20, 2), nrow = 10), "proteomics")
+#' infer_assay_type(matrix(rpois(40, 200), nrow = 10), "rnaseq")
+infer_assay_type <- function(expr_mat, omics_type) {
+  if (identical(omics_type, "rnaseq")) return("raw_count")
+  if (!identical(omics_type, "proteomics")) return(NA_character_)
+
+  max_value <- suppressWarnings(max(as.matrix(expr_mat), na.rm = TRUE))
+  if (!is.finite(max_value)) return(NA_character_)
+
+  if (max_value > MAX_PLAUSIBLE_LOG_SCALE_VALUE) {
+    "raw_intensity"
+  } else {
+    "normalized_intensity"
+  }
+}
+
 #' Check that the assay values look like the declared scale
 #'
 #' `assay_type` is the only record of what scale `expr_mat` is on, and the

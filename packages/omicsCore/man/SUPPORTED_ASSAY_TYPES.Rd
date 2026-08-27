@@ -24,8 +24,10 @@ dispatchers for (CyTOF \code{arcsinh_intensity}, for example).
 }
 \seealso{
 Other omics_input: 
+\code{\link{LOG_SCALE_ASSAY_TYPES}},
 \code{\link{check_assay_scale}()},
 \code{\link{drop_meta_na}()},
+\code{\link{infer_assay_type}()},
 \code{\link{is_omics_input}()},
 \code{\link{normalize_omics}()},
 \code{\link{omics_input}()},

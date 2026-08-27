@@ -41,9 +41,11 @@ SUPPORTED_ASSAY_TYPES <- list(
 #' Assay types that already sit on a log-like scale
 #'
 #' Used by [check_assay_scale()] to decide which direction a scale mismatch
-#' points in. Everything else in [SUPPORTED_ASSAY_TYPES] is linear.
+#' points in, and by callers deciding whether a layer still needs
+#' [normalize_omics()]. Everything else in [SUPPORTED_ASSAY_TYPES] is linear.
 #'
-#' @rdname omicsCore-constants
+#' @export
+#' @family omics_input
 LOG_SCALE_ASSAY_TYPES <- c(
   "normalized_intensity",
   "imputed_intensity",

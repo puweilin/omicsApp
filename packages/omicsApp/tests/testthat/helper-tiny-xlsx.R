@@ -5,16 +5,25 @@
 # `omics_type = "proteomics"`. Used by `test-mod_import_view-server.R`
 # and reusable from any future view test that needs a real `omics_input`.
 
+# `scale = "log2"` (the default, and what every pre-existing caller gets)
+# writes values around 18, the shape an already-normalized matrix has.
+# `"linear"` writes raw instrument intensities, which is what makes the import
+# view offer its normalization step.
 write_tiny_omics_xlsx <- function(path,
                                   n_features = 5L,
                                   n_samples  = 6L,
-                                  seed       = 2031L) {
+                                  seed       = 2031L,
+                                  scale      = c("log2", "linear")) {
+  scale <- match.arg(scale)
   set.seed(seed)
   feat_ids <- sprintf("P%04d", seq_len(n_features))
   samp_ids <- sprintf("S%02d", seq_len(n_samples))
 
+  values <- rnorm(n_features * n_samples, mean = 18, sd = 1.2)
+  if (identical(scale, "linear")) values <- 2^values
+
   expr <- matrix(
-    rnorm(n_features * n_samples, mean = 18, sd = 1.2),
+    values,
     nrow = n_features,
     dimnames = list(feat_ids, samp_ids)
   )

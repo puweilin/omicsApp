@@ -66,7 +66,10 @@ import_view_server <- function(id,
       f <- input$file
       shiny::req(f)
       omics_type <- input$omics_type %||% "proteomics"
-      assay_type <- if (omics_type == "rnaseq") "raw_count" else "intensity"
+      # Parse first with the modality default, then re-label from the values
+      # once there is a matrix to look at. read_omics() needs *an* assay_type,
+      # and the data it would be inferred from does not exist until it returns.
+      assay_type <- if (omics_type == "rnaseq") "raw_count" else "raw_intensity"
 
       out <- tryCatch(
         omicsCore::read_omics(
@@ -88,9 +91,14 @@ import_view_server <- function(id,
       # Stamp the user-visible source name so the schema card shows
       # the original filename, not the tempfile path Shiny gave us.
       out$report$source <- f$name
-      # Fingerprint the upload so Confirm can tell a genuinely new
-      # dataset from the same file picked twice.
       if (!is.null(out$input)) {
+        inferred <- omicsCore::infer_assay_type(out$input$expr_mat, omics_type)
+        if (!is.na(inferred)) {
+          out$input$assay_type <- inferred
+          assay_type <- inferred
+        }
+        # Fingerprint the upload so Confirm can tell a genuinely new
+        # dataset from the same file picked twice.
         out$input$source_fingerprint <-
           input_fingerprint(f$datapath, omics_type, assay_type)
       }
@@ -102,6 +110,117 @@ import_view_server <- function(id,
 
     shiny::observeEvent(input$file,       do_parse())
     shiny::observeEvent(input$omics_type, do_parse(), ignoreInit = TRUE)
+
+    # ---- assay type: inferred, then owned by the user -----------------
+    # The picker is rendered only once there is a matrix to infer from, so
+    # the default it shows is a statement about this file rather than a
+    # blanket guess.
+    output$assay_type_picker <- shiny::renderUI({
+      if (!parse_ok()) return(NULL)
+      omics_type <- input$omics_type %||% "proteomics"
+      choices <- omicsCore::SUPPORTED_ASSAY_TYPES[[omics_type]]
+      if (is.null(choices)) return(NULL)
+
+      shiny::selectInput(
+        ns("assay_type"),
+        label = "Value scale",
+        choices = stats::setNames(choices, gsub("_", " ", choices)),
+        selected = parsed()$input$assay_type
+      )
+    })
+
+    # Relabelling does not re-read the file; it rewrites the field the
+    # analysis backends read, and the fingerprint that decides whether a
+    # re-import counts as new data.
+    shiny::observeEvent(input$assay_type, {
+      cand <- parsed()
+      shiny::req(cand, cand$input)
+      if (identical(cand$input$assay_type, input$assay_type)) return()
+
+      cand$input$assay_type <- input$assay_type
+      f <- input$file
+      if (!is.null(f)) {
+        cand$input$source_fingerprint <- input_fingerprint(
+          f$datapath, cand$input$omics_type, input$assay_type)
+      }
+      parsed(cand)
+      confirmed_input(NULL)
+    }, ignoreInit = TRUE)
+
+    # omicsCore signals a scale mismatch with warning(), which never reaches a
+    # Shiny user. Surfaced here, because getting this wrong is silent
+    # everywhere else: limma would run on untransformed intensities and still
+    # return a full result table.
+    output$scale_notice <- shiny::renderUI({
+      cand <- parsed()
+      if (!parse_ok()) return(NULL)
+      chosen <- input$assay_type %||% cand$input$assay_type
+      if (is.null(chosen)) return(NULL)
+
+      probe <- cand$input
+      probe$assay_type <- chosen
+      msg <- NULL
+      withCallingHandlers(
+        omicsCore::check_assay_scale(probe),
+        warning = function(w) {
+          msg <<- conditionMessage(w)
+          invokeRestart("muffleWarning")
+        }
+      )
+      if (is.null(msg)) return(NULL)
+      htmltools::tags$div(
+        style = "margin-top:-8px;margin-bottom:8px",
+        notice(title = msg, kind = "warn")
+      )
+    })
+
+    # ---- normalization, applied on commit -----------------------------
+    # This belongs to import rather than QC because it is what turns a file
+    # into something the analysis backends can read: limma applies no
+    # transform of its own, so an un-normalized layer means limma runs on raw
+    # instrument output. The legacy CHISSS framework normalized in its
+    # data-input layer for the same reason; that layer is what did not survive
+    # the port into this package.
+    #
+    # RNA-seq is deliberately excluded: DESeq2 and edgeR model raw counts
+    # directly, and the t-test / lm backends log-transform "raw_count"
+    # themselves.
+    normalizable <- shiny::reactive({
+      if (!parse_ok()) return(FALSE)
+      chosen <- input$assay_type %||% parsed()$input$assay_type
+      identical(parsed()$input$omics_type, "proteomics") &&
+        !is.null(chosen) &&
+        !chosen %in% omicsCore::LOG_SCALE_ASSAY_TYPES
+    })
+
+    output$normalize_controls <- shiny::renderUI({
+      if (!parse_ok()) return(NULL)
+      if (!normalizable()) {
+        if (!identical(parsed()$input$omics_type, "proteomics")) return(NULL)
+        return(htmltools::tags$div(
+          class = "muted",
+          style = "font-size:12px;margin-bottom:10px",
+          "Already on a transformed scale — nothing to normalize."
+        ))
+      }
+      htmltools::tagList(
+        shiny::checkboxInput(
+          ns("normalize"),
+          label = "Normalize on import",
+          value = TRUE
+        ),
+        shiny::conditionalPanel(
+          condition = "input.normalize",
+          ns = ns,
+          shiny::selectInput(
+            ns("normalize_method"),
+            label = "Method",
+            choices = c("vsn (variance stabilising)" = "vsn", "log2" = "log2"),
+            selected = "vsn"
+          )
+        )
+      )
+    })
 
     # ---- derived state for the UI -------------------------------------
     has_file       <- shiny::reactive(!is.null(input$file))
@@ -270,8 +389,61 @@ import_view_server <- function(id,
     # parsing happens on every file pick and radio change, most of which
     # the user never confirms. Archiving failing must not stop the
     # import, so its outcome is surfaced but not acted on.
-    commit <- function(cand) {
+    # Which normalization the current controls would apply. "none" when the
+    # layer is not normalizable or the box is unticked -- both have to be
+    # distinguishable in the fingerprint from an actual method.
+    pending_normalize_method <- function() {
+      if (normalizable() && isTRUE(input$normalize %||% TRUE)) {
+        input$normalize_method %||% "vsn"
+      } else {
+        "none"
+      }
+    }
+
+    # The identity the data would have once committed. Computed before the
+    # replace check as well as inside commit(), so that re-picking the same
+    # file with the same settings still reads as "nothing changed" rather than
+    # as new data.
+    stamp_fingerprint <- function(cand) {
       f <- input$file
+      if (is.null(f)) return(cand)
+      cand$source_fingerprint <- input_fingerprint(
+        f$datapath, cand$omics_type, cand$assay_type,
+        normalize = pending_normalize_method())
+      cand
+    }
+
+    commit <- function(cand) {
+      method <- pending_normalize_method()
+      do_normalize <- !identical(method, "none")
+      cand <- stamp_fingerprint(cand)
+      f <- input$file
+
+      if (do_normalize) {
+        normalized <- tryCatch(
+          suppressMessages(omicsCore::normalize_omics(cand, method = method)),
+          error = function(e) e
+        )
+        if (inherits(normalized, "error")) {
+          # Importing raw and telling the user beats importing something the
+          # backends will silently mistreat
+          shiny::showNotification(
+            paste0("Normalization failed, importing unnormalized: ",
+                   conditionMessage(normalized)),
+            type = "error", duration = 12
+          )
+        } else {
+          # normalize_omics() keeps the pre-normalization matrix in raw_mat
+          normalized$source_fingerprint <- cand$source_fingerprint
+          cand <- normalized
+          shiny::showNotification(
+            sprintf("Normalized with %s; values are now '%s'.",
+                    method, cand$assay_type),
+            type = "message", duration = 6
+          )
+        }
+      }
+
       if (!is.null(f)) {
         res <- store_raw_upload(f$datapath, f$name, cand$source_fingerprint)
         if (isTRUE(res$ok)) {
@@ -289,7 +461,7 @@ import_view_server <- function(id,
 
     shiny::observeEvent(input$confirm, {
       shiny::req(parse_ok())
-      cand <- parsed()$input
+      cand <- stamp_fingerprint(parsed()$input)
       existing <- layer_being_replaced(cand)
 
       if (is.null(existing)) {
@@ -328,10 +500,14 @@ import_view_server <- function(id,
 # Identity of an upload. The file digest alone is not enough: the same
 # workbook imported as proteomics and as RNA-seq yields two different
 # inputs, so the parse settings are part of what makes it "the same".
-input_fingerprint <- function(path, omics_type, assay_type) {
+# `normalize` is in here for the same reason -- re-importing the same file
+# with normalization turned off produces different numbers, and that has to
+# read as new data rather than as "nothing changed".
+input_fingerprint <- function(path, omics_type, assay_type, normalize = NULL) {
   digest <- unname(tools::md5sum(path))
   if (is.na(digest)) return(NULL)
-  paste(digest, omics_type %||% "", assay_type %||% "", sep = ":")
+  paste(digest, omics_type %||% "", assay_type %||% "",
+        if (is.null(normalize)) "" else as.character(normalize), sep = ":")
 }
 
 # Both sides must carry a fingerprint for a match to mean anything. An
@@ -434,6 +610,12 @@ import_upload_card <- function(ns) {
         selected = "proteomics",
         inline = TRUE
       ),
+      # What scale the numbers are on is not recoverable from the file, and
+      # every analysis backend reads it without re-deriving anything. The
+      # guess is filled in from the data; this is where it gets corrected.
+      shiny::uiOutput(ns("assay_type_picker")),
+      shiny::uiOutput(ns("scale_notice")),
+      shiny::uiOutput(ns("normalize_controls")),
       shiny::uiOutput(ns("upload_status"))
     )
   )

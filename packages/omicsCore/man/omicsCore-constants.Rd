@@ -4,7 +4,6 @@
 \name{omicsCore-constants}
 \alias{omicsCore-constants}
 \alias{SUPPORTED_OMICS_TYPES}
-\alias{LOG_SCALE_ASSAY_TYPES}
 \alias{DEPRECATED_ASSAY_TYPE_ALIASES}
 \alias{MAX_PLAUSIBLE_LOG_SCALE_VALUE}
 \alias{SCALE_CHECKED_ASSAY_TYPES}
@@ -16,8 +15,6 @@
 \title{Package constants}
 \format{
 An object of class \code{character} of length 2.
-
-An object of class \code{character} of length 5.
 
 An object of class \code{character} of length 2.
 
@@ -38,8 +35,6 @@ An object of class \code{character} of length 6.
 \usage{
 SUPPORTED_OMICS_TYPES
 
-LOG_SCALE_ASSAY_TYPES
-
 DEPRECATED_ASSAY_TYPE_ALIASES
 
 MAX_PLAUSIBLE_LOG_SCALE_VALUE
@@ -58,9 +53,6 @@ CANONICAL_DATABASES
 }
 \description{
 Internal vocabulary used across \code{omicsCore}. Not exported.
-
-Used by \code{\link[=check_assay_scale]{check_assay_scale()}} to decide which direction a scale mismatch
-points in. Everything else in \link{SUPPORTED_ASSAY_TYPES} is linear.
 
 Names are the old values, elements the replacement. \code{omics_input()} rewrites
 them; \code{validate_omics_input()} accepts them with a warning so projects saved
