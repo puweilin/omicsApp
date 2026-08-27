@@ -51,20 +51,20 @@ skip_unless_golden <- function() {
   path
 }
 
-# What the legacy CHISSS framework does to get from raw intensities to
+# What the CHISSS framework does to get from raw intensities to
 # normalized_intensity, transcribed from
 # scripts/frameworks/omics_core/R/data_input/proteomics/build_proteomics_se.R.
 #
-# The log2 and the 2^ cancel on paper. They are kept here because they are
-# kept there: 2^log2(x) != x at ~1e-15 for most real intensities, and vsn's
-# optimiser turns that into visible differences. Reproducing the reference
-# means reproducing the round trip.
-legacy_normalize <- function(mat) {
+# Both implementations used to differ here: the framework inherited a
+# log2-then-2^ round trip from DEP, which cancels on paper but not in floating
+# point, and vsn's optimiser amplified the ~1e-15 discrepancy into differences
+# up to 0.2. The round trip has since been dropped on both sides, so the two
+# agree exactly and the assertions below say so.
+framework_normalize <- function(mat) {
   m <- mat
   m[m == 0] <- NA
-  m <- suppressWarnings(log2(m))
-  linear <- 2^m
-  vsn::predict(vsn::vsnMatrix(linear), linear)
+  m[m < 0]  <- NA
+  vsn::predict(vsn::vsnMatrix(m), m)
 }
 
 read_cheek_matrix <- function(path, max_missing = 0.5) {
@@ -90,11 +90,11 @@ read_cheek_matrix <- function(path, max_missing = 0.5) {
 
 # ---- C1: the normalized layer -----------------------------------------------
 
-test_that("normalize_omics reproduces the legacy pipeline's normalized values", {
+test_that("normalize_omics reproduces the framework's normalized values", {
   path <- skip_unless_golden()
   d <- read_cheek_matrix(path)
 
-  reference <- legacy_normalize(d$expr)
+  reference <- framework_normalize(d$expr)
   produced <- suppressMessages(normalize_omics(
     omics_input(d$expr, d$meta, d$feat,
                 omics_type = "proteomics", assay_type = "raw_intensity"),
@@ -104,18 +104,11 @@ test_that("normalize_omics reproduces the legacy pipeline's normalized values", 
   expect_identical(dim(produced), dim(reference))
   expect_identical(dimnames(produced), dimnames(reference))
 
-  # Not bit-identical, and the reason is known and bounded: the legacy path
-  # sends vsn `2^log2(x)` rather than `x`, which differs at ~1e-15 relative
-  # precision, and vsn's optimiser (factr = 5e7) amplifies that. Measured on
-  # this dataset: r = 0.9999990, max |diff| 0.22, median 2.5e-03.
-  r <- stats::cor(as.vector(reference), as.vector(produced),
-                  use = "complete.obs")
-  expect_gt(r, 0.9999)
-  expect_lt(max(abs(reference - produced), na.rm = TRUE), 1.0)
-  expect_lt(stats::median(abs(reference - produced), na.rm = TRUE), 0.01)
-
-  # Both land on the same scale; a double or missing transform would not
-  expect_lt(abs(max(produced, na.rm = TRUE) - max(reference, na.rm = TRUE)), 0.5)
+  # Two independent implementations of the same transform, so this is an
+  # equality and not a tolerance. It stops being one the moment either side
+  # reintroduces a step the other does not have -- which is exactly how the
+  # DEP round trip used to make them disagree.
+  expect_equal(unname(produced), unname(reference))
   expect_silent(check_assay_scale(
     omics_input(produced, d$meta, d$feat, omics_type = "proteomics",
                 assay_type = "normalized_intensity")
@@ -124,7 +117,7 @@ test_that("normalize_omics reproduces the legacy pipeline's normalized values", 
 
 # ---- C1b: the conclusions ---------------------------------------------------
 
-test_that("the differential results agree with the legacy pipeline", {
+test_that("the differential results agree with the framework pipeline", {
   path <- skip_unless_golden()
   d <- read_cheek_matrix(path)
 
@@ -137,7 +130,7 @@ test_that("the differential results agree with the legacy pipeline", {
     bundle$results$diff_result_df
   }
 
-  reference <- run_de(legacy_normalize(d$expr))
+  reference <- run_de(framework_normalize(d$expr))
   produced <- run_de(suppressMessages(normalize_omics(
     omics_input(d$expr, d$meta, d$feat,
                 omics_type = "proteomics", assay_type = "raw_intensity"),
@@ -151,21 +144,14 @@ test_that("the differential results agree with the legacy pipeline", {
   )
   expect_gt(nrow(joined), 3000)
 
-  # Measured on this dataset: logFC r = 0.9999957, max |diff| 0.0088
-  expect_gt(stats::cor(joined$effect.ref, joined$effect.new), 0.9999)
-  expect_lt(max(abs(joined$effect.ref - joined$effect.new)), 0.05)
-  expect_gt(
-    stats::cor(-log10(joined$p_value.ref), -log10(joined$p_value.new)),
-    0.9999
-  )
+  expect_equal(joined$effect.ref, joined$effect.new)
+  expect_equal(joined$p_value.ref, joined$p_value.new)
 
-  # What actually matters: the same proteins come out significant. Measured
-  # 91 / 91 with Jaccard 1.0; the bound leaves room for an FDR-boundary flip.
+  # What actually matters: the same proteins come out significant
   sig_ref <- joined$feature_id[joined$adj_p_value.ref < 0.05]
   sig_new <- joined$feature_id[joined$adj_p_value.new < 0.05]
   expect_gt(length(sig_ref), 50)
-  jaccard <- length(intersect(sig_ref, sig_new)) / length(union(sig_ref, sig_new))
-  expect_gt(jaccard, 0.95)
+  expect_setequal(sig_ref, sig_new)
 })
 
 # ---- C2: the failure this was built to prevent -------------------------------
@@ -204,7 +190,7 @@ test_that("an already-normalized workbook is imported without a second transform
 
   # Same data, pre-normalized, which is what a collaborator would send
   d <- read_cheek_matrix(path)
-  pre <- legacy_normalize(d$expr)
+  pre <- framework_normalize(d$expr)
 
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
@@ -249,7 +235,7 @@ test_that("a layer labelled with the old 'intensity' value still analyses", {
   # Such a layer is loaded from disk, so it never passes back through
   # omics_input() and keeps the superseded spelling.
   legacy_layer <- suppressWarnings(
-    omics_input(legacy_normalize(d$expr), d$meta, d$feat,
+    omics_input(framework_normalize(d$expr), d$meta, d$feat,
                 omics_type = "proteomics", assay_type = "normalized_intensity")
   )
   legacy_layer$assay_type <- "intensity"
