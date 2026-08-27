@@ -19,8 +19,11 @@ Subset an \code{omics_input} by feature IDs
 }
 \seealso{
 Other omics_input: 
+\code{\link{SUPPORTED_ASSAY_TYPES}},
+\code{\link{check_assay_scale}()},
 \code{\link{drop_meta_na}()},
 \code{\link{is_omics_input}()},
+\code{\link{normalize_omics}()},
 \code{\link{omics_input}()},
 \code{\link{select_complete_cases}()},
 \code{\link{subset_omics}()},

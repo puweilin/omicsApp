@@ -28,8 +28,12 @@ samples. A \code{data.frame} is coerced to a matrix.}
 
 \item{omics_type}{Omics modality, one of \link{SUPPORTED_OMICS_TYPES}.}
 
-\item{assay_type}{Optional assay semantic label, e.g. \code{"normalized_intensity"},
-\code{"raw_counts"}.}
+\item{assay_type}{Assay semantic label, ideally one of the values listed for
+this \code{omics_type} in \link{SUPPORTED_ASSAY_TYPES} (e.g. \code{"raw_intensity"},
+\code{"normalized_intensity"}, \code{"raw_count"}). This is the only record of what
+scale \code{expr_mat} is on -- nothing downstream re-derives it -- so an
+inaccurate label silently changes what the analysis backends do. Superseded
+spellings in \link{DEPRECATED_ASSAY_TYPE_ALIASES} are rewritten with a warning.}
 
 \item{raw_mat}{Optional raw matrix carried alongside \code{expr_mat}.}
 
@@ -70,12 +74,16 @@ meta <- data.frame(group = c("A", "A", "B", "B", "B"),
                    row.names = paste0("s", 1:5))
 feat <- data.frame(feature_id = paste0("g", 1:4),
                    row.names = paste0("g", 1:4))
-omics_input(expr, meta, feat, omics_type = "proteomics")
+omics_input(expr, meta, feat, omics_type = "proteomics",
+            assay_type = "normalized_intensity")
 }
 \seealso{
 Other omics_input: 
+\code{\link{SUPPORTED_ASSAY_TYPES}},
+\code{\link{check_assay_scale}()},
 \code{\link{drop_meta_na}()},
 \code{\link{is_omics_input}()},
+\code{\link{normalize_omics}()},
 \code{\link{select_complete_cases}()},
 \code{\link{subset_omics}()},
 \code{\link{subset_omics_features}()},

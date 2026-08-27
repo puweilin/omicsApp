@@ -7,11 +7,14 @@ test_that("omics_input creates a valid object from matrix input", {
   meta <- data.frame(group = rep(c("A", "B"), each = 2), row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:5), name = paste0("Gene", 1:5),
                      stringsAsFactors = FALSE)
+  # "intensity" was the label here; it is now a deprecated alias for
+  # "raw_intensity" (see test-assay-type-contract.R). These values are small,
+  # so a log-scale label is also what keeps check_assay_scale() quiet.
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   expect_s3_class(inp, "omics_input")
   expect_equal(inp$omics_type, "proteomics")
-  expect_equal(inp$assay_type, "intensity")
+  expect_equal(inp$assay_type, "normalized_intensity")
   expect_equal(dim(inp$expr_mat), c(5, 4))
 })
 
@@ -132,8 +135,14 @@ test_that("supported omics types validate without a warning", {
   mat <- matrix(1:12, nrow = 3, dimnames = list(paste0("g", 1:3), paste0("s", 1:4)))
   meta <- data.frame(group = 1:4, row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:3))
+  # assay_type is supplied because omitting it now warns in its own right;
+  # this test is about omics_type
+  assay_types <- c(proteomics = "normalized_intensity", rnaseq = "raw_count")
   for (type in c("proteomics", "rnaseq")) {
-    expect_no_warning(omics_input(mat, meta, feat, omics_type = type))
+    expect_no_warning(
+      omics_input(mat, meta, feat, omics_type = type,
+                  assay_type = assay_types[[type]])
+    )
   }
 })
 

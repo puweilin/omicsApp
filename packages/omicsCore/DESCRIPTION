@@ -48,6 +48,7 @@ Suggests:
     impute,
     missForest,
     pcaMethods,
+    vsn,
     tximport,
     GenomicFeatures,
     here,

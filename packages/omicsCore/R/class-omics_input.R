@@ -15,8 +15,12 @@
 #'   `colnames(expr_mat)`.
 #' @param feature_df Feature metadata containing a `feature_id` column.
 #' @param omics_type Omics modality, one of [SUPPORTED_OMICS_TYPES].
-#' @param assay_type Optional assay semantic label, e.g. `"normalized_intensity"`,
-#'   `"raw_counts"`.
+#' @param assay_type Assay semantic label, ideally one of the values listed for
+#'   this `omics_type` in [SUPPORTED_ASSAY_TYPES] (e.g. `"raw_intensity"`,
+#'   `"normalized_intensity"`, `"raw_count"`). This is the only record of what
+#'   scale `expr_mat` is on -- nothing downstream re-derives it -- so an
+#'   inaccurate label silently changes what the analysis backends do. Superseded
+#'   spellings in [DEPRECATED_ASSAY_TYPE_ALIASES] are rewritten with a warning.
 #' @param raw_mat Optional raw matrix carried alongside `expr_mat`.
 #' @param normalized_mat Optional normalized matrix carried alongside `expr_mat`.
 #' @param raw_object Optional upstream raw object (e.g. a `DESeqDataSet` or
@@ -41,7 +45,8 @@
 #'                    row.names = paste0("s", 1:5))
 #' feat <- data.frame(feature_id = paste0("g", 1:4),
 #'                    row.names = paste0("g", 1:4))
-#' omics_input(expr, meta, feat, omics_type = "proteomics")
+#' omics_input(expr, meta, feat, omics_type = "proteomics",
+#'             assay_type = "normalized_intensity")
 omics_input <- function(
   expr_mat,
   meta_df,
@@ -54,6 +59,8 @@ omics_input <- function(
   source_fingerprint = NULL,
   source_path = NULL
 ) {
+  assay_type <- canonical_assay_type(assay_type)
+
   x <- new_omics_input(
     omics_type = omics_type,
     assay_type = assay_type,
@@ -67,6 +74,8 @@ omics_input <- function(
     source_path = source_path
   )
   validate_omics_input(x)
+  # Once, at construction -- see check_assay_scale() for why not in validate
+  check_assay_scale(x)
   x
 }
 
@@ -132,6 +141,144 @@ is_omics_input <- function(x) {
   inherits(x, "omics_input")
 }
 
+#' Warn when an assay type is unknown for this modality
+#'
+#' Mirrors how [validate_omics_input()] treats `omics_type`: a warning, not an
+#' error, so a modality omicsCore ships no dispatcher for still works.
+#'
+#' @param assay_type Assay type label.
+#' @param omics_type Omics modality.
+#'
+#' @return Invisibly `TRUE`.
+#' @keywords internal
+validate_assay_type <- function(assay_type, omics_type) {
+  if (is.null(assay_type) || !is.character(assay_type) ||
+      length(assay_type) != 1L || is.na(assay_type) || !nzchar(assay_type)) {
+    warning(
+      "`assay_type` is missing. It is the only record of what scale ",
+      "`expr_mat` is on; analyses read it to decide whether to transform. ",
+      "Set one of: ",
+      paste(sprintf("'%s'", unlist(SUPPORTED_ASSAY_TYPES, use.names = FALSE)),
+            collapse = ", "),
+      call. = FALSE
+    )
+    return(invisible(TRUE))
+  }
+
+  if (assay_type %in% names(DEPRECATED_ASSAY_TYPE_ALIASES)) {
+    warning(
+      "`assay_type = \"", assay_type, "\"` is superseded by \"",
+      unname(DEPRECATED_ASSAY_TYPE_ALIASES[[assay_type]]),
+      "\". Rebuild this input with `omics_input()` to update it.",
+      call. = FALSE
+    )
+    return(invisible(TRUE))
+  }
+
+  expected <- SUPPORTED_ASSAY_TYPES[[omics_type]]
+  if (!is.null(expected) && !assay_type %in% expected) {
+    warning(
+      "Unrecognised `assay_type` for ", omics_type, ": '", assay_type,
+      "'. Known types are ", paste(sprintf("'%s'", expected), collapse = ", "),
+      ". Analyses will treat the values as-is without transforming them.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+#' Rewrite a superseded assay-type spelling
+#'
+#' Maps the names in [DEPRECATED_ASSAY_TYPE_ALIASES] onto their replacements,
+#' warning so the caller can update. Anything else passes through untouched,
+#' including labels outside [SUPPORTED_ASSAY_TYPES].
+#'
+#' @param assay_type Assay type label, or `NULL`.
+#'
+#' @return The canonical label, or `assay_type` unchanged.
+#' @keywords internal
+canonical_assay_type <- function(assay_type) {
+  if (is.null(assay_type) || !is.character(assay_type) ||
+      length(assay_type) != 1L || is.na(assay_type)) {
+    return(assay_type)
+  }
+  if (assay_type %in% names(DEPRECATED_ASSAY_TYPE_ALIASES)) {
+    replacement <- unname(DEPRECATED_ASSAY_TYPE_ALIASES[[assay_type]])
+    warning(
+      "`assay_type = \"", assay_type, "\"` is superseded; using \"",
+      replacement, "\". Update the caller to the new spelling.",
+      call. = FALSE
+    )
+    return(replacement)
+  }
+  assay_type
+}
+
+#' Check that the assay values look like the declared scale
+#'
+#' `assay_type` is the only record of what scale `expr_mat` is on, and the
+#' analysis backends act on it without re-deriving anything: limma runs
+#' straight on `expr_mat`, while `log2(x + 1)` is applied only for
+#' `"raw_count"`. Mislabelling therefore changes results silently -- feeding
+#' vsn-normalised values to a `raw_intensity` path, or running limma on linear
+#' intensities, produces plausible numbers that are wrong.
+#'
+#' The check is a magnitude heuristic: log2 proteomics intensities top out
+#' around 35, linear intensities run to millions. It warns rather than fails,
+#' because a small or unusual matrix can legitimately land either side of
+#' [MAX_PLAUSIBLE_LOG_SCALE_VALUE].
+#'
+#' Not called from [validate_omics_input()] on purpose: validation runs at
+#' every analysis entry point, and this scans the matrix. [omics_input()] runs
+#' it once at construction, which is where a wrong label enters.
+#'
+#' @param x An `omics_input`.
+#'
+#' @return Invisibly, `TRUE` when the values match the declared scale,
+#'   `FALSE` when they do not.
+#' @export
+#' @family omics_input
+check_assay_scale <- function(x) {
+  if (!is_omics_input(x)) stop("Object is not an `omics_input`.")
+
+  assay_type <- x$assay_type
+  if (is.null(assay_type) || !is.character(assay_type) ||
+      length(assay_type) != 1L || is.na(assay_type) ||
+      !assay_type %in% SCALE_CHECKED_ASSAY_TYPES) {
+    # Either the label's scale is unknown, or magnitude cannot resolve it --
+    # see SCALE_CHECKED_ASSAY_TYPES for why counts are excluded
+    return(invisible(TRUE))
+  }
+
+  max_value <- suppressWarnings(max(x$expr_mat, na.rm = TRUE))
+  if (!is.finite(max_value)) return(invisible(TRUE))
+
+  expects_log <- assay_type %in% LOG_SCALE_ASSAY_TYPES
+  looks_log <- max_value <= MAX_PLAUSIBLE_LOG_SCALE_VALUE
+
+  if (expects_log && !looks_log) {
+    warning(
+      "`assay_type = \"", assay_type, "\"` implies log-scale values, but the ",
+      "matrix reaches ", format(max_value, digits = 4), ". If these are linear ",
+      "intensities, normalize them first (see `normalize_omics()`); analyses ",
+      "will otherwise run on untransformed data.",
+      call. = FALSE
+    )
+    return(invisible(FALSE))
+  }
+  if (!expects_log && looks_log) {
+    warning(
+      "`assay_type = \"", assay_type, "\"` implies linear values, but the ",
+      "matrix only reaches ", format(max_value, digits = 4), ", which looks ",
+      "already log-transformed. Transforming again would compress the dynamic ",
+      "range and shrink every fold change.",
+      call. = FALSE
+    )
+    return(invisible(FALSE))
+  }
+  invisible(TRUE)
+}
+
 #' Validate an `omics_input`
 #'
 #' Checks structural consistency between matrices and metadata: dimension
@@ -175,6 +322,8 @@ validate_omics_input <- function(x) {
       call. = FALSE
     )
   }
+
+  validate_assay_type(x$assay_type, omics_type)
 
   expr_mat <- x$expr_mat
   meta_df <- x$meta_df

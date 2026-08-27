@@ -20,8 +20,12 @@ new_omics_input(
 \arguments{
 \item{omics_type}{Omics modality, one of \link{SUPPORTED_OMICS_TYPES}.}
 
-\item{assay_type}{Optional assay semantic label, e.g. \code{"normalized_intensity"},
-\code{"raw_counts"}.}
+\item{assay_type}{Assay semantic label, ideally one of the values listed for
+this \code{omics_type} in \link{SUPPORTED_ASSAY_TYPES} (e.g. \code{"raw_intensity"},
+\code{"normalized_intensity"}, \code{"raw_count"}). This is the only record of what
+scale \code{expr_mat} is on -- nothing downstream re-derives it -- so an
+inaccurate label silently changes what the analysis backends do. Superseded
+spellings in \link{DEPRECATED_ASSAY_TYPE_ALIASES} are rewritten with a warning.}
 
 \item{expr_mat}{Main expression matrix; rows are features, columns are
 samples. A \code{data.frame} is coerced to a matrix.}

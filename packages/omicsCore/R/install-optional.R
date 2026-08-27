@@ -8,7 +8,7 @@
 # differential-expression, enrichment, and persistence paths.
 OPTIONAL_GROUPS <- list(
   rnaseq      = c("DESeq2", "edgeR", "tximport", "GenomicFeatures"),
-  proteomics  = c("missForest", "pcaMethods"),
+  proteomics  = c("missForest", "pcaMethods", "vsn"),
   enrichment  = c("fgsea", "GSVA"),
   imputation  = c("impute", "missForest", "pcaMethods"),
   viz         = c("ComplexHeatmap", "circlize", "ggrepel", "patchwork", "ggpubr"),
@@ -19,7 +19,7 @@ OPTIONAL_GROUPS <- list(
 # pick the right installer when `pak` is not available.
 BIOC_PACKAGES <- c(
   "DESeq2", "edgeR", "tximport", "GenomicFeatures",
-  "fgsea", "GSVA", "ComplexHeatmap", "pcaMethods",
+  "fgsea", "GSVA", "ComplexHeatmap", "pcaMethods", "vsn",
   "impute"
 )
 

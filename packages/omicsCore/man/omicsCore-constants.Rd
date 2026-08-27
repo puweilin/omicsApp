@@ -4,6 +4,10 @@
 \name{omicsCore-constants}
 \alias{omicsCore-constants}
 \alias{SUPPORTED_OMICS_TYPES}
+\alias{LOG_SCALE_ASSAY_TYPES}
+\alias{DEPRECATED_ASSAY_TYPE_ALIASES}
+\alias{MAX_PLAUSIBLE_LOG_SCALE_VALUE}
+\alias{SCALE_CHECKED_ASSAY_TYPES}
 \alias{SUPPORTED_DIFF_ANALYSIS_TYPES}
 \alias{SUPPORTED_PREFERENCE}
 \alias{SUPPORTED_ENRICH_PREFERENCE}
@@ -12,6 +16,14 @@
 \title{Package constants}
 \format{
 An object of class \code{character} of length 2.
+
+An object of class \code{character} of length 5.
+
+An object of class \code{character} of length 2.
+
+An object of class \code{numeric} of length 1.
+
+An object of class \code{character} of length 4.
 
 An object of class \code{character} of length 3.
 
@@ -26,6 +38,14 @@ An object of class \code{character} of length 6.
 \usage{
 SUPPORTED_OMICS_TYPES
 
+LOG_SCALE_ASSAY_TYPES
+
+DEPRECATED_ASSAY_TYPE_ALIASES
+
+MAX_PLAUSIBLE_LOG_SCALE_VALUE
+
+SCALE_CHECKED_ASSAY_TYPES
+
 SUPPORTED_DIFF_ANALYSIS_TYPES
 
 SUPPORTED_PREFERENCE
@@ -38,6 +58,26 @@ CANONICAL_DATABASES
 }
 \description{
 Internal vocabulary used across \code{omicsCore}. Not exported.
+
+Used by \code{\link[=check_assay_scale]{check_assay_scale()}} to decide which direction a scale mismatch
+points in. Everything else in \link{SUPPORTED_ASSAY_TYPES} is linear.
+
+Names are the old values, elements the replacement. \code{omics_input()} rewrites
+them; \code{validate_omics_input()} accepts them with a warning so projects saved
+before the vocabulary existed still load.
+
+log2 proteomics intensities top out near 35; linear intensities run into the
+millions. \code{\link[=check_assay_scale]{check_assay_scale()}} uses this to tell them apart.
+
+\code{\link[=check_assay_scale]{check_assay_scale()}} separates linear from log values by how large they
+get, which only works for intensity-like assays. Counts, TPM and FPKM are
+legitimately small -- a gene with five reads is ordinary -- so applying the
+same rule to them would flag correct data.
+}
+\details{
+\code{"intensity"} was what the import view stamped on every proteomics upload,
+and \code{"raw_counts"} appeared in the documentation while the code only ever
+matched \code{"raw_count"}.
 }
 \keyword{datasets}
 \keyword{internal}

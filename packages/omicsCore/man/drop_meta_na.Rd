@@ -20,7 +20,10 @@ columns.
 }
 \seealso{
 Other omics_input: 
+\code{\link{SUPPORTED_ASSAY_TYPES}},
+\code{\link{check_assay_scale}()},
 \code{\link{is_omics_input}()},
+\code{\link{normalize_omics}()},
 \code{\link{omics_input}()},
 \code{\link{select_complete_cases}()},
 \code{\link{subset_omics}()},

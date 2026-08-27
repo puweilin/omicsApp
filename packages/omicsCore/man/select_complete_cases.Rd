@@ -20,8 +20,11 @@ Select features passing a missingness threshold
 }
 \seealso{
 Other omics_input: 
+\code{\link{SUPPORTED_ASSAY_TYPES}},
+\code{\link{check_assay_scale}()},
 \code{\link{drop_meta_na}()},
 \code{\link{is_omics_input}()},
+\code{\link{normalize_omics}()},
 \code{\link{omics_input}()},
 \code{\link{subset_omics}()},
 \code{\link{subset_omics_features}()},
