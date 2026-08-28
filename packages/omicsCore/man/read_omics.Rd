@@ -9,6 +9,7 @@ read_omics(
   type = c("auto", "excel", "csv", "rds"),
   omics_type = NULL,
   assay_type = NULL,
+  sheet_roles = NULL,
   ...
 )
 }
@@ -21,6 +22,15 @@ read_omics(
 Shiny wizard) are expected to set it after inspecting the report.}
 
 \item{assay_type}{Optional assay semantic label.}
+
+\item{sheet_roles}{Optional named character vector overriding what the
+classifier decided, as \code{c("<sheet name>" = "<role>")} with roles drawn
+from \link{IMPORT_REPORT_ROLES}. Sheets left out keep their inferred role.
+
+The classifier is a heuristic, and a confident wrong answer is worse than
+an unconfident one: a metadata sheet read as the matrix produces an
+\code{omics_input} that analyses cleanly and means nothing. This is how a
+caller lets the user correct it without re-implementing the reader.}
 
 \item{...}{Forwarded to the underlying reader (\code{readxl::read_excel},
 \code{utils::read.csv}).}

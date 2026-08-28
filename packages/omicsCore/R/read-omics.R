@@ -21,6 +21,14 @@
 #' @param omics_type Optional omics modality. If `NULL`, callers (the
 #'   Shiny wizard) are expected to set it after inspecting the report.
 #' @param assay_type Optional assay semantic label.
+#' @param sheet_roles Optional named character vector overriding what the
+#'   classifier decided, as `c("<sheet name>" = "<role>")` with roles drawn
+#'   from [IMPORT_REPORT_ROLES]. Sheets left out keep their inferred role.
+#'
+#'   The classifier is a heuristic, and a confident wrong answer is worse than
+#'   an unconfident one: a metadata sheet read as the matrix produces an
+#'   `omics_input` that analyses cleanly and means nothing. This is how a
+#'   caller lets the user correct it without re-implementing the reader.
 #' @param ... Forwarded to the underlying reader (`readxl::read_excel`,
 #'   `utils::read.csv`).
 #'
@@ -34,9 +42,11 @@ read_omics <- function(
   type = c("auto", "excel", "csv", "rds"),
   omics_type = NULL,
   assay_type = NULL,
+  sheet_roles = NULL,
   ...
 ) {
   type <- match.arg(type)
+  sheet_roles <- validate_sheet_roles(sheet_roles)
   if (!is.character(path) || length(path) != 1L || !nzchar(path)) {
     stop("`path` must be a non-empty single string.")
   }
@@ -48,13 +58,52 @@ read_omics <- function(
   }
   switch(type,
     excel = read_omics_excel(path, omics_type = omics_type,
-                             assay_type = assay_type, ...),
+                             assay_type = assay_type,
+                             sheet_roles = sheet_roles, ...),
     csv = read_omics_csv(path, omics_type = omics_type,
-                         assay_type = assay_type, ...),
+                         assay_type = assay_type,
+                         sheet_roles = sheet_roles, ...),
     rds = read_omics_rds(path, omics_type = omics_type,
-                         assay_type = assay_type, ...),
+                         assay_type = assay_type,
+                         sheet_roles = sheet_roles, ...),
     stop("Unsupported type: ", type)
   )
+}
+
+# Roles the caller may assign, checked before any file is opened so a typo
+# surfaces as a message about the argument rather than as a mysteriously
+# unchanged import.
+validate_sheet_roles <- function(sheet_roles) {
+  if (is.null(sheet_roles)) return(NULL)
+  if (!is.character(sheet_roles) || is.null(names(sheet_roles)) ||
+      any(!nzchar(names(sheet_roles)))) {
+    stop("`sheet_roles` must be a named character vector, ",
+         "e.g. c(Sheet1 = \"matrix\").", call. = FALSE)
+  }
+  bad <- setdiff(sheet_roles, IMPORT_REPORT_ROLES)
+  if (length(bad) > 0L) {
+    stop("Unknown role(s) in `sheet_roles`: ",
+         paste(sprintf("'%s'", bad), collapse = ", "),
+         ". Valid roles are ",
+         paste(sprintf("'%s'", IMPORT_REPORT_ROLES), collapse = ", "), ".",
+         call. = FALSE)
+  }
+  sheet_roles
+}
+
+# Apply the caller's assignment on top of the classifier's. Overridden sheets
+# get confidence 1 so pick_best_sheet() prefers them over anything the
+# classifier was merely sure about, and the note records that a human chose.
+apply_sheet_roles <- function(sheet_table, sheet_roles) {
+  if (is.null(sheet_roles) || nrow(sheet_table) == 0L) return(sheet_table)
+  for (nm in names(sheet_roles)) {
+    idx <- which(sheet_table$name == nm)
+    if (length(idx) == 0L) next
+    sheet_table$role[idx] <- unname(sheet_roles[[nm]])
+    sheet_table$confidence[idx] <- 1
+    sheet_table$notes[idx] <- "role set by user"
+  }
+  sheet_table
 }
 
 # ---- internal: per-type readers ----------------------------------------
@@ -72,7 +121,8 @@ detect_file_type <- function(path) {
   )
 }
 
-read_omics_excel <- function(path, omics_type, assay_type, ...) {
+read_omics_excel <- function(path, omics_type, assay_type,
+                             sheet_roles = NULL, ...) {
   sheet_names <- readxl::excel_sheets(path)
   sheets <- list()
   rows <- list()
@@ -104,12 +154,13 @@ read_omics_excel <- function(path, omics_type, assay_type, ...) {
       stringsAsFactors = FALSE
     )
   }
-  sheet_table <- do.call(rbind, rows)
+  sheet_table <- apply_sheet_roles(do.call(rbind, rows), sheet_roles)
   build_input_from_sheets(sheets, sheet_table, source = path,
                           omics_type = omics_type, assay_type = assay_type)
 }
 
-read_omics_csv <- function(path, omics_type, assay_type, ...) {
+read_omics_csv <- function(path, omics_type, assay_type,
+                           sheet_roles = NULL, ...) {
   sep <- if (grepl("\\.tsv$|\\.txt$", path, ignore.case = TRUE)) "\t" else ","
   df <- utils::read.table(path, header = TRUE, sep = sep,
                           check.names = FALSE, stringsAsFactors = FALSE, ...)
@@ -124,11 +175,13 @@ read_omics_csv <- function(path, omics_type, assay_type, ...) {
     stringsAsFactors = FALSE
   )
   sheets <- setNames(list(df), nm)
+  sheet_table <- apply_sheet_roles(sheet_table, sheet_roles)
   build_input_from_sheets(sheets, sheet_table, source = path,
                           omics_type = omics_type, assay_type = assay_type)
 }
 
-read_omics_rds <- function(path, omics_type, assay_type, ...) {
+read_omics_rds <- function(path, omics_type, assay_type,
+                           sheet_roles = NULL, ...) {
   obj <- readRDS(path)
   if (inherits(obj, "omics_input")) {
     if (!is.null(omics_type)) obj$omics_type <- omics_type
@@ -182,6 +235,7 @@ read_omics_rds <- function(path, omics_type, assay_type, ...) {
     stringsAsFactors = FALSE
   )
   sheets <- setNames(list(df), nm)
+  sheet_table <- apply_sheet_roles(sheet_table, sheet_roles)
   build_input_from_sheets(sheets, sheet_table, source = path,
                           omics_type = omics_type, assay_type = assay_type)
 }

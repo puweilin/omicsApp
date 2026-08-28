@@ -36,7 +36,8 @@ import_view_ui <- function(id) {
       class = "row-grid r-4-8",
       import_upload_card(ns),
       import_schema_card(ns)
-    )
+    ),
+    import_confirm_card(ns)
   )
 }
 
@@ -62,6 +63,17 @@ import_view_server <- function(id,
     # The classifier ignores omics_type, but the final omics_input()
     # construction does — so changing the radio after an upload should
     # rebuild the candidate input. Observe both.
+    # Roles the user has overridden, as read_omics() wants them. Kept apart
+    # from `parsed` because they have to survive the re-parse they trigger.
+    role_overrides <- shiny::reactiveVal(NULL)
+
+    # Bumped on every new file. Shiny keeps an input's value across re-renders
+    # of the control, so without this the role dropdowns would still hold the
+    # previous workbook's answers and the observer below would apply them to
+    # the new one the moment it parsed. Folding the generation into the input
+    # ids means a new file starts with genuinely empty controls.
+    parse_gen <- shiny::reactiveVal(0L)
+
     do_parse <- function() {
       f <- input$file
       shiny::req(f)
@@ -75,7 +87,8 @@ import_view_server <- function(id,
         omicsCore::read_omics(
           f$datapath,
           omics_type = omics_type,
-          assay_type = assay_type
+          assay_type = assay_type,
+          sheet_roles = role_overrides()
         ),
         error = function(e) {
           list(
@@ -108,7 +121,12 @@ import_view_server <- function(id,
       confirmed_input(NULL)
     }
 
-    shiny::observeEvent(input$file,       do_parse())
+    shiny::observeEvent(input$file, {
+      # A new file makes the previous sheet assignment meaningless
+      role_overrides(NULL)
+      parse_gen(shiny::isolate(parse_gen()) + 1L)
+      do_parse()
+    })
     shiny::observeEvent(input$omics_type, do_parse(), ignoreInit = TRUE)
 
     # ---- assay type: inferred, then owned by the user -----------------
@@ -173,6 +191,59 @@ import_view_server <- function(id,
         notice(title = msg, kind = "warn")
       )
     })
+
+    # ---- confirmation card --------------------------------------------
+    output$confirm_shape <- shiny::renderUI({
+      cand <- parsed()
+      if (is.null(cand)) return(NULL)
+      confirm_shape_ui(cand$input, cand$report)
+    })
+
+    output$confirm_roles <- shiny::renderUI({
+      cand <- parsed()
+      if (is.null(cand)) return(NULL)
+      confirm_roles_ui(ns, cand$report, gen = parse_gen())
+    })
+
+    # One observer per sheet row, created after the report is known. The
+    # dropdowns are rendered by confirm_roles_ui(), so the number of them is
+    # data-dependent; observers are registered once and read whatever exists.
+    shiny::observe({
+      cand <- parsed()
+      shiny::req(cand, cand$report$sheets)
+      sheets <- cand$report$sheets
+
+      gen <- parse_gen()
+      chosen <- vapply(seq_len(nrow(sheets)), function(i) {
+        val <- input[[role_input_id(gen, i)]]
+        if (is.null(val)) NA_character_ else val
+      }, character(1))
+      if (all(is.na(chosen))) return()
+
+      current <- sheets$role
+      changed <- !is.na(chosen) & chosen != current
+      if (!any(changed)) return()
+
+      # Carry every explicit choice, not just the changed one: re-parsing
+      # rebuilds the table from the classifier, and an earlier override would
+      # otherwise be undone by the next one.
+      overrides <- stats::setNames(chosen[!is.na(chosen)],
+                                   sheets$name[!is.na(chosen)])
+      role_overrides(overrides)
+      do_parse()
+    })
+
+    output$confirm_matrix_preview <- shiny::renderTable({
+      cand <- parsed()
+      shiny::req(cand, cand$input)
+      preview_matrix(cand$input$expr_mat)
+    }, striped = TRUE, spacing = "xs", width = "100%", digits = 2)
+
+    output$confirm_meta_preview <- shiny::renderTable({
+      cand <- parsed()
+      shiny::req(cand, cand$input)
+      preview_metadata(cand$input$meta_df)
+    }, striped = TRUE, spacing = "xs", width = "100%")
 
     # ---- normalization, applied on commit -----------------------------
     # This belongs to import rather than QC because it is what turns a file
@@ -626,7 +697,7 @@ import_schema_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Inferred schema"),
       htmltools::tags$span(class = "card-sub",
-                           "per-sheet classification \u00B7 read-only in slice 3A")
+                           "per-sheet classification \u00B7 correct it below")
     ),
     bslib::card_body(
       DT::DTOutput(ns("schema_table")),
@@ -643,4 +714,151 @@ import_schema_card <- function(ns) {
       )
     )
   )
+}
+
+# ---- confirmation card -----------------------------------------------
+
+# The schema card answers "what did the classifier decide". This one answers
+# "what does that decision mean for my data", which is the question a user can
+# actually check. A sheet assignment can be wrong at high confidence and still
+# yield an omics_input that analyses cleanly -- metadata read as the matrix
+# gives numbers, dimensions, and a full result table, all meaningless. Nothing
+# downstream errors on it, so this is the last point where it is catchable.
+import_confirm_card <- function(ns) {
+  bslib::card(
+    bslib::card_header(
+      htmltools::tags$h3(class = "card-title", "What will be imported"),
+      htmltools::tags$span(
+        class = "card-sub",
+        "check this against what you know about the file"
+      )
+    ),
+    bslib::card_body(
+      shiny::uiOutput(ns("confirm_shape")),
+      shiny::uiOutput(ns("confirm_roles")),
+      htmltools::tags$div(
+        class = "row-grid r-6-6",
+        htmltools::tags$div(
+          htmltools::tags$h5("Expression matrix"),
+          htmltools::tags$div(class = "muted",
+                              style = "font-size:12px;margin-bottom:6px",
+                              "first rows and columns, as parsed"),
+          shiny::tableOutput(ns("confirm_matrix_preview"))
+        ),
+        htmltools::tags$div(
+          htmltools::tags$h5("Sample metadata"),
+          htmltools::tags$div(class = "muted",
+                              style = "font-size:12px;margin-bottom:6px",
+                              "columns available for grouping and covariates"),
+          shiny::tableOutput(ns("confirm_meta_preview"))
+        )
+      )
+    )
+  )
+}
+
+# Numbers first, because "3 features x 240 samples" on a file the user knows
+# has 240 features is the fastest way to catch a transposed matrix.
+confirm_shape_ui <- function(input_obj, report) {
+  if (is.null(input_obj)) {
+    return(notice(
+      title  = "Nothing to import yet",
+      detail = "Upload a file, or correct the sheet roles above if the classifier could not find an expression matrix.",
+      kind   = "warn"
+    ))
+  }
+  mat <- input_obj$expr_mat
+  n_missing <- sum(is.na(mat))
+  orientation <- report$suggested_input$orientation %||% "features_in_rows"
+
+  htmltools::tags$div(
+    class = "stat-grid",
+    style = "margin-bottom:16px",
+    stat_card(
+      label = "Features", value = format(nrow(mat), big.mark = ","),
+      trend = "rows of the matrix", mono = TRUE
+    ),
+    stat_card(
+      label = "Samples", value = format(ncol(mat), big.mark = ","),
+      trend = "columns of the matrix", mono = TRUE
+    ),
+    stat_card(
+      label = "Missing", value = sprintf("%.1f%%", 100 * n_missing / length(mat)),
+      trend = sprintf("%s cells", format(n_missing, big.mark = ",")),
+      accent = if (n_missing / length(mat) > 0.5) "warn" else "ok"
+    ),
+    stat_card(
+      label = "Orientation",
+      value = if (identical(orientation, "features_in_rows")) "features in rows"
+              else "samples in rows",
+      trend = "swap the role below if reversed"
+    )
+  )
+}
+
+# Which sheet became what, with a dropdown to say otherwise. Sheets the
+# classifier could not place are worth showing too: an "unknown" sheet is
+# often the metadata, and silently dropping it is how a grouping column goes
+# missing later.
+# Input id for one sheet's role dropdown. The generation is part of the id so
+# a new upload gets fresh controls rather than inheriting the last file's.
+role_input_id <- function(gen, i) paste0("role_", gen, "_", i)
+
+confirm_roles_ui <- function(ns, report, gen = 0L) {
+  sheets <- report$sheets
+  if (is.null(sheets) || nrow(sheets) == 0L) return(NULL)
+
+  choices <- c("expression matrix" = "matrix",
+               "sample metadata" = "metadata",
+               "feature annotation" = "feature_annot",
+               "ignore" = "unknown")
+
+  rows <- lapply(seq_len(nrow(sheets)), function(i) {
+    nm <- sheets$name[i]
+    low_conf <- !is.na(sheets$confidence[i]) && sheets$confidence[i] < 0.5
+    htmltools::tags$div(
+      style = "display:flex;align-items:center;gap:10px;margin-bottom:6px",
+      htmltools::tags$code(style = "min-width:150px", nm),
+      htmltools::tags$span(
+        class = "muted", style = "font-size:12px;min-width:110px",
+        sprintf("%s x %s", sheets$n_rows[i], sheets$n_cols[i])
+      ),
+      shiny::selectInput(
+        ns(role_input_id(gen, i)), label = NULL, choices = choices,
+        selected = sheets$role[i], width = "180px"
+      ),
+      if (low_conf) {
+        pill("low confidence", kind = "warn")
+      } else if (identical(sheets$notes[i], "role set by user")) {
+        pill("you set this", kind = "ok")
+      } else NULL
+    )
+  })
+
+  htmltools::tagList(
+    htmltools::tags$h5("Sheet roles"),
+    htmltools::tags$div(class = "muted",
+                        style = "font-size:12px;margin-bottom:8px",
+                        "Changing a role re-reads the file with your assignment."),
+    rows,
+    htmltools::tags$hr(style = "margin:14px 0")
+  )
+}
+
+# A corner of the matrix. Seeing the actual values is what catches a header
+# row parsed as data, or an ID column read as a sample.
+preview_matrix <- function(mat, n_row = 5L, n_col = 4L) {
+  if (is.null(mat) || nrow(mat) == 0L) return(NULL)
+  sub <- mat[seq_len(min(n_row, nrow(mat))),
+             seq_len(min(n_col, ncol(mat))), drop = FALSE]
+  df <- as.data.frame(round(sub, 2))
+  df <- cbind(feature = rownames(sub), df)
+  rownames(df) <- NULL
+  df
+}
+
+preview_metadata <- function(meta, n_row = 5L) {
+  if (is.null(meta) || nrow(meta) == 0L) return(NULL)
+  df <- meta[seq_len(min(n_row, nrow(meta))), , drop = FALSE]
+  cbind(sample = rownames(df), as.data.frame(df, stringsAsFactors = FALSE))
 }
