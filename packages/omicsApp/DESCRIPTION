@@ -33,6 +33,7 @@ Remotes:
     omicsCore=local::../omicsCore
 Suggests:
     testthat (>= 3.0.0),
+    later,
     shinytest2,
     ggrepel,
     knitr,

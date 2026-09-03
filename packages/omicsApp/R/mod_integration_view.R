@@ -122,26 +122,31 @@ integration_view_server <- function(id,
         "auto"
       }
       run_async(
-        function() {
-          sec_diff <- omicsCore::run_diff(
-            input         = info$secondary,
-            method        = sec_method,
-            analysis_type = "group",
-            group_col     = info$group_col,
-            control_group = info$control,
-            case_group    = info$case
-          )
-          diff_bundles <- stats::setNames(
-            list(primary, sec_diff),
-            c(info$primary_tag, info$secondary_tag)
-          )
-          omicsCore::run_integration(
-            project      = proj,
-            method       = "concordance",
-            experiments  = c(info$primary_tag, info$secondary_tag),
-            diff_bundles = diff_bundles
-          )
-        },
+        # Detached for the same reason as the other two, and it matters
+        # most here: this one carries a project with every layer in it.
+        detached_call(
+          function() {
+            sec_diff <- omicsCore::run_diff(
+              input         = info$secondary,
+              method        = sec_method,
+              analysis_type = "group",
+              group_col     = info$group_col,
+              control_group = info$control,
+              case_group    = info$case
+            )
+            diff_bundles <- stats::setNames(
+              list(primary, sec_diff),
+              c(info$primary_tag, info$secondary_tag)
+            )
+            omicsCore::run_integration(
+              project      = proj,
+              method       = "concordance",
+              experiments  = c(info$primary_tag, info$secondary_tag),
+              diff_bundles = diff_bundles
+            )
+          },
+          info = info, sec_method = sec_method, primary = primary, proj = proj
+        ),
         on_success = function(result) {
           integration_error(NULL)
           is_demo(FALSE)

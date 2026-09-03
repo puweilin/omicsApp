@@ -74,14 +74,21 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
         return(invisible())
       }
       run_async(
-        function() {
-          omicsCore::run_enrichment(
-            diff_bundle = bundle,
-            type        = type,
-            database    = db_arg,
-            direction   = dir_
-          )
-        },
+        # Detached for the same reason as the Differential view: a
+        # closure defined here carries this module's whole scope to the
+        # worker, and an enrichment runs on a bundle that is already
+        # large.
+        detached_call(
+          function() {
+            omicsCore::run_enrichment(
+              diff_bundle = bundle,
+              type        = type,
+              database    = db_arg,
+              direction   = dir_
+            )
+          },
+          bundle = bundle, type = type, db_arg = db_arg, dir_ = dir_
+        ),
         on_success = function(result) {
           enrich_error(NULL)
           is_demo(FALSE)

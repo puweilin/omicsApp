@@ -252,17 +252,31 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         return(invisible())
       }
       run_async(
-        function() {
-          omicsCore::run_diff(
-            input         = a$input,
-            method        = method,
-            analysis_type = "group",
-            group_col     = group_col,
-            control_group = control,
-            case_group    = case,
-            covariates    = if (length(covariates)) covariates else NULL
-          )
-        },
+        # Detached, so the worker receives the input and the six
+        # parameters rather than this module's whole scope. Defined
+        # inline it carried the previous bundle, the project and the
+        # demo fixtures with it -- 527 MB of "globals", which future
+        # refused to export, from inside an observer, which greyed the
+        # page.
+        detached_call(
+          function() {
+            omicsCore::run_diff(
+              input         = inp,
+              method        = method,
+              analysis_type = "group",
+              group_col     = group_col,
+              control_group = control,
+              case_group    = case,
+              covariates    = covariates
+            )
+          },
+          inp        = a$input,
+          method     = method,
+          group_col  = group_col,
+          control    = control,
+          case       = case,
+          covariates = if (length(covariates)) covariates else NULL
+        ),
         on_success = function(bundle) {
           diff_error(NULL)
           diff_bundle(bundle)
@@ -285,20 +299,21 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # has finished choosing. Keeping the old result would be worse
     # still: it is about the previous layer, and nothing on screen
     # would say so.
-    # Keyed on input$layer rather than on active(), which also
-    # invalidates when the control below it re-renders. Watching active()
-    # meant a finished result was cleared by a re-render nobody asked
-    # for, which is how a completed run came back reading "no result
-    # yet".
-    ran_once <- shiny::reactiveVal(FALSE)
+    # Nothing runs until Re-run is pressed.
+    #
+    # The view used to analyse once on arrival so it opened populated.
+    # On the demo that is milliseconds; on a real workbook it is limma
+    # or DESeq2 over thousands of features, started by walking into the
+    # view, on a contrast the user has not looked at yet. Opening a tab
+    # is not a request to compute.
+    #
+    # Changing layer clears the result for the same reason it is not
+    # re-run: the result describes the previous layer, and nothing on
+    # screen would say so. Keyed on input$layer rather than on active(),
+    # which also invalidates when the control below it re-renders.
     shiny::observeEvent(input$layer, {
-      if (!ran_once()) {
-        ran_once(TRUE)
-        do_run()
-      } else {
-        diff_bundle(NULL)
-        diff_error(NULL)
-      }
+      diff_bundle(NULL)
+      diff_error(NULL)
     }, ignoreInit = TRUE)
 
     # Re-run button is the user-driven path. bindEvent semantics

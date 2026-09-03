@@ -108,15 +108,15 @@ test_that("a fold-change the old slider could not express now works", {
 
 # ---- first paint ------------------------------------------------------
 
-test_that("opening the view does not produce an error", {
-  # do_run() fires as soon as active() settles, which is before the
-  # renderUI-driven contrast controls exist. Reading input$group_col
-  # there gets NULL, and refusing on NULL put "Pick a group column with
-  # distinct Control and Case levels" on a view the user had just
-  # opened, having touched nothing.
+test_that("Re-run with no contrast chosen yet does not complain", {
+  # The controls are renderUI output, so on the first press they may not
+  # have reported a value. Refusing then put "Pick a group column with
+  # distinct Control and Case levels" in front of a user who had chosen
+  # nothing to be wrong about; do_run() falls back to the derived
+  # default instead.
   shiny::testServer(diff_view_server, args = list(), {
     session$flushReact()
-    session$setInputs(layer = "proteomics")   # what makes active() settle
+    session$setInputs(layer = "proteomics", rerun = 1)
     expect_null(diff_error())
     expect_false(is.null(diff_bundle()))
   })
@@ -125,7 +125,7 @@ test_that("opening the view does not produce an error", {
 test_that("the first run uses the same contrast the controls will show", {
   shiny::testServer(diff_view_server, args = list(), {
     session$flushReact()
-    session$setInputs(layer = "proteomics")
+    session$setInputs(layer = "proteomics", rerun = 1)
     d <- default_contrast()
     b <- diff_bundle()
     expect_identical(b$params$control_group, d$control)
@@ -133,10 +133,10 @@ test_that("the first run uses the same contrast the controls will show", {
   })
 })
 
-test_that("switching layer re-runs with an engine that layer supports", {
+test_that("a run on the rnaseq layer uses an engine that layer supports", {
   shiny::testServer(diff_view_server, args = list(), {
     session$flushReact()
-    session$setInputs(layer = "rnaseq")
+    session$setInputs(layer = "rnaseq", rerun = 1)
     expect_null(diff_error())
     # auto resolves to deseq2 for raw counts; the point is that it ran
     # at all, on a layer that was unreachable before.
@@ -165,8 +165,8 @@ test_that("changing layer clears the result rather than re-running", {
   # choosing.
   shiny::testServer(diff_view_server, args = list(), {
     session$flushReact()
-    session$setInputs(layer = "proteomics")
-    expect_false(is.null(diff_bundle()))          # the one automatic run
+    session$setInputs(layer = "proteomics", rerun = 1)
+    expect_false(is.null(diff_bundle()))
 
     session$setInputs(layer = "rnaseq")
     expect_null(diff_bundle())
@@ -179,7 +179,7 @@ test_that("keeping the old result would have been worse than clearing", {
   # entirely, and nothing on screen would say which layer it came from.
   shiny::testServer(diff_view_server, args = list(), {
     session$flushReact()
-    session$setInputs(layer = "proteomics")
+    session$setInputs(layer = "proteomics", rerun = 1)
     before <- diff_bundle()$input_info$omics_type
 
     session$setInputs(layer = "rnaseq")
@@ -192,7 +192,7 @@ test_that("keeping the old result would have been worse than clearing", {
 test_that("Re-run after a layer change uses the new layer's engine", {
   shiny::testServer(diff_view_server, args = list(), {
     session$flushReact()
-    session$setInputs(layer = "proteomics")
+    session$setInputs(layer = "proteomics", rerun = 1)
     expect_identical(diff_bundle()$params$method, "limma")
 
     session$setInputs(layer = "rnaseq", rerun = 1)
@@ -271,6 +271,40 @@ test_that("a finished result survives the controls re-rendering", {
       expect_identical(input$group_col, "condition")
       expect_identical(input$control, "G1")
       expect_identical(input$case, "G2")
+    }
+  )
+})
+
+# ---- arriving is not asking ------------------------------------------
+
+test_that("opening the view does not start an analysis", {
+  # It used to run once on arrival so the view opened populated. On the
+  # demo that is milliseconds; on a real workbook it is limma or DESeq2
+  # over thousands of features, started by walking into the tab, on a
+  # contrast nobody has looked at yet.
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(real_shaped_project())),
+    {
+      session$flushReact()
+      session$setInputs(layer = "proteomics")
+      expect_null(diff_bundle())
+      expect_null(diff_error())
+    }
+  )
+})
+
+test_that("Re-run is what starts it", {
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(real_shaped_project())),
+    {
+      session$flushReact()
+      session$setInputs(layer = "proteomics", group_col = "condition",
+                        control = "G1", case = "G2")
+      expect_null(diff_bundle())
+      session$setInputs(rerun = 1)
+      expect_false(is.null(diff_bundle()))
     }
   )
 })
