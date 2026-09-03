@@ -233,6 +233,52 @@ import_view_server <- function(id,
       do_parse()
     })
 
+    # Which column the gene symbol came from, or that none was found.
+    #
+    # The import matches it by heading, and a heading can be wrong or
+    # absent. Getting it wrong relabels every feature; getting nothing
+    # leaves feature_symbol as the accession, and enrichment then
+    # returns empty rather than failing -- clusterProfiler answers "No
+    # gene can be mapped" and hands back NULL, which arrives as a result
+    # with nothing in it. Either way the user cannot tell from the
+    # outcome, so it is said here, before anything is run.
+    output$confirm_symbol_source <- shiny::renderUI({
+      cand <- parsed()
+      if (is.null(cand) || is.null(cand$input)) return(NULL)
+      src <- attr(cand$input$feature_df, "symbol_column") %||% NA_character_
+
+      if (is.na(src)) {
+        return(htmltools::tags$div(
+          class = "muted",
+          style = "font-size:12.5px;margin:4px 0 12px",
+          htmltools::tags$strong("Gene symbol"),
+          htmltools::HTML(" &middot; "),
+          "no gene column found \u2014 feature IDs will be used instead. ",
+          htmltools::tags$span(
+            style = "color:var(--warn)",
+            "Enrichment needs gene symbols, so it will return nothing."
+          )
+        ))
+      }
+      example <- utils::head(
+        stats::na.omit(cand$input$feature_df$feature_symbol), 3L)
+      htmltools::tags$div(
+        class = "muted",
+        style = "font-size:12.5px;margin:4px 0 12px",
+        htmltools::tags$strong("Gene symbol"),
+        htmltools::HTML(" &middot; "),
+        "taken from ",
+        htmltools::tags$span(class = "text-mono", sprintf("\u201c%s\u201d", src)),
+        if (length(example)) {
+          htmltools::tagList(
+            htmltools::HTML(" &middot; "),
+            htmltools::tags$span(class = "text-mono",
+                                 paste(example, collapse = ", "))
+          )
+        }
+      )
+    })
+
     output$confirm_matrix_preview <- shiny::renderTable({
       cand <- parsed()
       shiny::req(cand, cand$input)
@@ -736,6 +782,7 @@ import_confirm_card <- function(ns) {
     bslib::card_body(
       shiny::uiOutput(ns("confirm_shape")),
       shiny::uiOutput(ns("confirm_roles")),
+      shiny::uiOutput(ns("confirm_symbol_source")),
       htmltools::tags$div(
         class = "row-grid r-6-6",
         htmltools::tags$div(
