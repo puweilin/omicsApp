@@ -85,15 +85,34 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
         # large.
         detached_call(
           function() {
-            omicsCore::run_enrichment(
-              diff_bundle   = bundle,
-              type          = type,
-              database      = db_arg,
-              direction     = dir_,
-              p_cutoff      = thr$p_cutoff,
-              p_preference  = thr$p_preference,
-              effect_cutoff = thr$effect_cutoff
-            )
+            # ORA takes the thresholds; GSEA does not.
+            #
+            # GSEA is a ranked-list method: it reads every feature,
+            # ordered by effect, and pre-filtering the list is not a
+            # stricter version of the analysis but a different and
+            # invalid one. run_enrichment() also spends p_cutoff on
+            # bounding the *pathway* table, so handing it a threshold
+            # chosen for features would quietly narrow which pathways
+            # are reported -- two different tests on two different
+            # objects, sharing one number.
+            if (identical(type, "ora")) {
+              omicsCore::run_enrichment(
+                diff_bundle   = bundle,
+                type          = type,
+                database      = db_arg,
+                direction     = dir_,
+                p_cutoff      = thr$p_cutoff,
+                p_preference  = thr$p_preference,
+                effect_cutoff = thr$effect_cutoff
+              )
+            } else {
+              omicsCore::run_enrichment(
+                diff_bundle = bundle,
+                type        = type,
+                database    = db_arg,
+                direction   = dir_
+              )
+            }
           },
           bundle = bundle, type = type, db_arg = db_arg, dir_ = dir_,
           thr = thr
@@ -170,13 +189,22 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       df <- b$results$diff_result_df
       if (is.null(df)) return(NULL)
       thr <- diff_thresholds()
+      # GSEA ranks every feature it can place, so there is no selection
+      # to report -- only how many made it into the ranking. Saying "N
+      # of M selected" here would describe a step the method does not
+      # take.
+      if (!identical(input$type %||% "ora", "ora")) {
+        rankable <- !is.na(df$effect) & !is.na(df$feature_symbol)
+        return(list(gsea = TRUE, n = sum(rankable), total = nrow(df),
+                    mapped = sum(rankable & df$feature_symbol != df$feature_id)))
+      }
       pcol <- if (identical(thr$p_preference, "raw")) "p_value" else "adj_p_value"
       pv <- df[[pcol]]
       keep <- !is.na(pv) & pv < (thr$p_cutoff %||% 0.05)
       if (!is.null(thr$effect_cutoff) && is.finite(thr$effect_cutoff)) {
         keep <- keep & !is.na(df$effect) & abs(df$effect) > thr$effect_cutoff
       }
-      list(n = sum(keep), total = nrow(df), p_col = pcol,
+      list(gsea = FALSE, n = sum(keep), total = nrow(df), p_col = pcol,
            p_cutoff = thr$p_cutoff %||% 0.05,
            effect_cutoff = thr$effect_cutoff,
            mapped = sum(keep & !is.na(df$feature_symbol) &
@@ -186,6 +214,21 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     output$input_summary <- shiny::renderUI({
       s <- selected_features()
       if (is.null(s)) return(NULL)
+      if (isTRUE(s$gsea)) {
+        return(htmltools::tags$div(
+          class = "muted", style = "font-size:12.5px;margin:2px 0 10px",
+          htmltools::tags$strong(sprintf("%d of %d features ranked",
+                                         s$n, s$total)),
+          " \u2014 GSEA reads the whole list, so the Differential ",
+          "thresholds do not apply here.",
+          if (s$mapped == 0L) {
+            htmltools::tags$span(
+              style = "color:var(--warn)",
+              " None carry a gene symbol, so no set will match."
+            )
+          }
+        ))
+      }
       bits <- sprintf("%s < %s", s$p_col, format(s$p_cutoff))
       if (!is.null(s$effect_cutoff) && is.finite(s$effect_cutoff)) {
         bits <- paste0(bits, sprintf(", |effect| > %.3f", s$effect_cutoff))

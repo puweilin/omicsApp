@@ -104,3 +104,59 @@ test_that("nothing is claimed before a differential has been run", {
     expect_null(output$input_summary)
   })
 })
+
+# ---- GSEA is a ranked-list method -------------------------------------
+
+test_that("the ranked list keeps features no threshold would have kept", {
+  # This is the guarantee, not an implementation detail: GSEA reads the
+  # whole ordered list, and pre-filtering it is not a stricter analysis
+  # but a different and invalid one.
+  b <- omicsApp:::example_diff_bundle()
+  df <- b$results$diff_result_df
+  ranked <- omicsCore::make_ranked_features(df)
+
+  expect_equal(length(ranked), sum(!is.na(df$effect) & !is.na(df$feature_symbol)))
+  # Features nowhere near significance are in it.
+  dull <- df$feature_symbol[df$adj_p_value > 0.5]
+  expect_true(any(names(ranked) %in% dull))
+  # And it is ordered.
+  expect_false(is.unsorted(rev(unname(ranked))))
+})
+
+test_that("a feature with no effect cannot be ranked and is dropped", {
+  b <- omicsApp:::example_diff_bundle()
+  df <- b$results$diff_result_df
+  n_before <- length(omicsCore::make_ranked_features(df))
+  df$effect[1:7] <- NA
+  expect_equal(length(omicsCore::make_ranked_features(df)), n_before - 7L)
+})
+
+test_that("GSEA mode reports the ranking, not a selection", {
+  # "120 of 3000 selected" would describe a step GSEA does not take.
+  html <- NULL
+  shiny::testServer(enrich_view_server,
+                    args = enrich_args(split_bundle(), p_preference = "adjusted"), {
+    session$setInputs(type = "gsea")
+    session$flushReact()
+    s <- selected_features()
+    expect_true(isTRUE(s$gsea))
+    expect_equal(s$n, 3000L)          # every feature, not the 0 that pass adj.P
+    html <<- paste(unlist(output$input_summary), collapse = " ")
+  })
+  expect_true(grepl("3000 of 3000 features ranked", html, fixed = TRUE))
+  expect_true(grepl("do not apply", html, fixed = TRUE))
+  expect_false(grepl("nothing to enrich", html, fixed = TRUE))
+})
+
+test_that("ORA mode still reports the selection", {
+  html <- NULL
+  shiny::testServer(enrich_view_server,
+                    args = enrich_args(split_bundle(), p_preference = "raw"), {
+    session$setInputs(type = "ora")
+    session$flushReact()
+    expect_false(isTRUE(selected_features()$gsea))
+    html <<- paste(unlist(output$input_summary), collapse = " ")
+  })
+  expect_true(grepl("120 of 3000 features", html, fixed = TRUE))
+  expect_false(grepl("ranked", html, fixed = TRUE))
+})
