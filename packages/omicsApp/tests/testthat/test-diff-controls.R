@@ -199,3 +199,78 @@ test_that("Re-run after a layer change uses the new layer's engine", {
     expect_identical(diff_bundle()$params$method, "deseq2")
   })
 })
+
+# ---- the controls must not undo the user ------------------------------
+
+real_shaped_project <- function(n = 40L, nf = 300L) {
+  set.seed(7L)
+  ids <- sprintf("RD%03d-C", seq_len(n))
+  m <- matrix(rnorm(nf * n, 20, 1.5), nf, n,
+              dimnames = list(sprintf("A0A%03d", seq_len(nf)), ids))
+  cond <- rep(c("G1", "G2"), each = n / 2)
+  m[1:30, cond == "G2"] <- m[1:30, cond == "G2"] + 3
+  # `label` holds the sample names, as a real workbook's does.
+  meta <- data.frame(label = ids, tissue = rep("Cheek", n),
+                     condition = cond, row.names = ids,
+                     stringsAsFactors = FALSE)
+  omicsCore::omics_project(
+    name = "real",
+    experiments = list(proteomics = omicsCore::omics_input(
+      m, meta, data.frame(feature_id = rownames(m)),
+      omics_type = "proteomics", assay_type = "normalized_intensity")))
+}
+
+test_that("a column of sample identifiers is not offered as a contrast", {
+  # `label` satisfied the old rule -- not numeric, more than one value --
+  # so the view defaulted to one sample against one other. limma cannot
+  # fit that, and said so as "Partial NA coefficients for 2294 probe(s)"
+  # and an empty result.
+  meta <- real_shaped_project()$experiments$proteomics$meta_df
+  cands <- grouping_candidates(meta)
+  expect_false("label" %in% cands)
+  expect_identical(cands[[1L]], "condition")
+})
+
+test_that("every offered column has at least two samples per level", {
+  meta <- real_shaped_project()$experiments$proteomics$meta_df
+  for (nm in grouping_candidates(meta)) {
+    expect_gte(min(table(meta[[nm]])), 2L, label = nm)
+  }
+})
+
+test_that("a named column wins over one that merely has fewer levels", {
+  meta <- data.frame(batch = rep(c("a", "b"), each = 4),
+                     condition = rep(c("ctl", "trt", "x", "y"), each = 2),
+                     stringsAsFactors = FALSE)
+  # batch has fewer levels; condition says what it is.
+  expect_identical(grouping_candidates(meta)[[1L]], "condition")
+})
+
+test_that("a finished result survives the controls re-rendering", {
+  # ui_layer read active(), and active() reads input$layer, so
+  # re-rendering the control re-sent its value and invalidated active()
+  # -- which cleared the result. The user picked condition / G1 / G2,
+  # ran it, and the view came back saying "no result yet" with `label`
+  # selected.
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(real_shaped_project())),
+    {
+      session$flushReact()
+      session$setInputs(layer = "proteomics")
+      session$setInputs(group_col = "condition", control = "G1",
+                        case = "G2", rerun = 1)
+      expect_false(is.null(diff_bundle()))
+
+      invisible(output$ui_group_col)
+      invisible(output$ui_layer)
+      invisible(output$ui_contrast)
+      session$flushReact()
+
+      expect_false(is.null(diff_bundle()))
+      expect_identical(input$group_col, "condition")
+      expect_identical(input$control, "G1")
+      expect_identical(input$case, "G2")
+    }
+  )
+})

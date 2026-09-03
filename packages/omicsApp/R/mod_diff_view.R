@@ -67,24 +67,29 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         return(list(input = NULL, tag = NULL, is_demo = TRUE))
       }
       want <- input$layer
-      idx <- if (!is.null(want) && want %in% names(exps)) {
-        match(want, names(exps))
+      tag <- if (!is.null(want) && want %in% names(exps)) {
+        want
       } else {
-        types <- vapply(exps, function(e) e$omics_type %||% "", character(1))
-        i <- which(types == "proteomics")
-        if (length(i) == 0L) 1L else i[1L]
+        default_layer_tag(exps)
       }
-      list(input = exps[[idx]], tag = names(exps)[idx], is_demo = is_demo)
+      list(input = exps[[tag]], tag = tag, is_demo = is_demo)
     })
 
     output$ui_layer <- shiny::renderUI({
       proj <- current_project() %||% example_project()
       tags_avail <- names(proj$experiments)
       if (length(tags_avail) == 0L) return(NULL)
+      # isolate(), because active() reads input$layer and this output
+      # writes it. Reading it here closed the loop: re-rendering the
+      # control re-sent its value, which invalidated active(), which
+      # re-rendered the control.
+      sel <- shiny::isolate(input$layer)
+      if (is.null(sel) || !sel %in% tags_avail) {
+        sel <- default_layer_tag(proj$experiments)
+      }
       shiny::selectInput(
         session$ns("layer"), label = "Experiment layer",
-        choices = tags_avail,
-        selected = active()$tag %||% tags_avail[1L]
+        choices = tags_avail, selected = sel
       )
     })
 
@@ -132,12 +137,9 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         return(list(group_col = NULL, control = NULL, case = NULL,
                     levels = character(0), candidates = character(0)))
       }
-      cands <- names(meta)[vapply(meta, function(col) {
-        u <- unique(stats::na.omit(col))
-        length(u) >= 2L && !is.numeric(col)
-      }, logical(1))]
+      cands <- grouping_candidates(meta)
       if (length(cands) == 0L) cands <- names(meta)
-      gc <- if ("group" %in% cands) "group" else cands[1L]
+      gc <- cands[1L]
       lv <- sort(unique(as.character(stats::na.omit(meta[[gc]]))))
       list(
         group_col  = gc,
@@ -154,10 +156,16 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     output$ui_group_col <- shiny::renderUI({
       d <- default_contrast()
       if (!length(d$candidates)) return(NULL)
+      # Keep what the user picked. This output re-renders whenever the
+      # layer or the project changes, and re-rendering with the default
+      # threw away their choice -- they selected condition / G1 / G2,
+      # ran it, and the control came back reading `label`.
+      sel <- shiny::isolate(input$group_col)
+      if (is.null(sel) || !sel %in% d$candidates) sel <- d$group_col
       shiny::selectInput(session$ns("group_col"),
                          label    = "Group column",
                          choices  = d$candidates,
-                         selected = d$group_col)
+                         selected = sel)
     })
 
     # Reactive level set for the chosen group column.
@@ -178,13 +186,17 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           "Pick a group column with at least two levels."
         ))
       }
+      keep <- function(current, fallback) {
+        current <- shiny::isolate(current)
+        if (is.null(current) || !current %in% lv) fallback else current
+      }
       htmltools::tagList(
         shiny::selectInput(session$ns("control"),
                            label = "Control", choices = lv,
-                           selected = lv[1L]),
+                           selected = keep(input$control, lv[1L])),
         shiny::selectInput(session$ns("case"),
                            label = "Case", choices = lv,
-                           selected = lv[min(2L, length(lv))])
+                           selected = keep(input$case, lv[min(2L, length(lv))]))
       )
     })
 
@@ -273,8 +285,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # has finished choosing. Keeping the old result would be worse
     # still: it is about the previous layer, and nothing on screen
     # would say so.
+    # Keyed on input$layer rather than on active(), which also
+    # invalidates when the control below it re-renders. Watching active()
+    # meant a finished result was cleared by a re-render nobody asked
+    # for, which is how a completed run came back reading "no result
+    # yet".
     ran_once <- shiny::reactiveVal(FALSE)
-    shiny::observeEvent(active(), {
+    shiny::observeEvent(input$layer, {
       if (!ran_once()) {
         ran_once(TRUE)
         do_run()
@@ -629,4 +646,51 @@ diff_hits_card <- function(ns) {
       DT::DTOutput(ns("hits"))
     )
   )
+}
+
+# Which layer the view lands on when the user has not chosen one:
+# proteomics if present, else the first.
+default_layer_tag <- function(experiments) {
+  if (!length(experiments)) return(NULL)
+  types <- vapply(experiments, function(e) e$omics_type %||% "", character(1))
+  i <- which(types == "proteomics")
+  names(experiments)[if (length(i)) i[1L] else 1L]
+}
+
+# Columns of `meta_df` that could name a contrast, best first.
+#
+# The old rule was "not numeric, and at least two distinct values",
+# which a sample identifier satisfies perfectly: one level per sample.
+# On a real workbook the first such column was `label`, whose values are
+# the sample names, so the view defaulted to a contrast of one sample
+# against one other. limma cannot fit that -- no residual degrees of
+# freedom -- and reported it as "Partial NA coefficients for 2294
+# probe(s)" and an empty result, which is not a sentence anyone can act
+# on.
+#
+# The real requirement is replication: every level needs at least two
+# samples, or the level cannot be tested. That single condition
+# excludes identifiers exactly, without having to guess from names.
+GROUP_COL_HINTS <- c("group", "condition", "treatment", "arm", "status")
+
+grouping_candidates <- function(meta, min_per_level = 2L) {
+  if (is.null(meta) || !ncol(meta)) return(character(0))
+  usable <- vapply(names(meta), function(nm) {
+    col <- meta[[nm]]
+    if (is.numeric(col)) return(FALSE)
+    counts <- table(as.character(col), useNA = "no")
+    length(counts) >= 2L && min(counts) >= min_per_level
+  }, logical(1))
+  cands <- names(meta)[usable]
+  if (!length(cands)) return(character(0))
+
+  # Fewest levels first: a two-level column is the contrast someone
+  # almost always means. Conventional names win over the count, since a
+  # column called `condition` is a stated intent and a level count is an
+  # inference.
+  n_levels <- vapply(cands, function(nm) {
+    length(unique(stats::na.omit(as.character(meta[[nm]]))))
+  }, integer(1))
+  hinted <- tolower(cands) %in% GROUP_COL_HINTS
+  cands[order(!hinted, n_levels)]
 }
