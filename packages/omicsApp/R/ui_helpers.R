@@ -101,8 +101,19 @@ view_header <- function(title, subtitle = NULL, actions = NULL) {
 #'
 #' @keywords internal
 #' @noRd
+#' @section Accents:
+#' `"warn"` is here because two callers already asked for it and got
+#' `match.arg()`'s error instead: the QC stats card whenever a sample is
+#' flagged as an outlier, and the import summary whenever a matrix is
+#' more than half missing. Both are warnings, and mapping them onto
+#' `"up"` for its red would have spent the volcano's up-regulated colour
+#' on something that is not a direction.
+#'
+#' Every value here needs a matching `.stat-card.accent-*` rule in
+#' `inst/app/www/styles.scss`; the two are checked against each other in
+#' `test-stat-card-accents.R`.
 stat_card <- function(label, value, trend = NULL,
-                      accent = c("brand", "up", "down", "ok"),
+                      accent = c("brand", "up", "down", "ok", "warn"),
                       mono = FALSE) {
   accent <- match.arg(accent)
   value_class <- paste(c("stat-value", if (isTRUE(mono)) "mono"), collapse = " ")
