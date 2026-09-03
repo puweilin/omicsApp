@@ -44,20 +44,47 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                              invalidate = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
-    # Active experiment: prefer proteomics, then the first layer
-    # of any kind, then NULL (= demo fallback).
+    # Active experiment: whichever layer the user picked, else
+    # proteomics, else the first of any kind.
+    #
+    # The layer is a control rather than a fixed choice because the
+    # engines available depend on it: applicable_diff_methods() offers
+    # deseq2 and edger only for rnaseq raw counts. Pinned to proteomics,
+    # as this was, those two could never be reached from the interface
+    # at all -- the gate was right and there was no way to the side of
+    # it where it opens.
+    #
+    # The demo resolves through example_project() for the same reason,
+    # rather than being handed a fixed proteomics input: its rnaseq
+    # layer is raw counts, so it is the one place a user can see the
+    # method list change without importing anything.
     active <- shiny::reactive({
       proj <- current_project()
-      if (is.null(proj)) return(list(input = NULL, tag = NULL, is_demo = TRUE))
+      is_demo <- is.null(proj)
+      if (is_demo) proj <- example_project()
       exps <- proj$experiments
-      if (length(exps) == 0L) return(list(input = NULL, tag = NULL, is_demo = TRUE))
-      types <- vapply(exps, function(e) e$omics_type %||% "", character(1))
-      idx <- which(types == "proteomics")
-      if (length(idx) == 0L) idx <- 1L
-      list(
-        input   = exps[[idx[1L]]],
-        tag     = names(exps)[idx[1L]],
-        is_demo = FALSE
+      if (length(exps) == 0L) {
+        return(list(input = NULL, tag = NULL, is_demo = TRUE))
+      }
+      want <- input$layer
+      idx <- if (!is.null(want) && want %in% names(exps)) {
+        match(want, names(exps))
+      } else {
+        types <- vapply(exps, function(e) e$omics_type %||% "", character(1))
+        i <- which(types == "proteomics")
+        if (length(i) == 0L) 1L else i[1L]
+      }
+      list(input = exps[[idx]], tag = names(exps)[idx], is_demo = is_demo)
+    })
+
+    output$ui_layer <- shiny::renderUI({
+      proj <- current_project() %||% example_project()
+      tags_avail <- names(proj$experiments)
+      if (length(tags_avail) == 0L) return(NULL)
+      shiny::selectInput(
+        session$ns("layer"), label = "Experiment layer",
+        choices = tags_avail,
+        selected = active()$tag %||% tags_avail[1L]
       )
     })
 
@@ -69,7 +96,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # here, at the point of choosing.
     output$ui_method <- shiny::renderUI({
       a <- active()
-      inp <- if (a$is_demo) example_proteomics_input() else a$input
+      inp <- a$input
       choices <- omicsCore::applicable_diff_methods(inp)
       shiny::selectInput(session$ns("method"), label = NULL,
                          choices = choices, selected = "auto")
@@ -77,7 +104,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     output$method_note <- shiny::renderUI({
       a <- active()
-      inp <- if (a$is_demo) example_proteomics_input() else a$input
+      inp <- a$input
       dropped <- setdiff(omicsCore::SUPPORTED_DIFF_METHODS,
                          omicsCore::applicable_diff_methods(inp))
       if (length(dropped) == 0L) return(NULL)
@@ -94,8 +121,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # for the simple "control vs case" UI in this slice).
     output$ui_group_col <- shiny::renderUI({
       a <- active()
-      meta <- if (a$is_demo) example_proteomics_input()$meta_df
-              else a$input$meta_df
+      meta <- a$input$meta_df
       cands <- names(meta)[vapply(meta, function(col) {
         u <- unique(stats::na.omit(col))
         length(u) >= 2L && !is.numeric(col)
@@ -111,8 +137,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # Reactive level set for the chosen group column.
     levels_ <- shiny::reactive({
       a <- active()
-      meta <- if (a$is_demo) example_proteomics_input()$meta_df
-              else a$input$meta_df
+      meta <- a$input$meta_df
       gc <- input$group_col
       if (is.null(gc) || !(gc %in% names(meta))) return(character(0))
       sort(unique(as.character(stats::na.omit(meta[[gc]]))))
@@ -139,8 +164,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     output$ui_covariates <- shiny::renderUI({
       a <- active()
-      meta <- if (a$is_demo) example_proteomics_input()$meta_df
-              else a$input$meta_df
+      meta <- a$input$meta_df
       gc <- input$group_col %||% ""
       cands <- setdiff(names(meta), c(gc, "sample_id"))
       shiny::selectizeInput(
@@ -171,9 +195,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     do_run <- function() {
       a <- active()
-      if (a$is_demo) {
-        diff_error(NULL)
-        diff_bundle(example_diff_bundle())
+      if (is.null(a$input)) {
+        diff_error("This project has no experiments to analyse.")
         return(invisible())
       }
       method   <- input$method %||% "auto"
@@ -230,15 +253,28 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # debounced so a slider drag fires one mask update instead of
     # one per pixel.
     fdr_cut_d <- shiny::debounce(shiny::reactive(input$fdr_cut %||% 0.05), 250)
-    fc_cut_d  <- shiny::debounce(shiny::reactive(input$fc_cut  %||% 1),    250)
+    # numericInput hands back NA while the box is empty mid-typing, and
+    # NA here would mark every feature non-significant with no
+    # explanation. Fall back to the default rather than to nothing.
+    fc_cut_d  <- shiny::debounce(shiny::reactive({
+      v <- input$fc_cut
+      if (is.null(v) || !is.finite(v) || v < 0) round(log2(1.2), 3) else v
+    }), 250)
+    # Which column "significant" is read from. The label follows it, so
+    # a figure never says adj.P over a raw-p mask.
+    p_col   <- shiny::reactive(
+      if (identical(input$p_kind %||% "adj", "raw")) "p_value" else "adj_p_value")
+    p_label <- shiny::reactive(
+      if (identical(input$p_kind %||% "adj", "raw")) "p" else "adj.P")
 
     marked <- shiny::reactive({
       shiny::req(diff_bundle())
       df <- diff_bundle()$results$diff_result_df
-      df$is_significant <- !is.na(df$adj_p_value) &
+      pv <- df[[p_col()]]
+      df$is_significant <- !is.na(pv) &
                            !is.na(df$effect) &
-                           df$adj_p_value < fdr_cut_d() &
-                           abs(df$effect)  > fc_cut_d()
+                           pv < fdr_cut_d() &
+                           abs(df$effect) > fc_cut_d()
       df
     })
 
@@ -309,8 +345,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       top    <- if (nrow(sig) > 0L) sig[which.max(abs(sig$effect)), ] else NULL
       top_value <- if (is.null(top)) "\u2014" else as.character(top$feature_symbol[1L])
       top_trend <- if (is.null(top)) "no features pass thresholds"
-                   else sprintf("effect %+.2f \u00B7 adj.P %.2g",
-                                top$effect[1L], top$adj_p_value[1L])
+                   else sprintf("effect %+.2f \u00B7 %s %.2g",
+                                top$effect[1L], p_label(), top[[p_col()]][1L])
       htmltools::tags$div(
         class = "stat-grid",
         stat_card(
@@ -324,15 +360,15 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         stat_card(
           label  = sprintf("Up in %s", input$case %||% "case"),
           value  = up_n,
-          trend  = sprintf("effect > %.2f \u00B7 adj.P < %.3f",
-                           fc_cut_d(), fdr_cut_d()),
+          trend  = sprintf("effect > %.2f \u00B7 %s < %.3f",
+                           fc_cut_d(), p_label(), fdr_cut_d()),
           accent = "up"
         ),
         stat_card(
           label  = sprintf("Down in %s", input$case %||% "case"),
           value  = down_n,
-          trend  = sprintf("effect < -%.2f \u00B7 adj.P < %.3f",
-                           fc_cut_d(), fdr_cut_d()),
+          trend  = sprintf("effect < -%.2f \u00B7 %s < %.3f",
+                           fc_cut_d(), p_label(), fdr_cut_d()),
           accent = "down"
         ),
         stat_card(
@@ -432,6 +468,13 @@ diff_params_card <- function(ns) {
       htmltools::tags$div(
         class = "param-stack",
         param_group(
+          "Layer",
+          # Which engines are on offer follows from this: deseq2 and
+          # edger need rnaseq raw counts, so without a way to change
+          # layer they were unreachable.
+          shiny::uiOutput(ns("ui_layer"))
+        ),
+        param_group(
           "Method",
           # Rendered server-side: which engines are valid depends on the
           # active layer's assay, and offering an invalid one produces a
@@ -450,13 +493,29 @@ diff_params_card <- function(ns) {
         ),
         param_group(
           "Thresholds",
-          shiny::sliderInput(
-            ns("fdr_cut"), label = "adj.P cutoff",
-            min = 0, max = 0.2, value = 0.05, step = 0.005
+          # Which p to threshold on is the user's call, not ours. An
+          # exploratory screen on 50 proteins and a confirmatory one on
+          # 20,000 genes want different answers, and forcing adj.P made
+          # the first look empty.
+          shiny::radioButtons(
+            ns("p_kind"), label = "Significance on",
+            choices = c("adjusted p" = "adj", "raw p" = "raw"),
+            selected = "adj", inline = TRUE
           ),
           shiny::sliderInput(
+            ns("fdr_cut"), label = "p cutoff",
+            min = 0, max = 0.2, value = 0.05, step = 0.005
+          ),
+          # A box, not a slider. The slider stepped 0.05, which cannot
+          # express log2(1.2) = 0.263 -- so the fold change most often
+          # wanted here was one of the few the control could not reach.
+          shiny::numericInput(
             ns("fc_cut"), label = "|log2FC| cutoff",
-            min = 0, max = 4, value = 1, step = 0.05
+            value = round(log2(1.2), 3), min = 0, max = 10, step = 0.05
+          ),
+          htmltools::tags$div(
+            class = "muted", style = "font-size:11.5px;margin-top:-6px",
+            sprintf("%.3f = %.2gx fold change", log2(1.2), 1.2)
           ),
           shinyWidgets::materialSwitch(
             ns("label_top"), label = "Label top 20",

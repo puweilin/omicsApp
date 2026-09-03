@@ -10,14 +10,19 @@
 #      surfaces in `diff_error()` instead of stop()-ing the
 #      reactive graph.
 
-test_that("diff view falls back to example_diff_bundle when project is NULL", {
+test_that("with no project the view analyses the demo, for real", {
+  # It used to hand back example_diff_bundle(), a bundle computed
+  # elsewhere at fixed settings, so the Method dropdown it had just
+  # drawn had no bearing on the result. The demo now goes through
+  # run_diff() like a project does, which is also what makes the
+  # rnaseq layer -- and so deseq2 -- reachable.
   current_project <- shiny::reactiveVal(NULL)
   shiny::testServer(
     diff_view_server,
     args = list(current_project = current_project),
     {
-      # Demo bundle no longer auto-populates on init; Re-run triggers it.
-      session$setInputs(rerun = 1)
+      session$setInputs(group_col = "group", control = "G1", case = "G2",
+                        method = "auto", rerun = 1)
       b <- diff_bundle()
       expect_s3_class(b, "analysis_bundle")
       expect_identical(b$analysis_name, "run_diff")
@@ -150,7 +155,8 @@ test_that("the volcano does not depend on the threshold sliders", {
     diff_view_server,
     args = list(current_project = shiny::reactiveVal(NULL)),
     {
-      session$setInputs(rerun = 1)
+      session$setInputs(group_col = "group", control = "G1", case = "G2",
+                        rerun = 1)
       shiny::req(diff_bundle())
       caption_of <- function() {
         p <- omicsCore::plot_volcano(
@@ -173,7 +179,8 @@ test_that("the sliders still drive the hit table", {
     diff_view_server,
     args = list(current_project = shiny::reactiveVal(NULL)),
     {
-      session$setInputs(rerun = 1, fdr_cut = 0.05, fc_cut = 1)
+      session$setInputs(group_col = "group", control = "G1", case = "G2",
+                        rerun = 1, fdr_cut = 0.05, fc_cut = 1)
       # The thresholds are debounced, so the mask only follows them once
       # the window has passed. A real drag settles the same way.
       session$elapse(300)

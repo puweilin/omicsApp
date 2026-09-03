@@ -221,7 +221,12 @@ plot_enrich_gsea_dot <- function(df, p_col) {
     theme_omicsCore()
 }
 
-truncate_pathway_name <- function(x, max_chars = 60L) {
+# 45, not 60. Hallmark names are short enough that 60 never bit, but a
+# GO BP or Reactome term routinely runs past it, and at 60 characters
+# the y-axis labels take more of the panel than the points do. 45 keeps
+# a term identifiable -- the discriminating words are at the front --
+# without the plot becoming a caption with dots attached.
+truncate_pathway_name <- function(x, max_chars = 45L) {
   x <- as.character(x)
   too_long <- !is.na(x) & nchar(x) > max_chars
   x[too_long] <- paste0(substr(x[too_long], 1L, max_chars - 1L), "\u2026")

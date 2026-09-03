@@ -297,6 +297,25 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       shiny::showNotification("Restored the last autosaved session.",
                               type = "message")
     })
+
+    # Restore on arrival rather than on a click. The autosave is the
+    # user's own last state, and asking them to ask for it every login
+    # meant landing on the CHISSS demo each morning -- a page that is
+    # useful once and then noise.
+    #
+    # Deliberately narrow: only when nothing is loaded, and only once
+    # per session, so it cannot overwrite an import that happened first
+    # or fire again after the user clears the project.
+    #
+    # The button stays, because it is now the way back to the autosave
+    # after the project has been changed in-session.
+    shiny::observe({
+      if (!is.null(current_project())) return()
+      proj <- tryCatch(store_read_autosave(), error = function(e) NULL)
+      if (is.null(proj)) return()
+      current_project(proj)
+      shiny::showNotification("Restored your last session.", type = "message")
+    }) |> shiny::bindEvent(TRUE, once = TRUE, ignoreInit = FALSE)
   })
 }
 
