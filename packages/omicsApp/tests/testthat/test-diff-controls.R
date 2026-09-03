@@ -105,3 +105,53 @@ test_that("a fold-change the old slider could not express now works", {
     expect_identical(marked()$is_significant, c(TRUE, FALSE, TRUE, FALSE))
   })
 })
+
+# ---- first paint ------------------------------------------------------
+
+test_that("opening the view does not produce an error", {
+  # do_run() fires as soon as active() settles, which is before the
+  # renderUI-driven contrast controls exist. Reading input$group_col
+  # there gets NULL, and refusing on NULL put "Pick a group column with
+  # distinct Control and Case levels" on a view the user had just
+  # opened, having touched nothing.
+  shiny::testServer(diff_view_server, args = list(), {
+    session$flushReact()
+    session$setInputs(layer = "proteomics")   # what makes active() settle
+    expect_null(diff_error())
+    expect_false(is.null(diff_bundle()))
+  })
+})
+
+test_that("the first run uses the same contrast the controls will show", {
+  shiny::testServer(diff_view_server, args = list(), {
+    session$flushReact()
+    session$setInputs(layer = "proteomics")
+    d <- default_contrast()
+    b <- diff_bundle()
+    expect_identical(b$params$control_group, d$control)
+    expect_identical(b$params$case_group, d$case)
+  })
+})
+
+test_that("switching layer re-runs with an engine that layer supports", {
+  shiny::testServer(diff_view_server, args = list(), {
+    session$flushReact()
+    session$setInputs(layer = "rnaseq")
+    expect_null(diff_error())
+    # auto resolves to deseq2 for raw counts; the point is that it ran
+    # at all, on a layer that was unreachable before.
+    expect_identical(diff_bundle()$params$method, "deseq2")
+  })
+})
+
+test_that("a project with no experiments says so rather than blaming the contrast", {
+  empty <- omicsCore::omics_project(name = "empty", experiments = list())
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(empty)),
+    {
+      session$setInputs(rerun = 1)
+      expect_match(diff_error() %||% "", "no experiments", ignore.case = TRUE)
+    }
+  )
+})

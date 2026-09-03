@@ -116,29 +116,55 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     })
 
-    # Group column dropdown: any meta_df column with >= 2 unique
-    # non-NA values (continuous columns like `age` are excluded
-    # for the simple "control vs case" UI in this slice).
-    output$ui_group_col <- shiny::renderUI({
-      a <- active()
-      meta <- a$input$meta_df
+    # The contrast the controls will default to, computed from the data
+    # rather than read back off them.
+    #
+    # do_run() fires once as soon as active() settles, and at that
+    # moment the controls do not exist yet: they are renderUI output,
+    # and Shiny has not been round the loop. Reading input$group_col
+    # there gets NULL, which used to surface as "Pick a group column
+    # with distinct Control and Case levels" on a view the user had
+    # only just opened. Deriving the default in one place means the
+    # first run and the rendered controls cannot disagree about it.
+    default_contrast <- shiny::reactive({
+      meta <- active()$input$meta_df
+      if (is.null(meta) || !ncol(meta)) {
+        return(list(group_col = NULL, control = NULL, case = NULL,
+                    levels = character(0), candidates = character(0)))
+      }
       cands <- names(meta)[vapply(meta, function(col) {
         u <- unique(stats::na.omit(col))
         length(u) >= 2L && !is.numeric(col)
       }, logical(1))]
       if (length(cands) == 0L) cands <- names(meta)
-      default <- if ("group" %in% cands) "group" else cands[1L]
+      gc <- if ("group" %in% cands) "group" else cands[1L]
+      lv <- sort(unique(as.character(stats::na.omit(meta[[gc]]))))
+      list(
+        group_col  = gc,
+        control    = if (length(lv)) lv[1L] else NULL,
+        case       = if (length(lv) >= 2L) lv[2L] else NULL,
+        levels     = lv,
+        candidates = cands
+      )
+    })
+
+    # Group column dropdown: any meta_df column with >= 2 unique
+    # non-NA values (continuous columns like `age` are excluded
+    # for the simple "control vs case" UI in this slice).
+    output$ui_group_col <- shiny::renderUI({
+      d <- default_contrast()
+      if (!length(d$candidates)) return(NULL)
       shiny::selectInput(session$ns("group_col"),
                          label    = "Group column",
-                         choices  = cands,
-                         selected = default)
+                         choices  = d$candidates,
+                         selected = d$group_col)
     })
 
     # Reactive level set for the chosen group column.
     levels_ <- shiny::reactive({
       a <- active()
       meta <- a$input$meta_df
-      gc <- input$group_col
+      gc <- input$group_col %||% default_contrast()$group_col
       if (is.null(gc) || !(gc %in% names(meta))) return(character(0))
       sort(unique(as.character(stats::na.omit(meta[[gc]]))))
     })
@@ -199,10 +225,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         diff_error("This project has no experiments to analyse.")
         return(invisible())
       }
-      method   <- input$method %||% "auto"
-      group_col <- input$group_col
-      control  <- input$control
-      case     <- input$case
+      d <- default_contrast()
+      method     <- input$method %||% "auto"
+      # Fall back to the derived default, not to nothing: on the first
+      # run the controls have not been rendered yet, and refusing then
+      # put an error on a view the user had only just opened.
+      group_col  <- input$group_col %||% d$group_col
+      control    <- input$control   %||% d$control
+      case       <- input$case      %||% d$case
       covariates <- input$covariates
       if (is.null(group_col) || is.null(control) || is.null(case) ||
           identical(control, case)) {
@@ -281,28 +311,41 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     output$header <- shiny::renderUI({
       a <- active()
       b <- diff_bundle()
-      method <- if (is.null(b)) "\u2014" else b$params$method
-      comparison <- if (is.null(b)) "\u2014"
-                    else (b$params$comparison %||%
-                          sprintf("%s vs %s",
-                                  input$case %||% "case",
-                                  input$control %||% "control"))
-      omics  <- if (is.null(b)) "\u2014"
-                else diff_omics_display(b$input_info$omics_type)
+      source_note <- htmltools::tags$span(
+        class = "muted",
+        if (a$is_demo) "demo project (built-in)"
+        else sprintf("layer = %s", a$tag)
+      )
+
+      # Before the first result there is nothing to summarise. Three em
+      # dashes separated by middots said that in a way that read as
+      # damage rather than as an empty state, which is how it was
+      # reported.
+      if (is.null(b)) {
+        return(view_header(
+          title    = "Differential",
+          subtitle = htmltools::tagList(
+            htmltools::tags$span(class = "muted", "no result yet"),
+            htmltools::HTML(" &middot; "),
+            source_note
+          )
+        ))
+      }
+
+      comparison <- b$params$comparison %||%
+        sprintf("%s vs %s",
+                b$params$case_group %||% input$case %||% "case",
+                b$params$control_group %||% input$control %||% "control")
       view_header(
         title    = "Differential",
         subtitle = htmltools::tagList(
-          omics,
+          diff_omics_display(b$input_info$omics_type),
           htmltools::HTML(" &middot; "),
           comparison,
           htmltools::HTML(" &middot; "),
-          method,
+          b$params$method,
           htmltools::HTML(" &middot; "),
-          htmltools::tags$span(
-            class = "muted",
-            if (a$is_demo) "demo project (built-in)"
-            else sprintf("layer = %s", a$tag)
-          )
+          source_note
         )
       )
     })
