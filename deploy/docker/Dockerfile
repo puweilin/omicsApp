@@ -25,24 +25,45 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Imports *and* Suggests. Suggests are not optional here: omicsCore
 # gates features behind requireNamespace(), so a missing Suggest does
 # not error, it silently removes the feature.
-RUN R -q -e 'install.packages(c( \
+#
+# `install.packages()` warns on failure rather than erroring, so without
+# the check below a package that will not build produces a *successful*
+# layer and an image quietly missing a feature. Fail here instead, where
+# the log still says which package and why.
+#
+# ggpubr is deliberately absent. It pulls Deriv -> doBy -> pbkrtest ->
+# car -> rstatix, and Deriv's current source needs R_ClosureFormals(),
+# an R 4.5 C API this image's R 4.4.2 does not have. Nothing calls
+# ggpubr: plots use theme_analysis()/theme_volcano() from the framework.
+RUN R -q -e 'pkgs <- c( \
       "shiny","bslib","bsicons","sass","htmltools","ggplot2","plotly","DT", \
       "shinyWidgets","shinyjs","promises","future", \
       "tibble","dplyr","stringr","readxl","openxlsx","jsonlite","scales", \
       "rlang","msigdbr","qs2", \
-      "ggrepel","patchwork","ggpubr","circlize","here","knitr","rmarkdown", \
-      "missForest","ActivePathways","pkgload"), \
-      Ncpus = parallel::detectCores())'
+      "ggrepel","patchwork","circlize","here","knitr","rmarkdown", \
+      "missForest","ActivePathways","pkgload"); \
+      install.packages(pkgs, Ncpus = parallel::detectCores()); \
+      missing <- setdiff(pkgs, rownames(installed.packages())); \
+      if (length(missing)) stop("CRAN packages failed to install: ", \
+                                paste(missing, collapse = ", "))'
 
 # ---- 3. Bioconductor dependencies -------------------------------------
 # `vsn` is not optional in practice: it is the default normalisation in
 # the import view and the method the CHISSS proteomics analyses have
 # always used. Without it every proteomics import fails on the default
 # setting with "Package 'vsn' is required".
-RUN R -q -e 'BiocManager::install(c( \
+#
+# Checked for the same reason as the CRAN layer above, and it matters
+# more here: none of these have binaries on p3m, so every one is a
+# source build with its own way to fail.
+RUN R -q -e 'pkgs <- c( \
       "limma","clusterProfiler","DESeq2","edgeR","S4Vectors","enrichplot", \
       "fgsea","GSVA","ComplexHeatmap","impute","pcaMethods","tximport", \
-      "GenomicFeatures","vsn"), ask = FALSE, update = FALSE, Ncpus = parallel::detectCores())'
+      "GenomicFeatures","vsn"); \
+      BiocManager::install(pkgs, ask = FALSE, update = FALSE, Ncpus = parallel::detectCores()); \
+      missing <- setdiff(pkgs, rownames(installed.packages())); \
+      if (length(missing)) stop("Bioconductor packages failed to install: ", \
+                                paste(missing, collapse = ", "))'
 
 # ---- 4. PDF reports (optional) ----------------------------------------
 # Adds ~1.5 GB. Comment out if HTML reports are enough; the Report view
