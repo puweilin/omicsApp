@@ -49,17 +49,40 @@ test_that("every sample gets a bar when there are few of them", {
   expect_match(p$labels$subtitle, "^8 samples$")
 })
 
-test_that("a large cohort is truncated, and says so", {
-  # Silently dropping rows would be worse than a cramped panel; the
-  # subtitle is what makes the truncation honest.
-  sdf <- data.frame(sample_id = sprintf("S%03d", 1:100),
-                    missing_rate = seq(0.5, 0.01, length.out = 100))
-  p <- plot_missing_by_sample(sdf)
-  expect_equal(nrow(p$data), MISSING_MAX_SAMPLE_BARS)
-  expect_match(p$labels$subtitle, "worst 30 of 100 samples", fixed = TRUE)
-  # And it is the worst 30 that survive, not the first 30.
-  expect_true(all(p$data$missing_rate >= sort(sdf$missing_rate,
-                                              decreasing = TRUE)[30]))
+big_cohort <- function(n = 100L) {
+  data.frame(sample_id = sprintf("S%03d", seq_len(n)),
+             missing_rate = seq(0.5, 0.01, length.out = n))
+}
+
+test_that("a large cohort keeps every sample, as a ranked curve", {
+  # Bars past a few dozen are thinner than their own labels. Truncating
+  # to the worst N answered "which sample is bad" but threw away "how
+  # bad is this cohort", which is the other half of the question.
+  p <- plot_missing_by_sample(big_cohort(100L))
+  expect_equal(nrow(p$data), 100L)
+  expect_true("rank" %in% names(p$data))
+})
+
+test_that("the ranked curve names the worst samples in its subtitle", {
+  # On the plot their labels would land on top of each other: the worst
+  # few sit at almost the same rank.
+  p <- plot_missing_by_sample(big_cohort(100L))
+  expect_match(p$labels$subtitle, "100 samples, ranked", fixed = TRUE)
+  expect_match(p$labels$subtitle, "S001", fixed = TRUE)  # the worst
+  expect_false(grepl("S100", p$labels$subtitle, fixed = TRUE))  # the best
+})
+
+test_that("rank 1 is the worst sample", {
+  p <- plot_missing_by_sample(big_cohort(100L))
+  worst <- p$data[p$data$rank == 1L, ]
+  expect_equal(worst$missing_rate, max(p$data$missing_rate))
+})
+
+test_that("the switch happens at the documented threshold, not near it", {
+  expect_false("rank" %in% names(
+    plot_missing_by_sample(big_cohort(MISSING_MAX_SAMPLE_BARS))$data))
+  expect_true("rank" %in% names(
+    plot_missing_by_sample(big_cohort(MISSING_MAX_SAMPLE_BARS + 1L))$data))
 })
 
 # ---- the feature panel ------------------------------------------------

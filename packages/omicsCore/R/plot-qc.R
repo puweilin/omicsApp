@@ -72,14 +72,29 @@ missing_axis_upper <- function(rates) {
   max(0.05, min(1, max(rates) * 1.15 + 0.01))
 }
 
+# How many of the worst samples to name when there are too many to name
+# them all. Five fits in the tail of a sorted curve without the labels
+# colliding.
+MISSING_LABEL_WORST <- 5L
+
+# One bar per sample stops working somewhere past a few dozen: the bars
+# get thinner than their labels are tall. Truncating to the worst N
+# answers "which sample is bad" but throws away "how bad is this cohort
+# overall", which is the other half of what the panel is for.
+#
+# So past the cap it becomes a sorted curve: every sample is still a
+# point, rank on y, and the shape of the curve is the distribution -- a
+# flat line with a short tail reads very differently from a steady
+# slope. The worst few keep their names, which is all anyone reads off
+# the top of a bar chart anyway.
+#
+# Missing rate stays on x either way, so this panel and the feature
+# panel below it remain directly comparable.
 plot_missing_by_sample <- function(sample_df, upper = 1) {
   df <- sample_df[order(sample_df$missing_rate, decreasing = TRUE), ,
                   drop = FALSE]
-  subtitle <- sprintf("%d samples", nrow(df))
   if (nrow(df) > MISSING_MAX_SAMPLE_BARS) {
-    subtitle <- sprintf("worst %d of %d samples",
-                        MISSING_MAX_SAMPLE_BARS, nrow(df))
-    df <- df[seq_len(MISSING_MAX_SAMPLE_BARS), , drop = FALSE]
+    return(plot_missing_sample_curve(df, upper))
   }
   # Reversed, because a discrete y axis is drawn bottom-up and the
   # worst sample belongs at the top.
@@ -93,8 +108,34 @@ plot_missing_by_sample <- function(sample_df, upper = 1) {
       limits = c(0, upper),
       expand = ggplot2::expansion(mult = c(0, 0.02))
     ) +
-    ggplot2::labs(title = "Missing rate per sample", subtitle = subtitle,
+    ggplot2::labs(title = "Missing rate per sample",
+                  subtitle = sprintf("%d samples", nrow(df)),
                   x = NULL, y = NULL) +
+    theme_omicsCore()
+}
+
+# `df` is already sorted worst-first.
+plot_missing_sample_curve <- function(df, upper = 1) {
+  df$rank <- seq_len(nrow(df))
+  worst <- df[seq_len(min(MISSING_LABEL_WORST, nrow(df))), , drop = FALSE]
+
+  ggplot2::ggplot(df, ggplot2::aes(x = .data$missing_rate, y = .data$rank)) +
+    ggplot2::geom_point(colour = MISSING_FILL, size = 1.1, alpha = 0.7) +
+    # Rank 1 is the worst, and belongs at the top.
+    ggplot2::scale_y_reverse(breaks = scales::breaks_pretty(4)) +
+    ggplot2::scale_x_continuous(labels = scales::label_percent(),
+                                limits = c(0, upper)) +
+    ggplot2::labs(
+      title = "Missing rate per sample",
+      # The names go in the subtitle rather than beside their points.
+      # The worst few sit at almost the same rank, so on the plot their
+      # labels land on top of one another; and putting them here costs
+      # no axis room, which keeps this panel's x range identical to the
+      # feature panel's.
+      subtitle = sprintf("%d samples, ranked. Worst: %s",
+                         nrow(df), paste(worst$sample_id, collapse = ", ")),
+      x = NULL, y = "Rank"
+    ) +
     theme_omicsCore()
 }
 
