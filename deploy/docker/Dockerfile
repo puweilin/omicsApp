@@ -72,7 +72,7 @@ RUN R -q -e 'pkgs <- c( \
 
 # ---- 3. Bioconductor dependencies -------------------------------------
 # `vsn` is not optional in practice: it is the default normalisation in
-# the import view and the method the CHISSS proteomics analyses have
+# the import view and the method the legacy proteomics pipeline has
 # always used. Without it every proteomics import fails on the default
 # setting with "Package 'vsn' is required".
 #

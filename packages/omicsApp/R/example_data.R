@@ -193,7 +193,7 @@ example_diff_bundle <- function() {
 #' @noRd
 example_project <- function() {
   omicsCore::omics_project(
-    name = "CHISSS demo \u00B7 Cheek \u00B7 G2 vs G1",
+    name = "Cheek \u00B7 G2 vs G1",
     experiments = list(
       proteomics = example_proteomics_input(),
       rnaseq     = example_input("rnaseq")

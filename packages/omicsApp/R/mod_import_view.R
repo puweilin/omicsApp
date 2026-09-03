@@ -249,7 +249,7 @@ import_view_server <- function(id,
     # This belongs to import rather than QC because it is what turns a file
     # into something the analysis backends can read: limma applies no
     # transform of its own, so an un-normalized layer means limma runs on raw
-    # instrument output. The legacy CHISSS framework normalized in its
+    # instrument output. The legacy framework normalized in its
     # data-input layer for the same reason; that layer is what did not survive
     # the port into this package.
     #

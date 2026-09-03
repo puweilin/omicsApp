@@ -300,7 +300,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     # Restore on arrival rather than on a click. The autosave is the
     # user's own last state, and asking them to ask for it every login
-    # meant landing on the CHISSS demo each morning -- a page that is
+    # meant landing on the built-in demo each morning -- a page that is
     # useful once and then noise.
     #
     # Deliberately narrow: only when nothing is loaded, and only once
@@ -458,7 +458,7 @@ project_activity_card <- function(project, is_demo = TRUE) {
                  sprintf("%d samples \u00B7 just now",
                          ncol(example_proteomics_input()$expr_mat))),
           bullet("--accent-500","Created demo project",
-                 "CHISSS \u00B7 Cheek \u00B7 G2 vs G1 \u00B7 just now")
+                 "Cheek \u00B7 G2 vs G1 \u00B7 just now")
         )
       } else {
         experiments <- project$experiments

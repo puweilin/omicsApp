@@ -21,7 +21,7 @@ ensure_vsn <- function() {
 #' heavily right-skewed, variance scaling with the mean, and fold changes that
 #' are differences of linear intensities rather than log ratios.
 #'
-#' `"vsn"` is the method the CHISSS proteomics analyses have always used. It
+#' `"vsn"` is the method the legacy proteomics pipeline has always used. It
 #' fits a variance-stabilising transform on the linear matrix and returns
 #' glog2-scale values, which behave like log2 intensities at the high end while
 #' staying finite near zero.

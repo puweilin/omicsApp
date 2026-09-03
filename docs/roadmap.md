@@ -37,7 +37,7 @@ Migration plan from `scripts/frameworks/omics_core/R/`:
 | `R/plot/*.R` | `packages/omicsCore/R/plot_*.R` | Copy, add `interactive` param via plotly |
 | `R/pipelines/*.R` | `packages/omicsCore/R/pipeline_*.R` | Copy, simplify |
 | `R/workflows/*.R` | `packages/omicsCore/R/workflow_*.R` | Copy, simplify |
-| `R/legacy/*.R` | **do not copy** | Remain in CHISSS legacy frameworks |
+| `R/legacy/*.R` | **do not copy** | Remain in the legacy frameworks |
 | `R/bootstrap/*.R` | **do not copy** (replaced by NAMESPACE) | |
 
 New additions in Phase 1:
@@ -49,9 +49,9 @@ New additions in Phase 1:
 
 ## Exit criteria per phase
 
-**Phase 1 done when:** `R CMD check --as-cran packages/omicsCore` returns 0 errors / 0 warnings; all current CHISSS analyses can be reproduced via `library(omicsCore)` without sourcing the legacy bootstrap.
+**Phase 1 done when:** `R CMD check --as-cran packages/omicsCore` returns 0 errors / 0 warnings; all current legacy analyses can be reproduced via `library(omicsCore)` without sourcing the legacy bootstrap.
 
-> **Status: met.** Validation script at `CHISSS/scripts/validation/cheek_g2_vs_g1_omicscore.R` reproduces the legacy Cheek G2-vs-G1 limma-with-age-adjustment diff (Pearson r = 1.000 on log2FC and -log10 p-values; volcano + heatmap + export_bundle all round-trip).
+> **Status: met.** Validation script at the parent project's `scripts/validation/cheek_g2_vs_g1_omicscore.R` reproduces the legacy Cheek G2-vs-G1 limma-with-age-adjustment diff (Pearson r = 1.000 on log2FC and -log10 p-values; volcano + heatmap + export_bundle all round-trip).
 >
 > **Correction.** That validation started from `readRDS(legacy_rds)` → `manager$get_imputed()`, i.e. from data the legacy framework had already vsn-normalized and imputed. It proved the differential layer faithful and said nothing about the preprocessing layer — which had not been ported, because `R/data_input/*` (migration table above) became the import *wizard* (`read_omics()`, sheet classification) rather than the data *preparation* pipeline the R6 managers ran. Normalization lived in `data_input/proteomics/`, not in `qc/`, so porting "the QC layer" faithfully missed it.
 >

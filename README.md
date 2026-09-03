@@ -47,16 +47,16 @@ NOT_CRAN=true Rscript -e 'devtools::test("packages/omicsApp")'
 `NOT_CRAN=true` matters: without it the golden test in
 `packages/omicsApp/tests/testthat/test-golden-raw-to-result.R` skips silently.
 That test runs the real SkinProteomics workbook from the raw file through
-import and normalization and checks the result against the legacy CHISSS
+import and normalization and checks the result against the legacy
 pipeline. It looks for `data/SkinProteomics/Proteomics_Data.xlsx` by walking
-up from the working directory, or wherever `CHISSS_PROTEOMICS_XLSX` points; it
+up from the working directory, or wherever `OMICSAPP_PROTEOMICS_XLSX` points; it
 skips when the file is absent, so a clone without the data still runs green.
 
 ## Status
 
 Pre-alpha. See [docs/export-manifest.md](./docs/export-manifest.md) for the planned public API and [docs/roadmap.md](./docs/roadmap.md) for the delivery plan.
 
-The legacy `omics_core` framework at `CHISSS/scripts/frameworks/omics_core/` remains **frozen** as the production code path for existing CHISSS analyses. `omicsCore` is a parallel, properly-packaged rewrite that does not affect those scripts.
+The legacy `omics_core` framework in the parent project's `scripts/frameworks/omics_core/` remains **frozen** as the production code path for the existing analyses. `omicsCore` is a parallel, properly-packaged rewrite that does not affect those scripts.
 
 ## License
 

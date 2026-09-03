@@ -2,7 +2,7 @@
 # Golden test: raw workbook -> omicsApp -> results that match the legacy pipeline
 # =============================================================================
 # This exists because of how the normalization gap got in. Phase 1's exit
-# criterion was "all current CHISSS analyses can be reproduced via
+# criterion was "all current legacy analyses can be reproduced via
 # library(omicsCore)", and the validation script that signed it off did:
 #
 #     manager  <- readRDS(legacy_rds)      # already vsn-normalized and imputed
@@ -17,10 +17,10 @@
 # pre-processed input cannot pass here.
 #
 # It needs the real SkinProteomics workbook, which does not live in this repo.
-# Point CHISSS_PROTEOMICS_XLSX at it, or keep the conventional CHISSS layout.
+# Point OMICSAPP_PROTEOMICS_XLSX at it, or keep the conventional layout.
 
 golden_workbook <- function() {
-  from_env <- Sys.getenv("CHISSS_PROTEOMICS_XLSX", "")
+  from_env <- Sys.getenv("OMICSAPP_PROTEOMICS_XLSX", "")
   if (nzchar(from_env) && file.exists(from_env)) return(from_env)
 
   # Walk up rather than counting "..": how deep the working directory sits
@@ -46,12 +46,12 @@ skip_unless_golden <- function() {
   path <- golden_workbook()
   testthat::skip_if(
     is.na(path),
-    "Real SkinProteomics workbook not found; set CHISSS_PROTEOMICS_XLSX"
+    "Real SkinProteomics workbook not found; set OMICSAPP_PROTEOMICS_XLSX"
   )
   path
 }
 
-# What the CHISSS framework does to get from raw intensities to
+# What the legacy framework does to get from raw intensities to
 # normalized_intensity, transcribed from
 # scripts/frameworks/omics_core/R/data_input/proteomics/build_proteomics_se.R.
 #
