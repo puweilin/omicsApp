@@ -56,11 +56,31 @@ RUN R -q -e 'pkgs <- c( \
 # Checked for the same reason as the CRAN layer above, and it matters
 # more here: none of these have binaries on p3m, so every one is a
 # source build with its own way to fail.
-RUN R -q -e 'pkgs <- c( \
+#
+# The repositories are named explicitly rather than left to
+# BiocManager::install(), because 3.20 is now an archived release and
+# bioconductor.org redirects it to an OSN bucket at XSEDE that is slow
+# to unreachable. The failure mode is the bad one: no error, just a
+# download waiting on a host that never answers, so the build appears to
+# hang after printing "Replacement repositories".
+#
+# data/annotation is in the list because clusterProfiler needs GO.db.
+# Override BIOC_MIRROR to build somewhere the upstream is fast:
+#   docker build --build-arg BIOC_MIRROR=https://bioconductor.org ...
+ARG BIOC_MIRROR=https://mirrors.westlake.edu.cn/bioconductor
+RUN R -q -e 'bioc <- paste0(Sys.getenv("BIOC_MIRROR"), "/packages/3.20"); \
+      if (!nzchar(Sys.getenv("BIOC_MIRROR"))) stop("BIOC_MIRROR is empty"); \
+      options(repos = c( \
+        BioCsoft = paste0(bioc, "/bioc"), \
+        BioCann  = paste0(bioc, "/data/annotation"), \
+        BioCexp  = paste0(bioc, "/data/experiment"), \
+        CRAN     = "https://p3m.dev/cran/__linux__/noble/latest"), \
+        timeout = 300); \
+      pkgs <- c( \
       "limma","clusterProfiler","DESeq2","edgeR","S4Vectors","enrichplot", \
       "fgsea","GSVA","ComplexHeatmap","impute","pcaMethods","tximport", \
       "GenomicFeatures","vsn"); \
-      BiocManager::install(pkgs, ask = FALSE, update = FALSE, Ncpus = parallel::detectCores()); \
+      install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("Bioconductor packages failed to install: ", \
                                 paste(missing, collapse = ", "))'
