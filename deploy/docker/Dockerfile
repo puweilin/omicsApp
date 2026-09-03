@@ -67,6 +67,20 @@ RUN R -q -e 'pkgs <- c( \
 # data/annotation is in the list because clusterProfiler needs GO.db.
 # Override BIOC_MIRROR to build somewhere the upstream is fast:
 #   docker build --build-arg BIOC_MIRROR=https://bioconductor.org ...
+#
+# 12 packages pull in 168: clusterProfiler alone accounts for 120,
+# enrichplot 118 and GSVA 101, overlapping heavily. That closure, all
+# built from source because p3m carries no Bioconductor binaries, is
+# what the 30-45 minutes here is.
+#
+# tximport and GenomicFeatures are deliberately absent. Neither is ever
+# called: diff-deseq2.R and diff-edger.R read a length matrix the caller
+# may have left at input$misc$tximport$length, which is metadata, not a
+# package call, and there is no Salmon import path yet. Together they
+# cost 11 further packages of which rtracklayer, Rsamtools, Rhtslib,
+# GenomicAlignments and RCurl are all C/C++ builds. They stay in
+# omicsCore's Suggests and install-optional.R's rnaseq bundle, for
+# whoever installs the package outside this image.
 ARG BIOC_MIRROR=https://mirrors.westlake.edu.cn/bioconductor
 RUN R -q -e 'bioc <- paste0(Sys.getenv("BIOC_MIRROR"), "/packages/3.20"); \
       if (!nzchar(Sys.getenv("BIOC_MIRROR"))) stop("BIOC_MIRROR is empty"); \
@@ -78,8 +92,7 @@ RUN R -q -e 'bioc <- paste0(Sys.getenv("BIOC_MIRROR"), "/packages/3.20"); \
         timeout = 300); \
       pkgs <- c( \
       "limma","clusterProfiler","DESeq2","edgeR","S4Vectors","enrichplot", \
-      "fgsea","GSVA","ComplexHeatmap","impute","pcaMethods","tximport", \
-      "GenomicFeatures","vsn"); \
+      "fgsea","GSVA","ComplexHeatmap","impute","pcaMethods","vsn"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("Bioconductor packages failed to install: ", \
