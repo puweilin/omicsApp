@@ -53,10 +53,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # deploy/scripts/check_pins.R, which verifies both and should be run
 # before this line is changed.
 ARG CRAN_SNAPSHOT=2025-03-01
+ARG BIOC_MIRROR=https://mirrors.westlake.edu.cn/bioconductor
 ENV CRAN=https://p3m.dev/cran/__linux__/noble/${CRAN_SNAPSHOT}
-RUN R -q -e 'options(repos = c(CRAN = Sys.getenv("CRAN")), timeout = 300); \
-      cat("CRAN:", getOption("repos")[["CRAN"]], "\n"); \
-      pkgs <- c( \
+COPY deploy/docker/setup_repos.R /tmp/setup_repos.R
+RUN Rscript /tmp/setup_repos.R && rm /tmp/setup_repos.R
+
+RUN R -q -e 'pkgs <- c( \
       "shiny","bslib","bsicons","sass","htmltools","ggplot2","plotly","DT", \
       "shinyWidgets","shinyjs","promises","future", \
       "tibble","dplyr","stringr","readxl","openxlsx","jsonlite","scales", \
@@ -102,21 +104,36 @@ RUN R -q -e 'options(repos = c(CRAN = Sys.getenv("CRAN")), timeout = 300); \
 # GenomicAlignments and RCurl are all C/C++ builds. They stay in
 # omicsCore's Suggests and install-optional.R's rnaseq bundle, for
 # whoever installs the package outside this image.
-ARG BIOC_MIRROR=https://mirrors.westlake.edu.cn/bioconductor
-RUN R -q -e 'bioc <- paste0(Sys.getenv("BIOC_MIRROR"), "/packages/3.20"); \
-      if (!nzchar(Sys.getenv("BIOC_MIRROR"))) stop("BIOC_MIRROR is empty"); \
-      options(repos = c( \
-        BioCsoft = paste0(bioc, "/bioc"), \
-        BioCann  = paste0(bioc, "/data/annotation"), \
-        BioCexp  = paste0(bioc, "/data/experiment"), \
-        CRAN     = Sys.getenv("CRAN")), \
-        timeout = 300); \
-      pkgs <- c( \
-      "limma","clusterProfiler","DESeq2","edgeR","S4Vectors","enrichplot", \
-      "fgsea","GSVA","ComplexHeatmap","impute","pcaMethods","vsn"); \
+# Split into three, ordered by how deep their dependency chains run, so
+# that a failure in one keeps the earlier ones cached. That is worth the
+# extra layers: this closure is 109 source builds, both failures so far
+# landed in the last two groups -- BiocParallel under DESeq2, ggtree
+# under clusterProfiler -- and each time the whole layer was discarded,
+# because Docker commits only successful ones.
+#
+# Repositories come from Rprofile.site, written above.
+
+# 3a. Foundations: 24 packages, none deep.
+RUN R -q -e 'pkgs <- c("S4Vectors","limma","impute","pcaMethods","edgeR", \
+                       "vsn","ComplexHeatmap"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
-      if (length(missing)) stop("Bioconductor packages failed to install: ", \
+      if (length(missing)) stop("Bioconductor 3a failed: ", \
+                                paste(missing, collapse = ", "))'
+
+# 3b. 23 more, and the first heavy C++ builds (BiocParallel, Rhdf5lib).
+RUN R -q -e 'pkgs <- c("fgsea","DESeq2"); \
+      install.packages(pkgs, Ncpus = parallel::detectCores()); \
+      missing <- setdiff(pkgs, rownames(installed.packages())); \
+      if (length(missing)) stop("Bioconductor 3b failed: ", \
+                                paste(missing, collapse = ", "))'
+
+# 3c. The long tail: 62 packages, most of the time, and the whole
+# clusterProfiler/enrichplot/ggtree chain.
+RUN R -q -e 'pkgs <- c("GSVA","enrichplot","clusterProfiler"); \
+      install.packages(pkgs, Ncpus = parallel::detectCores()); \
+      missing <- setdiff(pkgs, rownames(installed.packages())); \
+      if (length(missing)) stop("Bioconductor 3c failed: ", \
                                 paste(missing, collapse = ", "))'
 
 # ---- 4. PDF reports (optional) ----------------------------------------
