@@ -216,7 +216,15 @@ fetch_msigdbr_raw <- function(database, organism) {
 build_term_tables <- function(database, organism) {
   df <- fetch_msigdbr_table(database, organism)
   gene_col <- if ("gene_symbol" %in% colnames(df)) "gene_symbol" else "human_gene_symbol"
-  name_col <- if ("gs_description" %in% colnames(df)) "gs_description" else NA_character_
+  # The display name comes from gs_name, not gs_description.
+  #
+  # For Hallmark a description is a short sentence, which is why this
+  # went unnoticed. For GO and Reactome it is the full definition with
+  # its citations -- "The chemical reactions and pathways involving
+  # 10-formyltetrahydrofolate, the formylated derivative of
+  # tetrahydrofolate. [GOC:ai]" -- and that was arriving as the label on
+  # a dotplot axis.
+  name_col <- NA_character_
 
   keep <- !is.na(df[[gene_col]]) & !is.na(df$gs_name)
   t2g <- data.frame(
@@ -235,9 +243,10 @@ build_term_tables <- function(database, organism) {
     )
     t2n <- unique(t2n)
   } else {
+    terms <- unique(t2g$term)
     t2n <- data.frame(
-      term = unique(t2g$term),
-      name = unique(t2g$term),
+      term = terms,
+      name = prettify_gene_set_name(terms),
       stringsAsFactors = FALSE
     )
   }
@@ -303,4 +312,29 @@ list_gene_sets <- function(database, organism = "Hs") {
   out <- out[!is.na(out$gene_symbol) & !is.na(out$pathway_name), , drop = FALSE]
   out <- out[!duplicated(out[, c("pathway_id", "gene_symbol")]), , drop = FALSE]
   out
+}
+
+# MSigDB set names carry their collection as a prefix and join words
+# with underscores: HALLMARK_TNFA_SIGNALING_VIA_NFKB. Neither belongs on
+# a plot axis.
+GENE_SET_NAME_PREFIXES <- c(
+  "HALLMARK_", "GOBP_", "GOMF_", "GOCC_", "KEGG_MEDICUS_", "KEGG_LEGACY_",
+  "KEGG_", "REACTOME_", "WP_", "BIOCARTA_", "PID_"
+)
+
+# Turn a set name into a label.
+#
+# Casing is left as MSigDB wrote it. Lowercasing reads better on a long
+# GO term -- "10 formyltetrahydrofolate metabolic process" -- but every
+# rule for deciding which tokens to spare turns some gene symbol into a
+# word, and TNFA rendered as "Tnfa" is wrong in a way that ALL CAPS is
+# only ugly. A label that is hard to read can still be looked up; one
+# that is wrong cannot.
+prettify_gene_set_name <- function(x) {
+  x <- as.character(x)
+  for (p in GENE_SET_NAME_PREFIXES) {
+    hit <- startsWith(x, p) & !is.na(x)
+    x[hit] <- substring(x[hit], nchar(p) + 1L)
+  }
+  trimws(gsub("_", " ", x, fixed = TRUE))
 }

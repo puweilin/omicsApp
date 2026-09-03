@@ -218,19 +218,19 @@ example_project <- function() {
 #' @noRd
 example_enrich_table <- function() {
   pathways <- c(
-    "Inflammatory response",
-    "TNFA signaling via NFKB",
-    "IL6 JAK STAT3 signaling",
-    "Epithelial mesenchymal transition",
-    "Complement",
-    "Oxidative phosphorylation",
-    "Myogenesis",
-    "Apical junction",
-    "Hypoxia",
-    "Apoptosis",
-    "Interferon gamma response",
-    "KRAS signaling up",
-    "Adipogenesis",
+    "INFLAMMATORY RESPONSE",
+    "TNFA SIGNALING VIA NFKB",
+    "IL6 JAK STAT3 SIGNALING",
+    "EPITHELIAL MESENCHYMAL TRANSITION",
+    "COMPLEMENT",
+    "OXIDATIVE PHOSPHORYLATION",
+    "MYOGENESIS",
+    "APICAL JUNCTION",
+    "HYPOXIA",
+    "APOPTOSIS",
+    "INTERFERON GAMMA RESPONSE",
+    "KRAS SIGNALING UP",
+    "ADIPOGENESIS",
     "Fatty acid metabolism",
     "MYC targets v1"
   )
@@ -378,7 +378,7 @@ example_integration_tables <- function() {
       "Extracellular matrix organization",
       "Collagen biosynthesis",
       "Innate immune system",
-      "Oxidative phosphorylation"
+      "OXIDATIVE PHOSPHORYLATION"
     ),
     p_a        = c(1.2e-12, 8.6e-09, 2.4e-08, 5.8e-08, 3.1e-06, 3.5e-06),
     p_b        = c(4.1e-08, 2.0e-07, 7.8e-06, 1.2e-05, 8.4e-05, 2.1e-04),
