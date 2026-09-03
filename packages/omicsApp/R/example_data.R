@@ -406,6 +406,29 @@ example_integration_tables <- function() {
 #' @noRd
 example_qc_bundle <- function() {
   if (!is.null(.example_cache$qc)) return(.example_cache$qc)
+  .example_cache$qc <- omicsCore::run_qc(
+    example_qc_input(),
+    missing_threshold = 0.5,
+    outlier_method    = "iqr"
+  )
+}
+
+#' The input behind the demo QC bundle
+#'
+#' Split out from [example_qc_bundle()] so the QC view can run the demo
+#' through `run_qc()` with the *live* slider and radio values. Handing
+#' back a bundle computed at fixed settings left both controls visibly
+#' enabled and doing nothing, which reads as a broken app rather than as
+#' a demo.
+#'
+#' 50 x 12 proteomics, so a re-run costs milliseconds and needs no cache
+#' of its own.
+#'
+#' @return An `omics_input` with ~5% of cells set to `NA`.
+#' @keywords internal
+#' @noRd
+example_qc_input <- function() {
+  if (!is.null(.example_cache$qc_input)) return(.example_cache$qc_input)
   input <- example_proteomics_input()
   expr  <- input$expr_mat
   set.seed(2026L + 3L)
@@ -413,12 +436,7 @@ example_qc_bundle <- function() {
   na_idx  <- sample.int(n_cells, size = ceiling(0.05 * n_cells))
   expr[na_idx] <- NA_real_
   input$expr_mat <- expr
-
-  .example_cache$qc <- omicsCore::run_qc(
-    input,
-    missing_threshold = 0.5,
-    outlier_method    = "iqr"
-  )
+  .example_cache$qc_input <- input
 }
 
 # ---- internal symbol pools -------------------------------------------

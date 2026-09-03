@@ -115,17 +115,19 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       thr   <- input$missing_threshold %||% 0.5
       out_m <- input$outlier_method   %||% "iqr"
 
-      bundle <- tryCatch({
-        if (a$is_demo) {
-          example_qc_bundle()
-        } else {
-          omicsCore::run_qc(
-            a$input,
-            missing_threshold = thr,
-            outlier_method    = out_m
-          )
-        }
-      }, error = function(e) e)
+      # The demo runs through run_qc() like a real project rather than
+      # returning a fixed bundle. Both controls above are enabled, and
+      # a control that is enabled and does nothing reads as a broken
+      # app; the demo input is 50 x 12, so a re-run is milliseconds.
+      qc_input <- if (a$is_demo) example_qc_input() else a$input
+
+      bundle <- tryCatch(
+        omicsCore::run_qc(
+          qc_input,
+          missing_threshold = thr,
+          outlier_method    = out_m
+        ),
+        error = function(e) e)
 
       if (inherits(bundle, "error")) {
         last_error(conditionMessage(bundle))
