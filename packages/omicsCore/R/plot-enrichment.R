@@ -167,7 +167,7 @@ plot_enrich_dot <- function(df, p_col) {
       x = if (has_effect) "effect" else "overlap size",
       y = NULL
     ) +
-    theme_enrichment()
+    theme_omics_labelled()
 
   if (has_effect) {
     p <- p + ggplot2::geom_vline(xintercept = 0, linetype = "dashed",
@@ -192,7 +192,7 @@ plot_enrich_bar <- function(df, p_col) {
       x = paste0("-log10(", p_col, ")"),
       y = NULL
     ) +
-    theme_enrichment()
+    theme_omics_labelled()
 }
 
 plot_enrich_gsea_dot <- function(df, p_col) {
@@ -218,7 +218,7 @@ plot_enrich_gsea_dot <- function(df, p_col) {
       x = "NES",
       y = NULL
     ) +
-    theme_enrichment()
+    theme_omics_labelled()
 }
 
 # Wrapped, not cut short. A truncated GO BP term is often
@@ -253,14 +253,24 @@ wrap_pathway_name <- function(x, width = 34L, max_lines = 3L) {
   }, character(1), USE.NAMES = FALSE)
 }
 
-# Pathway labels are the plot's content, not its furniture: a reader
-# scanning a dotplot is reading the y axis. theme_omicsCore()'s base
-# size leaves them smaller than the title, which is backwards.
-theme_enrichment <- function() {
-  theme_omicsCore() +
+# Used by the enrichment and integration panels -- named for why, not
+# for which module, since it now serves both.
+#
+# These panels are read, not glanced at: the y
+# axis carries pathway names or gene symbols, and those *are* the
+# result. theme_omicsCore()'s 11pt base leaves them smaller than the
+# title, which is backwards, and smaller still once the panel is one of
+# two sharing a row.
+#
+# The base size moves rather than only axis.text, so the legend, the
+# axis titles and the facet strips come with it -- raising one and
+# leaving the rest is how a plot ends up looking mismatched.
+theme_omics_labelled <- function(base_size = 13) {
+  theme_omicsCore(base_size = base_size) +
     ggplot2::theme(
-      axis.text.y = ggplot2::element_text(size = ggplot2::rel(1.15),
-                                          lineheight = 0.95),
-      axis.text.x = ggplot2::element_text(size = ggplot2::rel(1.0))
+      axis.text.y  = ggplot2::element_text(size = ggplot2::rel(1.05),
+                                           lineheight = 0.95),
+      legend.text  = ggplot2::element_text(size = ggplot2::rel(0.9)),
+      legend.title = ggplot2::element_text(size = ggplot2::rel(0.9))
     )
 }

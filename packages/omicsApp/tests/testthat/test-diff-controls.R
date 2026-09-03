@@ -155,3 +155,47 @@ test_that("a project with no experiments says so rather than blaming the contras
     }
   )
 })
+
+# ---- changing layer ---------------------------------------------------
+
+test_that("changing layer clears the result rather than re-running", {
+  # Picking a layer is the first of several decisions -- method,
+  # contrast, covariates. Spending a run on the state halfway through
+  # them is work nobody asked for, on settings nobody has finished
+  # choosing.
+  shiny::testServer(diff_view_server, args = list(), {
+    session$flushReact()
+    session$setInputs(layer = "proteomics")
+    expect_false(is.null(diff_bundle()))          # the one automatic run
+
+    session$setInputs(layer = "rnaseq")
+    expect_null(diff_bundle())
+    expect_null(diff_error())
+  })
+})
+
+test_that("keeping the old result would have been worse than clearing", {
+  # A bundle from the previous layer describes different features
+  # entirely, and nothing on screen would say which layer it came from.
+  shiny::testServer(diff_view_server, args = list(), {
+    session$flushReact()
+    session$setInputs(layer = "proteomics")
+    before <- diff_bundle()$input_info$omics_type
+
+    session$setInputs(layer = "rnaseq")
+    session$setInputs(rerun = 1)
+    expect_identical(diff_bundle()$input_info$omics_type, "rnaseq")
+    expect_false(identical(diff_bundle()$input_info$omics_type, before))
+  })
+})
+
+test_that("Re-run after a layer change uses the new layer's engine", {
+  shiny::testServer(diff_view_server, args = list(), {
+    session$flushReact()
+    session$setInputs(layer = "proteomics")
+    expect_identical(diff_bundle()$params$method, "limma")
+
+    session$setInputs(layer = "rnaseq", rerun = 1)
+    expect_identical(diff_bundle()$params$method, "deseq2")
+  })
+})

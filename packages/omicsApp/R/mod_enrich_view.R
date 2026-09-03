@@ -231,6 +231,11 @@ enrich_omics_display <- function(t) {
 
 enrich_params_card <- function(ns) {
   bslib::card(
+    # A dropdown opened from this card renders *inside* it, and a card
+    # clips its overflow -- so the Database menu was cut off at the card
+    # edge. Only an issue since the controls moved to a top row: down a
+    # tall rail there was always card below the menu.
+    class = "param-row-card",
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Parameters"),
       htmltools::tags$span(class = "card-sub",

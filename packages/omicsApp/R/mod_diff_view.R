@@ -262,11 +262,26 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     }
 
-    # Initial population: fire as soon as the active() reactive
-    # settles. For demo we just emit the fixture; for live data
-    # we attempt a default-contrast run.
+    # Run once, when the view first settles, so the user lands on a
+    # populated volcano rather than an empty panel.
+    #
+    # After that a change of layer *clears* the result instead of
+    # recomputing it. Re-running would be worse than either extreme:
+    # picking a layer is the first of several decisions -- method,
+    # contrast, covariates -- and spending a DESeq2 run on the state
+    # halfway through them is work nobody asked for, on settings nobody
+    # has finished choosing. Keeping the old result would be worse
+    # still: it is about the previous layer, and nothing on screen
+    # would say so.
+    ran_once <- shiny::reactiveVal(FALSE)
     shiny::observeEvent(active(), {
-      do_run()
+      if (!ran_once()) {
+        ran_once(TRUE)
+        do_run()
+      } else {
+        diff_bundle(NULL)
+        diff_error(NULL)
+      }
     }, ignoreInit = TRUE)
 
     # Re-run button is the user-driven path. bindEvent semantics

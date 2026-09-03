@@ -401,6 +401,12 @@ table.tbl td.num, table.tbl th.num {
   > .param-action { margin-left: auto; }
 }
 
+// The card holding a .param-row must not clip its own dropdowns. Cards
+// clip by default, which is right for a plot and wrong for a menu that
+// opens downward out of a short card.
+.param-row-card,
+.param-row-card > .card-body { overflow: visible !important; }
+
 .param-group {
   padding-bottom: 14px;
   border-bottom: 1px dashed var(--border);

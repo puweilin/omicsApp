@@ -153,7 +153,7 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
       x = xlab,
       y = "-log10(adj_p_value)"
     ) +
-    theme_omicsCore()
+    theme_omics_labelled()
 
   p + add_repel_layer(df, x_aes, ".neglog10p", ".label")
 }
@@ -186,7 +186,7 @@ plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_c
                  " - ", integration_axis_label(bundle, "b"), ")"),
       y = "-log10(combined p)"
     ) +
-    theme_omicsCore()
+    theme_omics_labelled()
 
   p + add_repel_layer(df, "effect", ".neglog10p", ".label")
 }
@@ -220,7 +220,7 @@ plot_integration_effect_pair <- function(df, bundle) {
       x = paste0("effect (", integration_axis_label(bundle, "a"), ")"),
       y = paste0("effect (", integration_axis_label(bundle, "b"), ")")
     ) +
-    theme_omicsCore()
+    theme_omics_labelled()
 }
 
 # The concordance schema stores `effect = effect_a - effect_b` rather
@@ -266,7 +266,7 @@ plot_integration_quadrant <- function(df, bundle) {
       subtitle = paste(bundle$params$experiments, collapse = " vs "),
       x = NULL, y = "features"
     ) +
-    theme_omicsCore()
+    theme_omics_labelled()
 }
 
 plot_integration_dotplot <- function(df, bundle, top_n) {
@@ -294,5 +294,5 @@ plot_integration_dotplot <- function(df, bundle, top_n) {
       subtitle = paste(bundle$params$experiments, collapse = " vs "),
       x = "-log10(adj p)", y = NULL
     ) +
-    theme_omicsCore()
+    theme_omics_labelled()
 }
