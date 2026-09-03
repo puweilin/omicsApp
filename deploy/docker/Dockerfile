@@ -35,7 +35,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # car -> rstatix, and Deriv's current source needs R_ClosureFormals(),
 # an R 4.5 C API this image's R 4.4.2 does not have. Nothing calls
 # ggpubr: plots use theme_analysis()/theme_volcano() from the framework.
-RUN R -q -e 'pkgs <- c( \
+#
+# CRAN is pinned to a snapshot two days after Bioconductor 3.20 was
+# released, because 3.20 is archived and today's CRAN has moved almost
+# two years past it. Left on `latest` the mismatch surfaces one package
+# at a time: Deriv needs an R 4.5 C API this R 4.4.2 does not have, and
+# ggtree 3.14.0 calls getFromNamespace("check_linewidth", "ggplot2"),
+# which ggplot2 4.0 removed. Pinning fixes the class rather than the
+# instances, and makes the build reproducible as a side effect.
+ARG CRAN_SNAPSHOT=2024-11-01
+ENV CRAN=https://p3m.dev/cran/__linux__/noble/${CRAN_SNAPSHOT}
+RUN R -q -e 'options(repos = c(CRAN = Sys.getenv("CRAN")), timeout = 300); \
+      cat("CRAN:", getOption("repos")[["CRAN"]], "\n"); \
+      pkgs <- c( \
       "shiny","bslib","bsicons","sass","htmltools","ggplot2","plotly","DT", \
       "shinyWidgets","shinyjs","promises","future", \
       "tibble","dplyr","stringr","readxl","openxlsx","jsonlite","scales", \
@@ -88,7 +100,7 @@ RUN R -q -e 'bioc <- paste0(Sys.getenv("BIOC_MIRROR"), "/packages/3.20"); \
         BioCsoft = paste0(bioc, "/bioc"), \
         BioCann  = paste0(bioc, "/data/annotation"), \
         BioCexp  = paste0(bioc, "/data/experiment"), \
-        CRAN     = "https://p3m.dev/cran/__linux__/noble/latest"), \
+        CRAN     = Sys.getenv("CRAN")), \
         timeout = 300); \
       pkgs <- c( \
       "limma","clusterProfiler","DESeq2","edgeR","S4Vectors","enrichplot", \

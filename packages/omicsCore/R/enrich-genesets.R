@@ -179,6 +179,16 @@ fetch_msigdbr_table <- function(database, organism) {
   df
 }
 
+# Translate a DB_MSIGDBR_MAP subcollection to the name the pre-v10
+# msigdbr data uses. Only KEGG differs: MSigDB 7.5 calls it "CP:KEGG",
+# and renamed it "CP:KEGG_LEGACY" when KEGG_MEDICUS arrived. The map
+# carries the modern name, so on old msigdbr the filter would match no
+# rows and hand back an empty table instead of the KEGG gene sets --
+# an empty result, not an error, which is the worse of the two.
+legacy_subcollection <- function(subcollection) {
+  if (identical(subcollection, "CP:KEGG_LEGACY")) "CP:KEGG" else subcollection
+}
+
 fetch_msigdbr_raw <- function(database, organism) {
   cfg <- DB_MSIGDBR_MAP[[database]]
   msig_args <- names(formals(msigdbr::msigdbr))
@@ -191,9 +201,10 @@ fetch_msigdbr_raw <- function(database, organism) {
     )
   } else {
     # Legacy msigdbr (<v10) API.
+    sub <- legacy_subcollection(cfg$subcollection)
     raw <- msigdbr::msigdbr(species = organism, category = cfg$collection)
-    if (!is.na(cfg$subcollection) && "gs_subcat" %in% colnames(raw)) {
-      raw <- raw[raw$gs_subcat == cfg$subcollection, , drop = FALSE]
+    if (!is.na(sub) && "gs_subcat" %in% colnames(raw)) {
+      raw <- raw[raw$gs_subcat == sub, , drop = FALSE]
     }
     raw
   }

@@ -61,9 +61,16 @@ fetch <- function(cfg, organism) {
       subcollection = if (is.na(cfg$subcollection)) NULL else cfg$subcollection
     )
   } else {
+    # msigdbr < 10 carries MSigDB 7.5, whose KEGG subcategory is
+    # "CP:KEGG". MSigDB renamed it "CP:KEGG_LEGACY" on adding
+    # KEGG_MEDICUS, and COLLECTIONS above uses the modern name -- so
+    # without this the filter matches nothing and the kegg table is
+    # silently empty rather than absent.
+    sub <- cfg$subcollection
+    if (identical(sub, "CP:KEGG_LEGACY")) sub <- "CP:KEGG"
     raw <- msigdbr::msigdbr(species = organism, category = cfg$collection)
-    if (!is.na(cfg$subcollection) && "gs_subcat" %in% colnames(raw)) {
-      raw <- raw[raw$gs_subcat == cfg$subcollection, , drop = FALSE]
+    if (!is.na(sub) && "gs_subcat" %in% colnames(raw)) {
+      raw <- raw[raw$gs_subcat == sub, , drop = FALSE]
     }
     raw
   }
