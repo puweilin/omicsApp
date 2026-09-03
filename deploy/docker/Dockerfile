@@ -35,10 +35,14 @@ RUN R -q -e 'install.packages(c( \
       Ncpus = parallel::detectCores())'
 
 # ---- 3. Bioconductor dependencies -------------------------------------
+# `vsn` is not optional in practice: it is the default normalisation in
+# the import view and the method the CHISSS proteomics analyses have
+# always used. Without it every proteomics import fails on the default
+# setting with "Package 'vsn' is required".
 RUN R -q -e 'BiocManager::install(c( \
       "limma","clusterProfiler","DESeq2","edgeR","S4Vectors","enrichplot", \
       "fgsea","GSVA","ComplexHeatmap","impute","pcaMethods","tximport", \
-      "GenomicFeatures"), ask = FALSE, update = FALSE, Ncpus = parallel::detectCores())'
+      "GenomicFeatures","vsn"), ask = FALSE, update = FALSE, Ncpus = parallel::detectCores())'
 
 # ---- 4. PDF reports (optional) ----------------------------------------
 # Adds ~1.5 GB. Comment out if HTML reports are enough; the Report view

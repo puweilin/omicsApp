@@ -271,7 +271,7 @@ import_view_server <- function(id,
         return(htmltools::tags$div(
           class = "muted",
           style = "font-size:12px;margin-bottom:10px",
-          "Already on a transformed scale — nothing to normalize."
+          "Already on a transformed scale \u2014 nothing to normalize."
         ))
       }
       htmltools::tagList(
