@@ -432,7 +432,54 @@ materialize_feature_annot <- function(df, feature_ids) {
   }
   df <- df[feature_ids, , drop = FALSE]
   attr(df, "id_column") <- id_col
+  sym_col <- pick_symbol_column(df, exclude = id_col)
+  if (!is.null(sym_col)) {
+    df$feature_symbol <- first_gene_symbol(df[[sym_col]])
+  }
+  attr(df, "symbol_column") <- sym_col %||% NA_character_
   df
+}
+
+# Column names the instrument vendors use for the gene symbol.
+# Matched after lowercasing and stripping everything that is not a
+# letter, so "Gene names", "Gene.Name", "PG.Genes" and "gene_symbol" all
+# collapse onto an entry here.
+SYMBOL_COLUMN_NAMES <- c(
+  "genesymbol", "genesymbols", "symbol", "symbols",
+  "gene", "genes", "genename", "genenames",
+  "pggenes",        # Spectronaut
+  "hgncsymbol", "hgnc"
+)
+
+# Which column holds the gene symbol, or NULL.
+#
+# Matched by name rather than by content, unlike pick_id_column(), which
+# can check its guess against the matrix row names. There is nothing to
+# check a symbol against: any short uppercase string looks like a gene,
+# and guessing wrong here would relabel every feature in every plot and
+# every enrichment with something that is not its name. A vendor's column
+# heading is a stated fact; the shape of the values is not.
+pick_symbol_column <- function(df, exclude = NULL) {
+  if (is.null(df) || !ncol(df)) return(NULL)
+  if ("feature_symbol" %in% colnames(df)) return(NULL)  # already named
+  norm <- tolower(gsub("[^A-Za-z]", "", colnames(df)))
+  hit <- which(norm %in% SYMBOL_COLUMN_NAMES &
+                 !colnames(df) %in% c(exclude, "feature_id"))
+  if (!length(hit)) return(NULL)
+  # Earliest match wins; the vendor list is ordered most specific first
+  # but a workbook can carry more than one, and the leftmost is the one
+  # a reader would have taken.
+  colnames(df)[hit[1L]]
+}
+
+# MaxQuant and friends pack several genes into one cell, separated by
+# ";" or ",". The first is the leading identification; keeping the whole
+# string would give an enrichment query that matches nothing.
+first_gene_symbol <- function(x) {
+  x <- trimws(as.character(x))
+  x <- sub("[;,].*$", "", x)
+  x[!nzchar(x)] <- NA_character_
+  x
 }
 
 pick_id_column <- function(df, feature_ids) {
