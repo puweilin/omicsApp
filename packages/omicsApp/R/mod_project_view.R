@@ -28,9 +28,14 @@ project_view_ui <- function(id) {
 #' @rdname project_view_ui
 #' @param current_project Reactive (or reactiveVal) yielding the
 #'   live `omics_project` or `NULL`.
+#' @param on_view_layer Called with an experiment tag when its "View"
+#'   link is clicked. The default does nothing, which keeps the module
+#'   usable on its own; the app supplies a callback that switches to the
+#'   QC view and asks it for that layer.
 #' @keywords internal
 #' @noRd
-project_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
+project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
+                                on_view_layer = function(tag) NULL) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Render against the live project when present, otherwise the
@@ -129,9 +134,35 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) 
       r <- resolved()
       htmltools::tags$div(
         class = "row-grid r-7-5",
-        project_experiments_card(r$project$experiments),
+        project_experiments_card(r$project$experiments, ns = session$ns),
         project_activity_card(r$project, is_demo = r$is_demo)
       )
+    })
+
+    # One observer per experiment row, registered the first time a row
+    # at that position exists. Registering inside an observer rather
+    # than up front is what lets the number of rows change;
+    # `registered_rows` stops a second registration when the project is
+    # replaced, which would otherwise fire the callback once per
+    # duplicate.
+    registered_rows <- new.env(parent = emptyenv())
+    shiny::observe({
+      n <- length(resolved()$project$experiments)
+      for (i in seq_len(n)) {
+        key <- paste0("view_layer_", i)
+        if (!is.null(registered_rows[[key]])) next
+        registered_rows[[key]] <- TRUE
+        local({
+          idx <- i
+          shiny::observeEvent(input[[paste0("view_layer_", idx)]], {
+            # Read the tag at click time: the project may have been
+            # replaced since the link was drawn, and the row now
+            # belongs to a different layer.
+            tags_now <- names(resolved()$project$experiments)
+            if (idx <= length(tags_now)) on_view_layer(tags_now[[idx]])
+          }, ignoreInit = TRUE)
+        })
+      }
     })
 
     # ---- saved-project store -----------------------------------------
@@ -310,7 +341,13 @@ project_omics_label <- function(x) {
          x$omics_type)
 }
 
-project_experiments_card <- function(experiments) {
+#' @param ns The module's namespace function. The "View" cell is an
+#'   `actionLink` when it is supplied, and plain text when it is not --
+#'   the card is also rendered in contexts with no session to click in.
+#'   Links are keyed by row position, not by tag: a tag is user-supplied
+#'   text and would make an unsafe input id.
+#' @noRd
+project_experiments_card <- function(experiments, ns = NULL) {
   bslib::card(
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Experiments"),
@@ -341,8 +378,9 @@ project_experiments_card <- function(experiments) {
             )
           ),
           htmltools::tags$tbody(
-            lapply(names(experiments), function(tag) {
-              exp <- experiments[[tag]]
+            lapply(seq_along(experiments), function(i) {
+              tag <- names(experiments)[i]
+              exp <- experiments[[i]]
               htmltools::tags$tr(
                 htmltools::tags$td(htmltools::tags$span(class = "text-mono", tag)),
                 htmltools::tags$td(project_omics_label(exp)),
@@ -350,7 +388,14 @@ project_experiments_card <- function(experiments) {
                 htmltools::tags$td(class = "num",
                                    format(nrow(exp$expr_mat), big.mark = ",")),
                 htmltools::tags$td(pill("ready", kind = "ok")),
-                htmltools::tags$td(htmltools::tags$a("View \u2192"))
+                htmltools::tags$td(
+                  if (is.null(ns)) {
+                    htmltools::tags$span(class = "muted", "View \u2192")
+                  } else {
+                    shiny::actionLink(ns(paste0("view_layer_", i)),
+                                      "View \u2192")
+                  }
+                )
               )
             })
           )

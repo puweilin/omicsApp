@@ -61,10 +61,14 @@ qc_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
-                           invalidate = shiny::reactiveVal(0L)) {
+                           invalidate = shiny::reactiveVal(0L),
+                           requested_layer = shiny::reactiveVal(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
 
-    # Active experiment selection. When the user has a real project,
+    # Active experiment selection. A tag asked for from elsewhere (the
+    # Project view's "View" link) wins, provided it still names a layer
+    # in the current project -- otherwise the request is stale and
+    # silently ignored rather than emptying the view. With no request,
     # pick the first proteomics layer (PCA + missingness panels are
     # designed for that); fall back to the first experiment of any
     # kind; fall back to the built-in proteomics fixture.
@@ -76,6 +80,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       exps <- proj$experiments
       if (length(exps) == 0L) {
         return(list(input = NULL, tag = NULL, is_demo = TRUE))
+      }
+      want <- requested_layer()
+      if (!is.null(want) && length(want) == 1L && want %in% names(exps)) {
+        return(list(input = exps[[want]], tag = want, is_demo = FALSE))
       }
       types <- vapply(exps, function(e) e$omics_type %||% "", character(1))
       idx <- which(types == "proteomics")

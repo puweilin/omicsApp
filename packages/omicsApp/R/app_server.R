@@ -79,11 +79,21 @@ app_server <- function(input, output, session) {
   })
 
   # ---- view modules ---------------------------------------------------
-  project_view_server("project", current_project = current_project)
+  # The Project view's per-layer "View" link lands on QC with that layer
+  # selected. The tag travels through a reactiveVal rather than through
+  # set_view() because the two are separate concerns: which view is on
+  # screen, and which layer that view should be showing.
+  requested_layer <- shiny::reactiveVal(NULL)
+  project_view_server("project", current_project = current_project,
+                      on_view_layer = function(tag) {
+                        requested_layer(tag)
+                        set_view("qc")
+                      })
   imported_input <- import_view_server("import",
                         current_project = current_project)
   qc_bundle <- qc_view_server("qc", current_project = current_project,
-                              invalidate = layer_generation)
+                              invalidate = layer_generation,
+                              requested_layer = requested_layer)
   diff_bundle <- diff_view_server("diff", current_project = current_project,
                                   invalidate = layer_generation)
   enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
