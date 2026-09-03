@@ -30,36 +30,123 @@ plot_qc <- function(bundle,
 
 # ---- views -------------------------------------------------------------
 
+MISSING_FILL <- "#2C3E99"
+
+# How many samples the per-sample panel will draw before it starts
+# showing only the worst. Past this the bars are too thin to read in
+# the height the app gives the panel, and the question the panel
+# answers -- which samples are worst -- only needs the top of the list.
+MISSING_MAX_SAMPLE_BARS <- 30L
+
+# Samples and features are not the same kind of question, and were
+# previously drawn as though they were: one 30-bin histogram, faceted.
+# With a dozen samples most of those bins are empty and the few that are
+# not read as unexplained spikes, and a histogram discards the one thing
+# the sample panel is for -- *which* sample is bad.
+#
+# So: a bar per sample, worst first; a density for features, where the
+# count is large and the shape is the point.
 plot_qc_missing <- function(bundle) {
   miss <- bundle$results$qc_summary$missingness
-  sample_df <- miss$sample_metrics
-  feature_df <- miss$feature_metrics
+  # One x range for both panels. They measure the same quantity, and
+  # the previous facet_wrap(scales = "free") gave them separate ones,
+  # so a sample panel and a feature panel that looked alike could be an
+  # order of magnitude apart. Scaled to the data rather than fixed at
+  # [0, 1]: real missingness is usually a few percent, and a panel that
+  # is 95% empty space hides the shape it exists to show.
+  upper <- missing_axis_upper(c(miss$sample_metrics$missing_rate,
+                                miss$feature_metrics$missing_rate))
+  patchwork::wrap_plots(
+    plot_missing_by_sample(miss$sample_metrics, upper),
+    plot_missing_by_feature(miss$feature_metrics, upper),
+    ncol = 1
+  )
+}
 
-  combined <- rbind(
-    data.frame(
-      axis = "sample",
-      id = sample_df$sample_id,
-      missing_rate = sample_df$missing_rate,
-      stringsAsFactors = FALSE
-    ),
-    data.frame(
-      axis = "feature",
-      id = feature_df$feature_id,
-      missing_rate = feature_df$missing_rate,
-      stringsAsFactors = FALSE
-    )
+# Always anchored at 0, so the reader can see where the floor is, and
+# never past 1. The floor of 5% stops an all-but-complete dataset from
+# being magnified into what looks like a problem.
+missing_axis_upper <- function(rates) {
+  rates <- rates[!is.na(rates)]
+  if (!length(rates)) return(1)
+  max(0.05, min(1, max(rates) * 1.15 + 0.01))
+}
+
+plot_missing_by_sample <- function(sample_df, upper = 1) {
+  df <- sample_df[order(sample_df$missing_rate, decreasing = TRUE), ,
+                  drop = FALSE]
+  subtitle <- sprintf("%d samples", nrow(df))
+  if (nrow(df) > MISSING_MAX_SAMPLE_BARS) {
+    subtitle <- sprintf("worst %d of %d samples",
+                        MISSING_MAX_SAMPLE_BARS, nrow(df))
+    df <- df[seq_len(MISSING_MAX_SAMPLE_BARS), , drop = FALSE]
+  }
+  # Reversed, because a discrete y axis is drawn bottom-up and the
+  # worst sample belongs at the top.
+  df$sample_id <- factor(df$sample_id, levels = rev(df$sample_id))
+
+  ggplot2::ggplot(df, ggplot2::aes(x = .data$missing_rate,
+                                   y = .data$sample_id)) +
+    ggplot2::geom_col(fill = MISSING_FILL, width = 0.7) +
+    ggplot2::scale_x_continuous(
+      labels = scales::label_percent(),
+      limits = c(0, upper),
+      expand = ggplot2::expansion(mult = c(0, 0.02))
+    ) +
+    ggplot2::labs(title = "Missing rate per sample", subtitle = subtitle,
+                  x = NULL, y = NULL) +
+    theme_omicsCore()
+}
+
+plot_missing_by_feature <- function(feature_df, upper = 1) {
+  rate <- feature_df$missing_rate
+  rate <- rate[!is.na(rate)]
+  base <- ggplot2::labs(
+    title = "Missing rate across features",
+    subtitle = sprintf("%d features", length(rate)),
+    # Named, because an unlabelled axis reading 2.5, 5.0, 7.5 next to a
+    # panel of counts invites being read as one.
+    x = "Missing rate", y = "Density"
   )
 
-  ggplot2::ggplot(combined,
-                  ggplot2::aes(x = .data$missing_rate)) +
-    ggplot2::geom_histogram(bins = 30, fill = "#2C3E99", color = "white") +
-    ggplot2::facet_wrap(~ axis, scales = "free", ncol = 1) +
+  # density() needs spread to estimate a bandwidth from. All-complete
+  # data -- the good case -- has none, so say so rather than error.
+  if (length(rate) < 3L || length(unique(rate)) < 2L) {
+    return(
+      ggplot2::ggplot(data.frame(x = rate), ggplot2::aes(x = .data$x)) +
+        ggplot2::geom_rug(colour = MISSING_FILL) +
+        ggplot2::scale_x_continuous(labels = scales::label_percent(),
+                                    limits = c(0, upper)) +
+        base +
+        ggplot2::labs(subtitle = sprintf(
+          "%d features, all at %s", length(rate),
+          scales::label_percent()(if (length(rate)) rate[1] else 0))) +
+        theme_omicsCore()
+    )
+  }
+
+  # Evaluated on [0, 1] rather than left to spill past either end: a
+  # missing rate below 0 or above 1 is not a thing, and a smooth that
+  # draws one invites the reader to believe it.
+  dens <- stats::density(rate, from = 0, to = 1)
+  curve <- data.frame(x = dens$x, y = dens$y)
+
+  ggplot2::ggplot(curve, ggplot2::aes(x = .data$x, y = .data$y)) +
+    ggplot2::geom_area(fill = MISSING_FILL, alpha = 0.25) +
+    ggplot2::geom_line(colour = MISSING_FILL, linewidth = 0.6) +
+    # The rug keeps the individual features visible under the smooth,
+    # which matters when there are few of them and the curve is mostly
+    # bandwidth.
+    ggplot2::geom_rug(data = data.frame(x = rate, y = 0),
+                      ggplot2::aes(x = .data$x), sides = "b",
+                      alpha = 0.4, colour = MISSING_FILL) +
+    # coord_cartesian, not scale limits: the density is estimated over
+    # the whole [0, 1] and then viewed, rather than re-estimated from a
+    # truncated sample, which would change the curve's shape.
     ggplot2::scale_x_continuous(labels = scales::label_percent()) +
-    ggplot2::labs(
-      title = "Missingness distribution",
-      x = "Missing rate",
-      y = "Count"
-    ) +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.05))) +
+    ggplot2::coord_cartesian(xlim = c(0, upper)) +
+    base +
     theme_omicsCore()
 }
 
