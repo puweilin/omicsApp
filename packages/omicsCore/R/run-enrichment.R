@@ -27,8 +27,11 @@ SUPPORTED_ENRICH_TYPES <- c("ora", "gsea")
 #'   vector to query multiple databases.
 #' @param organism Organism shorthand (e.g. `"Hs"`).
 #' @param direction One of `"both"` (default), `"up"`, or `"down"`.
-#' @param p_cutoff Significance cutoff used both to select diff features
-#'   (ORA) and to bound the enrichment result table.
+#' @param p_cutoff Significance cutoff for selecting diff features (ORA
+#'   only; GSEA ranks the whole list).
+#' @param output_p_cutoff Bound on the returned table. Defaults to
+#'   `p_cutoff`. Pass `1` to keep every pathway, so a caller can choose
+#'   raw or adjusted p at display time without re-running.
 #' @param p_preference For ORA feature selection: `"adjusted"` (default) or
 #'   `"raw"`.
 #' @param effect_cutoff Optional |effect| cutoff for ORA feature selection.
@@ -58,6 +61,7 @@ run_enrichment <- function(
   organism = "Hs",
   direction = c("both", "up", "down"),
   p_cutoff = 0.05,
+  output_p_cutoff = NULL,
   p_preference = c("adjusted", "raw"),
   effect_cutoff = NULL,
   p_adjust_method = "BH",
@@ -88,6 +92,7 @@ run_enrichment <- function(
         organism = organism,
         direction = direction,
         p_cutoff = p_cutoff,
+        output_p_cutoff = output_p_cutoff,
         p_preference = p_preference,
         effect_cutoff = effect_cutoff,
         p_adjust_method = p_adjust_method
@@ -99,6 +104,7 @@ run_enrichment <- function(
         organism = organism,
         direction = direction,
         p_cutoff = p_cutoff,
+        output_p_cutoff = output_p_cutoff,
         p_adjust_method = p_adjust_method,
         min_size = min_size,
         max_size = max_size

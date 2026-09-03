@@ -7,6 +7,7 @@ run_gsea_database <- function(
   database,
   organism = "Hs",
   p_cutoff = 0.05,
+  output_p_cutoff = NULL,
   p_adjust_method = "BH",
   min_size = 10L,
   max_size = 500L,
@@ -55,6 +56,9 @@ run_gsea_from_bundle <- function(
   organism = "Hs",
   direction = c("both", "up", "down"),
   p_cutoff = 0.05,
+  # GSEA never selects features -- the whole ranked list goes in -- so
+  # here p_cutoff only ever bounded the output, and this is its name.
+  output_p_cutoff = NULL,
   p_adjust_method = "BH",
   min_size = 10L,
   max_size = 500L
@@ -74,7 +78,7 @@ run_gsea_from_bundle <- function(
     ranked_features = ranked,
     database = database,
     organism = organism,
-    p_cutoff = p_cutoff,
+    p_cutoff = output_p_cutoff %||% p_cutoff,
     p_adjust_method = p_adjust_method,
     min_size = min_size,
     max_size = max_size

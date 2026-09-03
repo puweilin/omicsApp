@@ -47,6 +47,12 @@ run_ora_from_bundle <- function(
   organism = "Hs",
   direction = c("both", "up", "down"),
   p_cutoff = 0.05,
+  # Separate from p_cutoff, which for ORA also decides which features go
+  # in. Bounding the stored result at the same number means a bundle can
+  # only ever hold what one threshold admitted, so switching the display
+  # between raw and adjusted p has nothing to switch to. NULL keeps the
+  # old single-threshold behaviour.
+  output_p_cutoff = NULL,
   effect_cutoff = NULL,
   p_preference = c("adjusted", "raw"),
   p_adjust_method = "BH"
@@ -84,7 +90,7 @@ run_ora_from_bundle <- function(
       universe = universe,
       database = database,
       organism = organism,
-      p_cutoff = p_cutoff,
+      p_cutoff = output_p_cutoff %||% p_cutoff,
       p_adjust_method = p_adjust_method
     )
     std <- standardize_enrich_result(

@@ -288,20 +288,37 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       if (isTRUE(is_demo())) example_enrich_bundle() else enrich_bundle()
     })
 
+    # The threshold the panel is read at. numericInput reports NA while
+    # the box is mid-edit, and NA would empty the panel with nothing to
+    # say why.
+    show_p <- shiny::reactive(input$show_p %||% "adjusted")
+    show_cutoff <- shiny::reactive({
+      v <- input$show_cutoff
+      if (is.null(v) || !is.finite(v) || v <= 0 || v > 1) 0.05 else v
+    })
+
     output$dot <- shiny::renderPlot({
       b <- plot_bundle()
       shiny::req(b)
-      omicsCore::plot_enrichment(b, view = "dot", top_n = 12L)
+      omicsCore::plot_enrichment(b, view = "dot", top_n = 12L,
+                                 p_preference = show_p(),
+                                 p_cutoff = show_cutoff())
     })
 
     output$hits <- DT::renderDT({
       df <- table_data()
       shiny::req(nrow(df) > 0L)
-      df <- df[order(df$adj_p_value), , drop = FALSE]
+      df <- omicsCore::filter_enrich_results(
+        df, p_cutoff = show_cutoff(), p_preference = show_p())
+      shiny::req(nrow(df) > 0L)
+      pcol <- if (identical(show_p(), "raw")) "p_value" else "adj_p_value"
+      df <- df[order(df[[pcol]]), , drop = FALSE]
       out <- data.frame(
         Pathway   = df$pathway_name,
         NES       = sprintf("%+.2f", df$effect),
-        `adj.P`   = signif(df$adj_p_value, 3),
+        # Named for the column it holds, so the table cannot say adj.P
+        # over raw values.
+        P         = signif(df[[pcol]], 3),
         Direction = df$direction,
         Overlap   = sprintf("%d/%d",
                             df$overlap_size %||% NA_integer_,
@@ -309,6 +326,8 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
         check.names = FALSE,
         stringsAsFactors = FALSE
       )
+      names(out)[names(out) == "P"] <-
+        if (identical(show_p(), "raw")) "p" else "adj.P"
       DT::datatable(
         out,
         rownames  = FALSE,
@@ -380,6 +399,23 @@ enrich_params_card <- function(ns) {
             ns("direction"), label = NULL,
             choices  = c("both", "up", "down"),
             selected = "both", inline = TRUE
+          )
+        ),
+        param_group(
+          "Significance",
+          # A display threshold, like the Differential view's sliders:
+          # applied to the result that is already computed, so switching
+          # it costs nothing and re-runs nothing. GSEA over 2695 GO sets
+          # keeps 9 at adjusted p and 131 at raw; which of those is the
+          # right answer is the reader's call, not ours.
+          shiny::radioButtons(
+            ns("show_p"), label = NULL,
+            choices  = c("adjusted p" = "adjusted", "raw p" = "raw"),
+            selected = "adjusted", inline = TRUE
+          ),
+          shiny::numericInput(
+            ns("show_cutoff"), label = NULL,
+            value = 0.05, min = 0, max = 1, step = 0.01
           )
         ),
         htmltools::tags$div(
