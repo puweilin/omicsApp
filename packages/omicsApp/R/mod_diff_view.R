@@ -516,10 +516,21 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     }, server = TRUE)
 
-    # Expose the bundle so siblings (Enrichment in slice 3E,
-    # Report in 3F) can subscribe later. Returning here is
-    # harmless when the parent ignores it.
-    shiny::reactive(diff_bundle())
+    # The bundle *and* the thresholds it is read at. Enrichment used to
+    # take only the bundle and apply its own defaults -- adjusted p at
+    # 0.05, no fold-change bound -- so the gene list it enriched was a
+    # different set from the hits shown here, and neither view said so.
+    # A user with a hundred hits by raw p got an enrichment over however
+    # many passed adj.P, which can be none.
+    list(
+      bundle = shiny::reactive(diff_bundle()),
+      thresholds = shiny::reactive(list(
+        p_cutoff      = fdr_cut_d(),
+        p_preference  = if (identical(input$p_kind %||% "adj", "raw")) "raw"
+                        else "adjusted",
+        effect_cutoff = fc_cut_d()
+      ))
+    )
   })
 }
 

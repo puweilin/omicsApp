@@ -18,6 +18,7 @@ enrich_view_ui <- function(id) {
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
     shiny::uiOutput(ns("notices")),
+    shiny::uiOutput(ns("input_summary")),
     # Parameters across the top rather than down a 3fr rail: three
     # radio groups and a dropdown do not need a quarter of the width,
     # and the dotplot -- whose y axis carries pathway names -- needed
@@ -38,6 +39,9 @@ enrich_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
+                               diff_thresholds = shiny::reactive(list(
+                                 p_cutoff = 0.05, p_preference = "adjusted",
+                                 effect_cutoff = NULL)),
                                invalidate = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
@@ -60,6 +64,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       db_arg <- input$database %||% "hallmark"
       type   <- input$type %||% "ora"
       dir_   <- input$direction %||% "both"
+      thr    <- diff_thresholds()
       bundle <- diff_bundle()
       if (is.null(bundle) || !have_cp) {
         # Demo fallback: synthetic table re-shaped to match the
@@ -81,13 +86,17 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
         detached_call(
           function() {
             omicsCore::run_enrichment(
-              diff_bundle = bundle,
-              type        = type,
-              database    = db_arg,
-              direction   = dir_
+              diff_bundle   = bundle,
+              type          = type,
+              database      = db_arg,
+              direction     = dir_,
+              p_cutoff      = thr$p_cutoff,
+              p_preference  = thr$p_preference,
+              effect_cutoff = thr$effect_cutoff
             )
           },
-          bundle = bundle, type = type, db_arg = db_arg, dir_ = dir_
+          bundle = bundle, type = type, db_arg = db_arg, dir_ = dir_,
+          thr = thr
         ),
         on_success = function(result) {
           enrich_error(NULL)
@@ -145,6 +154,59 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
             else "live result"
           )
         )
+      )
+    })
+
+    # The size of the gene list this enrichment is over.
+    #
+    # An empty result reads identically whether no feature met the
+    # threshold or three thousand did and none of the sets were
+    # enriched. Reported as "100+ differential genes but every database
+    # comes back with nothing", which is a question this answers before
+    # anyone has to ask it.
+    selected_features <- shiny::reactive({
+      b <- diff_bundle()
+      if (is.null(b)) return(NULL)
+      df <- b$results$diff_result_df
+      if (is.null(df)) return(NULL)
+      thr <- diff_thresholds()
+      pcol <- if (identical(thr$p_preference, "raw")) "p_value" else "adj_p_value"
+      pv <- df[[pcol]]
+      keep <- !is.na(pv) & pv < (thr$p_cutoff %||% 0.05)
+      if (!is.null(thr$effect_cutoff) && is.finite(thr$effect_cutoff)) {
+        keep <- keep & !is.na(df$effect) & abs(df$effect) > thr$effect_cutoff
+      }
+      list(n = sum(keep), total = nrow(df), p_col = pcol,
+           p_cutoff = thr$p_cutoff %||% 0.05,
+           effect_cutoff = thr$effect_cutoff,
+           mapped = sum(keep & !is.na(df$feature_symbol) &
+                          df$feature_symbol != df$feature_id))
+    })
+
+    output$input_summary <- shiny::renderUI({
+      s <- selected_features()
+      if (is.null(s)) return(NULL)
+      bits <- sprintf("%s < %s", s$p_col, format(s$p_cutoff))
+      if (!is.null(s$effect_cutoff) && is.finite(s$effect_cutoff)) {
+        bits <- paste0(bits, sprintf(", |effect| > %.3f", s$effect_cutoff))
+      }
+      htmltools::tags$div(
+        class = "muted", style = "font-size:12.5px;margin:2px 0 10px",
+        htmltools::tags$strong(sprintf("%d of %d features", s$n, s$total)),
+        sprintf(" selected at %s", bits),
+        if (s$n == 0L) {
+          htmltools::tags$span(
+            style = "color:var(--warn)",
+            " \u2014 nothing to enrich. Loosen the thresholds in the ",
+            "Differential view."
+          )
+        } else if (s$mapped == 0L) {
+          htmltools::tags$span(
+            style = "color:var(--warn)",
+            " \u2014 none carry a gene symbol, so no set will match. ",
+            "Check the Gene symbol line on the Import page."
+          )
+        }
       )
     })
 

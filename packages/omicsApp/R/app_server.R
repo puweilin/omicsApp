@@ -94,9 +94,15 @@ app_server <- function(input, output, session) {
   qc_bundle <- qc_view_server("qc", current_project = current_project,
                               invalidate = layer_generation,
                               requested_layer = requested_layer)
-  diff_bundle <- diff_view_server("diff", current_project = current_project,
-                                  invalidate = layer_generation)
+  diff_view <- diff_view_server("diff", current_project = current_project,
+                                invalidate = layer_generation)
+  diff_bundle <- diff_view$bundle
+  # Enrichment reads the same thresholds the hit table is read at.
+  # Without this it applied its own -- adjusted p at 0.05, no
+  # fold-change bound -- and enriched a different set of genes from the
+  # ones on screen, silently.
   enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
+                                      diff_thresholds = diff_view$thresholds,
                                       invalidate = layer_generation)
   integration_bundle <- integration_view_server("integration",
                           current_project = current_project,
