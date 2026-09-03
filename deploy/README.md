@@ -103,6 +103,23 @@ docker run --rm bioconductor/bioconductor_docker:RELEASE_3_20 \
 df -h /var/lib/docker   # image is 5-7 GB; build cache wants 2-3x that
 ```
 
+Then check the pins, which costs a minute and has already paid for
+itself twice:
+
+```bash
+Rscript deploy/scripts/check_pins.R
+```
+
+It resolves the whole dependency closure against the pinned CRAN
+snapshot and the Bioconductor mirror and reports any version
+requirement that cannot be satisfied. "Every package is present" and
+"every package's requirements are satisfiable" are different questions,
+and only the second one predicts whether the build works — a snapshot
+where all 228 packages existed still died 20 minutes in, on
+`BiocParallel` wanting a newer `BH`. Run it after changing
+`CRAN_SNAPSHOT`, `BIOC_MIRROR`, the Bioconductor release, or either
+package list.
+
 ### 3. Build (30-60 minutes)
 
 ```bash

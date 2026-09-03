@@ -36,14 +36,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # an R 4.5 C API this image's R 4.4.2 does not have. Nothing calls
 # ggpubr: plots use theme_analysis()/theme_volcano() from the framework.
 #
-# CRAN is pinned to a snapshot two days after Bioconductor 3.20 was
-# released, because 3.20 is archived and today's CRAN has moved almost
-# two years past it. Left on `latest` the mismatch surfaces one package
-# at a time: Deriv needs an R 4.5 C API this R 4.4.2 does not have, and
-# ggtree 3.14.0 calls getFromNamespace("check_linewidth", "ggplot2"),
-# which ggplot2 4.0 removed. Pinning fixes the class rather than the
-# instances, and makes the build reproducible as a side effect.
-ARG CRAN_SNAPSHOT=2024-11-01
+# CRAN is pinned, because Bioconductor 3.20 is archived and today's CRAN
+# has moved nearly two years past it. Left on `latest` the mismatch
+# surfaces one package at a time: Deriv wants R_ClosureFormals(), an R
+# 4.5 C API this R 4.4.2 lacks, and ggtree 3.14.0 calls
+# getFromNamespace("check_linewidth", "ggplot2"), which ggplot2 4.0
+# removed. Pinning fixes the class rather than the instances, and makes
+# the build reproducible as a side effect.
+#
+# The date is from the *end* of 3.20's life, not its release. The mirror
+# serves the final state of the 3.20 branch, which kept moving all cycle:
+# a snapshot from two days after 3.20 shipped had all 228 packages
+# present and still failed, because BiocParallel by then wanted
+# BH >= 1.87.0, released later. 2025-03-01 is the latest date that
+# satisfies every requirement while msigdbr is still < 10 -- see WATCH in
+# deploy/scripts/check_pins.R, which verifies both and should be run
+# before this line is changed.
+ARG CRAN_SNAPSHOT=2025-03-01
 ENV CRAN=https://p3m.dev/cran/__linux__/noble/${CRAN_SNAPSHOT}
 RUN R -q -e 'options(repos = c(CRAN = Sys.getenv("CRAN")), timeout = 300); \
       cat("CRAN:", getOption("repos")[["CRAN"]], "\n"); \
