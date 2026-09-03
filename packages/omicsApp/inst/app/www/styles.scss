@@ -374,6 +374,33 @@ table.tbl td.num, table.tbl th.num {
 // Param sidebar (right-rail in Diff / Enrich views)
 // =============================================================
 .param-stack { display: flex; flex-direction: column; gap: 14px; }
+
+// Horizontal variant, for views whose controls are few enough to sit
+// on one line. A 3fr rail spent on three radio groups is width the
+// plot next to it needed more.
+.param-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 24px;
+
+  > .param-group {
+    // Separators run vertically here, not horizontally, and the last
+    // group has none -- see below.
+    padding-bottom: 0;
+    padding-right: 24px;
+    border-bottom: 0;
+    border-right: 1px dashed var(--border);
+    flex: 0 1 auto;
+    min-width: 130px;
+  }
+  > .param-group:last-of-type { border-right: 0; padding-right: 0; }
+
+  // Push the action to the far end, so it does not read as another
+  // parameter.
+  > .param-action { margin-left: auto; }
+}
+
 .param-group {
   padding-bottom: 14px;
   border-bottom: 1px dashed var(--border);

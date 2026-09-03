@@ -138,7 +138,7 @@ empty_enrich_plot <- function(label) {
 }
 
 plot_enrich_dot <- function(df, p_col) {
-  df$.label <- truncate_pathway_name(df$pathway_name)
+  df$.label <- wrap_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df[[p_col]])]))
 
   # Effect (NES for GSEA, log2 odds for ORA) says which direction a
@@ -167,7 +167,7 @@ plot_enrich_dot <- function(df, p_col) {
       x = if (has_effect) "effect" else "overlap size",
       y = NULL
     ) +
-    theme_omicsCore()
+    theme_enrichment()
 
   if (has_effect) {
     p <- p + ggplot2::geom_vline(xintercept = 0, linetype = "dashed",
@@ -177,7 +177,7 @@ plot_enrich_dot <- function(df, p_col) {
 }
 
 plot_enrich_bar <- function(df, p_col) {
-  df$.label <- truncate_pathway_name(df$pathway_name)
+  df$.label <- wrap_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(df[[p_col]], decreasing = TRUE)]))
   ggplot2::ggplot(
     df,
@@ -192,14 +192,14 @@ plot_enrich_bar <- function(df, p_col) {
       x = paste0("-log10(", p_col, ")"),
       y = NULL
     ) +
-    theme_omicsCore()
+    theme_enrichment()
 }
 
 plot_enrich_gsea_dot <- function(df, p_col) {
   if (!"direction" %in% colnames(df) || all(is.na(df$direction))) {
     stop("`gsea_dot` view requires a `direction` column with non-NA values.")
   }
-  df$.label <- truncate_pathway_name(df$pathway_name)
+  df$.label <- wrap_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df[[p_col]])]))
   ggplot2::ggplot(
     df,
@@ -218,17 +218,49 @@ plot_enrich_gsea_dot <- function(df, p_col) {
       x = "NES",
       y = NULL
     ) +
-    theme_omicsCore()
+    theme_enrichment()
 }
 
-# 45, not 60. Hallmark names are short enough that 60 never bit, but a
-# GO BP or Reactome term routinely runs past it, and at 60 characters
-# the y-axis labels take more of the panel than the points do. 45 keeps
-# a term identifiable -- the discriminating words are at the front --
-# without the plot becoming a caption with dots attached.
+# Wrapped, not cut short. A truncated GO BP term is often
+# indistinguishable from three others that share its opening words,
+# which is the one thing a pathway label has to avoid; wrapping keeps
+# the whole name at the cost of vertical space, and vertical space is
+# what this panel has.
+#
+# `max_lines` is the backstop. Without it a single 200-character
+# Reactome term would claim the height of four others, and the plot
+# would be about the label rather than the result.
+# Kept alongside wrap_pathway_name() for plot-integration.R, which
+# applies it to gene symbols. A symbol is short and atomic: wrapping one
+# across two lines would be worse than shortening it.
 truncate_pathway_name <- function(x, max_chars = 45L) {
   x <- as.character(x)
   too_long <- !is.na(x) & nchar(x) > max_chars
   x[too_long] <- paste0(substr(x[too_long], 1L, max_chars - 1L), "\u2026")
   x
+}
+
+wrap_pathway_name <- function(x, width = 34L, max_lines = 3L) {
+  x <- as.character(x)
+  vapply(x, function(s) {
+    if (is.na(s) || !nzchar(s)) return(s)
+    lines <- strwrap(s, width = width)
+    if (length(lines) > max_lines) {
+      lines <- lines[seq_len(max_lines)]
+      lines[max_lines] <- paste0(lines[max_lines], "\u2026")
+    }
+    paste(lines, collapse = "\n")
+  }, character(1), USE.NAMES = FALSE)
+}
+
+# Pathway labels are the plot's content, not its furniture: a reader
+# scanning a dotplot is reading the y axis. theme_omicsCore()'s base
+# size leaves them smaller than the title, which is backwards.
+theme_enrichment <- function() {
+  theme_omicsCore() +
+    ggplot2::theme(
+      axis.text.y = ggplot2::element_text(size = ggplot2::rel(1.15),
+                                          lineheight = 0.95),
+      axis.text.x = ggplot2::element_text(size = ggplot2::rel(1.0))
+    )
 }

@@ -18,16 +18,15 @@ enrich_view_ui <- function(id) {
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
     shiny::uiOutput(ns("notices")),
+    # Parameters across the top rather than down a 3fr rail: three
+    # radio groups and a dropdown do not need a quarter of the width,
+    # and the dotplot -- whose y axis carries pathway names -- needed
+    # every bit of it. The two result cards then split the full width.
+    enrich_params_card(ns),
     htmltools::tags$div(
-      class = "row-grid r-3-9",
-      enrich_params_card(ns),
-      htmltools::tags$div(
-        htmltools::tags$div(
-          class = "row-grid r-7-5",
-          enrich_dot_card(ns),
-          enrich_hits_card(ns)
-        )
-      )
+      class = "row-grid r-7-5",
+      enrich_dot_card(ns),
+      enrich_hits_card(ns)
     )
   )
 }
@@ -239,7 +238,7 @@ enrich_params_card <- function(ns) {
     ),
     bslib::card_body(
       htmltools::tags$div(
-        class = "param-stack",
+        class = "param-row",
         param_group(
           "Test",
           shiny::radioButtons(
@@ -267,11 +266,10 @@ enrich_params_card <- function(ns) {
           )
         ),
         htmltools::tags$div(
-          style = "margin-top:8px",
+          class = "param-action",
           shiny::actionButton(
             ns("rerun"), "Re-run",
-            class = "btn btn-primary",
-            style = "width:100%"
+            class = "btn btn-primary"
           )
         )
       )
