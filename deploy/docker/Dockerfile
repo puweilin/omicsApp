@@ -180,14 +180,51 @@ RUN useradd --create-home --uid ${APP_UID} omics \
     && mkdir -p /data /data/raw \
     && chown -R omics:omics /data
 
-# One BLAS thread per worker. Without this each of the `workers`
-# background processes opens as many threads as there are cores, and a
-# handful of containers oversubscribe the host.
+# One BLAS thread per worker, and no nested parallelism.
+#
+# ENV alone does not achieve this, which is worth stating plainly
+# because the previous version of this file claimed it did: R reads
+# etc/Renviron.site during startup and its assignments *override* the
+# inherited environment. The base image sets OMP_NUM_THREADS=2,
+# OMP_THREAD_LIMIT=2 and BIOCPARALLEL_WORKER_NUMBER=4 there, so every R
+# process got those regardless of what ENV said. Appending wins, because
+# R applies the file in order.
+#
+# The base image's own comments say those values work around package
+# check timeouts -- "a BayesSpace TIMEOUT on Linux", "a snifter TIMEOUT
+# on Mac". None of that applies to an application container that builds
+# nothing and runs no checks.
+#
+# What does apply is that launch() uses future::multicore, which forks.
+# BiocParallel's default back-end forks too, so DESeq2, GSVA and fgsea
+# would fork again inside an already-forked worker: 2 workers x 4 = 8
+# processes on a 2-CPU container. Worse, OpenMP and fork() are a known
+# hazard -- a process that has started an OpenMP thread pool and then
+# forks leaves the child with a pool in an undefined state, and the
+# symptom is a session that hangs with nothing on screen. One thread in
+# the parent is the standard way to avoid it.
+#
+# The cost is that a lone analysis is single-threaded. That is the right
+# side of the trade here: the container has 2 CPUs, run_diff() takes
+# seconds, and a hang has no error message to debug.
 ENV OMP_NUM_THREADS=1 \
     OPENBLAS_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
     OMICSAPP_DATA_DIR=/data \
     OMICSAPP_QUOTA_GB=50
+RUN printf '%s\n' \
+      '' \
+      '# Appended by deploy/docker/Dockerfile; overrides the base image.' \
+      'OMP_NUM_THREADS=1' \
+      'OMP_THREAD_LIMIT=1' \
+      'KMP_DEVICE_THREAD_LIMIT=1' \
+      'KMP_TEAMS_THREAD_LIMIT=1' \
+      'BIOCPARALLEL_WORKER_NUMBER=1' \
+    >> /usr/local/lib/R/etc/Renviron.site \
+ && R -q --no-echo -e 'v <- c("OMP_NUM_THREADS","OMP_THREAD_LIMIT","BIOCPARALLEL_WORKER_NUMBER"); \
+      got <- Sys.getenv(v); \
+      cat(paste0("  ", v, " = ", got), sep = "\n"); \
+      if (!all(got == "1")) stop("Renviron.site override did not take effect")'
 
 USER omics
 WORKDIR /home/omics
