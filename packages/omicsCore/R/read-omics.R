@@ -186,9 +186,11 @@ read_omics_excel <- function(path, omics_type, assay_type,
 # yields one column holding the whole row -- which classify_sheet_role()
 # then reports as an unrecognisable sheet rather than as a parse
 # failure. Counted on the header alone, where no field is quoted.
-detect_delimiter <- function(path) {
-  line <- tryCatch(readLines(path, n = 1L, warn = FALSE),
-                   error = function(e) character(0))
+detect_delimiter <- function(path, line = NULL) {
+  if (is.null(line)) {
+    line <- tryCatch(readLines(path, n = 1L, warn = FALSE),
+                     error = function(e) character(0))
+  }
   if (length(line) == 0L || !nzchar(line[1])) return(",")
   candidates <- c("\t", ",", ";")
   counts <- vapply(candidates,
@@ -198,11 +200,36 @@ detect_delimiter <- function(path) {
   candidates[which.max(counts)]
 }
 
+# How many leading lines to skip before the header. featureCounts writes
+# its command line first, as "# Program:featureCounts ...", and
+# read.table takes whatever comes first as the header -- one column,
+# and then "more columns than column names" on the second line. Only
+# leading lines are considered, and only ones that begin with "#" and
+# carry fewer fields than the line after them: "#" inside data is an
+# ordinary character (see comment.char below), and a header whose first
+# cell happens to start with "#" has as many fields as its rows.
+count_leading_comment_lines <- function(path) {
+  head_lines <- tryCatch(readLines(path, n = 25L, warn = FALSE),
+                         error = function(e) character(0))
+  skip <- 0L
+  while (skip + 1L < length(head_lines) && startsWith(head_lines[skip + 1L], "#")) {
+    nxt <- head_lines[skip + 2L]
+    sep <- detect_delimiter(path, line = nxt)
+    n_fields <- function(x) lengths(regmatches(x, gregexpr(sep, x, fixed = TRUE)))
+    if (n_fields(head_lines[skip + 1L]) >= n_fields(nxt)) break
+    skip <- skip + 1L
+  }
+  skip
+}
+
 read_omics_csv <- function(path, omics_type, assay_type,
                            sheet_roles = NULL, ...) {
-  sep <- detect_delimiter(path)
+  skip <- count_leading_comment_lines(path)
+  header_line <- tryCatch(readLines(path, n = skip + 1L, warn = FALSE)[skip + 1L],
+                          error = function(e) NA_character_)
+  sep <- detect_delimiter(path, line = header_line)
 
-  args <- list(path, header = TRUE, sep = sep,
+  args <- list(path, header = TRUE, sep = sep, skip = skip,
                check.names = FALSE, stringsAsFactors = FALSE, ...)
 
   # Quoting rules differ by ecosystem, so they follow the delimiter.
@@ -327,7 +354,12 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   }
 
   orient <- sheet_table$orientation[sheet_table$name == matrix_sheet]
-  mat <- materialize_matrix(sheets[[matrix_sheet]], orient)
+  # Vendor tables carry QC counts and annotation beside the samples; the
+  # numeric ones would otherwise become samples. Done on the table, where
+  # the column names still say what each column is.
+  cols <- select_sample_columns(sheets[[matrix_sheet]])
+  for (note in cols$notes) report <- add_import_warning(report, note)
+  mat <- materialize_matrix(cols$df, orient)
   if (is.null(mat)) {
     report <- add_import_warning(report,
       "Could not coerce the picked matrix sheet to a numeric matrix.")
@@ -354,9 +386,10 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   meta <- materialize_metadata(if (is.null(metadata_sheet)) NULL
                                else sheets[[metadata_sheet]],
                                sample_ids = colnames(mat))
-  feat <- materialize_feature_annot(if (is.null(feature_sheet)) NULL
-                                    else sheets[[feature_sheet]],
-                                    feature_ids = rownames(mat))
+  # A separate annotation sheet wins; failing that, the annotation
+  # columns the matrix sheet itself carried.
+  feat_source <- if (!is.null(feature_sheet)) sheets[[feature_sheet]] else cols$annotation
+  feat <- materialize_feature_annot(feat_source, feature_ids = rownames(mat))
 
   # An Ensembl-keyed matrix needs symbols before any pathway database can
   # be matched against it. Done here rather than left to the user,
@@ -485,7 +518,9 @@ materialize_matrix <- function(df, orientation) {
     id_col <- as.character(df[[1L]])
     df <- df[, -1L, drop = FALSE]
   }
-  # Drop any remaining non-numeric columns.
+  # Text columns are read as numbers where every cell is a number or a
+  # way of writing "missing". Drop the rest.
+  df[] <- lapply(df, function(c) if (is.numeric(c)) c else clean_numeric_text(c))
   numeric_cols <- vapply(df, function(c) {
     is.numeric(c) || all(is.na(suppressWarnings(as.numeric(as.character(c)))) ==
                          is.na(c))
@@ -507,6 +542,116 @@ materialize_matrix <- function(df, orientation) {
     mat <- t(mat)
   }
   mat
+}
+
+# The ways a cell says "no value". Spectronaut writes "Filtered", Excel
+# exports "#N/A", people write "n.d."; read as text, any one of them
+# turned a whole sample column non-numeric, and the column was dropped
+# without a word -- a missing sample rather than a missing value.
+MISSING_TOKENS <- c("", "na", "n/a", "#n/a", "#na", "nan", "null", "none",
+                    "filtered", "n.d.", "nd", "-", "--", "?")
+
+# Numbers written for people: thousands separators, and the tokens above.
+# Only a column where every non-missing cell reads as a number after the
+# cleanup is treated as numeric, so a genuinely textual column is left
+# alone.
+clean_numeric_text <- function(x) {
+  if (is.factor(x)) x <- as.character(x)
+  if (!is.character(x)) return(x)
+  y <- trimws(x)
+  y[tolower(y) %in% MISSING_TOKENS] <- NA_character_
+  present <- y[!is.na(y)]
+  if (length(present) == 0L) return(y)
+  grouped <- "^[-+]?[0-9]{1,3}(,[0-9]{3})+(\\.[0-9]+)?$"
+  plain <- "^[-+]?([0-9]+\\.?[0-9]*|\\.[0-9]+)([eE][-+]?[0-9]+)?$"
+  if (any(grepl(grouped, present)) && all(grepl(grouped, present) | grepl(plain, present))) {
+    y <- gsub(",", "", y, fixed = TRUE)
+  }
+  y
+}
+
+# Columns a quantification tool writes beside the samples, by the family
+# they belong to. MaxQuant names every per-sample column "<measure>
+# <sample>" and adds totals and QC counts under bare names; the sample
+# block is the one family, and the rest is not data. Listed in order of
+# preference: LFQ is what MaxQuant users analyse, raw Intensity is what
+# they fall back to.
+SAMPLE_COLUMN_FAMILIES <- c("LFQ intensity ", "iBAQ ", "Intensity ",
+                            "Reporter intensity corrected ", "Reporter intensity ")
+
+# featureCounts' fixed header. Start/End/Strand are ";"-joined text and
+# fall away on their own; Length is numeric and became a seventh sample.
+FEATURECOUNTS_ANNOTATION <- c("Chr", "Start", "End", "Strand", "Length")
+
+# Vendor suffixes on sample columns: Spectronaut's "[1] S01.raw.PG.Quantity",
+# DIA-NN's raw-file paths. Stripped so the sample is called what the
+# metadata sheet calls it. Only these; a prefix shared by every sample
+# ("Cheek_01", "Cheek_02") is part of the name and stays.
+strip_vendor_decoration <- function(x) {
+  x <- sub("^\\[[0-9]+\\]\\s*", "", x)
+  x <- sub("^.*[\\\\/]", "", x)
+  x <- sub("\\.(PG|PEP|EG|FG)\\.[A-Za-z]+$", "", x)
+  x <- sub("\\.(raw|d|wiff|mzML|mzXML|bam|sam|cram)$", "", x, ignore.case = TRUE)
+  x
+}
+
+#' Keep the columns that are samples
+#'
+#' @param df The matrix sheet as read, first column the feature ids.
+#' @return `list(df, notes)`; `notes` is `character(0)` when nothing
+#'   changed.
+#' @keywords internal
+#' @noRd
+select_sample_columns <- function(df) {
+  unchanged <- list(df = df, notes = character(0), annotation = NULL)
+  if (!is.data.frame(df) || ncol(df) < 3L) return(unchanged)
+  notes <- character(0)
+  nms <- colnames(df)
+
+  # The text columns beside the samples are the feature annotation a
+  # single-table export carries -- "Gene names" in MaxQuant, "PG.Genes"
+  # in Spectronaut, "Genes" in DIA-NN. Kept aside for the case where the
+  # file has no separate annotation sheet, so the symbol column is
+  # picked up by the same rules that read one.
+  is_text <- vapply(df, function(c) !is.numeric(c) && !is.logical(c), logical(1))
+  is_text[1L] <- TRUE
+  annotation <- if (sum(is_text) > 1L) df[, is_text, drop = FALSE] else NULL
+
+  if (all(c("Geneid", FEATURECOUNTS_ANNOTATION) %in% nms)) {
+    df <- df[, setdiff(nms, FEATURECOUNTS_ANNOTATION), drop = FALSE]
+    nms <- colnames(df)
+    notes <- c(notes, sprintf(
+      "Dropped featureCounts' annotation columns (%s); they are not samples.",
+      paste(FEATURECOUNTS_ANNOTATION, collapse = ", ")))
+  }
+
+  id_col <- nms[[1L]]
+  for (family in SAMPLE_COLUMN_FAMILIES) {
+    members <- nms[startsWith(nms, family)]
+    if (length(members) < 2L) next
+    others <- setdiff(nms, c(id_col, members))
+    keep <- df[, c(id_col, members), drop = FALSE]
+    colnames(keep) <- c(id_col, sub(family, "", members, fixed = TRUE))
+    notes <- c(notes, sprintf(
+      "Kept the %d '%s' columns as samples and dropped %d other column(s) (%s).",
+      length(members), trimws(family), length(others),
+      paste(utils::head(others, 6L), collapse = ", ")))
+    df <- keep
+    nms <- colnames(df)
+    break
+  }
+
+  decorated <- nms[-1L]
+  plain <- strip_vendor_decoration(decorated)
+  if (!identical(plain, decorated) && !anyDuplicated(plain) && all(nzchar(plain))) {
+    colnames(df) <- c(nms[[1L]], plain)
+    notes <- c(notes, sprintf(
+      "Shortened %d sample name(s) by their vendor decoration, e.g. '%s' to '%s'.",
+      sum(plain != decorated), decorated[plain != decorated][[1L]],
+      plain[plain != decorated][[1L]]))
+  }
+
+  list(df = df, notes = notes, annotation = annotation)
 }
 
 materialize_metadata <- function(df, sample_ids) {

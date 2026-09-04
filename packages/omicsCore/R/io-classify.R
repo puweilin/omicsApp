@@ -169,6 +169,33 @@ classify_sheet_role <- function(df, name = NA_character_) {
                 notes = sprintf("%.0f%% numeric cells", 100 * numeric_fraction)))
   }
 
+  # A vendor report: a block of numeric sample columns beside a handful
+  # of annotation columns. MaxQuant's proteinGroups.txt carries five text
+  # columns and a dozen QC counts before the first LFQ intensity, a
+  # Spectronaut report four text columns before its quantities -- and at
+  # six samples neither comes near 80% numeric, so both were "no sheet
+  # looked like an expression matrix" and the import stopped there. The
+  # block is what makes it a matrix: several numeric columns, at least
+  # half the sheet, behind a first column of identifiers, on a table
+  # with more rows than a sample sheet has, and none of the column names
+  # that mark a sample sheet. A metadata sheet with three numeric
+  # columns and no recognisable name is the case this could get wrong,
+  # which is why the confidence is low enough for the review step to
+  # show it as a guess.
+  n_numeric <- round(numeric_fraction * ncol(df))
+  first_col_ids <- !is.numeric(df[[1L]]) && !is.logical(df[[1L]]) &&
+    looks_like_feature_labels(df[[1L]])
+  if (n_numeric >= 3L && numeric_fraction >= 0.5 && first_col_ids &&
+      !has_meta_hint && nrow(df) >= 20L) {
+    orient <- detect_orientation(df)
+    conf <- if (name_matrix) 0.7 else 0.6
+    return(list(role = "matrix",
+                confidence = conf,
+                orientation = orient$orientation,
+                notes = sprintf("%d numeric column(s) beside %d annotation column(s)",
+                                n_numeric, ncol(df) - n_numeric)))
+  }
+
   # Metadata is checked before feature_annot so that a column named
   # `sample_id` (whose values may also match the HGNC regex) doesn't get
   # mistaken for a gene-symbol table.
@@ -225,9 +252,12 @@ compute_numeric_fraction <- function(df) {
     if (is.numeric(col)) return(TRUE)
     if (is.logical(col)) return(FALSE)
     sub <- col[rows_idx]
-    sub <- sub[!is.na(sub) & nzchar(as.character(sub))]
+    # The same cleanup the reader applies, so a sample column that says
+    # "Filtered" in a few cells counts as the numbers it mostly is.
+    sub <- clean_numeric_text(as.character(sub))
+    sub <- sub[!is.na(sub) & nzchar(sub)]
     if (length(sub) == 0L) return(FALSE)
-    coerced <- suppressWarnings(as.numeric(as.character(sub)))
+    coerced <- suppressWarnings(as.numeric(sub))
     mean(!is.na(coerced)) >= 0.9
   }, logical(1))
   mean(numeric_cols)
