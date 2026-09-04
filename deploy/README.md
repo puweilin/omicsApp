@@ -366,10 +366,22 @@ one.
 **Restarting ShinyProxy drops running sessions.** Adding a user requires
 a restart, so do it when nobody is mid-analysis.
 
-**`customHeader` authentication needs 3.2.0.** It does not exist in
-3.1.1, which is what the install step above pins, and 3.2.x also wants
-Java 21 rather than 17. `openid` — what the template uses — has been
-there since well before 3.1.1, so nothing here needs the upgrade.
+**`customHeader` authentication is available but not used.** It arrived
+in 3.2.0, so the pinned 3.2.4 has it, and pairing it with a
+forward-auth proxy is a simpler integration than OIDC — no client
+secret, no redirect URI, no signing keys to fetch.
+
+It is not used because it makes ShinyProxy trust an unsigned header
+absolutely: whoever the header names is who you are. That is safe only
+if nothing but the reverse proxy can reach ShinyProxy, and this is a
+shared machine — a colleague's service already holds port 8080, so a
+local process sending `Remote-User: <someone>` to 127.0.0.1:8081 is a
+path that exists here rather than a theoretical one. `bind-address:
+127.0.0.1` stops remote hosts, not local ones.
+
+OIDC has no equivalent boundary: the identity is carried in a token
+Keycloak signed, so forging it needs Keycloak's key rather than the
+ability to open a socket.
 
 **Log in once before adding everybody.** Whatever the doubt is --
 version syntax, indentation, the password format -- ten accounts made
@@ -623,7 +635,7 @@ Leave these until the acceptance checklist passes. First deployments go
 wrong for ordinary reasons, and every extra variable is one more
 candidate.
 
-**ShinyProxy already has its own account.** The 3.1.1 `.deb` creates a
+**ShinyProxy already has its own account.** The `.deb` creates a
 `shinyproxy` system user, adds it to `docker`, and ships a unit that
 uses it:
 

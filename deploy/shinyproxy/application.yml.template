@@ -7,9 +7,13 @@
 #   cp application.yml.template application.yml
 #   chmod 600 application.yml
 #
-# Written for ShinyProxy 3.1.1. The `openid` backend long predates it,
-# so this needs no upgrade -- unlike `customHeader`, which arrived in
-# 3.2.0 and would also drag Java 17 up to 21.
+# Written for ShinyProxy 3.2.4. Anything older cannot start a container
+# on Docker 28+ at all -- see "Things that will bite you" in the README.
+#
+# `customHeader` authentication exists in this version and would be a
+# simpler integration, but it is deliberately unused: it trusts an
+# unsigned header, which is only safe if nothing but nginx can reach
+# this service, and other people have shells on this machine.
 
 proxy:
   # 8081, not the conventional 8080: this is a shared machine and a
