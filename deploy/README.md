@@ -197,12 +197,19 @@ htpasswd -bnBC 10 "" 'the-password' | tr -d ':\n'   # paste into proxy.users
 Log in with one test account before hashing everyone's password: the
 `{bcrypt}` prefix depends on the ShinyProxy version.
 
-**Check the port is free first.** This is a shared machine, and 8080 is
-what everyone reaches for:
+**Check both ports first.** This is a shared machine, and 8080 is what
+everyone reaches for -- but ShinyProxy binds a second one too, for the
+actuator endpoints, on 9090:
 
 ```bash
-sudo ss -tln | grep ':8080 ' && echo "TAKEN -- pick another port"
+sudo ss -tln | grep -E ':(8080|9090) ' && echo "TAKEN -- pick another"
 ```
+
+Miss the second and the log contradicts itself: "Undertow started on
+port 8081" followed by "Web server failed to start. Port 9090 was
+already in use." The main port really did come up; the context failed
+anyway, so nothing serves. `management.server.port` in the template
+moves it.
 
 If it is taken, change it in *both* places or the two halves will
 disagree without either complaining:

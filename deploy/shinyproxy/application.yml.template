@@ -89,6 +89,19 @@ proxy:
       # wait for a 7 GB image to start. 3.x syntax.
       minimum-seats-available: 1
 
+# ShinyProxy is a Spring Boot application and runs a second server for
+# the actuator endpoints, on 9090 by default. On a shared machine that
+# is as likely to be occupied as 8080, and when it cannot bind, the
+# whole context fails to start -- after the main port has already come
+# up, so the log says "Undertow started on port 8081" and then "Web
+# server failed to start", which reads like a contradiction.
+#
+# Check both before starting:
+#   sudo ss -tln | grep -E ':(8080|9090) '
+management:
+  server:
+    port: 9091
+
 logging:
   file:
     name: /var/log/shinyproxy/shinyproxy.log
