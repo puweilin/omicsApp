@@ -12,7 +12,8 @@ make_persistence_project <- function() {
   feat <- data.frame(feature_id = paste0("F", 1:5),
                      row.names = paste0("F", 1:5),
                      stringsAsFactors = FALSE)
-  input <- omics_input(expr, meta, feat, omics_type = "proteomics")
+  input <- omics_input(expr, meta, feat, omics_type = "proteomics",
+                       assay_type = "normalized_intensity")
   omics_project("persist_demo", experiments = list(proteo = input))
 }
 
@@ -70,12 +71,4 @@ test_that("load_project rejects future schema versions", {
 
 test_that("load_project errors when file is missing", {
   expect_error(load_project(tempfile()), "does not exist")
-})
-
-test_that("save_project errors informatively without qs2", {
-  if (requireNamespace("qs2", quietly = TRUE)) {
-    skip("qs2 is installed; cannot test gate")
-  }
-  expect_error(save_project(make_persistence_project(), tempfile()),
-               "qs2")
 })

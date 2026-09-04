@@ -46,7 +46,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                                invalidate = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
-    have_cp <- requireNamespace("clusterProfiler", quietly = TRUE)
+    have_cp <- has_pkg("clusterProfiler")
 
     enrich_bundle <- shiny::reactiveVal(NULL)
     enrich_error  <- shiny::reactiveVal(NULL)

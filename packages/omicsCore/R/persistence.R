@@ -13,7 +13,7 @@
 OMP_SCHEMA_VERSION <- "1.0.0"
 
 ensure_qs2 <- function() {
-  if (!requireNamespace("qs2", quietly = TRUE)) {
+  if (!is_installed("qs2")) {
     stop(
       "Package 'qs2' is required for save_project() / load_project(). ",
       "Install with: install_optional('persistence').",

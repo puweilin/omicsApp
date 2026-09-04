@@ -146,7 +146,7 @@ geneset_cache_file <- function(dir, database, organism) {
 read_geneset_cache <- function(database, organism) {
   dir <- geneset_cache_dir()
   if (is.null(dir)) return(NULL)
-  if (!requireNamespace("qs2", quietly = TRUE)) return(NULL)
+  if (!is_installed("qs2")) return(NULL)
   path <- geneset_cache_file(dir, database, organism)
   if (!file.exists(path)) return(NULL)
   df <- tryCatch(qs2::qs_read(path), error = function(e) NULL)

@@ -160,7 +160,7 @@ write_plot <- function(plot, path, fmt, width, height) {
     return(invisible(path))
   }
   if (inherits(plot, c("Heatmap", "HeatmapList"))) {
-    if (!requireNamespace("ComplexHeatmap", quietly = TRUE)) {
+    if (!is_installed("ComplexHeatmap")) {
       stop("ComplexHeatmap is required to export heatmap plots.")
     }
     open_device(path, fmt, width, height)

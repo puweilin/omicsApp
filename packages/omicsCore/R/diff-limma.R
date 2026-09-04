@@ -3,7 +3,7 @@
 # pointing at install_optional("proteomics").
 
 ensure_limma <- function() {
-  if (!requireNamespace("limma", quietly = TRUE)) {
+  if (!is_installed("limma")) {
     stop(
       "Package 'limma' is required for the limma differential backend. ",
       "Install with: omicsCore::install_optional('proteomics').",

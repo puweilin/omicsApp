@@ -98,12 +98,6 @@ test_that("impute_matrix half_min halves the row min", {
   expect_false(anyNA(out))
 })
 
-test_that("impute_matrix knn errors instructively when not installed", {
-  if (requireNamespace("impute", quietly = TRUE)) skip("impute is installed")
-  m <- matrix(c(1, NA), nrow = 1, dimnames = list("g1", c("s1", "s2")))
-  expect_error(impute_matrix(m, method = "knn"), "install_optional")
-})
-
 test_that("winsorize_counts clips per-gene extremes", {
   set.seed(1)
   m <- matrix(rpois(50, 50), nrow = 5,

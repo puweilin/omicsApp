@@ -3,7 +3,7 @@
 # otherwise falls back to standard library-size normalization.
 
 ensure_edger <- function() {
-  if (!requireNamespace("edgeR", quietly = TRUE)) {
+  if (!is_installed("edgeR")) {
     stop(
       "Package 'edgeR' is required for the edgeR differential backend. ",
       "Install with: omicsCore::install_optional('rnaseq').",

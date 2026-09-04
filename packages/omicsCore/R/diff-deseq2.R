@@ -3,7 +3,7 @@
 # can carry gene-length offsets) without making tximport a hard dep.
 
 ensure_deseq2 <- function() {
-  if (!requireNamespace("DESeq2", quietly = TRUE)) {
+  if (!is_installed("DESeq2")) {
     stop(
       "Package 'DESeq2' is required for the DESeq2 differential backend. ",
       "Install with: omicsCore::install_optional('rnaseq').",

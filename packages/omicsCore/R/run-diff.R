@@ -78,8 +78,8 @@ auto_select_diff_method <- function(input, analysis_type) {
 
   ok <- switch(
     as.character(prefer),
-    "deseq2" = requireNamespace("DESeq2", quietly = TRUE),
-    "limma"  = requireNamespace("limma", quietly = TRUE),
+    "deseq2" = is_installed("DESeq2"),
+    "limma"  = is_installed("limma"),
     FALSE
   )
 

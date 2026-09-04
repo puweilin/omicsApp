@@ -391,7 +391,7 @@ ma_xlab <- function(bundle) {
 
 add_repel_layer <- function(df, x, y, label_col) {
   if (!any(!is.na(df[[label_col]]))) return(NULL)
-  if (requireNamespace("ggrepel", quietly = TRUE)) {
+  if (is_installed("ggrepel")) {
     ggrepel::geom_text_repel(
       data = df,
       mapping = ggplot2::aes(x = .data[[x]], y = .data[[y]],

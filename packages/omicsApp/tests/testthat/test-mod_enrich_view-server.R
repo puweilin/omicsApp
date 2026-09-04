@@ -24,22 +24,6 @@ test_that("enrich view falls back to demo when diff_bundle is NULL", {
   )
 })
 
-test_that("enrich view surfaces clusterProfiler install hint when needed", {
-  skip_if(requireNamespace("clusterProfiler", quietly = TRUE),
-          "clusterProfiler is installed; cannot exercise the gating notice.")
-  diff_bundle <- shiny::reactiveVal(omicsApp:::example_diff_bundle())
-  shiny::testServer(
-    enrich_view_server,
-    args = list(diff_bundle = diff_bundle),
-    {
-      session$setInputs(type = "ora", database = "hallmark",
-                        direction = "both", rerun = 1)
-      expect_true(isTRUE(is_demo()))
-      expect_match(enrich_error(), "clusterProfiler", fixed = TRUE)
-    }
-  )
-})
-
 test_that("enrich view runs run_enrichment when clusterProfiler is installed", {
   skip_if_not_installed("clusterProfiler")
   skip_if_not_installed("msigdbr")

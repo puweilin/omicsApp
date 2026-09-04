@@ -65,7 +65,7 @@ plot_gsva_heatmap <- function(
   display_rownames <- tidy_pathway_names(rownames(mat))
   rownames(mat) <- display_rownames
 
-  if (requireNamespace("ComplexHeatmap", quietly = TRUE)) {
+  if (is_installed("ComplexHeatmap")) {
     plot_gsva_complexheatmap(
       mat = mat,
       meta_df = meta_df,
@@ -101,7 +101,7 @@ plot_gsva_complexheatmap <- function(mat, meta_df, annotation_cols,
     }
   }
 
-  col_fn <- if (requireNamespace("circlize", quietly = TRUE)) {
+  col_fn <- if (is_installed("circlize")) {
     circlize::colorRamp2(c(-2, 0, 2), c("#3C5488B2", "white", "#E64B35B2"))
   } else {
     NULL

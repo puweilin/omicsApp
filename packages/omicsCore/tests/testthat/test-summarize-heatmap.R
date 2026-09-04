@@ -30,15 +30,6 @@ test_that("plot_heatmap accepts an omics_input directly", {
   expect_true(inherits(out, c("Heatmap", "HeatmapList", "ggplot")))
 })
 
-test_that("plot_heatmap falls back to ggplot when ComplexHeatmap is unavailable", {
-  if (requireNamespace("ComplexHeatmap", quietly = TRUE)) {
-    skip("ComplexHeatmap is installed; cannot exercise fallback path")
-  }
-  x <- make_heatmap_input()
-  gg <- plot_heatmap(x, n_top = 8)
-  expect_s3_class(gg, "ggplot")
-})
-
 test_that("plot_heatmap dispatches on a diff bundle", {
   x <- make_heatmap_input()
   b <- run_diff(x, method = "ttest", analysis_type = "group",

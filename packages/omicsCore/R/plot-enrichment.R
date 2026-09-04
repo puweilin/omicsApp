@@ -76,7 +76,7 @@ plot_gsea <- function(bundle, pathway_id, database = NULL) {
   if (!identical(bundle$params$type, "gsea")) {
     stop("plot_gsea() requires a bundle with type = 'gsea'.")
   }
-  if (!requireNamespace("enrichplot", quietly = TRUE)) {
+  if (!is_installed("enrichplot")) {
     stop(
       "Package 'enrichplot' is required for plot_gsea(). ",
       "Install with: BiocManager::install('enrichplot').",

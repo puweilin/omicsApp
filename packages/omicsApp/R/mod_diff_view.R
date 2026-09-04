@@ -550,9 +550,7 @@ utils::globalVariables(".data")
 # DESeq2 / edgeR / limma are the ones run_diff() can dispatch to.
 diff_missing_engines <- function() {
   engines <- c(limma = "limma", DESeq2 = "DESeq2", edgeR = "edgeR")
-  missing <- vapply(engines, function(pkg) {
-    !requireNamespace(pkg, quietly = TRUE)
-  }, logical(1))
+  missing <- vapply(engines, function(pkg) !has_pkg(pkg), logical(1))
   names(engines)[missing]
 }
 

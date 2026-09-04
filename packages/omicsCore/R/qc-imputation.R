@@ -47,7 +47,10 @@ impute_matrix <- function(
 # ---- backends ----------------------------------------------------------
 
 impute_row_min <- function(mat, scale = 1) {
-  row_min <- apply(mat, 1L, min, na.rm = TRUE)
+  # A feature with no observed value has no minimum. min() answers Inf
+  # with a warning; the Inf was caught below and the warning was not,
+  # and it was the only warning this file's tests emitted.
+  row_min <- suppressWarnings(apply(mat, 1L, min, na.rm = TRUE))
   row_min[!is.finite(row_min)] <- 0
   idx <- which(is.na(mat), arr.ind = TRUE)
   mat[idx] <- scale * row_min[idx[, 1L]]
@@ -55,7 +58,7 @@ impute_row_min <- function(mat, scale = 1) {
 }
 
 impute_knn <- function(mat, k = 10, ...) {
-  if (!requireNamespace("impute", quietly = TRUE)) {
+  if (!is_installed("impute")) {
     stop(
       "Package 'impute' is required for method = 'knn'. ",
       "Install it with: omicsCore::install_optional('imputation') ",
@@ -71,7 +74,7 @@ impute_knn <- function(mat, k = 10, ...) {
 
 impute_missforest <- function(mat, maxiter = 10, ntree = 100,
                               seed = 1234L, ...) {
-  if (!requireNamespace("missForest", quietly = TRUE)) {
+  if (!is_installed("missForest")) {
     stop(
       "Package 'missForest' is required for method = 'missforest'. ",
       "Install it with: omicsCore::install_optional('imputation').",
@@ -107,7 +110,7 @@ impute_missforest <- function(mat, maxiter = 10, ntree = 100,
 }
 
 impute_bpca <- function(mat, n_pcs = 3, ...) {
-  if (!requireNamespace("pcaMethods", quietly = TRUE)) {
+  if (!is_installed("pcaMethods")) {
     stop(
       "Package 'pcaMethods' is required for method = 'bpca'. ",
       "Install it with: omicsCore::install_optional('imputation').",

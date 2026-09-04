@@ -3,7 +3,7 @@
 # log2(x + 1) themselves when `assay_type` is "raw_count".
 
 ensure_vsn <- function() {
-  if (!requireNamespace("vsn", quietly = TRUE)) {
+  if (!is_installed("vsn")) {
     stop(
       "Package 'vsn' is required for `method = \"vsn\"`. ",
       "Install with: omicsCore::install_optional('proteomics').",

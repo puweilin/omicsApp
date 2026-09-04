@@ -177,7 +177,7 @@ symbol_section <- function(omics_type) {
 #' @keywords internal
 #' @noRd
 write_import_template <- function(path, omics_type = "proteomics") {
-  if (!requireNamespace("openxlsx", quietly = TRUE)) {
+  if (!has_pkg("openxlsx")) {
     stop("Package 'openxlsx' is required to write the template workbook.",
          call. = FALSE)
   }

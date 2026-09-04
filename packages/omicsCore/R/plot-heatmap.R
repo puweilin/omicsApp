@@ -79,7 +79,7 @@ plot_heatmap <- function(
     show_rownames <- nrow(mat) <= 80L
   }
 
-  if (requireNamespace("ComplexHeatmap", quietly = TRUE)) {
+  if (is_installed("ComplexHeatmap")) {
     plot_heatmap_complex(
       mat = mat, meta = meta, annotation_cols = annotation_cols,
       cluster_rows = cluster_rows, cluster_cols = cluster_cols,
@@ -183,7 +183,7 @@ plot_heatmap_complex <- function(mat, meta, annotation_cols, cluster_rows,
       top_anno <- ComplexHeatmap::HeatmapAnnotation(df = anno_df)
     }
   }
-  col_fn <- if (requireNamespace("circlize", quietly = TRUE)) {
+  col_fn <- if (is_installed("circlize")) {
     circlize::colorRamp2(c(-2, 0, 2), c("#3C5488B2", "white", "#E64B35B2"))
   } else {
     NULL

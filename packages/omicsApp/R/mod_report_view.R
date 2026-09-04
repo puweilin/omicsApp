@@ -29,7 +29,7 @@ report_view_ui <- function(id) {
 report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
 
-    have_rmd <- requireNamespace("rmarkdown", quietly = TRUE)
+    have_rmd <- has_pkg("rmarkdown")
     ns <- session$ns
 
     # ---- header -------------------------------------------------------

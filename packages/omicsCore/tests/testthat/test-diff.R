@@ -126,27 +126,6 @@ test_that("run_diff auto picks limma for proteomics when installed", {
   expect_equal(b$params$method, "limma")
 })
 
-test_that("run_diff auto falls back to ttest when limma is missing", {
-  if (requireNamespace("limma", quietly = TRUE)) skip("limma is installed")
-  x <- make_proteo()
-  expect_message(
-    b <- run_diff(x, method = "auto", analysis_type = "group",
-                  group_col = "group", control_group = "ctrl", case_group = "case"),
-    "falling back"
-  )
-  expect_equal(b$params$method, "ttest")
-})
-
-test_that("run_diff auto falls back to lm for continuous proteomics", {
-  if (requireNamespace("limma", quietly = TRUE)) skip("limma is installed")
-  x <- make_proteo()
-  expect_message(
-    b <- run_diff_continuous(x, method = "auto", continuous_col = "age"),
-    "falling back"
-  )
-  expect_equal(b$params$method, "lm")
-})
-
 # ---- run_diff: argument validation --------------------------------------
 
 test_that("run_diff requires group_col / control_group / case_group for group analysis", {

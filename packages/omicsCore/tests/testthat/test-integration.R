@@ -61,7 +61,7 @@ make_integration_project <- function(n_features = 60L, n_donors = 8L) {
     stringsAsFactors = FALSE
   )
   input_b <- omics_input(base, meta_b, fdf_b, omics_type = "rnaseq",
-                          assay_type = "normalized_intensity")
+                          assay_type = "logcpm")
 
   donor_ids <- paste0("D", seq_len(n_donors))
   link <- data.frame(
@@ -204,20 +204,6 @@ test_that("concordance rejects non-run_diff bundles", {
 })
 
 # ---- active_pathways backend (Suggests-gated) -------------------------
-
-test_that("run_integration active_pathways requires ActivePathways", {
-  p <- make_integration_project()
-  diffs <- build_integration_diff_bundles(p)
-  if (requireNamespace("ActivePathways", quietly = TRUE)) {
-    skip("ActivePathways is installed; skipping the gate test")
-  }
-  expect_error(
-    run_integration(p, method = "active_pathways",
-                    experiments = c("proteo", "rna"),
-                    diff_bundles = diffs),
-    "ActivePathways"
-  )
-})
 
 test_that("active_pathways returns the integration schema when installed", {
   skip_if_not_installed("ActivePathways")

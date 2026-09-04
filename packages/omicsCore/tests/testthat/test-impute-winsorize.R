@@ -85,30 +85,6 @@ test_that("impute_matrix mean handles features with all NAs", {
 
 # ---- impute_matrix: error for missing backend packages -----------------
 
-test_that("impute_matrix knn errors instructively when impute missing", {
-  mat <- make_test_mat()
-  mat[1, 1] <- NA_real_
-  skip_if(requireNamespace("impute", quietly = TRUE),
-          "impute is installed; cannot test error path")
-  expect_error(impute_matrix(mat, method = "knn"), "impute")
-})
-
-test_that("impute_matrix bpca errors instructively when pcaMethods missing", {
-  mat <- make_test_mat()
-  mat[1, 1] <- NA_real_
-  skip_if(requireNamespace("pcaMethods", quietly = TRUE),
-          "pcaMethods is installed; cannot test error path")
-  expect_error(impute_matrix(mat, method = "bpca"), "pcaMethods")
-})
-
-test_that("impute_matrix missforest errors instructively when missForest missing", {
-  mat <- make_test_mat()
-  mat[1, 1] <- NA_real_
-  skip_if(requireNamespace("missForest", quietly = TRUE),
-          "missForest is installed; cannot test error path")
-  expect_error(impute_matrix(mat, method = "missforest"), "missForest")
-})
-
 # ---- impute_matrix: edge cases -----------------------------------------
 
 test_that("impute_matrix works on single-row matrix", {

@@ -5,7 +5,7 @@
 # then runs ActivePathways against an in-memory GMT-like list.
 
 ensure_active_pathways <- function() {
-  if (!requireNamespace("ActivePathways", quietly = TRUE)) {
+  if (!is_installed("ActivePathways")) {
     stop(
       "Package 'ActivePathways' is required for method = 'active_pathways'. ",
       "Install with: install.packages('ActivePathways').",

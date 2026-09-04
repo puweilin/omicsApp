@@ -4,7 +4,7 @@
 # right params. `rmarkdown` is Suggests-gated.
 
 ensure_rmarkdown <- function() {
-  if (!requireNamespace("rmarkdown", quietly = TRUE)) {
+  if (!is_installed("rmarkdown")) {
     stop(
       "Package 'rmarkdown' is required for export_report(). ",
       "Install with: install.packages('rmarkdown').",
