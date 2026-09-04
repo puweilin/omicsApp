@@ -20,6 +20,19 @@
 #                   login, so the password written here stops working the
 #                   moment the user has chosen their own. You never learn
 #                   what they picked.
+#
+#                   Set OMICSAPP_INITIAL_PASSWORD to give everyone the
+#                   same one instead, which is easier to hand out:
+#
+#                     sudo OMICSAPP_INITIAL_PASSWORD='...' \
+#                          deploy/scripts/add_user.sh a@x.com b@x.com
+#
+#                   The cost is that until each person has logged in
+#                   once, any of them can sign in as any other -- a
+#                   mistyped address lands in a colleague's account and
+#                   sets its password, with no malice required. Worth it
+#                   if everyone will log in the same day; not if the
+#                   accounts sit unclaimed for a week.
 #   directory       /srv/omicsapp/users/<sub>, owned by the container uid
 #
 # The directory is named after the Keycloak `sub`, a UUID fixed when the
@@ -122,6 +135,7 @@ KC_URL="$KC_URL" KC_REALM="$KC_REALM" KC_ADMIN_USER="$KC_ADMIN_USER" \
 KC_GROUP="$KC_GROUP" USERS_ROOT="$USERS_ROOT" RAW_ROOT="$RAW_ROOT" \
 CONTAINER_UID="$CONTAINER_UID" CONTAINER_GID="$CONTAINER_GID" \
 SECRETS="$SECRETS" \
+OMICSAPP_INITIAL_PASSWORD="${OMICSAPP_INITIAL_PASSWORD:-}" \
 python3 - "$@" <<'PY'
 import json, os, secrets, string, sys, urllib.error, urllib.parse, urllib.request
 
@@ -203,6 +217,20 @@ group_id = match[0]["id"]
 ALPHABET = "".join(c for c in string.ascii_letters + string.digits
                    if c not in "O0oIl1")
 
+SHARED = os.environ.get("OMICSAPP_INITIAL_PASSWORD", "")
+# Checked here rather than left to Keycloak. The realm sets
+# passwordPolicy: length(12), and a rejection from the API arrives as a
+# JSON error key -- after some accounts have already been created, so a
+# rerun then has to skip the ones that exist. Failing before the first
+# account is created is the cheaper end of that.
+if SHARED and len(SHARED) < 12:
+    sys.exit("error: OMICSAPP_INITIAL_PASSWORD is %d characters; the realm's "
+             "password policy requires 12" % len(SHARED))
+
+
+def make_password():
+    return SHARED or "".join(secrets.choice(ALPHABET) for _ in range(14))
+
 created = []
 for email in emails:
     try:
@@ -238,7 +266,7 @@ for email in emails:
         os.chmod(path, 0o700)   # makedirs applies the umask; chmod does not
         made.append("%s (%s)" % (path, label))
 
-    pw = "".join(secrets.choice(ALPHABET) for _ in range(14))
+    pw = make_password()
     try:
         # temporary=True is what makes Keycloak demand a new password at
         # first login. It is the whole reason the admin never needs to
@@ -265,7 +293,13 @@ with open(os.open(SECRETS, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a") 
         fh.write("%-34s  %-14s  %s\n" % (email, pw, sub))
 
 print()
-print("%d account(s) created. Temporary passwords: %s" % (len(created), SECRETS))
+print("%d account(s) created. Record: %s" % (len(created), SECRETS))
+if SHARED:
+    print()
+    print("All of them share the password you supplied. Until each person has")
+    print("logged in once and been made to change it, any of them can sign in")
+    print("as any other -- so chase the stragglers rather than letting the")
+    print("accounts sit unclaimed.")
 PY
 
 # Under sudo the handout file belongs to the person who ran it.
@@ -277,10 +311,10 @@ unset KC_ADMIN_PASSWORD
 
 cat <<DONE
 
-Hand each person their address and temporary password. Keycloak will
-require a new one at first login, so what is in that file stops working
-as soon as they have chosen their own -- which is why you never need to
-know it.
+Hand each person their address and temporary password. Keycloak requires
+a new one at first login, so what is in that file stops working as soon
+as they have chosen their own -- you never learn the password anyone
+actually uses.
 
 Once they are distributed:
     shred -u ${SECRETS}
