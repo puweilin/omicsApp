@@ -153,6 +153,24 @@ logging:
     name: /var/log/shinyproxy/shinyproxy.log
 
 server:
+  # Required whenever TLS is terminated in front, and the documentation
+  # says so outright: without it ShinyProxy builds every absolute URL
+  # from the request it received -- which arrived as plain HTTP from
+  # nginx -- and hands the browser `http://` links. nginx redirects
+  # those back to https, so the site appears to work while every
+  # navigation costs an extra round trip.
+  #
+  # The part that does not merely cost a round trip is OIDC: the
+  # redirect_uri is built the same way, and Keycloak rejects a http://
+  # one against a https:// registration. `native` lets Undertow read
+  # X-Forwarded-Proto, which nginx sets.
+  forward-headers-strategy: native
+
+  # Defaults to false. Everything here is HTTPS -- port 80 only issues
+  # redirects -- so there is no reason for the session cookie to be
+  # sendable over plain HTTP.
+  secure-cookies: true
+
   servlet:
     session:
       # Must not be shorter than proxy.heartbeat-timeout above, or the
