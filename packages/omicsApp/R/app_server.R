@@ -103,6 +103,7 @@ app_server <- function(input, output, session) {
   # ones on screen, silently.
   enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
                                       diff_thresholds = diff_view$thresholds,
+                                      diff_layer = diff_view$layer,
                                       invalidate = layer_generation)
   integration_bundle <- integration_view_server("integration",
                           current_project = current_project,

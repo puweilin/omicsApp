@@ -42,6 +42,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                                diff_thresholds = shiny::reactive(list(
                                  p_cutoff = 0.05, p_preference = "adjusted",
                                  effect_cutoff = NULL)),
+                               diff_layer = shiny::reactive(NULL),
                                invalidate = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
@@ -160,12 +161,26 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                 else sprintf("%s \u00B7 %s",
                              toupper(b$params$type %||% "ora"),
                              b$params$database %||% "hallmark")
+      # Which layer, stated rather than offered. Enrichment runs on a
+      # differential result, so its layer is whichever one Differential
+      # was run on -- a picker here could be set to disagree with that,
+      # and the panel would then be labelled rnaseq while showing
+      # proteomics pathways. To change it, change it there.
+      layer <- diff_layer_tag()
       view_header(
         title    = "Pathway enrichment",
         subtitle = htmltools::tagList(
           omics,
           htmltools::HTML(" &middot; "),
           method,
+          if (!is.null(layer)) {
+            htmltools::tagList(
+              htmltools::HTML(" &middot; "),
+              htmltools::tags$span(
+                class = "muted",
+                sprintf("from the %s differential", layer))
+            )
+          },
           htmltools::HTML(" &middot; "),
           htmltools::tags$span(
             class = "muted",
@@ -174,6 +189,14 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           )
         )
       )
+    })
+
+    # The tag of the layer the upstream differential ran on, handed over
+    # by that view. NULL for the demo.
+    diff_layer_tag <- shiny::reactive({
+      if (isTRUE(is_demo())) return(NULL)
+      tag <- diff_layer()
+      if (is.null(tag) || !nzchar(tag)) NULL else tag
     })
 
     # The size of the gene list this enrichment is over.

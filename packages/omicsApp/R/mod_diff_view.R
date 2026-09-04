@@ -524,6 +524,11 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # many passed adj.P, which can be none.
     list(
       bundle = shiny::reactive(diff_bundle()),
+      # The layer this ran on. The bundle does not carry it -- a project
+      # layer tag is an app concept, not something run_diff() knows --
+      # and Enrichment needs it to say which layer its pathways came
+      # from rather than leaving the reader to assume.
+      layer = shiny::reactive(active()$tag),
       thresholds = shiny::reactive(list(
         p_cutoff      = fdr_cut_d(),
         p_preference  = if (identical(input$p_kind %||% "adj", "raw")) "raw"

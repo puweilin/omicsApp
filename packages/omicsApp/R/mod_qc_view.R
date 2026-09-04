@@ -81,18 +81,40 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (length(exps) == 0L) {
         return(list(input = NULL, tag = NULL, is_demo = TRUE))
       }
-      want <- requested_layer()
+      # The picker wins when it names a layer that exists: it is the one
+      # the user is looking at. requested_layer() is how another view
+      # hands over ("show me this one"), and it seeds the picker rather
+      # than fighting it.
+      want <- input$layer
+      if (is.null(want) || !want %in% names(exps)) want <- requested_layer()
       if (!is.null(want) && length(want) == 1L && want %in% names(exps)) {
         return(list(input = exps[[want]], tag = want, is_demo = FALSE))
       }
-      types <- vapply(exps, function(e) e$omics_type %||% "", character(1))
-      idx <- which(types == "proteomics")
-      if (length(idx) == 0L) idx <- 1L
+      idx <- qc_default_layer_idx(exps)
       list(
-        input   = exps[[idx[1L]]],
-        tag     = names(exps)[idx[1L]],
+        input   = exps[[idx]],
+        tag     = names(exps)[idx],
         is_demo = FALSE
       )
+    })
+
+    output$ui_layer <- shiny::renderUI({
+      proj <- current_project()
+      if (is.null(proj) || length(proj$experiments) < 2L) return(NULL)
+      tags_avail <- names(proj$experiments)
+      # isolate(), for the reason the Differential view documents: this
+      # output writes input$layer and active() reads it, so reading it
+      # here would close the loop -- re-rendering the control re-sends
+      # its value, which invalidates active(), which re-renders it.
+      sel <- shiny::isolate(input$layer)
+      if (is.null(sel) || !sel %in% tags_avail) {
+        sel <- shiny::isolate(requested_layer())
+      }
+      if (is.null(sel) || !sel %in% tags_avail) {
+        sel <- tags_avail[[qc_default_layer_idx(proj$experiments)]]
+      }
+      shiny::selectInput(session$ns("layer"), label = "Experiment layer",
+                         choices = tags_avail, selected = sel)
     })
 
     # The QC bundle. tryCatch keeps a parameter mishap (e.g. a
@@ -277,10 +299,15 @@ qc_controls_card <- function(ns) {
       htmltools::tags$h3(class = "card-title", "Filters"),
       htmltools::tags$span(
         class = "card-sub",
-        "missing-rate cutoff and outlier detection"
+        "which layer, and how it is filtered"
       )
     ),
     bslib::card_body(
+      # A project holds several layers and QC describes exactly one of
+      # them. Which one was decided elsewhere -- by the arrow in the
+      # Projects table, or by falling back to the first proteomics layer
+      # -- so the answer to "what am I looking at" was not on this page.
+      shiny::uiOutput(ns("ui_layer")),
       htmltools::tags$div(
         class = "row-grid r-6-6",
         shiny::sliderInput(
@@ -303,6 +330,15 @@ qc_controls_card <- function(ns) {
       )
     )
   )
+}
+
+# Proteomics first when nothing else has been asked for: the missingness
+# panels are the ones this view was built around, and they say nothing
+# about a counts matrix.
+qc_default_layer_idx <- function(exps) {
+  types <- vapply(exps, function(e) e$omics_type %||% "", character(1L))
+  idx <- which(types == "proteomics")
+  if (length(idx) == 0L) 1L else idx[[1L]]
 }
 
 omics_display <- function(t) {
