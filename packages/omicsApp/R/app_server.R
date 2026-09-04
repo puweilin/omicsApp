@@ -111,27 +111,88 @@ app_server <- function(input, output, session) {
                           invalidate      = layer_generation)
   report_view_server("report", current_project = current_project)
 
-  # Attach analysis bundles to the project whenever any bundle changes,
-  # so that export_report() can walk names(project$bundles). We assign
-  # back through `current_project(proj)` to propagate the change — a
-  # direct `proj$bundles <- b` mutation would NOT invalidate the
-  # reactiveVal, leaving the report view stuck on stale bundle status.
+  # ---- which data the views' results belong to -------------------------
+  # A layer's identity is its upload fingerprint, or its shape when it
+  # was built without one. The import observer below bumps the
+  # generation for the replacement it performs itself; this covers the
+  # arrivals it never sees -- Open, Restore, a dropped layer, the first
+  # import after a demo run -- where the project changes under the
+  # views and what they hold was computed on data that is no longer in
+  # it. Found by the acceptance test: a project restored into a fresh
+  # session lost its saved analyses within one flush, and a project
+  # opened while the views still held another project's results was
+  # handed those results as its own.
+  layer_identity <- function(proj) {
+    if (is.null(proj) || !length(proj$experiments)) return(character(0))
+    vapply(proj$experiments, function(e) {
+      e$source_fingerprint %||% paste(dim(e$expr_mat), collapse = "x")
+    }, character(1))
+  }
+  seen_identity <- shiny::reactiveVal(NULL)
+  shiny::observeEvent(current_project(), {
+    now <- layer_identity(current_project())
+    before <- seen_identity()
+    seen_identity(now)
+    if (is.null(before)) {
+      # First project of the session. Whatever the views hold is about
+      # the demo, and must not be attached to the user's data.
+      if (length(now)) layer_generation(shiny::isolate(layer_generation()) + 1L)
+      return()
+    }
+    gone <- setdiff(names(before), names(now))
+    common <- intersect(names(before), names(now))
+    changed <- common[before[common] != now[common]]
+    if (length(gone) || length(changed)) {
+      layer_generation(shiny::isolate(layer_generation()) + 1L)
+    }
+  }, priority = 20L, ignoreNULL = FALSE, ignoreInit = TRUE)
+
+  # Views publish their results into the project, so that
+  # export_report() can walk names(project$bundles). We assign back
+  # through `current_project(proj)` to propagate the change -- a direct
+  # `proj$bundles <- b` mutation would NOT invalidate the reactiveVal,
+  # leaving the report view stuck on stale bundle status.
+  #
+  # Starts from the project's own bundles rather than from an empty
+  # list: a project can arrive already carrying results (Restore and
+  # Open bring them from disk), and rebuilding the list from the views
+  # alone threw those away the moment they were loaded. A view that
+  # lets go of a result on its own -- a change of layer, not a change
+  # of data -- still takes it out of the project; a view emptied by a
+  # generation bump does not, because whoever bumped has already
+  # decided what the project keeps.
+  #
+  # Priority -10: after every view has reacted to a generation bump, so
+  # this never sees a result computed on a layer that has just been
+  # replaced. That ordering used to rest on which reactiveVal the
+  # import observer happened to assign first.
+  held <- new.env(parent = emptyenv())
   shiny::observe({
     proj <- current_project()
     if (is.null(proj)) return()
-    b <- list()
-    qb <- qc_bundle()
-    if (!is.null(qb)) b$qc <- qb
-    db <- diff_bundle()
-    if (!is.null(db)) b$diff <- db
-    eb <- enrich_bundle()
-    if (!is.null(eb)) b$enrich <- eb
-    ib <- integration_bundle()
-    if (!is.null(ib)) b$integration <- ib
+    gen <- layer_generation()
+    views <- list(
+      qc          = qc_bundle(),
+      diff        = diff_bundle(),
+      enrich      = enrich_bundle(),
+      integration = integration_bundle()
+    )
+    b <- proj$bundles %||% list()
+    for (nm in names(views)) {
+      v <- views[[nm]]
+      prev <- held[[nm]]
+      if (!is.null(v)) {
+        b[[nm]] <- v
+      } else if (!is.null(prev) && !is.null(prev$bundle) &&
+                 identical(prev$gen, gen)) {
+        b[[nm]] <- NULL
+      }
+      held[[nm]] <- list(bundle = v, gen = gen)
+    }
     if (identical(proj$bundles, b)) return()
     proj$bundles <- b
     current_project(proj)
-  })
+  }, priority = -10L)
 
   # Every time the Import view confirms a fresh omics_input, fold it
   # into the project under a tag derived from its omics_type. Repeated
