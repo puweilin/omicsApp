@@ -358,6 +358,14 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
                                     else sheets[[feature_sheet]],
                                     feature_ids = rownames(mat))
 
+  # An Ensembl-keyed matrix needs symbols before any pathway database can
+  # be matched against it. Done here rather than left to the user,
+  # because the alternative -- an empty enrichment result -- is
+  # indistinguishable from a real one that found nothing.
+  sym <- attach_hgnc_symbols(feat, rownames(mat))
+  feat <- sym$feature_df
+  if (!is.null(sym$note)) report <- add_import_warning(report, sym$note)
+
   suggested <- list(
     matrix_sheet = matrix_sheet,
     metadata_sheet = metadata_sheet,

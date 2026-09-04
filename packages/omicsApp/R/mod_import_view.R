@@ -121,6 +121,17 @@ import_view_server <- function(id,
       confirmed_input(NULL)
     }
 
+    # Both templates carry the same donors under different sample ids --
+    # the pairing Integration needs, shown rather than described.
+    output$template_proteomics <- shiny::downloadHandler(
+      filename = function() "omicsapp_template_proteomics.xlsx",
+      content = function(file) write_import_template(file, "proteomics")
+    )
+    output$template_rnaseq <- shiny::downloadHandler(
+      filename = function() "omicsapp_template_rnaseq.xlsx",
+      content = function(file) write_import_template(file, "rnaseq")
+    )
+
     shiny::observeEvent(input$file, {
       # A new file makes the previous sheet assignment meaningless
       role_overrides(NULL)
@@ -733,7 +744,24 @@ import_upload_card <- function(ns) {
       shiny::uiOutput(ns("assay_type_picker")),
       shiny::uiOutput(ns("scale_notice")),
       shiny::uiOutput(ns("normalize_controls")),
-      shiny::uiOutput(ns("upload_status"))
+      shiny::uiOutput(ns("upload_status")),
+
+      # The classifier reads whatever a vendor sent; it cannot invent the
+      # grouping, and without that there is nothing for Differential to
+      # compare. A file that already parses is a better starting point
+      # than a description of one.
+      htmltools::tags$hr(style = "margin:14px 0 10px"),
+      htmltools::tags$div(
+        class = "muted", style = "font-size:12px;margin-bottom:6px",
+        "Not sure of the format? Start from a template."
+      ),
+      htmltools::tags$div(
+        style = "display:flex;gap:8px;flex-wrap:wrap",
+        shiny::downloadButton(ns("template_proteomics"), "Proteomics template",
+                              class = "btn btn-ghost btn-sm"),
+        shiny::downloadButton(ns("template_rnaseq"), "RNA-seq template",
+                              class = "btn btn-ghost btn-sm")
+      )
     )
   )
 }

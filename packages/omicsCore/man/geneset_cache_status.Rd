@@ -25,7 +25,9 @@ network round-trip.
 \seealso{
 Other enrich: 
 \code{\link{filter_enrich_results}()},
+\code{\link{hgnc_map_provenance}()},
 \code{\link{list_gene_sets}()},
+\code{\link{map_ensembl_symbols}()},
 \code{\link{plot_enrichment}()},
 \code{\link{plot_gsea}()},
 \code{\link{plot_gsva_heatmap}()},

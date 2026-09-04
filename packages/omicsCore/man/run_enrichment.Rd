@@ -11,6 +11,7 @@ run_enrichment(
   organism = "Hs",
   direction = c("both", "up", "down"),
   p_cutoff = 0.05,
+  output_p_cutoff = NULL,
   p_preference = c("adjusted", "raw"),
   effect_cutoff = NULL,
   p_adjust_method = "BH",
@@ -33,8 +34,12 @@ vector to query multiple databases.}
 
 \item{direction}{One of \code{"both"} (default), \code{"up"}, or \code{"down"}.}
 
-\item{p_cutoff}{Significance cutoff used both to select diff features
-(ORA) and to bound the enrichment result table.}
+\item{p_cutoff}{Significance cutoff for selecting diff features (ORA
+only; GSEA ranks the whole list).}
+
+\item{output_p_cutoff}{Bound on the returned table. Defaults to
+\code{p_cutoff}. Pass \code{1} to keep every pathway, so a caller can choose
+raw or adjusted p at display time without re-running.}
 
 \item{p_preference}{For ORA feature selection: \code{"adjusted"} (default) or
 \code{"raw"}.}
@@ -80,7 +85,9 @@ For GSVA-style sample-level scoring, see \code{\link[=run_gsva]{run_gsva()}}.
 Other enrich: 
 \code{\link{filter_enrich_results}()},
 \code{\link{geneset_cache_status}()},
+\code{\link{hgnc_map_provenance}()},
 \code{\link{list_gene_sets}()},
+\code{\link{map_ensembl_symbols}()},
 \code{\link{plot_enrichment}()},
 \code{\link{plot_gsea}()},
 \code{\link{plot_gsva_heatmap}()},

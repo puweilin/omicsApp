@@ -43,7 +43,9 @@ direction (up / down).
 Other enrich: 
 \code{\link{filter_enrich_results}()},
 \code{\link{geneset_cache_status}()},
+\code{\link{hgnc_map_provenance}()},
 \code{\link{list_gene_sets}()},
+\code{\link{map_ensembl_symbols}()},
 \code{\link{plot_gsea}()},
 \code{\link{plot_gsva_heatmap}()},
 \code{\link{refresh_geneset_cache}()},
