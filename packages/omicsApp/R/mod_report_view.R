@@ -42,18 +42,32 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
                 proj$name %||% "Project",
                 length(proj$experiments))
       }
+      # There is nothing to report on until a project exists, and
+      # do_export() stops on req(proj) when there is not -- silently, as
+      # req() does. A live-looking button that produces no file and no
+      # message is indistinguishable from a broken one, and that is what
+      # it looked like.
+      ready <- have_rmd && !is.null(proj)
+      dl <- function(id, label, primary) {
+        btn <- shiny::downloadButton(
+          ns(id), label,
+          class = paste("btn", if (ready && primary) "btn-primary" else "btn-ghost"))
+        if (ready) return(btn)
+        # `disabled` on the anchor, plus the pointer-events guard,
+        # because a download link is an <a> and browsers do not honour
+        # the attribute on its own.
+        htmltools::tagAppendAttributes(
+          btn, disabled = NA,
+          style = "pointer-events:none;opacity:0.55",
+          title = if (!have_rmd) "rmarkdown is not installed"
+                  else "Import a project first")
+      }
       view_header(
         title    = "Report",
         subtitle = subtitle,
         actions  = htmltools::tagList(
-          shiny::downloadButton(
-            ns("download_html"), "Generate HTML",
-            class = if (have_rmd) "btn btn-primary" else "btn btn-ghost"
-          ),
-          shiny::downloadButton(
-            ns("download_pdf"), "Generate PDF",
-            class = if (have_rmd) "btn btn-ghost" else "btn btn-ghost"
-          )
+          dl("download_html", "Generate HTML", TRUE),
+          dl("download_pdf", "Generate PDF", FALSE)
         )
       )
     })
