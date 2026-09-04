@@ -246,7 +246,10 @@ refresh_geneset_cache <- function(
 
     # Stage-and-rename so an interrupted write can never clobber a good
     # cache with a truncated one.
-    tmp <- paste0(path, ".tmp")
+    # Unique per call: the monthly cron and a manual refresh can
+    # overlap, and a shared temp name lets one truncate the other.
+    tmp <- tempfile(pattern = paste0(basename(path), "."),
+                    tmpdir = dirname(path), fileext = ".tmp")
     qs2::qs_save(df, tmp)
     file.rename(tmp, path)
     cache_drop(paste0("msig::", db, "::", organism))

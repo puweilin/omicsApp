@@ -64,7 +64,18 @@ save_project <- function(project, path, overwrite = FALSE) {
     payload = project
   )
 
-  tmp <- paste0(path, ".tmp")
+  # Unique per call, not paste0(path, ".tmp").
+  #
+  # The rename is what makes this atomic for a reader, and a shared
+  # temp name takes that back: two writers -- the same account open on
+  # two devices, both autosaving -- open the same file, interleave, and
+  # one renames the result over the real one. The on.exit cleanup would
+  # also delete the other writer's file mid-write.
+  #
+  # Same directory as the target, because rename() is only atomic within
+  # a filesystem and tempdir() is usually a different one.
+  tmp <- tempfile(pattern = paste0(basename(path), "."),
+                  tmpdir = dirname(path), fileext = ".tmp")
   on.exit(if (file.exists(tmp)) file.remove(tmp), add = TRUE)
   qs2::qs_save(payload, file = tmp)
   ok <- file.rename(tmp, path)
