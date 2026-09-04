@@ -54,6 +54,9 @@ Suggests:
     here,
     testthat (>= 3.0.0),
     withr,
+    callr,
+    pkgload,
+    writexl,
     knitr,
     rmarkdown
 Config/testthat/edition: 3
