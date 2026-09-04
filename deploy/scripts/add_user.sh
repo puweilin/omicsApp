@@ -219,13 +219,13 @@ ALPHABET = "".join(c for c in string.ascii_letters + string.digits
 
 SHARED = os.environ.get("OMICSAPP_INITIAL_PASSWORD", "")
 # Checked here rather than left to Keycloak. The realm sets
-# passwordPolicy: length(12), and a rejection from the API arrives as a
+# passwordPolicy: length(8), and a rejection from the API arrives as a
 # JSON error key -- after some accounts have already been created, so a
 # rerun then has to skip the ones that exist. Failing before the first
 # account is created is the cheaper end of that.
-if SHARED and len(SHARED) < 12:
+if SHARED and len(SHARED) < 8:
     sys.exit("error: OMICSAPP_INITIAL_PASSWORD is %d characters; the realm's "
-             "password policy requires 12" % len(SHARED))
+             "password policy requires 8" % len(SHARED))
 
 
 def make_password():

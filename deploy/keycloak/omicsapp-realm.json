@@ -11,7 +11,7 @@
   "resetPasswordAllowed": false,
   "verifyEmail": false,
 
-  "passwordPolicy": "length(12)",
+  "passwordPolicy": "length(8)",
 
   "bruteForceProtected": true,
   "failureFactor": 10,

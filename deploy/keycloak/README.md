@@ -136,7 +136,7 @@ rather than be ignored. Hence this table.
 | `resetPasswordAllowed` | `false` | Sends mail, and there is no SMTP server. Enabled without one, the forgot-password link fails *after* the user has been told it was sent. Resets are done by an admin. |
 | `verifyEmail` | `false` | Same reason. |
 | `bruteForceProtected` | `true` | Locks an account for a minute after ten failures. |
-| `passwordPolicy` | `length(12)` | Applies to what users choose, not to the generated temporary ones. |
+| `passwordPolicy` | `length(8)` | The floor NIST SP 800-63B recommends for a chosen secret. Online guessing is handled by the lockout above, not by length; length matters against an offline attack on the hashes, which needs the server breached first. |
 | groups mapper on `shinyproxy` | `groups`, `full.path: false` | **The one that gets missed.** ShinyProxy's `roles-claim` reads it from the ID token and the userinfo response, so all three claim flags are on. Without the mapper every login succeeds and every user is then denied, with nothing in the log connecting the two. |
 
 The redirect URI is not a choice: ShinyProxy's `OpenIDConfiguration.java`
