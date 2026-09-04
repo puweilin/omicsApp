@@ -3,7 +3,7 @@
 # Focus: edge inputs (tiny / empty / NA), invalid args, output class.
 
 make_plot_input <- function(n_feat = 30, n_samp = 8, omics_type = "proteomics",
-                            assay_type = "intensity") {
+                            assay_type = "normalized_intensity") {
   mat <- matrix(rnorm(n_feat * n_samp, mean = 10, sd = 2),
                 nrow = n_feat, ncol = n_samp)
   rownames(mat) <- paste0("gene_", seq_len(n_feat))
@@ -126,8 +126,8 @@ test_that("plot_enrichment respects view = 'bar'", {
 test_that("plot_enrichment respects view = 'gsea_dot' on GSEA bundle", {
   skip_if_not_installed("clusterProfiler")
   b <- tryCatch(
-    run_enrichment(make_plot_diff_bundle(n_feat = 50), type = "gsea",
-                   database = "hallmark"),
+    suppressWarnings(run_enrichment(realistic_diff_bundle(), type = "gsea",
+                                    database = "hallmark")),
     error = function(e) NULL
   )
   skip_if(is.null(b), "GSEA bundle could not be built")
@@ -245,7 +245,7 @@ test_that("plot_pca handles 2-sample input", {
   meta <- data.frame(group = c("A", "B"), row.names = c("s1", "s2"))
   feat <- data.frame(feature_id = rownames(mat))
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   # 2 samples: PCA is degenerate, function may render or error gracefully
   res <- tryCatch(plot_pca(inp), error = function(e) e)
   expect_true(inherits(res, "ggplot") || inherits(res, "error"))
@@ -325,7 +325,7 @@ test_that("plot_qc with color_by renders", {
 make_dual_diff_bundles <- function() {
   i1 <- make_plot_input(n_feat = 20, n_samp = 6)
   i2 <- make_plot_input(n_feat = 20, n_samp = 6, omics_type = "rnaseq",
-                        assay_type = "normalized_count")
+                        assay_type = "logcpm")
   colnames(i2$expr_mat) <- paste0("t", 1:6)
   rownames(i2$meta_df) <- paste0("t", 1:6)
   proj <- omics_project("dual", experiments = list(prot = i1, rna = i2))
@@ -412,36 +412,34 @@ test_that("plot_gsea errors on non-bundle", {
 
 test_that("plot_gsea errors on missing pathway_id", {
   skip_if_not_installed("clusterProfiler")
-  b <- run_enrichment(make_plot_diff_bundle(n_feat = 50), type = "gsea",
-                      database = "hallmark")
+  b <- suppressWarnings(run_enrichment(realistic_diff_bundle(), type = "gsea",
+                                       database = "hallmark"))
   expect_error(plot_gsea(b))
 })
 
 # ---- plot_gsva_heatmap ------------------------------------------------
+# On the realistic fixture, so the Hallmark sets overlap the matrix. The
+# old fixture's made-up gene names left nothing to score, and the
+# tryCatch/skip around it reported that as "could not be built" -- on
+# every machine, forever -- while also naming a result slot that never
+# existed.
+
+gsva_plot_bundle <- function() {
+  run_gsva(realistic_input(), database = "hallmark")
+}
 
 test_that("plot_gsva_heatmap renders for a gsva bundle", {
   skip_if_not_installed("GSVA")
   skip_if_not_installed("msigdbr")
-  b <- tryCatch(
-    run_gsva(make_plot_input(n_feat = 50, n_samp = 8),
-             database = "hallmark"),
-    error = function(e) NULL
-  )
-  skip_if(is.null(b), "GSVA bundle could not be built")
-  p <- plot_gsva_heatmap(b, top_n = 10L)
+  p <- plot_gsva_heatmap(gsva_plot_bundle(), top_n = 10L)
   expect_true(inherits(p, c("ggplot", "Heatmap", "HeatmapList")))
 })
 
 test_that("plot_gsva_heatmap with pathways subset", {
   skip_if_not_installed("GSVA")
   skip_if_not_installed("msigdbr")
-  b <- tryCatch(
-    run_gsva(make_plot_input(n_feat = 50, n_samp = 8),
-             database = "hallmark"),
-    error = function(e) NULL
-  )
-  skip_if(is.null(b), "GSVA bundle could not be built")
-  pws <- rownames(b$results$gsva_score_mat)[1:3]
+  b <- gsva_plot_bundle()
+  pws <- rownames(b$results$gsva_matrix)[1:3]
   p <- plot_gsva_heatmap(b, pathways = pws)
   expect_true(inherits(p, c("ggplot", "Heatmap", "HeatmapList")))
 })
@@ -453,13 +451,8 @@ test_that("plot_gsva_heatmap errors on non-bundle", {
 test_that("plot_gsva_heatmap errors on invalid scale", {
   skip_if_not_installed("GSVA")
   skip_if_not_installed("msigdbr")
-  b <- tryCatch(
-    run_gsva(make_plot_input(n_feat = 50, n_samp = 8),
-             database = "hallmark"),
-    error = function(e) NULL
-  )
-  skip_if(is.null(b), "GSVA bundle could not be built")
-  expect_error(plot_gsva_heatmap(b, scale = "diagonal"), "should be one of")
+  expect_error(plot_gsva_heatmap(gsva_plot_bundle(), scale = "diagonal"),
+               "should be one of")
 })
 
 # ---- consolidated palette and views -----------------------------------

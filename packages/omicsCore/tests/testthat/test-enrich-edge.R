@@ -18,7 +18,7 @@ make_diff_bundle_for_enrich <- function() {
     stringsAsFactors = FALSE
   )
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   run_diff(inp, method = "ttest", analysis_type = "group",
            group_col = "group",
            control_group = "control", case_group = "treatment")
@@ -77,20 +77,16 @@ test_that("run_enrichment ORA with different databases works", {
 
 test_that("run_enrichment GSEA with hallmark works", {
   skip_if_not_installed("clusterProfiler")
-  bundle <- make_diff_bundle_for_enrich()
-  res <- run_enrichment(bundle, type = "gsea", database = "hallmark")
+  # Real symbols, or no set overlaps the list and GSEA fails inside a
+  # tryCatch while this test still passes on the class of the bundle.
+  # test-enrich-realistic.R holds the full assertions.
+  bundle <- realistic_diff_bundle()
+  res <- suppressWarnings(run_enrichment(bundle, type = "gsea", database = "hallmark"))
   expect_true(is_analysis_bundle(res))
+  expect_gt(nrow(res$results$enrich_result_df), 0L)
 })
 
 # ---- run_enrichment: error paths ---------------------------------------
-
-test_that("run_enrichment errors when clusterProfiler not installed", {
-  skip_if(requireNamespace("clusterProfiler", quietly = TRUE),
-          "clusterProfiler is installed; can't test error path")
-  bundle <- make_diff_bundle_for_enrich()
-  expect_error(run_enrichment(bundle, type = "ora", database = "hallmark"),
-               "clusterProfiler")
-})
 
 test_that("run_enrichment errors on invalid bundle input", {
   expect_error(run_enrichment(list(), type = "ora", database = "hallmark"),

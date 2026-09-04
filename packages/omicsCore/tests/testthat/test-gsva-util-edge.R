@@ -1,64 +1,66 @@
 # GSVA, install_optional, and remaining utility robustness tests.
-
-make_gsva_input <- function(n_feat = 50, n_samp = 8) {
-  mat <- matrix(rnorm(n_feat * n_samp, mean = 10, sd = 2),
-                nrow = n_feat, ncol = n_samp)
-  rownames(mat) <- paste0("gene_", seq_len(n_feat))
-  colnames(mat) <- paste0("s", seq_len(n_samp))
-  meta <- data.frame(group = rep(c("A", "B"), length.out = n_samp),
-                     row.names = colnames(mat))
-  feat <- data.frame(feature_id = rownames(mat),
-                     feature_name = rownames(mat),
-                     stringsAsFactors = FALSE)
-  omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "log_intensity")
-}
+#
+# The GSVA tests use the realistic fixture (helper-realistic.R): real
+# gene symbols, so the Hallmark sets actually overlap the matrix. They
+# used to wrap run_gsva() in tryCatch and skip on any error, which turned
+# a real defect -- the symbol lookup dropped every feature -- into
+# "GSVA bundle not buildable in this env", on every machine, on every
+# run. They also read a result slot that has never existed. A skip
+# cannot be wrong; that is exactly why it must not stand in for a
+# failure.
 
 # ---- run_gsva ----------------------------------------------------------
 
 test_that("run_gsva returns a bundle on valid input", {
   skip_if_not_installed("GSVA")
   skip_if_not_installed("msigdbr")
-  b <- tryCatch(run_gsva(make_gsva_input(), database = "hallmark"),
-                error = function(e) NULL)
-  skip_if(is.null(b), "GSVA bundle not buildable in this env")
+  b <- run_gsva(realistic_input(), database = "hallmark")
   expect_true(is_analysis_bundle(b))
+  expect_identical(b$analysis_name, "run_gsva")
+  expect_identical(b$params$method, "gsva")
 })
 
-test_that("run_gsva produces a gsva_score_mat result", {
+test_that("run_gsva produces a gene-set by sample score matrix", {
   skip_if_not_installed("GSVA")
   skip_if_not_installed("msigdbr")
-  b <- tryCatch(run_gsva(make_gsva_input(), database = "hallmark"),
-                error = function(e) NULL)
-  skip_if(is.null(b), "GSVA bundle not buildable in this env")
-  expect_true(is.matrix(b$results$gsva_score_mat) ||
-                is.data.frame(b$results$gsva_score_mat))
+  inp <- realistic_input()
+  b <- run_gsva(inp, database = "hallmark")
+  m <- b$results$gsva_matrix
+  expect_true(is.matrix(m))
+  expect_identical(colnames(m), colnames(inp$expr_mat))
+  expect_true(all(grepl("^HALLMARK_", rownames(m))))
+  expect_true(all(is.finite(m)))
+  expect_true(all(abs(m) <= 1))
+  expect_type(b$results$gsva_gene_sets, "list")
 })
 
 test_that("run_gsva supports ssgsea method", {
   skip_if_not_installed("GSVA")
-  skip_if_not_installed("msigdbr")
-  b <- tryCatch(run_gsva(make_gsva_input(), database = "hallmark",
-                         method = "ssgsea"),
-                error = function(e) NULL)
-  skip_if(is.null(b), "ssgsea bundle not buildable in this env")
+  b <- run_gsva(realistic_input(), gene_sets = REAL_GENE_SETS,
+                min_size = 5L, method = "ssgsea")
   expect_true(is_analysis_bundle(b))
+  expect_identical(b$params$method, "ssgsea")
+  expect_setequal(rownames(b$results$gsva_matrix), names(REAL_GENE_SETS))
 })
 
 test_that("run_gsva respects min_size and max_size", {
   skip_if_not_installed("GSVA")
-  skip_if_not_installed("msigdbr")
-  b <- tryCatch(run_gsva(make_gsva_input(), database = "hallmark",
-                         min_size = 1L, max_size = 5000L),
-                error = function(e) NULL)
-  skip_if(is.null(b), "GSVA bundle not buildable in this env")
-  expect_true(is_analysis_bundle(b))
+  # Every supplied set has 40 members: a floor of 40 keeps them all, a
+  # ceiling of 39 leaves nothing to score.
+  keep <- run_gsva(realistic_input(), gene_sets = REAL_GENE_SETS,
+                   min_size = 40L, max_size = 40L)
+  expect_setequal(rownames(keep$results$gsva_matrix), names(REAL_GENE_SETS))
+  expect_error(
+    run_gsva(realistic_input(), gene_sets = REAL_GENE_SETS,
+             min_size = 5L, max_size = 39L),
+    "[Nn]o gene set"
+  )
 })
 
 test_that("run_gsva errors on bogus database", {
   skip_if_not_installed("GSVA")
   skip_if_not_installed("msigdbr")
-  expect_error(run_gsva(make_gsva_input(), database = "ghost_db"))
+  expect_error(run_gsva(realistic_input(), database = "ghost_db"))
 })
 
 # ---- install_optional groups ------------------------------------------

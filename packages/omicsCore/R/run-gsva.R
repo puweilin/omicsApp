@@ -46,7 +46,7 @@ run_gsva <- function(
   validate_omics_input(input)
   method <- match.arg(method)
 
-  if (!requireNamespace("GSVA", quietly = TRUE)) {
+  if (!is_installed("GSVA")) {
     stop(
       "Package 'GSVA' is required for run_gsva(). ",
       "Install with: omicsCore::install_optional('enrichment').",
@@ -61,8 +61,16 @@ run_gsva <- function(
 
   # Replace expression rownames with feature_symbol so the gene-set lookup
   # works against HGNC symbols (the space msigdbr returns).
+  #
+  # Matched on the feature_id column, not on rownames(feature_df): the
+  # constructor does not set those, so a feature_df built by hand has
+  # 1..n for row names, and indexing it by feature id returned NA for
+  # every feature. Every row was then dropped and GSVA refused the empty
+  # matrix -- and the tests skipped over the refusal as an environment
+  # problem.
   if (!is.null(input$feature_df) && "feature_symbol" %in% colnames(input$feature_df)) {
-    syms <- input$feature_df[rownames(expr_mat), "feature_symbol"]
+    idx <- match(rownames(expr_mat), input$feature_df$feature_id)
+    syms <- as.character(input$feature_df$feature_symbol[idx])
     valid <- !is.na(syms) & nzchar(syms)
     expr_mat <- expr_mat[valid, , drop = FALSE]
     syms <- syms[valid]
