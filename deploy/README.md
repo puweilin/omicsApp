@@ -4,10 +4,17 @@ Serves the app to a small group (3–4 concurrent users) on an internal
 network, one container per logged-in user.
 
 ```
-browser ──HTTP──> nginx ──> ShinyProxy(:8080) ──> omicsapp container × N
-                              │ simple auth        └─ /data ← /srv/omicsapp/users/<user>
-                              └─ lifecycle
+browser ──HTTPS──> nginx ─┬─> ShinyProxy(:8080) ──> omicsapp container × N
+                          │     └─ lifecycle          └─ /data ← /srv/omicsapp/users/<sub>
+                          └─> Keycloak(:8180) ──> accounts, passwords, self-service
 ```
+
+ShinyProxy holds no credentials. Keycloak owns them, which is what lets
+a user change their own password and username without an admin editing a
+file and restarting a service that would drop everyone's running
+analysis. Storage is keyed on the Keycloak `sub` — an immutable UUID —
+so a rename does not orphan anyone's projects. See
+[`keycloak/README.md`](keycloak/README.md).
 
 Per-user containers are the point: each user's expression matrices and
 results live only in their own process, and one session running out of
@@ -19,10 +26,12 @@ memory cannot take anyone else down with it.
 |---|---|
 | `docker/Dockerfile` | The image. Build from the **repository root**. |
 | `docker/prewarm_genesets.R` | Bakes the MSigDB tables in at build time. |
-| `shinyproxy/application.yml.template` | Copy to `application.yml` on the server and fill in users. |
-| `nginx/omicsapp.conf` | Reverse proxy, including the WebSocket headers Shiny needs. |
+| `shinyproxy/application.yml.template` | Copy to `application.yml` on the server and fill in the client secret. |
+| `nginx/omicsapp.conf` | Reverse proxy: TLS, the WebSocket headers Shiny needs, and Keycloak at `/auth`. |
+| `keycloak/` | The identity provider: compose file, realm definition, and its own README. |
 | `scripts/build_image.sh` | Wrapper that gets the build context right. |
-| `scripts/add_user.sh` | Creates a user's private directory with the ownership the container needs. |
+| `scripts/add_user.sh` | Creates an account in Keycloak and its storage directory, in that order. |
+| `scripts/list_users.sh` | Maps the UUID directory names back to people. |
 
 ## First deployment
 
@@ -193,16 +202,12 @@ sudo chmod 600 /etc/shinyproxy/application.yml
 sudo chown shinyproxy:shinyproxy /etc/shinyproxy/application.yml
 ```
 
-Passwords go in as plain text. Simple authentication compares the field
-literally -- its backend does `.password("{noop}" + user.password)` --
-so a bcrypt hash is not a hash there, it is a password nobody can type,
-and the only symptom is a login that fails. The protection is the file:
-mode 600, owned by the service account. Anything stronger means a
-different backend (LDAP, OpenID, SAML).
+No passwords go in this file. It names Keycloak's endpoints and carries
+one client secret, which you paste in after starting Keycloak — the
+order and the reasoning are in [`keycloak/README.md`](keycloak/README.md).
 
-`deploy/scripts/make_test_users.sh` generates accounts and
-`install_users.sh` writes them in; the latter refuses an encoder prefix
-for the reason above.
+Stand Keycloak up first. ShinyProxy fetches the signing keys at startup
+and will not start without them.
 
 **Check both ports first.** This is a shared machine, and 8080 is what
 everyone reaches for -- but ShinyProxy binds a second one too, for the
@@ -298,9 +303,10 @@ one.
 **Restarting ShinyProxy drops running sessions.** Adding a user requires
 a restart, so do it when nobody is mid-analysis.
 
-**Check the ShinyProxy version against the template.**
-`minimum-seats-available` is 3.x syntax (2.x used
-`container-pre-initialization`).
+**`customHeader` authentication needs 3.2.0.** It does not exist in
+3.1.1, which is what the install step above pins, and 3.2.x also wants
+Java 21 rather than 17. `openid` — what the template uses — has been
+there since well before 3.1.1, so nothing here needs the upgrade.
 
 **Log in once before adding everybody.** Whatever the doubt is --
 version syntax, indentation, the password format -- ten accounts made

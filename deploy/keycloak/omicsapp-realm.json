@@ -1,0 +1,62 @@
+{
+  "realm": "omicsapp",
+  "displayName": "Multi-omics analysis",
+  "enabled": true,
+  "sslRequired": "external",
+
+  "registrationAllowed": false,
+  "editUsernameAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "verifyEmail": false,
+
+  "passwordPolicy": "length(12)",
+
+  "bruteForceProtected": true,
+  "failureFactor": 10,
+  "waitIncrementSeconds": 60,
+
+  "groups": [
+    { "name": "lab" },
+    { "name": "admins" }
+  ],
+
+  "clients": [
+    {
+      "clientId": "shinyproxy",
+      "name": "ShinyProxy",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://192.168.51.52/login/oauth2/code/shinyproxy"
+      ],
+      "webOrigins": [
+        "https://192.168.51.52"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "https://192.168.51.52/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

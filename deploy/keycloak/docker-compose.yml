@@ -1,0 +1,104 @@
+# Keycloak, the identity provider behind ShinyProxy.
+#
+#   cp .env.template .env      # fill in the three secrets
+#   chmod 600 .env
+#   sudo docker compose up -d
+#
+# ShinyProxy no longer holds any credentials: it redirects to Keycloak,
+# and Keycloak decides. That is what lets a user change their own
+# password and username without an admin editing a file or restarting a
+# service that would drop everyone's running analysis.
+#
+# Two containers, ~1 GB. Postgres rather than the built-in dev store
+# because losing this database means every account is gone, and the dev
+# store is explicitly not supported for anything but development.
+
+services:
+  keycloak-db:
+    image: postgres:16
+    container_name: keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?set KC_DB_PASSWORD in .env}
+    volumes:
+      # On the HDD array with the user data, so one backup job covers
+      # both. A backup of /srv/omicsapp/users without this is a backup
+      # of files nobody can log in to reach.
+      - /srv/omicsapp/keycloak-db:/var/lib/postgresql/data
+    networks: [sp-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.3
+    container_name: keycloak
+    restart: unless-stopped
+    # Not `latest`: an unattended pull of a new major version is how a
+    # working login page becomes a migration at the worst moment.
+    command: start --import-realm
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak-db
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?set KC_DB_PASSWORD in .env}
+
+      # The first admin. Keycloak 26 renamed these from KEYCLOAK_ADMIN;
+      # the old names are deprecated and silently do nothing on some
+      # paths, which presents as "the admin password is wrong".
+      #
+      # They are only read while the database is empty. After the first
+      # start the account lives in Postgres, so changing these later has
+      # no effect -- change it in the admin console instead.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?set KC_ADMIN_PASSWORD in .env}
+
+      # ---- how Keycloak sees itself from outside -------------------
+      # Keycloak signs tokens with an issuer and builds every redirect
+      # from this. Get it wrong and the browser is sent to an address it
+      # cannot reach, or the issuer does not match what ShinyProxy
+      # expects -- both of which look like "login is broken" rather than
+      # like a URL problem.
+      #
+      # The full URL form, including the /auth path, because nginx
+      # serves it at a sub-path of the same host.
+      KC_HOSTNAME: https://192.168.51.52/auth
+      KC_HTTP_RELATIVE_PATH: /auth
+
+      # nginx terminates TLS, so the hop from nginx to here is plain
+      # HTTP. The documentation is explicit: with edge termination,
+      # enabling HTTP "is required".
+      KC_HTTP_ENABLED: "true"
+
+      # Without this, requests arriving through a proxy get 403 -- the
+      # origin check fails because Keycloak sees nginx's address rather
+      # than the browser's. It is the single most common way this
+      # deployment fails, and the error says nothing about proxies.
+      KC_PROXY_HEADERS: xforwarded
+
+      # Believe those headers only from nginx. Anything else reaching
+      # this port could otherwise claim any client address it liked.
+      KC_PROXY_TRUSTED_ADDRESSES: 127.0.0.1,172.16.0.0/12
+    ports:
+      # Localhost only: nginx is the way in. 8180 rather than 8080,
+      # which is taken on this host by a colleague's service.
+      - "127.0.0.1:8180:8080"
+    volumes:
+      # Read-only: this file is the realm's definition in git, not
+      # Keycloak's working copy. Import happens once, when the database
+      # is empty; after that the database is authoritative and edits
+      # here do nothing until you re-import deliberately.
+      - ./omicsapp-realm.json:/opt/keycloak/data/import/omicsapp-realm.json:ro
+    networks: [sp-net]
+
+networks:
+  sp-net:
+    external: true

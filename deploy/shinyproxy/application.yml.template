@@ -7,8 +7,9 @@
 #   cp application.yml.template application.yml
 #   chmod 600 application.yml
 #
-# Verify against your ShinyProxy version: `minimum-seats-available` is
-# 3.x syntax (2.x used `container-pre-initialization`).
+# Written for ShinyProxy 3.1.1. The `openid` backend long predates it,
+# so this needs no upgrade -- unlike `customHeader`, which arrived in
+# 3.2.0 and would also drag Java 17 up to 21.
 
 proxy:
   port: 8080
@@ -16,25 +17,47 @@ proxy:
   bind-address: 127.0.0.1
 
   # ---- authentication -------------------------------------------------
-  # No self-registration by design: adding a user is a deliberate act
-  # (see deploy/scripts/add_user.sh), which for a handful of colleagues
-  # is a feature rather than a limitation.
-  authentication: simple
+  # Keycloak owns the credentials; ShinyProxy only trusts what it says.
+  # That is what makes self-service possible: a user changes their own
+  # password and username in Keycloak's account console, and nothing
+  # here has to be edited or restarted.
+  #
+  # `openid`, not `keycloak`: the dedicated Keycloak backend was
+  # deprecated in 3.0.2 and removed in 3.1.0.
+  authentication: openid
   admin-groups: [admins]
-  # Passwords are plain text, because that is what simple
-  # authentication compares against: the backend does
-  #     .password("{noop}" + user.password)
-  # so a {bcrypt} prefix is not a hash, it is a password nobody can
-  # type. The file is the protection -- mode 600, owned by the
-  # shinyproxy service account. For anything stronger the answer is a
-  # different backend: LDAP, OpenID, SAML.
-  users:
-    - name: puweilin
-      password: "REPLACE_ME"
-      groups: [admins]
-    # - name: colleague
-    #   password: "REPLACE_ME"
-    #   groups: [lab]
+  openid:
+    auth-url:  https://192.168.51.52/auth/realms/omicsapp/protocol/openid-connect/auth
+    token-url: https://192.168.51.52/auth/realms/omicsapp/protocol/openid-connect/token
+    jwks-url:  https://192.168.51.52/auth/realms/omicsapp/protocol/openid-connect/certs
+    logout-url: https://192.168.51.52/auth/realms/omicsapp/protocol/openid-connect/logout
+    client-id: shinyproxy
+    client-secret: REPLACE_ME
+
+    # This one line decides whether anyone keeps their data.
+    #
+    # It names the claim that becomes proxy.userId, which names the
+    # volume below. The default is `email`, and `preferred_username` is
+    # the obvious-looking choice -- but users are allowed to change both
+    # of those, and the day someone does, their volume points somewhere
+    # new and their projects are gone.
+    #
+    # `sub` is the only claim Keycloak guarantees never changes. The
+    # cost is that the directories are UUIDs rather than names; see
+    # deploy/scripts/list_users.sh for the mapping back.
+    username-attribute: sub
+
+    # Group membership arrives as a claim, not from a directory lookup,
+    # so the realm needs a group-membership mapper emitting `groups`.
+    # Without it every login succeeds and then fails authorization,
+    # because access-groups below matches nothing.
+    roles-claim: groups
+
+    # nginx terminates TLS, so the request reaching ShinyProxy is plain
+    # HTTP and Spring builds an http:// redirect URI from it -- which
+    # Keycloak rejects, because the registered one is https://. This
+    # forces the scheme.
+    enforce-https-redirect-uri: true
 
   # ---- session lifecycle ----------------------------------------------
   # ShinyProxy has no idle detection: a tab left open counts as active
@@ -89,9 +112,19 @@ proxy:
       container-env:
         OMICSAPP_QUOTA_GB: "50"
       access-groups: [lab, admins]
-      # Keep one container warm so the first user of the day does not
-      # wait for a 7 GB image to start. 3.x syntax.
-      minimum-seats-available: 1
+
+      # Deliberately no `minimum-seats-available`. It looks attractive
+      # -- keep a container warm so the first user of the day does not
+      # wait for a 7 GB image -- but it cannot coexist with the volume
+      # above. Pre-initialized containers are created at startup, before
+      # anyone has logged in, so ShinyProxy cannot fill in a per-user
+      # value; the documentation says so outright: "the container cannot
+      # be customized for a specific user. This means that you cannot
+      # use SpEL expression in the configuration of an app."
+      #
+      # Private per-user storage is the whole point here, so the warm
+      # container is what gets dropped. Do not add this back without
+      # first working out where #{proxy.userId} would resolve to.
 
 # ShinyProxy is a Spring Boot application and runs a second server for
 # the actuator endpoints, on 9090 by default. On a shared machine that
