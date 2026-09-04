@@ -191,10 +191,18 @@ docker run --rm omicsapp:1.0 \
   R -q -e 'cat(length(list.files(Sys.getenv("OMICSCORE_GENESET_CACHE"))), "cached tables\n")'
 # expect 14
 
-# The future plan is parallel. Sequential means one user's DESeq2
-# freezes every other session, with nothing on screen to say so.
+# Whether forked workers are available. launch() reads exactly this to
+# decide between multicore and multisession (see run_app.R); FALSE costs
+# a process spawn per analysis rather than correctness, but it is worth
+# knowing which one the container will pick.
+#
+# NOT `class(future::plan())`: the plan is set by launch(), so a bare
+# `R -e` session that never calls it reports `sequential` whatever the
+# image contains. That check can only ever fail, which makes it a check
+# people learn to ignore.
 docker run --rm omicsapp:1.0 \
-  R -q -e 'library(future); cat(class(future::plan())[2], "\n")'
+  R -q -e 'cat("supportsMulticore:", future::supportsMulticore(), "\n")'
+# expect TRUE
 ```
 
 ### 5. Network and storage
