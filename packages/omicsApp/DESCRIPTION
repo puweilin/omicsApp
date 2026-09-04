@@ -34,7 +34,9 @@ Remotes:
 Suggests:
     testthat (>= 3.0.0),
     later,
+    withr,
     shinytest2,
+    chromote,
     ggrepel,
     knitr,
     openxlsx,

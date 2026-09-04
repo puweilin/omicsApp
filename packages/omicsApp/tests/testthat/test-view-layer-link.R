@@ -43,9 +43,10 @@ test_that("without a namespace the cell is inert rather than a fake link", {
 test_that("the card carries no literal non-ASCII into the page", {
   # R CMD check fails on non-ASCII outside comments, and the arrow is
   # in a string.
-  src <- readLines(system.file("R", package = "omicsApp") |> dirname() |>
-                     file.path("R", "mod_project_view.R"), warn = FALSE)
-  skip_if(length(src) == 0, "installed package has no sources")
+  src_file <- system.file("R", package = "omicsApp") |> dirname() |>
+    file.path("R", "mod_project_view.R")
+  skip_if(!file.exists(src_file), "installed package has no sources")
+  src <- readLines(src_file, warn = FALSE)
   expect_false(any(grepl("[^\x01-\x7f]", src)))
 })
 

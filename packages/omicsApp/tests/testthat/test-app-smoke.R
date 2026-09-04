@@ -18,23 +18,46 @@
 #   - input-driven flow regression (sliders -> volcano point
 #     count, etc.)
 
+# Where the app under test comes from. In the source tree the app
+# directory is `inst/app` and both packages are loaded from source via
+# OMICSAPP_DEV_ROOT (see inst/app/app.R). The installed copy is the
+# fallback for R CMD check, and *only* there: it used to be the only
+# option, and the installed omicsApp was four months older than the
+# code being tested. A browser test of stale code is worse than none,
+# because it says "all views render" about a version nobody is editing.
+smoke_app_dir <- function() {
+  src_app <- file.path("..", "..", "inst", "app")
+  packages_dir <- normalizePath(file.path("..", "..", ".."), mustWork = FALSE)
+  if (file.exists(file.path(src_app, "app.R")) &&
+      file.exists(file.path(packages_dir, "omicsCore", "DESCRIPTION")) &&
+      requireNamespace("pkgload", quietly = TRUE)) {
+    return(list(dir = normalizePath(src_app), dev_root = packages_dir))
+  }
+  list(dir = system.file("app", package = "omicsApp"), dev_root = "")
+}
+
 test_that("omicsApp boots and all 7 views render", {
   skip_on_cran()
   skip_if_not_installed("shinytest2")
   skip_if_not_installed("chromote")
-  skip_if(tolower(Sys.getenv("CI", "false")) == "true",
-          "Skipping browser test in CI environment")
+  skip_if_not(nzchar(Sys.which("google-chrome")) ||
+                nzchar(Sys.which("chromium")) ||
+                nzchar(Sys.which("chrome")) ||
+                !is.null(tryCatch(chromote::find_chrome(),
+                                  error = function(e) NULL)),
+              "No Chrome/Chromium available for chromote")
 
-  app_dir <- system.file("app", package = "omicsApp")
-  if (!nzchar(app_dir)) {
-    skip("omicsApp is not installed (system.file('app') is empty).")
+  where <- smoke_app_dir()
+  if (!nzchar(where$dir)) {
+    skip("omicsApp is not installed and no source tree is present.")
   }
+  withr::local_envvar(OMICSAPP_DEV_ROOT = where$dev_root)
 
   app <- tryCatch(
     shinytest2::AppDriver$new(
-      app_dir,
+      where$dir,
       name         = "omicsApp-smoke",
-      load_timeout = 20000
+      load_timeout = 30000
     ),
     error = function(e) {
       skip(sprintf("AppDriver launch failed: %s", conditionMessage(e)))
