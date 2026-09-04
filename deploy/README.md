@@ -53,7 +53,12 @@ sudo systemctl enable --now docker
 
 # ShinyProxy is a jar; the .deb installs it plus a systemd unit.
 # Check https://shinyproxy.io/downloads/ for the current version.
-sudo apt-get install -y openjdk-17-jre-headless
+# openjdk-17-jdk-headless, not -jre-headless: the .deb depends on
+# "openjdk-17-jdk-headless | openjdk-17-jre", and -jre-headless is
+# neither of those -- it is the package they both depend on. dpkg
+# unpacks and then refuses to configure, which reads like a broken
+# download rather than a missing dependency.
+sudo apt-get install -y openjdk-17-jdk-headless
 wget https://github.com/openanalytics/shinyproxy/releases/download/v3.1.1/shinyproxy_3.1.1_amd64.deb
 sudo dpkg -i shinyproxy_3.1.1_amd64.deb
 
