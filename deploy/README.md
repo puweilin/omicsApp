@@ -300,8 +300,11 @@ a restart, so do it when nobody is mid-analysis.
 
 **Check the ShinyProxy version against the template.**
 `minimum-seats-available` is 3.x syntax (2.x used
-`container-pre-initialization`), and the `{bcrypt}` password prefix is
-worth confirming with one test login before hashing everyone's password.
+`container-pre-initialization`).
+
+**Log in once before adding everybody.** Whatever the doubt is --
+version syntax, indentation, the password format -- ten accounts made
+wrong fail the same way as one, and one is faster to look at.
 
 ## Storage layout
 
