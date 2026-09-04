@@ -32,6 +32,8 @@ Pure base R; no \code{matrixStats} dependency.
 Other qc: 
 \code{\link{impute_matrix}()},
 \code{\link{plot_qc}()},
+\code{\link{qc_depth}()},
+\code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},
 \code{\link{qc_outliers}()},
 \code{\link{run_qc}()}

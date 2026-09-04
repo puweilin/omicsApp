@@ -82,6 +82,12 @@ run_qc <- function(
     feature_missing_cutoff = missing_threshold
   )
 
+  # ---- depth ----
+  # Always, for both modalities: it is one pass over the matrix, and
+  # deciding in advance which panel someone will want is how the RNA-seq
+  # view ended up with nothing to show.
+  depth <- qc_depth(input)
+
   # ---- outliers ----
   run_outliers <- !identical(outlier_method, "none") &&
                   !(length(outlier_method) == 1L && is.na(outlier_method))
@@ -136,6 +142,7 @@ run_qc <- function(
     results = list(
       qc_summary = list(
         missingness = missingness,
+        depth = depth,
         outliers = outliers,
         recommended_filters = list(
           remove_samples = remove_samples,

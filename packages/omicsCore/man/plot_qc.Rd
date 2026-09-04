@@ -6,7 +6,7 @@
 \usage{
 plot_qc(
   bundle,
-  view = c("missing", "pca", "connectivity", "imputation"),
+  view = c("missing", "depth", "pca", "connectivity", "imputation"),
   color_by = NULL,
   ...
 )
@@ -30,6 +30,8 @@ Builds standard ggplot panels from a \code{\link[=run_qc]{run_qc()}} bundle.
 \seealso{
 Other qc: 
 \code{\link{impute_matrix}()},
+\code{\link{qc_depth}()},
+\code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},
 \code{\link{qc_outliers}()},
 \code{\link{run_qc}()},

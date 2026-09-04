@@ -43,6 +43,8 @@ Backends listed in Suggests raise an instructive error pointing at
 \seealso{
 Other qc: 
 \code{\link{plot_qc}()},
+\code{\link{qc_depth}()},
+\code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},
 \code{\link{qc_outliers}()},
 \code{\link{run_qc}()},

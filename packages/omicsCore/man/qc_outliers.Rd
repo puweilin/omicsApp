@@ -41,6 +41,8 @@ All three methods are pure base R; no Suggests packages required.
 Other qc: 
 \code{\link{impute_matrix}()},
 \code{\link{plot_qc}()},
+\code{\link{qc_depth}()},
+\code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},
 \code{\link{run_qc}()},
 \code{\link{winsorize_counts}()}

@@ -1,3 +1,4 @@
+note_title <- function(x) paste(as.character(x), collapse = "")
 # A project holds several layers, and QC describes exactly one of them.
 # Which one was decided elsewhere -- by the arrow in the Projects table,
 # or by a fallback -- so the answer to "what am I looking at" was not on
@@ -93,5 +94,69 @@ test_that("the diff view hands its layer tag out", {
     session$setInputs(layer = "rna")
     session$flushReact()
     expect_identical(out$layer(), "rna")
+  })
+})
+
+# ---- which quality panel ---------------------------------------------
+
+qv_input <- function(omics_type) {
+  ids <- paste0("S", 1:6)
+  set.seed(3)
+  m <- matrix(as.numeric(stats::rpois(30 * 6, 200)), nrow = 30,
+              dimnames = list(paste0("F", 1:30), ids))
+  if (omics_type == "proteomics") m[sample(length(m), 40)] <- NA
+  omicsCore::omics_input(
+    m,
+    data.frame(sample_id = ids, condition = rep(c("G1", "G2"), 3),
+               row.names = ids, stringsAsFactors = FALSE),
+    data.frame(feature_id = rownames(m), row.names = rownames(m),
+               stringsAsFactors = FALSE),
+    omics_type = omics_type,
+    assay_type = if (omics_type == "rnaseq") "raw_count" else "raw_intensity")
+}
+
+test_that("the quality panel defaults to the question the modality raises", {
+  proj <- shiny::reactiveVal(omicsCore::omics_project(
+    "p", list(prot = qv_input("proteomics"), rna = qv_input("rnaseq"))))
+
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$flushReact()
+    # Missingness is the proteomics question. A counts matrix has no
+    # holes, so that panel reports "all at 0%" -- true, and useless.
+    expect_identical(quality_view(), "missing")
+
+    session$setInputs(layer = "rna")
+    session$flushReact()
+    expect_identical(quality_view(), "depth")
+  })
+})
+
+test_that("the default is a default, not a lock", {
+  # An intensity matrix has a meaningful total, and an imputed counts
+  # matrix may well be worth looking at for missingness.
+  proj <- shiny::reactiveVal(omicsCore::omics_project(
+    "p", list(rna = qv_input("rnaseq"))))
+
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$flushReact()
+    expect_identical(quality_view(), "depth")
+
+    session$setInputs(quality_view = "missing")
+    session$flushReact()
+    expect_identical(quality_view(), "missing")
+  })
+})
+
+test_that("the panel title follows the panel", {
+  proj <- shiny::reactiveVal(omicsCore::omics_project(
+    "p", list(rna = qv_input("rnaseq"))))
+
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$flushReact()
+    expect_match(note_title(output$quality_title), "Depth")
+
+    session$setInputs(quality_view = "missing")
+    session$flushReact()
+    expect_match(note_title(output$quality_title), "Missingness")
   })
 })

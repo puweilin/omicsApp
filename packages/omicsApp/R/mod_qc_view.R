@@ -40,11 +40,8 @@ qc_view_ui <- function(id) {
       ),
       bslib::card(
         bslib::card_header(
-          htmltools::tags$h3(class = "card-title", "Missingness"),
-          htmltools::tags$span(
-            class = "card-sub",
-            "per-sample and per-feature missing rate"
-          )
+          shiny::uiOutput(ns("quality_title"), inline = TRUE),
+          shiny::uiOutput(ns("quality_picker"), inline = TRUE)
         ),
         bslib::card_body(
           shiny::plotOutput(ns("missing"), height = "360px"),
@@ -261,17 +258,76 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     })
 
+    # Which quality panel this modality is actually asking about.
+    #
+    # Missingness is the proteomics question: a peptide that was not
+    # detected is a hole in the matrix. A counts matrix has no holes --
+    # every gene has a number for every sample, most of them zero -- so
+    # the panel reported "63,241 features, all at 0%", which is true and
+    # says nothing, in the space that should have been showing whether a
+    # library was under-sequenced.
+    #
+    # A default per modality, not a lock: an intensity matrix has a
+    # meaningful total too, and someone with an imputed counts matrix may
+    # well want the missingness view.
+    default_quality_view <- shiny::reactive({
+      if (identical(active()$input$omics_type %||% "", "rnaseq")) "depth"
+      else "missing"
+    })
+    quality_view <- shiny::reactive({
+      v <- input$quality_view
+      if (is.null(v) || !v %in% c("missing", "depth")) default_quality_view()
+      else v
+    })
+
+    output$quality_title <- shiny::renderUI({
+      depth <- identical(quality_view(), "depth")
+      htmltools::tagList(
+        htmltools::tags$h3(class = "card-title",
+                           if (depth) "Depth" else "Missingness"),
+        htmltools::tags$span(
+          class = "card-sub",
+          if (depth) "library size and features detected"
+          else "per-sample and per-feature missing rate")
+      )
+    })
+
+    output$quality_picker <- shiny::renderUI({
+      # isolate(), for the reason the layer picker documents: this output
+      # writes input$quality_view and quality_view() reads it.
+      sel <- shiny::isolate(input$quality_view)
+      if (is.null(sel) || !sel %in% c("missing", "depth")) {
+        sel <- default_quality_view()
+      }
+      shiny::radioButtons(
+        session$ns("quality_view"), label = NULL,
+        choices = c("Depth" = "depth", "Missingness" = "missing"),
+        selected = sel, inline = TRUE)
+    })
+
     output$missing <- shiny::renderPlot({
       bundle <- last_bundle()
       shiny::req(bundle)
-      omicsCore::plot_qc(bundle, view = "missing")
+      omicsCore::plot_qc(bundle, view = quality_view())
     })
 
     output$missing_caption <- shiny::renderUI({
       a <- active()
       bundle <- last_bundle()
       shiny::req(bundle)
-      caption <- if (a$is_demo) {
+      caption <- if (identical(quality_view(), "depth")) {
+        d <- bundle$results$qc_summary$depth
+        if (is.null(d) || nrow(d) == 0L) {
+          "No depth summary for this layer."
+        } else {
+          low <- omicsCore::qc_depth_outliers(d)
+          sprintf("%d samples · median library %s · %s",
+                  nrow(d),
+                  format(round(stats::median(d$library_size)), big.mark = ","),
+                  if (length(low) == 0L) "none shallow"
+                  else sprintf("shallow: %s", paste(low, collapse = ", ")))
+        }
+      } else if (a$is_demo) {
         "Demo fixture: ~5% of cells set to NA at random."
       } else {
         n_na <- sum(is.na(bundle$results$cleaned_input$expr_mat))

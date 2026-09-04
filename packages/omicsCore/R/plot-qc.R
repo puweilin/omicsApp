@@ -12,7 +12,8 @@
 #' @export
 #' @family qc
 plot_qc <- function(bundle,
-                    view = c("missing", "pca", "connectivity", "imputation"),
+                    view = c("missing", "depth", "pca", "connectivity",
+                             "imputation"),
                     color_by = NULL,
                     ...) {
   if (!is_analysis_bundle(bundle) || !identical(bundle$analysis_name, "run_qc")) {
@@ -22,6 +23,7 @@ plot_qc <- function(bundle,
 
   switch(view,
     missing      = plot_qc_missing(bundle),
+    depth        = plot_qc_depth(bundle),
     pca          = plot_qc_pca(bundle, color_by = color_by),
     connectivity = plot_qc_connectivity(bundle),
     imputation   = plot_qc_imputation(bundle)
@@ -318,4 +320,106 @@ theme_omicsCore <- function(base_size = 11, base_family = "") {
       axis.line = ggplot2::element_line(color = "#9AA3AE"),
       strip.text = ggplot2::element_text(face = "bold")
     )
+}
+
+# ---- depth (RNA-seq) ---------------------------------------------------
+# What replaces the missingness panels for a counts matrix, where
+# missingness is 0% for every feature and the panel says nothing.
+#
+# Two questions, drawn together because the pair is what distinguishes
+# the two problems: a shallow library drops both total counts and genes
+# detected, while a degraded sample drops detection with the total
+# holding up.
+
+DEPTH_LOW_RATIO <- 0.3
+
+plot_qc_depth <- function(bundle) {
+  depth <- bundle$results$qc_summary$depth
+  if (is.null(depth) || nrow(depth) == 0L) {
+    stop("This QC bundle carries no depth summary.", call. = FALSE)
+  }
+  patchwork::wrap_plots(
+    plot_depth_library(depth),
+    plot_depth_detection(depth),
+    ncol = 1
+  )
+}
+
+# Ordered worst-first for the same reason the missingness panel is: the
+# question is which sample is bad, and sorting is what answers it
+# without reading every label.
+depth_ordered <- function(depth, col) {
+  depth <- depth[order(depth[[col]]), , drop = FALSE]
+  depth$sample_id <- factor(depth$sample_id, levels = depth$sample_id)
+  depth
+}
+
+plot_depth_library <- function(depth) {
+  d <- depth_ordered(depth, "library_size")
+  # Coloured against the median rather than an absolute count: what
+  # counts as shallow depends on the experiment, and a fixed cutoff
+  # would be wrong for every study but one.
+  d$.low <- !is.na(d$library_size_ratio) &
+    d$library_size_ratio < DEPTH_LOW_RATIO
+
+  ggplot2::ggplot(d, ggplot2::aes(x = .data$library_size,
+                                  y = .data$sample_id,
+                                  fill = .data$.low)) +
+    ggplot2::geom_col(width = 0.75) +
+    ggplot2::scale_fill_manual(
+      values = c(`FALSE` = MISSING_FILL, `TRUE` = omics_colors$up),
+      guide = "none") +
+    ggplot2::scale_x_continuous(labels = depth_axis_labels) +
+    ggplot2::labs(
+      title = "Library size per sample",
+      subtitle = depth_library_subtitle(d),
+      x = "Total counts", y = NULL
+    ) +
+    theme_omicsCore() +
+    depth_sample_axis(nrow(d))
+}
+
+plot_depth_detection <- function(depth) {
+  d <- depth_ordered(depth, "n_detected")
+  ggplot2::ggplot(d, ggplot2::aes(x = .data$n_detected,
+                                  y = .data$sample_id)) +
+    ggplot2::geom_col(width = 0.75, fill = MISSING_FILL) +
+    ggplot2::scale_x_continuous(labels = depth_axis_labels) +
+    ggplot2::labs(
+      title = "Features detected per sample",
+      subtitle = sprintf("of %s in the matrix",
+                         format(round(max(d$n_detected) /
+                                        max(d$detection_rate, na.rm = TRUE)),
+                                big.mark = ",")),
+      x = "Features with any signal", y = NULL
+    ) +
+    theme_omicsCore() +
+    depth_sample_axis(nrow(d))
+}
+
+depth_library_subtitle <- function(d) {
+  n_low <- sum(d$.low)
+  if (n_low == 0L) {
+    "no sample below 30% of the median"
+  } else {
+    sprintf("%d sample%s below 30%% of the median: %s",
+            n_low, if (n_low == 1L) "" else "s",
+            paste(as.character(d$sample_id[d$.low]), collapse = ", "))
+  }
+}
+
+# Past a few dozen samples the labels stop being legible in the height
+# the app gives the panel, and the ordering is what carries the meaning
+# anyway.
+depth_sample_axis <- function(n) {
+  if (n <= MISSING_MAX_SAMPLE_BARS) return(NULL)
+  ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                 axis.ticks.y = ggplot2::element_blank())
+}
+
+depth_axis_labels <- function(x) {
+  ifelse(is.na(x), "",
+         ifelse(abs(x) >= 1e6, paste0(round(x / 1e6, 1), "M"),
+                ifelse(abs(x) >= 1e3, paste0(round(x / 1e3), "k"),
+                       format(x, big.mark = ","))))
 }
