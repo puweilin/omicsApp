@@ -21,6 +21,10 @@ integration_view_ui <- function(id) {
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
     shiny::uiOutput(ns("notices")),
+    # Before the results, not after: which sample was treated as which
+    # person is an assumption the reader should see before reading
+    # anything computed on it.
+    integration_pairing_card(ns),
     shiny::uiOutput(ns("stats")),
     htmltools::tags$div(
       class = "row-grid r-6-6",
@@ -93,6 +97,97 @@ integration_view_server <- function(id,
     integration_bundle <- shiny::reactiveVal(NULL)
     integration_error  <- shiny::reactiveVal(NULL)
     is_demo            <- shiny::reactiveVal(TRUE)
+
+    # ---- sample pairing ------------------------------------------------
+    # Shown whether or not the current method needs it. Concordance
+    # matches features, not samples, so it runs without a pairing -- but
+    # a user who gets that far and then cannot correlate should find out
+    # here rather than after the run, and should be able to fix it here
+    # rather than by re-importing.
+    pairing <- shiny::reactive({
+      proj <- current_project()
+      if (is.null(proj) || length(proj$experiments) < 2L) return(NULL)
+      tags <- names(proj$experiments)
+      omicsCore::sample_pairing_preview(proj, tags[[1L]], tags[[2L]])
+    })
+
+    output$pairing_table <- DT::renderDT({
+      p <- pairing()
+      shiny::req(p, nrow(p$pairs) > 0L)
+      proj <- current_project()
+      tags <- names(proj$experiments)
+      out <- p$pairs
+      names(out) <- c("Donor", tags[[1L]], tags[[2L]])
+      DT::datatable(out, rownames = FALSE, selection = "none",
+                    options = list(pageLength = 8, dom = "tip",
+                                   scrollX = TRUE))
+    }, server = TRUE)
+
+    output$pairing_note <- shiny::renderUI({
+      p <- pairing()
+      if (is.null(p)) {
+        return(notice("Import a second layer to pair samples across omics.",
+                      kind = "info"))
+      }
+      n <- nrow(p$pairs)
+      if (n == 0L) {
+        return(notice(
+          "No pairing found",
+          paste0(
+            "Sample-level integration needs to know which sample in each ",
+            "layer came from the same person. Add a `donor` column to ",
+            "each layer's sample metadata and re-import those layers, or ",
+            "rename the samples so they share a leading id — RD001-C ",
+            "and RD001_Folli both give RD001. Nothing already computed ",
+            "has to be re-run: donor is read by Integration and by ",
+            "nothing else."),
+          kind = "warn"))
+      }
+      switch(
+        p$source,
+        linked = notice(sprintf("%d pairs, saved with this project.", n),
+                        kind = "info"),
+        donor = notice(sprintf("%d pairs, from the donor column in both layers.", n),
+                       kind = "info"),
+        sample_id = notice(sprintf("%d pairs, from sample ids that match outright.", n),
+                           kind = "info"),
+        suggested = notice(
+          sprintf("%d pairs, guessed from the sample ids — check them", n),
+          paste0("Nothing states that these are the same person; the ids ",
+                 "merely share a leading part. Accept the pairing to keep ",
+                 "it with the project, or state it properly with a donor ",
+                 "column."),
+          kind = "warn"),
+        notice(sprintf("%d pairs.", n), kind = "info")
+      )
+    })
+
+    # A guess becomes a decision only when someone says so, and then it is
+    # saved with the project rather than re-derived every time.
+    output$pairing_action <- shiny::renderUI({
+      p <- pairing()
+      if (is.null(p) || nrow(p$pairs) == 0L) return(NULL)
+      if (!identical(p$source, "suggested")) return(NULL)
+      shiny::actionButton(session$ns("accept_pairing"), "Accept pairing",
+                          class = "btn btn-sm btn-primary")
+    })
+
+    shiny::observeEvent(input$accept_pairing, {
+      proj <- current_project()
+      p <- pairing()
+      shiny::req(proj, p, nrow(p$pairs) > 0L)
+      tags <- names(proj$experiments)
+      proj$sample_link <- rbind(
+        data.frame(tag = tags[[1L]], sample_id = p$pairs$a,
+                   donor_id = p$pairs$donor_id, stringsAsFactors = FALSE),
+        data.frame(tag = tags[[2L]], sample_id = p$pairs$b,
+                   donor_id = p$pairs$donor_id, stringsAsFactors = FALSE)
+      )
+      current_project(proj)
+      shiny::showNotification(
+        sprintf("Pairing saved: %d donors.", nrow(p$pairs)),
+        type = "message")
+    })
 
     # One of the layers this integration spanned has been replaced, so
     # the pairing it reports no longer exists. Back to the module's own
@@ -383,6 +478,21 @@ utils::globalVariables(".data")
 # The quadrant palette and the effect-recovery helpers moved to
 # omicsCore alongside `plot_integration()`, which is now the only thing
 # that needed them.
+
+integration_pairing_card <- function(ns) {
+  bslib::card(
+    bslib::card_header(
+      htmltools::tags$h3(class = "card-title", "Sample pairing"),
+      htmltools::tags$span(class = "card-sub",
+                           "which sample is which person"),
+      shiny::uiOutput(ns("pairing_action"), inline = TRUE)
+    ),
+    bslib::card_body(
+      shiny::uiOutput(ns("pairing_note")),
+      DT::DTOutput(ns("pairing_table"))
+    )
+  )
+}
 
 integration_dual_card <- function(ns) {
   bslib::card(
