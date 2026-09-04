@@ -109,7 +109,7 @@ test_that("run_diff errors when control_group not found in meta", {
     run_diff(inp, method = "ttest", analysis_type = "group",
              group_col = "group",
              control_group = "not_a_group", case_group = "treatment"),
-    "Each group must have at least"
+    "is not a level of `group`"
   )
 })
 
@@ -127,7 +127,7 @@ test_that("run_diff errors when control equals case", {
     run_diff(inp, method = "ttest", analysis_type = "group",
              group_col = "group",
              control_group = "control", case_group = "control"),
-    "duplicated|identical|same"
+    "distinct"
   )
 })
 

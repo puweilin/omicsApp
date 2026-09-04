@@ -226,6 +226,7 @@ run_diff <- function(
   )
 
   validate_diff_args(analysis_type, method, backend_args)
+  validate_diff_design(input, analysis_type, backend_args)
 
   # Drop arguments the chosen backend doesn't accept (e.g. ttest has no
   # `covariates`, lm/ttest have no `paired_col`-via-limma corfit, ...).
@@ -294,6 +295,103 @@ run_diff_continuous <- function(
 }
 
 # ---- internal helpers --------------------------------------------------
+
+# The design, checked before any engine sees it.
+#
+# Every engine answers a degenerate design in its own way, and most of
+# the answers are tables. limma and lm drop a covariate that is
+# confounded with the group and return the unadjusted result labelled
+# as adjusted; lm returns a table of NA for a constant covariate; both
+# return all-NA for a continuous variable that does not vary; a case
+# level that is not in the column reaches limma as "trying to take
+# contrast of non-estimable coefficient". DESeq2 and edgeR refuse
+# outright, which is the right answer, so it is now the answer
+# everywhere, in words that name the column.
+validate_diff_design <- function(input, analysis_type, args) {
+  meta <- input$meta_df
+  if (analysis_type == "anova") return(invisible(TRUE))
+
+  if (analysis_type == "group") {
+    group_col <- args$group_col
+    if (!group_col %in% colnames(meta)) {
+      stop("`group_col` not found in `meta_df`: ", group_col, call. = FALSE)
+    }
+    levels_present <- unique(as.character(meta[[group_col]]))
+    levels_present <- levels_present[!is.na(levels_present)]
+    for (nm in c("control_group", "case_group")) {
+      if (!args[[nm]] %in% levels_present) {
+        stop(sprintf(
+          "`%s` '%s' is not a level of `%s`. Levels present: %s.",
+          nm, args[[nm]], group_col,
+          paste(sprintf("'%s'", levels_present), collapse = ", ")
+        ), call. = FALSE)
+      }
+    }
+    if (identical(args$control_group, args$case_group)) {
+      stop("`control_group` and `case_group` must be distinct.", call. = FALSE)
+    }
+    keep <- !is.na(meta[[group_col]]) &
+      meta[[group_col]] %in% c(args$control_group, args$case_group)
+    sub <- meta[keep, , drop = FALSE]
+    primary <- factor(sub[[group_col]],
+                      levels = c(args$control_group, args$case_group))
+  } else {
+    cont <- args$continuous_col
+    if (!cont %in% colnames(meta)) {
+      stop("`continuous_col` not found in `meta_df`: ", cont, call. = FALSE)
+    }
+    sub <- meta
+    values <- coerce_continuous_col(sub[[cont]], cont)
+    if (anyNA(values)) {
+      stop(sprintf(
+        "`%s` has missing values in %d sample(s): %s.",
+        cont, sum(is.na(values)),
+        paste(utils::head(rownames(sub)[is.na(values)], 5L), collapse = ", ")
+      ), call. = FALSE)
+    }
+    if (length(unique(values)) < 2L) {
+      stop(sprintf("`%s` has no variation across samples; there is nothing to regress on.",
+                   cont), call. = FALSE)
+    }
+    primary <- values
+  }
+
+  covariates <- args$covariates
+  if (is.null(covariates) || length(covariates) == 0L) return(invisible(TRUE))
+  missing_cov <- setdiff(covariates, colnames(sub))
+  if (length(missing_cov) > 0L) {
+    stop("Missing covariates: ", paste(missing_cov, collapse = ", "), call. = FALSE)
+  }
+  design_df <- data.frame(.primary = primary, sub[, covariates, drop = FALSE],
+                          check.names = FALSE)
+  base <- stats::model.matrix(~ .primary, data = design_df)
+  for (cov in covariates) {
+    x <- sub[[cov]]
+    if (anyNA(x)) {
+      stop(sprintf(
+        "Covariate `%s` has missing values in %d of the samples being compared: %s.",
+        cov, sum(is.na(x)),
+        paste(utils::head(rownames(sub)[is.na(x)], 5L), collapse = ", ")
+      ), call. = FALSE)
+    }
+    if (length(unique(x)) < 2L) {
+      stop(sprintf(
+        "Covariate `%s` is constant across the samples being compared, so there is nothing to adjust for.",
+        cov), call. = FALSE)
+    }
+    # Confounded with what is being tested: adding the covariate to the
+    # design adds no rank, so the engine would silently drop one of them.
+    with_cov <- stats::model.matrix(
+      stats::as.formula(paste0("~ .primary + `", cov, "`")), data = design_df)
+    if (qr(with_cov)$rank < ncol(with_cov)) {
+      what <- if (analysis_type == "group") args$group_col else args$continuous_col
+      stop(sprintf(
+        "Covariate `%s` is confounded with `%s`: the two cannot be separated, so the effect of `%s` is not estimable with it in the model.",
+        cov, what, what), call. = FALSE)
+    }
+  }
+  invisible(TRUE)
+}
 
 validate_diff_args <- function(analysis_type, method, args) {
   if (analysis_type %in% c("group", "anova")) {
