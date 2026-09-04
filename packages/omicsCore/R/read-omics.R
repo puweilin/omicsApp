@@ -340,6 +340,17 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
     return(list(input = NULL, report = report))
   }
 
+  # Before metadata is matched against the column names, because the
+  # names are what changes here.
+  picked <- select_measurement_columns(mat)
+  mat <- picked$mat
+  # Surfaced rather than done quietly: dropping half the columns is a
+  # decision made on the user's behalf, and the count they see in the
+  # schema review should be one they can reconcile with their file.
+  if (!is.null(picked$note)) {
+    report <- add_import_warning(report, picked$note)
+  }
+
   meta <- materialize_metadata(if (is.null(metadata_sheet)) NULL
                                else sheets[[metadata_sheet]],
                                sample_ids = colnames(mat))
@@ -380,6 +391,81 @@ pick_best_sheet <- function(sheet_table, role) {
   if (nrow(cand) == 0L) return(NULL)
   cand <- cand[order(cand$confidence, decreasing = TRUE), , drop = FALSE]
   cand$name[[1L]]
+}
+
+# Suffixes a sequencing vendor uses to say what a column measures. Only
+# these are recognised: an unknown trailing word is far more likely to be
+# part of the sample name than a unit.
+MEASURE_SUFFIXES <- c(
+  count = "count", counts = "count", readcount = "count",
+  fpkm = "fpkm", tpm = "tpm", cpm = "cpm", rpkm = "rpkm"
+)
+
+# The last underscore-delimited word only. `_[A-Za-z_]+$` would be
+# greedy across separators and read `RD001_Folli_FPKM` as `Folli_FPKM`,
+# which matches nothing -- the table then looks unit-free and both units
+# survive into one matrix.
+MEASURE_SUFFIX_RE <- "_[A-Za-z]+$"
+
+measure_suffix <- function(x) {
+  m <- regmatches(x, regexpr(MEASURE_SUFFIX_RE, x))
+  if (length(m) == 0L) return(NA_character_)
+  unname(MEASURE_SUFFIXES[tolower(sub("^_", "", m))])
+}
+
+#' Keep one measurement per sample
+#'
+#' Vendor reports often put every sample twice, once per unit --
+#' `RD001_Folli_FPKM` beside `RD001_Folli_count`. Read whole, that is a
+#' matrix where half the columns are on a different scale from the other
+#' half, and nothing downstream can tell: PCA, clustering and
+#' differential testing all run and all produce nonsense.
+#'
+#' Counts win when present, because they are what the differential
+#' methods need; FPKM cannot be given to DESeq2 at all. The suffix is
+#' then dropped, which is also what makes the two report layouts agree --
+#' the counts-only file names the same sample `RD001_Folli`, so metadata
+#' written for one matches the other.
+#'
+#' @param mat Numeric matrix, samples in columns.
+#' @return `list(mat, note)`; `note` is `NULL` when nothing was changed.
+#' @keywords internal
+#' @noRd
+select_measurement_columns <- function(mat) {
+  unchanged <- list(mat = mat, note = NULL)
+  nms <- colnames(mat)
+  if (is.null(nms) || ncol(mat) == 0L) return(unchanged)
+
+  suffix <- vapply(nms, measure_suffix, character(1L), USE.NAMES = FALSE)
+  # Any column without a recognised unit means this is not a
+  # units-in-the-header table, and guessing on a partial match would
+  # silently drop real samples.
+  if (anyNA(suffix)) return(unchanged)
+
+  groups <- unique(suffix)
+  keep_unit <- if ("count" %in% groups) "count" else groups[[1L]]
+  keep <- suffix == keep_unit
+
+  stripped <- sub(MEASURE_SUFFIX_RE, "", nms[keep])
+  # Only rename when it stays unambiguous.
+  if (anyDuplicated(stripped) == 0L) {
+    out <- mat[, keep, drop = FALSE]
+    colnames(out) <- stripped
+  } else {
+    out <- mat[, keep, drop = FALSE]
+  }
+
+  if (length(groups) == 1L && identical(colnames(out), nms)) return(unchanged)
+
+  note <- if (length(groups) > 1L) {
+    sprintf(
+      "Columns carried units (%s); kept the %d %s column(s) and dropped %d.",
+      paste(sort(groups), collapse = ", "), sum(keep), keep_unit, sum(!keep))
+  } else {
+    sprintf("Dropped the '%s' suffix from %d sample name(s).",
+            keep_unit, ncol(out))
+  }
+  list(mat = out, note = note)
 }
 
 materialize_matrix <- function(df, orientation) {

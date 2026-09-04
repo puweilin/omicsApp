@@ -367,3 +367,67 @@ test_that("default read.table quoting would have lost those rows", {
   expect_equal(nrow(lenient), 3L)
   expect_true(is.null(default) || nrow(default) < 3L)
 })
+
+# ---- one measurement per sample --------------------------------------
+# Vendor reports carry every sample twice, once per unit. Read whole,
+# half the columns are on a different scale from the other half and
+# nothing downstream can tell -- PCA, clustering and differential
+# testing all run and all mean nothing.
+
+mat_named <- function(nms) {
+  m <- matrix(seq_len(4 * length(nms)), nrow = 4,
+              dimnames = list(paste0("G", 1:4), nms))
+  m
+}
+
+test_that("counts win when a table carries both units", {
+  res <- select_measurement_columns(
+    mat_named(c("A_FPKM", "B_FPKM", "A_count", "B_count")))
+
+  expect_identical(colnames(res$mat), c("A", "B"))
+  expect_match(res$note, "kept the 2 count")
+  expect_match(res$note, "dropped 2")
+})
+
+test_that("the suffix is dropped so both report layouts name samples alike", {
+  # The counts-only file from the same vendor calls the sample
+  # `RD001_Folli`; metadata written against one must match the other.
+  res <- select_measurement_columns(mat_named(c("RD001_Folli_count",
+                                                "RD002_Folli_count")))
+  expect_identical(colnames(res$mat), c("RD001_Folli", "RD002_Folli"))
+})
+
+test_that("a single non-count unit is kept rather than discarded", {
+  res <- select_measurement_columns(mat_named(c("A_TPM", "B_TPM")))
+  expect_identical(colnames(res$mat), c("A", "B"))
+})
+
+test_that("columns without a recognised unit are left alone", {
+  nms <- c("RD001_Folli", "RD002_Folli")
+  res <- select_measurement_columns(mat_named(nms))
+  expect_identical(colnames(res$mat), nms)
+  expect_null(res$note)
+})
+
+test_that("a partly-suffixed table is not touched", {
+  # Acting on a partial match would drop real samples whose names happen
+  # to end in a word that looks like a unit.
+  nms <- c("A_count", "B_count", "SomeSample")
+  res <- select_measurement_columns(mat_named(nms))
+  expect_identical(colnames(res$mat), nms)
+  expect_null(res$note)
+})
+
+test_that("the unit suffix is read as the last word, not across separators", {
+  # A greedy match reads RD001_Folli_FPKM as the unit `Folli_FPKM`,
+  # which matches nothing -- the table then looks unit-free and both
+  # units survive into one matrix.
+  expect_identical(measure_suffix("RD001_Folli_FPKM"), "fpkm")
+  expect_identical(measure_suffix("RD001_Folli_count"), "count")
+  expect_true(is.na(measure_suffix("RD001_Folli")))
+})
+
+test_that("names are left intact when stripping would collide", {
+  res <- select_measurement_columns(mat_named(c("A_count", "A_counts")))
+  expect_identical(colnames(res$mat), c("A_count", "A_counts"))
+})

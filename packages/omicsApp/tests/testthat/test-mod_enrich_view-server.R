@@ -57,3 +57,56 @@ test_that("enrich view runs run_enrichment when clusterProfiler is installed", {
     }
   )
 })
+
+# ---- full-table download ---------------------------------------------
+# The CSV is what gets opened in Excel a week later. It carries every
+# pathway and every column -- including the gene lists, which are what a
+# follow-up needs and the only thing the on-screen table cannot show.
+
+test_that("the enrichment download writes the whole table, not the filtered view", {
+  diff_bundle <- shiny::reactiveVal(NULL)
+  shiny::testServer(
+    enrich_view_server,
+    args = list(diff_bundle = diff_bundle),
+    {
+      session$setInputs(type = "ora", database = "hallmark",
+                        direction = "both",
+                        # Strict enough to empty the table on screen.
+                        # The file must not follow it: a CSV silently
+                        # truncated to one threshold is the kind of thing
+                        # nobody notices until a number cannot be
+                        # reproduced.
+                        show_p = "adjusted", show_cutoff = 1e-12)
+
+      full <- table_data()
+      expect_true(nrow(full) > 0L)
+
+      written <- utils::read.csv(output$download_table, check.names = FALSE)
+
+      expect_equal(nrow(written), nrow(full))
+      expect_equal(ncol(written), ncol(full))
+      expect_true(all(c("pathway_name", "p_value", "adj_p_value") %in%
+                        names(written)))
+      # The gene lists are the reason to export at all.
+      expect_true(any(c("overlap_features", "leading_features") %in%
+                        names(written)))
+    }
+  )
+})
+
+test_that("the exported table is sorted so the file opens on the strongest result", {
+  diff_bundle <- shiny::reactiveVal(NULL)
+  shiny::testServer(
+    enrich_view_server,
+    args = list(diff_bundle = diff_bundle),
+    {
+      session$setInputs(type = "ora", database = "hallmark",
+                        direction = "both")
+      written <- utils::read.csv(output$download_table, check.names = FALSE)
+      by_db <- split(written$adj_p_value, written$database)
+      for (v in by_db) {
+        expect_false(is.unsorted(v[!is.na(v)]))
+      }
+    }
+  )
+})

@@ -342,6 +342,27 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       )
     }, server = TRUE)
 
+    output$download_table <- shiny::downloadHandler(
+      filename = function() {
+        b <- if (isTRUE(is_demo())) NULL else enrich_bundle()
+        type <- toupper(b$params$type %||% "enrichment")
+        sprintf("%s_%s.csv", tolower(type), format(Sys.Date(), "%Y%m%d"))
+      },
+      content = function(file) {
+        df <- table_data()
+        shiny::req(nrow(df) > 0L)
+
+        # Unfiltered and every column, including the gene lists -- those
+        # are what a follow-up actually needs, and they are the one thing
+        # the on-screen table cannot show. Sorted so the file opens on
+        # the strongest result rather than in database order.
+        df <- df[order(df$database,
+                       df$adj_p_value %||% df$p_value,
+                       df$p_value), , drop = FALSE]
+        utils::write.csv(df, file, row.names = FALSE, na = "")
+      }
+    )
+
     # Expose the bundle for slice 3F (report).
     shiny::reactive(enrich_bundle())
   })
@@ -448,7 +469,15 @@ enrich_hits_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Enriched sets"),
       htmltools::tags$span(class = "card-sub",
-                           "ranked by adj.P")
+                           "ranked by adj.P"),
+      # Everything, not what the table happens to be showing: the CSV is
+      # what gets opened in Excel a week later, and a file silently
+      # truncated to one significance threshold is the kind of thing
+      # nobody notices until a number cannot be reproduced.
+      shiny::downloadButton(
+        ns("download_table"), "Download full table",
+        class = "btn btn-ghost btn-sm"
+      )
     ),
     bslib::card_body(
       DT::DTOutput(ns("hits"))
