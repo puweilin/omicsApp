@@ -65,8 +65,10 @@ qc_outliers <- function(
 
 qc_outliers_pca <- function(expr_mat, sd_threshold) {
   # prcomp() cannot handle NA values; mean-impute per feature first.
+  # pca_over_samples() then drops the features that never vary, which a
+  # scaled PCA cannot use -- see pca-utils.R.
   mat_for_pca <- mean_impute_rows(expr_mat)
-  pca_res <- stats::prcomp(t(mat_for_pca), scale. = TRUE)
+  pca_res <- pca_over_samples(mat_for_pca)
   coords <- as.data.frame(pca_res$x[, 1:2, drop = FALSE])
   coords$sample_id <- rownames(coords)
   rownames(coords) <- NULL

@@ -197,7 +197,7 @@ plot_qc_pca <- function(bundle, color_by = NULL) {
   if (ncol(mat) < 2L) {
     stop("Need at least 2 samples to draw a PCA scatter.")
   }
-  pca <- stats::prcomp(t(mat), scale. = TRUE)
+  pca <- pca_over_samples(mat)
   scores <- as.data.frame(pca$x[, 1:2, drop = FALSE])
   scores$sample_id <- rownames(scores)
   rownames(scores) <- NULL
@@ -218,10 +218,22 @@ plot_qc_pca <- function(bundle, color_by = NULL) {
                  color = .data[[color_by]])
   }
 
+  # Said on the plot rather than left implicit. A counts matrix carries
+  # every annotated gene, so a fifth of them being zero in every sample
+  # is ordinary -- but "PCA of 63,241 features" and "PCA of the 49,000
+  # that vary" are different claims, and only one of them is true.
+  dropped <- attr(pca, "n_dropped") %||% 0L
+  subtitle <- if (dropped > 0L) {
+    sprintf("%s features; %s constant across all samples, excluded",
+            format(nrow(mat), big.mark = ","),
+            format(dropped, big.mark = ","))
+  } else NULL
+
   ggplot2::ggplot(scores, mapping) +
     ggplot2::geom_point(size = 2.5, alpha = 0.9) +
     ggplot2::labs(
       title = "PCA of cleaned input",
+      subtitle = subtitle,
       x = sprintf("PC1 (%.1f%%)", var_pct[1L]),
       y = sprintf("PC2 (%.1f%%)", var_pct[2L])
     ) +

@@ -185,15 +185,7 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
   if (ncol(mat) < 2L) {
     stop("Need at least 2 samples to draw a PCA scatter.")
   }
-  # Drop features with zero variance after imputation: prcomp(scale.=TRUE)
-  # cannot scale a constant column.
-  row_var <- apply(mat, 1L, stats::var, na.rm = TRUE)
-  mat <- mat[!is.na(row_var) & row_var > 0, , drop = FALSE]
-  if (nrow(mat) < 2L) {
-    stop("Need at least 2 variable features after filtering for PCA.")
-  }
-
-  pca <- stats::prcomp(t(mat), scale. = TRUE)
+  pca <- pca_over_samples(mat)
   scores <- as.data.frame(pca$x[, 1:2, drop = FALSE])
   scores$sample_id <- rownames(scores)
   rownames(scores) <- NULL
