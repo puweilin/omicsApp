@@ -37,6 +37,7 @@ Suggests:
     withr,
     shinytest2,
     chromote,
+    callr,
     ggrepel,
     knitr,
     openxlsx,

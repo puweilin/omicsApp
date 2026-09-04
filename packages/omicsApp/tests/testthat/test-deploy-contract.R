@@ -258,6 +258,14 @@ test_that("the user store is the same directory in ShinyProxy, add_user.sh and t
   expect_true(any(grepl("OMICSAPP_DATA_DIR=/data", docker)))
 })
 
+test_that("the image runs in a UTF-8 locale", {
+  root <- skip_unless_deploy()
+  docker <- read_deploy(root, "docker", "Dockerfile")
+  code <- docker[!grepl("^\\s*#", docker)]
+  expect_true(any(grepl("LANG=[A-Za-z_]+\\.UTF-8", code)))
+  expect_true(any(grepl("LC_ALL=[A-Za-z_]+\\.UTF-8", code)))
+})
+
 test_that("the CRAN snapshot is a date the check_pins script can read", {
   root <- skip_unless_deploy()
   docker <- read_deploy(root, "docker", "Dockerfile")

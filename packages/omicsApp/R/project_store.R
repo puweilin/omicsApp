@@ -214,6 +214,36 @@ project_slug <- function(name) {
   slug
 }
 
+#' A path the operating system will take in any locale
+#'
+#' A name typed in the browser arrives marked UTF-8. R translates a
+#' marked path to the native encoding before every file call, and in a
+#' process whose locale is C that translation fails for anything
+#' outside ASCII: "unable to translate ... to native encoding", from
+#' save, from archive, from open. A container without a configured
+#' locale is exactly that process. The filesystem, on the other hand,
+#' takes bytes, and UTF-8 bytes are what every other tool on the host
+#' writes -- so the mark is dropped and the bytes go through as they
+#' are. `list_saved_projects()` puts the mark back on the way out.
+#'
+#' @param path A path, possibly marked UTF-8.
+#' @return The same bytes, unmarked.
+#' @keywords internal
+#' @noRd
+os_path <- function(path) {
+  path <- enc2utf8(path)
+  Encoding(path) <- "unknown"
+  path
+}
+
+# The inverse: names read back from the filesystem are UTF-8 bytes,
+# and saying so is what lets the JSON layer send them to the browser
+# as characters rather than as <e8><9b><8b>.
+as_utf8_name <- function(x) {
+  Encoding(x) <- "UTF-8"
+  x
+}
+
 #' Absolute path for a project slug inside the store
 #'
 #' @param slug Slug from `project_slug()`.
@@ -223,7 +253,7 @@ project_slug <- function(name) {
 #' @keywords internal
 #' @noRd
 project_path <- function(slug, dir = omicsapp_data_dir()) {
-  file.path(dir, paste0(slug, ".omp"))
+  os_path(file.path(dir, paste0(slug, ".omp")))
 }
 
 #' Path to the rolling autosave snapshot
@@ -259,8 +289,11 @@ list_saved_projects <- function(dir = omicsapp_data_dir()) {
   files <- files[basename(files) != paste0(AUTOSAVE_SLUG, ".omp")]
   if (length(files) == 0L) return(empty)
   info <- file.info(files)
+  # Marked before the regex runs: sub() on unmarked non-ASCII bytes in a
+  # C locale warns that it cannot translate them, and it is right.
+  names <- as_utf8_name(basename(files))
   out <- data.frame(
-    slug     = sub("\\.omp$", "", basename(files)),
+    slug     = sub("\\.omp$", "", names),
     path     = files,
     size_mb  = round(info$size / 1024^2, 2),
     modified = info$mtime,
@@ -532,9 +565,9 @@ store_raw_upload <- function(path, name, fingerprint,
   stem <- project_slug(tools::file_path_sans_ext(name %||% "upload"))
   if (is.na(stem)) stem <- "upload"
   ext <- tools::file_ext(name %||% "")
-  target <- file.path(raw_dir(dir),
-                      paste0(stem, "__", digest,
-                             if (nzchar(ext)) paste0(".", ext) else ""))
+  target <- os_path(file.path(raw_dir(dir),
+                              paste0(stem, "__", digest,
+                                     if (nzchar(ext)) paste0(".", ext) else "")))
   if (file.exists(target)) {
     return(list(ok = TRUE, path = target,
                 message = "Already archived."))

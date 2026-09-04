@@ -231,6 +231,26 @@ read_omics_csv <- function(path, omics_type, assay_type,
 
   args <- list(path, header = TRUE, sep = sep, skip = skip,
                check.names = FALSE, stringsAsFactors = FALSE, ...)
+  # The first column is the identifiers, whatever they look like, and
+  # they are text: an Entrez id is a number that must not be summed, and
+  # a probe id "0001" read as a number comes back "1". Only the first
+  # column is forced; the rest keep read.table's typing, which on a 63k
+  # by 258 file is the difference between seconds and a minute.
+  header_fields <- if (is.na(header_line)) character(0) else
+    strsplit(header_line, sep, fixed = TRUE)[[1L]]
+  if (is.null(args$colClasses) && length(header_fields) > 0L) {
+    args$colClasses <- c("character", rep(NA_character_, length(header_fields) - 1L))
+  }
+  duplicated_headers <- unique(header_fields[duplicated(trimws(header_fields))])
+  duplicated_headers <- duplicated_headers[nzchar(duplicated_headers)]
+  # Mark the text as UTF-8 rather than as "whatever the process locale
+  # is". The files are UTF-8 -- every pipeline and spreadsheet writes
+  # them so -- but a container without a configured locale runs R in C,
+  # where an unmarked non-ASCII name survives as bytes only: it compares
+  # unequal to the same name from a workbook, and Shiny's JSON layer
+  # renders it as <e5><9f><ba>. `encoding` marks without converting, so
+  # it costs nothing on ASCII and is right on everything else.
+  if (is.null(args$encoding)) args$encoding <- "UTF-8"
 
   # Quoting rules differ by ecosystem, so they follow the delimiter.
   # Tab-separated files from bioinformatics pipelines do not quote
@@ -250,6 +270,8 @@ read_omics_csv <- function(path, omics_type, assay_type,
   if (is.null(args$comment.char)) args$comment.char <- ""
 
   df <- do.call(utils::read.table, args)
+  # A byte-order mark is not part of the first column's name.
+  if (ncol(df) > 0L) colnames(df)[1L] <- sub("^\ufeff", "", colnames(df)[1L])
   nm <- tools::file_path_sans_ext(basename(path))
   cls <- classify_sheet_role(df, name = nm)
   sheet_table <- data.frame(

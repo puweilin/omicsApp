@@ -212,6 +212,16 @@ ENV OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
     OMICSAPP_DATA_DIR=/data \
     OMICSAPP_QUOTA_GB=50
+
+# A UTF-8 locale, stated rather than inherited. The rocker base sets
+# one, but nothing here depended on that being true until it was tested:
+# under LC_ALL=C, R cannot hand a path with a non-ASCII character to the
+# operating system, so a project named in Chinese could be neither saved
+# nor opened, and a sample name from a CSV reached the browser as bytes.
+# The code now survives a C locale (see the c-locale tests in both
+# packages); the image still should not run in one.
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8
 RUN printf '%s\n' \
       '' \
       '# Appended by deploy/docker/Dockerfile; overrides the base image.' \

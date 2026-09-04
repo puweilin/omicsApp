@@ -8,29 +8,7 @@
 # the reader's: every read is a complete file, and the last one standing
 # is one of the two projects rather than a splice of both.
 
-# Where the omicsCore this process is running came from, so the writers
-# run the same code. Under load_all that is the source tree (pkgload's
-# system.file() shim answers with inst/; the root is one level up); when
-# installed it is the library the package was loaded from -- named
-# explicitly, because R CMD check installs into a temporary library and
-# a child that just says library(omicsCore) may pick up an older copy
-# from the user library instead. The first version of this test did,
-# and failed on a bug that copy still had.
-omicscore_origin <- function() {
-  root <- system.file(package = "omicsCore")
-  if (identical(basename(root), "inst")) root <- dirname(root)
-  # An installed package has an R/ directory too -- it holds the lazy-load
-  # database -- so the source tree is recognised by its .R files, not by
-  # the directory. Handing an installed directory to load_all() gives a
-  # namespace with no functions in it.
-  has_sources <- dir.exists(file.path(root, "R")) &&
-    length(list.files(file.path(root, "R"), pattern = "\\.[Rr]$")) > 0L
-  if (file.exists(file.path(root, "DESCRIPTION")) && has_sources &&
-      requireNamespace("pkgload", quietly = TRUE)) {
-    return(list(kind = "source", path = normalizePath(root)))
-  }
-  list(kind = "installed", path = dirname(normalizePath(root)))
-}
+# omicscore_origin() and the loader live in helper-child-process.R.
 
 writer_body <- function(origin, path, name, n) {
   if (identical(origin$kind, "source")) {
@@ -38,6 +16,8 @@ writer_body <- function(origin, path, name, n) {
   } else {
     library(omicsCore, lib.loc = c(origin$path, .libPaths()))
   }
+  # (Inlined rather than calling the helper: callr serialises this
+  # function alone, and the helper would not travel with it.)
   mat <- matrix(as.numeric(seq_len(60)) + nchar(name), 15, 4,
                 dimnames = list(paste0("g", 1:15), paste0("s", 1:4)))
   meta <- data.frame(group = c("A", "A", "B", "B"), row.names = paste0("s", 1:4))
