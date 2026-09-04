@@ -1,0 +1,38 @@
+# Nightly backup for omicsApp.
+#
+#   sudo mkdir -p /backup/omicsapp
+#   sudo cp omicsapp-backup /etc/cron.d/omicsapp-backup
+#   sudo chmod 644 /etc/cron.d/omicsapp-backup   # cron ignores other modes
+#
+# Two things have to be backed up, and only one of them is obvious.
+#
+# /srv/omicsapp/users is the work. /srv/omicsapp/keycloak-db is who may
+# open it. Without the second, a restore gives you every file and nobody
+# who can log in to reach one -- and because the directories are named
+# after the Keycloak `sub`, there is no way to work out afterwards whose
+# is whose. The account database is what turns a UUID back into a person.
+#
+# Source is the HDD array, destination the SSD: a different physical
+# disk, which is the point. Roughly 75 GB a year against 4 TB.
+#
+# `%` has to be escaped in a crontab or the line is truncated there.
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# The account database, as a dump rather than a file copy. Copying
+# Postgres' files while it is running gives you something that may need
+# crash recovery to open; pg_dump gives you something that restores.
+#
+# Named by day of week, so seven days rotate themselves with no cleanup
+# job to forget. A restore that only ever overwrote one file would
+# propagate a corruption on the first night nobody noticed.
+20 2 * * *  root  docker exec keycloak-db pg_dump -U keycloak keycloak | gzip > /backup/omicsapp/keycloak-$(date +\%u).sql.gz
+
+# The users' work.
+30 2 * * *  root  rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp/users/
+
+# The database files as well, as a fallback for the dump above. Cheap --
+# a handful of accounts is a few MB -- and it covers the case where the
+# container was down at 02:20.
+35 2 * * *  root  rsync -a --delete /srv/omicsapp/keycloak-db/ /backup/omicsapp/keycloak-db/

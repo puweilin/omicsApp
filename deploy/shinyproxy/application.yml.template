@@ -103,7 +103,19 @@ proxy:
       display-name: Multi-omics analysis
       description: Proteomics and transcriptomics QC, differential analysis, enrichment, and integration
       container-image: omicsapp:1.0
-      container-network: sp-net
+      # Not sp-net, which is where Keycloak and its Postgres live. An app
+      # container has no reason to reach either, and on a shared network
+      # it could: the account database and Keycloak's admin API would be
+      # one hostname away from code that runs user-supplied data.
+      #
+      # Nothing needs this network for the app to work -- ShinyProxy
+      # reaches the container through a published port, not through
+      # Docker DNS (see internal-networking above). It exists so the
+      # containers have somewhere to be that is not next to the
+      # credentials.
+      #
+      #   sudo docker network create omicsapp-net
+      container-network: omicsapp-net
       port: 3838
       # A single analysis holds the matrices plus every computed bundle.
       # 6g is generous for 20k x 60; raise it before raising the number

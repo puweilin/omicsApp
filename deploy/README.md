@@ -28,7 +28,9 @@ memory cannot take anyone else down with it.
 | `docker/prewarm_genesets.R` | Bakes the MSigDB tables in at build time. |
 | `shinyproxy/application.yml.template` | Copy to `application.yml` on the server and fill in the client secret. |
 | `nginx/omicsapp.conf` | Reverse proxy: TLS, the WebSocket headers Shiny needs, and Keycloak at `/auth`. |
+| `nginx/nginx-limits.conf` | systemd drop-in raising nginx's file-descriptor limit. |
 | `keycloak/` | The identity provider: compose file, realm definition, and its own README. |
+| `cron/omicsapp-backup` | Nightly backup of the work **and** the account database. |
 | `scripts/build_image.sh` | Wrapper that gets the build context right. |
 | `scripts/add_user.sh` | Creates an account in Keycloak and its storage directory, in that order. |
 | `scripts/list_users.sh` | Maps the UUID directory names back to people. |
@@ -198,9 +200,17 @@ docker run --rm omicsapp:1.0 \
 ### 5. Network and storage
 
 ```bash
+# Two networks, deliberately. Keycloak and its Postgres share sp-net;
+# app containers get their own. An app container has no reason to reach
+# the account database, and on one shared network it could -- code
+# running user-supplied data would be a hostname away from the
+# credentials. Neither container needs Docker DNS for anything else:
+# ShinyProxy reaches apps through a published port.
 docker network create sp-net
+docker network create omicsapp-net
+
 sudo mkdir -p /srv/omicsapp/users            # /srv is the HDD
-sudo deploy/scripts/add_user.sh puweilin     # once per user
+sudo deploy/scripts/add_user.sh you@example.com   # once per person
 ```
 
 Confirm `/srv` really is the HDD before creating anything — see
@@ -271,8 +281,25 @@ another service too.
 ```bash
 sudo cp deploy/nginx/omicsapp.conf /etc/nginx/sites-available/omicsapp
 sudo ln -s /etc/nginx/sites-available/omicsapp /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+
+# Raise the file-descriptor limit before the first reload, not after the
+# first failure -- see the file's own comments for what that looks like.
+sudo mkdir -p /etc/systemd/system/nginx.service.d
+sudo cp deploy/nginx/nginx-limits.conf /etc/systemd/system/nginx.service.d/limits.conf
+sudo systemctl daemon-reload
+
+sudo nginx -t && sudo systemctl restart nginx
+sudo ufw allow from 192.168.51.0/24 to any port 443 proto tcp
 sudo ufw allow from 192.168.51.0/24 to any port 80 proto tcp
+```
+
+`restart`, not `reload`, for that first one: a reload keeps the running
+master, and the master is what holds the old limit.
+
+Confirm it took:
+
+```bash
+grep 'Max open files' /proc/$(cat /var/run/nginx.pid)/limits
 ```
 
 Leave `sites-enabled/default` alone. nginx picks a server block by
@@ -591,19 +618,29 @@ sudo rsync -a --delete /srv/omicsapp/users/       /backup/omicsapp/users/
 sudo rsync -a --delete /srv/omicsapp/keycloak-db/ /backup/omicsapp/keycloak-db/
 ```
 
-```cron
-# /etc/cron.d/omicsapp-backup — nightly at 02:30
-30 2 * * *  root  rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp/users/
-35 2 * * *  root  rsync -a --delete /srv/omicsapp/keycloak-db/ /backup/omicsapp/keycloak-db/
+The schedule is a file in the repository rather than something to
+transcribe:
+
+```bash
+sudo cp deploy/cron/omicsapp-backup /etc/cron.d/omicsapp-backup
+sudo chmod 644 /etc/cron.d/omicsapp-backup
 ```
 
-Copying Postgres' files while it is running gives you a backup that may
-need crash recovery to open. That is usually fine and is much better
-than nothing, but if these accounts ever become hard to recreate, take a
-real dump instead:
+It takes a `pg_dump` of the account database as well as copying the
+files. Copying Postgres' files while it is running gives you something
+that may need crash recovery to open; the dump gives you something that
+restores. The dumps are named by day of week, so seven of them rotate
+themselves — a single overwritten file would propagate a corruption on
+the first night nobody noticed.
 
-```cron
-25 2 * * *  root  docker exec keycloak-db pg_dump -U keycloak keycloak | gzip > /backup/omicsapp/keycloak.sql.gz
+`chmod 644` is not decoration: cron silently ignores a file in
+`/etc/cron.d` that is group- or world-writable, so a stricter-looking
+mode gets you no backups and no error.
+
+Check it ran, the morning after:
+
+```bash
+ls -l /backup/omicsapp/ /backup/omicsapp/users/ | head
 ```
 
 Two things this does not cover, so decide about them explicitly:
