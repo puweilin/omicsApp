@@ -52,6 +52,34 @@ pipeline. It looks for `data/SkinProteomics/Proteomics_Data.xlsx` by walking
 up from the working directory, or wherever `OMICSAPP_PROTEOMICS_XLSX` points; it
 skips when the file is absent, so a clone without the data still runs green.
 
+The omicsApp suite tests the omicsCore *source tree* beside it, not the
+installed copy (`tests/testthat/setup.R` loads `packages/omicsCore` with
+pkgload), and the shinytest2 smoke test boots `inst/app` from source with
+both packages loaded the same way (`OMICSAPP_DEV_ROOT`, see
+`inst/app/app.R`). Neither test therefore depends on when
+`install_local()` was last run.
+
+A few suites are deliberately opt-in:
+
+| Suite | Runs when | What it holds |
+|---|---|---|
+| `omicsCore/tests/testthat/test-perf-budget.R` | `OMICSCORE_PERF_TESTS=1` | import, PCA and limma at the size of the real follicle dataset (63k x 258) |
+| `omicsCore/tests/testthat/test-concurrent-writers.R` | `callr` installed | two R processes autosaving one `.omp` while a third reads it |
+| `omicsApp/tests/testthat/test-app-smoke.R` | Chrome available | the seven views in a browser, from source |
+| `omicsApp/tests/testthat/test-deploy-contract.R` | `deploy/` present | the ports, paths and package lists that three deploy files must agree on |
+
+`omicsCore/tests/testthat/fixtures/omp/` is a corpus of `.omp` files written
+by past versions; every file in it must keep opening. When the schema
+version or the bundle layout changes, add a file rather than replacing one
+(`write_omp_corpus_fixture()` in `test-omp-corpus.R` writes the current
+version's).
+
+Optional-dependency branches are tested by mocking `omicsCore:::is_installed()`
+and `omicsApp:::has_pkg()` (`test-lightweight-install.R`,
+`test-missing-deps.R`); any new `requireNamespace()` call outside those two
+functions fails a test, because it would silently leave that branch untested
+again.
+
 ## Status
 
 Pre-alpha. See [docs/export-manifest.md](./docs/export-manifest.md) for the planned public API and [docs/roadmap.md](./docs/roadmap.md) for the delivery plan.
