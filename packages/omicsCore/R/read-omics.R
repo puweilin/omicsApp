@@ -108,8 +108,30 @@ apply_sheet_roles <- function(sheet_table, sheet_roles) {
 
 # ---- internal: per-type readers ----------------------------------------
 
+# Both Excel formats announce themselves in their first bytes: .xlsx is
+# a zip, .xls is an OLE2 compound file. Anything else with those
+# extensions is text pretending.
+is_excel_file <- function(path) {
+  con <- file(path, "rb")
+  on.exit(close(con), add = TRUE)
+  magic <- readBin(con, "raw", n = 8L)
+  if (length(magic) < 8L) return(FALSE)
+  identical(magic[1:4], as.raw(c(0x50, 0x4b, 0x03, 0x04))) ||
+    identical(magic, as.raw(c(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1)))
+}
+
 detect_file_type <- function(path) {
   ext <- tolower(tools::file_ext(path))
+
+  # Trust the bytes over the name. RNA-seq pipelines routinely write
+  # tab-separated text and call it .xls -- a 170 MB expression table
+  # with that extension is normal output, not a mistake -- and handing
+  # it to readxl fails with a message about the workbook rather than
+  # about the format, which sends you looking at the wrong thing.
+  if (ext %in% c("xls", "xlsx") && file.exists(path) && !is_excel_file(path)) {
+    return("csv")
+  }
+
   switch(ext,
     xlsx = "excel",
     xls  = "excel",
@@ -159,11 +181,48 @@ read_omics_excel <- function(path, omics_type, assay_type,
                           omics_type = omics_type, assay_type = assay_type)
 }
 
+# From the header line, not the extension: a .xls that turned out to be
+# text is tab-separated more often than not, and guessing comma there
+# yields one column holding the whole row -- which classify_sheet_role()
+# then reports as an unrecognisable sheet rather than as a parse
+# failure. Counted on the header alone, where no field is quoted.
+detect_delimiter <- function(path) {
+  line <- tryCatch(readLines(path, n = 1L, warn = FALSE),
+                   error = function(e) character(0))
+  if (length(line) == 0L || !nzchar(line[1])) return(",")
+  candidates <- c("\t", ",", ";")
+  counts <- vapply(candidates,
+                   function(d) lengths(regmatches(line[1], gregexpr(d, line[1], fixed = TRUE))),
+                   integer(1L))
+  if (max(counts) == 0L) return(",")
+  candidates[which.max(counts)]
+}
+
 read_omics_csv <- function(path, omics_type, assay_type,
                            sheet_roles = NULL, ...) {
-  sep <- if (grepl("\\.tsv$|\\.txt$", path, ignore.case = TRUE)) "\t" else ","
-  df <- utils::read.table(path, header = TRUE, sep = sep,
-                          check.names = FALSE, stringsAsFactors = FALSE, ...)
+  sep <- detect_delimiter(path)
+
+  args <- list(path, header = TRUE, sep = sep,
+               check.names = FALSE, stringsAsFactors = FALSE, ...)
+
+  # Quoting rules differ by ecosystem, so they follow the delimiter.
+  # Tab-separated files from bioinformatics pipelines do not quote
+  # anything, and their annotation columns are full of characters that
+  # read.table treats as quotes -- a gene called "5'-nucleotidase" opens
+  # a quote that stays open until the next apostrophe, swallowing whole
+  # rows. The failure is `line N did not have K elements`, thousands of
+  # lines after the one that caused it.
+  #
+  # Comma-separated files are usually written by a spreadsheet, where a
+  # field containing a comma is quoted and the quotes must be honoured.
+  if (is.null(args$quote)) {
+    args$quote <- if (identical(sep, "\t")) "" else "\""
+  }
+  # Never: `#` is a legal character in a gene description and truncating
+  # the line at one loses columns silently.
+  if (is.null(args$comment.char)) args$comment.char <- ""
+
+  df <- do.call(utils::read.table, args)
   nm <- tools::file_path_sans_ext(basename(path))
   cls <- classify_sheet_role(df, name = nm)
   sheet_table <- data.frame(

@@ -286,3 +286,84 @@ test_that("read_omics flags an empty workbook gracefully", {
   expect_null(out$input)
   expect_true(length(out$report$warnings) > 0L)
 })
+
+# ---- extension vs content --------------------------------------------
+# RNA-seq pipelines routinely write tab-separated text and name it .xls.
+# Trusting the extension sends it to readxl, which fails with a message
+# about the workbook rather than about the format.
+
+test_that("a tab-separated file named .xls is read as text, not Excel", {
+  path <- withr::local_tempfile(fileext = ".xls")
+  writeLines(c("gene_id\tS1\tS2", "G1\t1\t2", "G2\t3\t4"), path)
+
+  expect_false(is_excel_file(path))
+  expect_identical(detect_file_type(path), "csv")
+  expect_identical(detect_delimiter(path), "\t")
+})
+
+test_that("a real xlsx is still detected as Excel", {
+  skip_if_not_installed("writexl")
+  path <- withr::local_tempfile(fileext = ".xlsx")
+  writexl::write_xlsx(data.frame(gene_id = "G1", S1 = 1), path)
+
+  expect_true(is_excel_file(path))
+  expect_identical(detect_file_type(path), "excel")
+})
+
+test_that("detect_delimiter picks the delimiter the header actually uses", {
+  tsv <- withr::local_tempfile(); writeLines("a\tb\tc", tsv)
+  csv <- withr::local_tempfile(); writeLines("a,b,c", csv)
+  ssv <- withr::local_tempfile(); writeLines("a;b;c", ssv)
+  one <- withr::local_tempfile(); writeLines("only_one_column", one)
+
+  expect_identical(detect_delimiter(tsv), "\t")
+  expect_identical(detect_delimiter(csv), ",")
+  expect_identical(detect_delimiter(ssv), ";")
+  expect_identical(detect_delimiter(one), ",")   # nothing to go on
+})
+
+test_that("apostrophes and # in annotation columns do not eat rows", {
+  # read.table's defaults treat ' as an opening quote and # as a comment.
+  # A gene called 5'-nucleotidase opens a quote that stays open until the
+  # next apostrophe, and every row in between is swallowed -- surfacing
+  # thousands of lines later as `line N did not have K elements`.
+  #
+  # Asserted on the parse, not on the classified matrix: how the sheet is
+  # then labelled depends on the shape of the fixture, and this is about
+  # whether every row survived reading.
+  path <- withr::local_tempfile(fileext = ".xls")
+  samples <- paste0("S", 1:6)
+  descs <- rep(c("5'-nucleotidase", 'some "quoted" name', "contains # hash",
+                 "apostrophe's here", "plain"), 6)
+  rows <- vapply(seq_along(descs), function(i) {
+    paste(c(paste0("G", i), descs[i], as.character(seq_along(samples) * i)),
+          collapse = "\t")
+  }, character(1L))
+  writeLines(c(paste(c("gene_id", "description", samples), collapse = "\t"), rows),
+             path)
+
+  res <- read_omics(path, omics_type = "rnaseq", assay_type = "fpkm")
+  expect_equal(res$report$sheets$n_rows[[1L]], length(descs))
+  expect_equal(res$report$sheets$n_cols[[1L]], 2L + length(samples))
+})
+
+test_that("default read.table quoting would have lost those rows", {
+  # The counter-test: without the fix the same file parses short or
+  # errors outright, which is what makes the one above worth keeping.
+  path <- withr::local_tempfile(fileext = ".tsv")
+  writeLines(c("gene_id\tdescription\tS1",
+               "G1\t5'-nucleotidase\t1",
+               "G2\tplain\t2",
+               "G3\tanother'\t3"), path)
+
+  lenient <- utils::read.table(path, header = TRUE, sep = "\t",
+                               quote = "", comment.char = "",
+                               check.names = FALSE, stringsAsFactors = FALSE)
+  default <- tryCatch(
+    utils::read.table(path, header = TRUE, sep = "\t",
+                      check.names = FALSE, stringsAsFactors = FALSE),
+    error = function(e) NULL)
+
+  expect_equal(nrow(lenient), 3L)
+  expect_true(is.null(default) || nrow(default) < 3L)
+})

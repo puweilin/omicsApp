@@ -145,15 +145,29 @@ plot_enrich_dot <- function(df, p_col) {
   # pathway moved; overlap size only says how many genes were in it.
   # Prefer the former when the result carries it, and fall back
   # otherwise so an ORA result without an effect column still plots.
-  has_effect <- "effect" %in% names(df) && any(is.finite(df$effect))
+  usable <- function(col) col %in% names(df) && any(is.finite(df[[col]]))
+
+  has_effect <- usable("effect")
   x_aes <- if (has_effect) "effect" else "overlap_size"
   df$.signif <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
 
-  p <- ggplot2::ggplot(
-    df,
-    ggplot2::aes(x = .data[[x_aes]], y = .data$.label,
-                 size = .data$overlap_size, color = .data$.signif)
-  ) +
+  # The size aesthetic needs the same fallback as x, and for the same
+  # kind of result. GSEA has no overlap: standardize_enrich_results only
+  # fills overlap_size from `Count` or `GeneRatio`, which fgsea emits
+  # neither of, so the column is entirely NA. Mapping size to it made
+  # every point NA-sized, and geom_point drops those -- the panel drew
+  # its axes and facet strips and not one dot.
+  #
+  # That reads as "enrichment found nothing", which is the same thing an
+  # empty result looks like, so the failure hides as a result.
+  size_aes <- if (usable("overlap_size")) "overlap_size" else "gene_set_size"
+  has_size <- usable(size_aes)
+
+  aes_args <- list(x = quote(.data[[x_aes]]), y = quote(.data$.label),
+                   color = quote(.data$.signif))
+  if (has_size) aes_args$size <- quote(.data[[size_aes]])
+
+  p <- ggplot2::ggplot(df, do.call(ggplot2::aes, aes_args)) +
     ggplot2::geom_point(na.rm = TRUE) +
     ggplot2::facet_wrap(~ .data$database, scales = "free", ncol = 1) +
     # Low to high significance, matching the volcano: a reader who has
@@ -161,13 +175,20 @@ plot_enrich_dot <- function(df, p_col) {
     ggplot2::scale_color_gradient(low = omics_colors$scale_low,
                                   high = omics_colors$scale_high,
                                   name = paste0("-log10(", p_col, ")")) +
-    ggplot2::scale_size_continuous(range = c(2, 6), name = "overlap") +
     ggplot2::labs(
       title = "Enrichment",
       x = if (has_effect) "effect" else "overlap size",
       y = NULL
     ) +
     theme_omics_labelled()
+
+  if (has_size) {
+    # Named for the column actually mapped, so a GSEA panel does not
+    # label a gene-set size "overlap".
+    p <- p + ggplot2::scale_size_continuous(
+      range = c(2, 6),
+      name = if (identical(size_aes, "overlap_size")) "overlap" else "set size")
+  }
 
   if (has_effect) {
     p <- p + ggplot2::geom_vline(xintercept = 0, linetype = "dashed",

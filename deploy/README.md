@@ -67,6 +67,9 @@ which holds the Keycloak secrets, exists only on the server, and would
 otherwise be deleted by the next sync. (rsync does not delete excluded
 files, so naming it here is what keeps it.)
 
+Expect about 3 MB/s. That is the host's network link, not rsync or the
+laptop — see [Network](#network) — and it is why `-z` is in the command.
+
 ### 1. Host prerequisites
 
 Four things, and only four — everything else the application needs is
@@ -366,6 +369,13 @@ one.
 **Restarting ShinyProxy drops running sessions.** Adding a user requires
 a restart, so do it when nobody is mid-analysis.
 
+**The host has no cable in it.** Anything copied *to* 192.168.51.52
+arrives at about 3 MB/s, whoever sends it: the host's only link is a USB
+Wi-Fi adapter whose downlink drops frames under load. The step 0
+`rsync` is slow for that reason and no other. [Network](#network) has
+the measurements, and the reason plugging a cable in is not by itself
+enough.
+
 **`customHeader` authentication is available but not used.** It arrived
 in 3.2.0, so the pinned 3.2.4 has it, and pairing it with a
 forward-auth proxy is a simpler integration than OIDC — no client
@@ -442,6 +452,102 @@ On the 7 GB image, because it changes the arithmetic: layers are
 — there is one copy on disk, and each container adds only its writable
 layer, which stays tiny because all data goes to the bind mount rather
 than into the container.
+
+## Network
+
+**The host is on Wi-Fi.** Both onboard Ethernet ports, `eno1` and
+`eno2`, are up with no carrier — nothing is plugged into them — and the
+only link to the LAN is a MediaTek MT7612U USB adapter
+(`wlxfc221c300109`, in-kernel `mt76x2u` driver), associated to `OANET`
+on channel 64 at -66 dBm. 192.168.51.52 is a 24-hour DHCP lease from
+192.168.48.1 on that adapter's MAC, `fc:22:1c:30:01:09`. The LAN is
+192.168.48.0/21, not a /24 — that matters below.
+
+**Anything sent *to* the host arrives at about 3 MB/s.** Measured
+2026-09-04 with 30–60 MB transfers, TCP over ssh and nc, from three
+sources:
+
+| Direction | Throughput |
+|---|---|
+| Laptop (Wi-Fi, -45 dBm) → host | 1.8–3.4 MB/s |
+| Host → laptop | 18–22 MB/s |
+| Wired LAN host 192.168.48.182 → host | 2.5–3.0 MB/s |
+| Host → 192.168.48.182 | 13.8 MB/s |
+| Laptop → 192.168.48.182, same minute | 18–21 MB/s |
+| Laptop → host, four streams in parallel | 7.8 MB/s aggregate |
+
+The direction is what matters, not who initiates: data entering the
+host crosses the slow hop whether `rsync` pushes it, `curl` pulls it or
+`docker pull` fetches it. At these rates a gigabyte is six minutes in
+and one minute out.
+
+**The loss is on the access-point → adapter hop, and only under load.**
+During one 30 MB upload the host's TCP stack queued 3,073 out-of-order
+segments in 25,846 received (`TcpExt.TCPOFOQueue` in
+`/proc/net/netstat`): roughly one segment in eight arrived after a
+later one, which means the earlier one was dropped in the air and the
+sender had to retransmit it. The host itself retransmitted one segment.
+An idle `ping -s 1400` of 150 packets loses none, so this is loss under
+load, not a broken link. Everything on the host that could have caused
+it was checked and is not it: the adapter's transmit side is fine (the
+host → anything rows), it negotiates 300 Mb/s out and 270 Mb/s in,
+power saving is off (NetworkManager's `default-wifi-powersave-on.conf`
+asks for it; `iwconfig` reports `Power Management:off`), it is on a USB
+3.0 port, there is no rate-limiting qdisc, and the load average was
+0.1. Nor is it the sender: the same laptop pushed 20 MB/s into the
+wired host at the same time, and the wired host got the same 3 MB/s
+into this one. (The laptop's own Wi-Fi shows periodic 25–90 ms RTT
+spikes to every LAN address — macOS AWDL, `awdl0` active with AirDrop
+set to Everyone — which adds jitter and is unrelated to the asymmetry.)
+
+Whether it is the adapter or where it sits is not settled. -66 dBm on a
+stub antenna inside a rack is consistent with either, and the only
+other `OANET` radio the host can see, on channel 161, is weaker. The
+cheap experiment is a USB extension cable: move the adapter out of the
+chassis, and if the signal reaches -55 dBm and the upload rate does not
+move, it is the adapter.
+
+```bash
+iwconfig wlxfc221c300109 | grep -E "Signal|Bit Rate"
+```
+
+**The fix is a cable; the address is the part to plan.** The TLS
+certificate (`subjectAltName=IP:192.168.51.52`), Keycloak's
+`KC_HOSTNAME`, ShinyProxy's OIDC URLs and the realm's redirect URIs all
+carry 192.168.51.52, and that lease belongs to the Wi-Fi MAC. Plugging
+in `eno1` activates NetworkManager's `Wired connection 1`, which is
+DHCP, so the port comes up with a *different* address while the Wi-Fi
+keeps the old one — two MACs holding addresses on one subnet, and every
+peer's ARP table free to disagree about which one 192.168.51.52 is. In
+order:
+
+1. Ask IT to reserve 192.168.51.52 for `eno1`'s MAC,
+   `18:9b:a5:86:df:23` (`eno2` is `18:9b:a5:86:df:22`).
+2. Take the Wi-Fi profile down and stop it coming back on its own:
+
+   ```bash
+   nmcli connection modify OANET connection.autoconnect no
+   nmcli connection down OANET
+   ```
+
+3. Plug the cable in, and check that `ip -br addr show eno1` shows
+   192.168.51.52/21 before touching anything else. Nothing in the
+   application needs to change if the address survives.
+
+**Step 7's firewall rule covers a quarter of the LAN.** `ufw allow from
+192.168.51.0/24` was written for a /24. On the real /21 it admits
+192.168.51.x and refuses 48.x–50.x and 52.x–55.x — which includes the
+laptop this was diagnosed from. It has not bitten because ufw is not
+enforcing (`ENABLED=no` in `/etc/ufw/ufw.conf`, although the service is
+running); enable it and the app disappears for most of the building.
+The rule wants `192.168.48.0/21`.
+
+**Until the cable, work with the asymmetry.** `-z` in the step 0 rsync
+is doing real work — source is text and compresses several times over
+— so keep it. Split anything large into parallel streams; four gave
+2.5× the throughput of one. And keep the directions straight: copying
+*out* of the host — the exported image, results someone wants on their
+laptop — is the cheap one.
 
 ## Resources
 
