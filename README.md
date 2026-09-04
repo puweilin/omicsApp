@@ -67,6 +67,9 @@ A few suites are deliberately opt-in:
 | `omicsCore/tests/testthat/test-concurrent-writers.R` | `callr` installed | two R processes autosaving one `.omp` while a third reads it |
 | `omicsApp/tests/testthat/test-app-smoke.R` | Chrome available | the seven views in a browser, from source |
 | `omicsApp/tests/testthat/test-deploy-contract.R` | `deploy/` present | the ports, paths and package lists that three deploy files must agree on |
+| `omicsApp/tests/testthat/test-app-journey.R` | Chrome available | upload, run, enrich, download the script, replace the data, in a browser |
+| `omicsCore/tests/testthat/test-golden-rnaseq-follicle.R` | the parent project's `data/` and `results/`, or `OMICSAPP_FOLLICLE_ROOT` | the follicle counts file through filter, winsorize and edgeR, against the legacy report's table |
+| `*/tests/testthat/test-c-locale.R` | `callr` installed | the package in a child process running under `LC_ALL=C`, as a container without a locale would |
 
 `omicsCore/tests/testthat/fixtures/omp/` is a corpus of `.omp` files written
 by past versions; every file in it must keep opening. When the schema
