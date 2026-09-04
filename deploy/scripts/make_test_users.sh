@@ -94,8 +94,11 @@ cat <<DONE
 ${COUNT} accounts created.
 
   ${YAML}
-      the block to paste under proxy.users: in
-      /etc/shinyproxy/application.yml, then: systemctl restart shinyproxy
+      the accounts. Install them with:
+          sudo ${SCRIPT_DIR}/install_users.sh ${YAML}
+      Add your own admin account to that file first -- install_users.sh
+      replaces the list rather than adding to it, so whatever is not in
+      the file will not be in the config.
 
   ${SECRETS}
       mode 600, the only copy of the passwords. Hand them out, then:
