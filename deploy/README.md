@@ -78,15 +78,19 @@ sudo apt-get install -y docker.io nginx rsync
 sudo systemctl enable --now docker
 
 # ShinyProxy is a jar; the .deb installs it plus a systemd unit.
-# Check https://shinyproxy.io/downloads/ for the current version.
-# openjdk-17-jdk-headless, not -jre-headless: the .deb depends on
-# "openjdk-17-jdk-headless | openjdk-17-jre", and -jre-headless is
+#
+# 3.2.4, not 3.1.1: on Docker 28+ the older release cannot start any
+# container at all. See "Things that will bite you".
+#
+# openjdk-21-jdk-headless, not -jre-headless: the .deb depends on
+# "openjdk-21-jdk-headless | openjdk-21-jre", and -jre-headless is
 # neither of those -- it is the package they both depend on. dpkg
 # unpacks and then refuses to configure, which reads like a broken
-# download rather than a missing dependency.
-sudo apt-get install -y openjdk-17-jdk-headless
-wget https://github.com/openanalytics/shinyproxy/releases/download/v3.1.1/shinyproxy_3.1.1_amd64.deb
-sudo dpkg -i shinyproxy_3.1.1_amd64.deb
+# download rather than a missing dependency. (3.1.1 wanted Java 17;
+# 3.2.x wants 21.)
+sudo apt-get install -y openjdk-21-jdk-headless
+wget https://github.com/openanalytics/shinyproxy/releases/download/v3.2.4/shinyproxy_3.2.4_amd64.deb
+sudo dpkg -i shinyproxy_3.2.4_amd64.deb
 
 # Optional: the mDNS hostname alias (see nginx/omicsapp.conf)
 sudo apt-get install -y avahi-daemon
@@ -298,6 +302,40 @@ The last row is the Phase 0 fix that mattered most; it needs a
 colleague to check.
 
 ## Things that will bite you
+
+The first three below were all latent for the same reason, and it is
+worth naming: nobody had ever logged in successfully, so no code path
+downstream of "start a container" had ever run. Three separate faults
+were sitting in a row, and each one only became visible after the one
+before it was fixed. If a deployment has never served a real session,
+assume the same and fix them in order rather than concluding the first
+one was the problem.
+
+**ShinyProxy before 3.2 cannot start any container on Docker 28+.** The
+failure is `Cannot build ImageInfo, some of required attributes are not
+set [comment, dockerVersion, author]`, on a request that returned HTTP
+200 — the call succeeded and the *parse* failed. Docker no longer
+returns those legacy v1 image-config fields, and the `docker-client
+7.0.8-OA-3` bundled in 3.1.1 requires them. It affects every image,
+pulled or built, so neither rebuilding nor switching off the containerd
+image store helps. 3.2.4 bundles `7.0.8-OA-5`, where the three fields
+are no longer in the builder's required set. That upgrade also moves
+Java 17 to 21.
+
+**`internal-networking` must be false when ShinyProxy runs on the
+host.** True makes it address containers by their Docker-network
+hostname, which resolves through Docker's embedded DNS — available
+inside containers, not to a systemd service. The container starts, the
+health check fails with `UnknownHostException: <container id>`, and the
+browser says "Failed to start app", which reads like the application
+crashed.
+
+**`server.forward-headers-strategy` is required behind TLS.** Without
+it every absolute URL is built from the request as nginx forwarded it,
+i.e. plain HTTP. nginx redirects those back, so the site works and
+merely costs a round trip — but the OIDC `redirect_uri` is built the
+same way, and Keycloak rejects a `http://` one against a `https://`
+registration.
 
 **The build context is the repository root.** The Dockerfile COPYs both
 `packages/omicsCore` and `packages/omicsApp`. `docker build` from
