@@ -12,7 +12,11 @@
 # 3.2.0 and would also drag Java 17 up to 21.
 
 proxy:
-  port: 8080
+  # 8081, not the conventional 8080: this is a shared machine and a
+  # colleague's service holds 8080 (`Server: SkinAtlas/1.0`). Pointing
+  # nginx at 8080 does not fail loudly -- it forwards to that service,
+  # which answers 401, and the login page never appears.
+  port: 8081
   # Bind to localhost only; nginx terminates the connection from users.
   bind-address: 127.0.0.1
 
@@ -127,17 +131,22 @@ proxy:
       # first working out where #{proxy.userId} would resolve to.
 
 # ShinyProxy is a Spring Boot application and runs a second server for
-# the actuator endpoints, on 9090 by default. On a shared machine that
-# is as likely to be occupied as 8080, and when it cannot bind, the
-# whole context fails to start -- after the main port has already come
-# up, so the log says "Undertow started on port 8081" and then "Web
-# server failed to start", which reads like a contradiction.
+# the actuator endpoints, on 9090 by default -- taken here by `mihomo`,
+# the same way 8080 is taken by a colleague's service. When it cannot
+# bind, the whole context fails to start, but only after the main port
+# has come up: the log says "Undertow started on port 8081" and then
+# "Web server failed to start", which reads like a contradiction.
 #
-# Check both before starting:
-#   sudo ss -tln | grep -E ':(8080|9090) '
+# Check both of the ports this file actually uses before starting:
+#   sudo ss -tlnp | grep -E ':(8081|9091) '
 management:
   server:
     port: 9091
+    # Localhost, like the main port. Left at the default it binds every
+    # interface, which puts Spring's actuator endpoints on the lab
+    # network -- and this file now holds an OIDC client secret that
+    # /actuator/env would hand out.
+    address: 127.0.0.1
 
 logging:
   file:

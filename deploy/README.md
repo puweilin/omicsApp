@@ -4,7 +4,7 @@ Serves the app to a small group (3–4 concurrent users) on an internal
 network, one container per logged-in user.
 
 ```
-browser ──HTTPS──> nginx ─┬─> ShinyProxy(:8080) ──> omicsapp container × N
+browser ──HTTPS──> nginx ─┬─> ShinyProxy(:8081) ──> omicsapp container × N
                           │     └─ lifecycle          └─ /data ← /srv/omicsapp/users/<sub>
                           └─> Keycloak(:8180) ──> accounts, passwords, self-service
 ```
@@ -226,30 +226,38 @@ order and the reasoning are in [`keycloak/README.md`](keycloak/README.md).
 Stand Keycloak up first. ShinyProxy fetches the signing keys at startup
 and will not start without them.
 
-**Check both ports first.** This is a shared machine, and 8080 is what
-everyone reaches for -- but ShinyProxy binds a second one too, for the
-actuator endpoints, on 9090:
+**The template ships 8081 and 9091, not the defaults.** This is a shared
+machine: 8080 belongs to a colleague's service (`Server: SkinAtlas/1.0`)
+and 9090 to something called `mihomo`. ShinyProxy binds two ports — the
+one users reach, and a second for Spring's actuator endpoints — and both
+conventional choices are taken here.
+
+Check before starting, because neither collision announces itself
+usefully:
 
 ```bash
-sudo ss -tln | grep -E ':(8080|9090) ' && echo "TAKEN -- pick another"
+sudo ss -tlnp | grep -E ':(8081|9091) ' && echo "TAKEN -- pick another"
 ```
 
-Miss the second and the log contradicts itself: "Undertow started on
-port 8081" followed by "Web server failed to start. Port 9090 was
-already in use." The main port really did come up; the context failed
-anyway, so nothing serves. `management.server.port` in the template
-moves it.
+The actuator collision is the confusing one. The log contradicts itself:
+"Undertow started on port 8081" followed by "Web server failed to start.
+Port 9090 was already in use." The main port really did come up; the
+context failed anyway, so nothing serves.
 
-If it is taken, change it in *both* places or the two halves will
-disagree without either complaining:
+The wrong-port collision is worse, because it does not fail at all.
+Point nginx at 8080 here and it forwards to the neighbouring service,
+which answers `401` — a login prompt for software you have never heard
+of, and nothing in any log to say ShinyProxy was never involved.
+
+`proxy.port` in `application.yml` and `proxy_pass` in the nginx site are
+two files that must agree. After any change to either:
 
 ```bash
-sudo sed -i 's/^  port: 8080$/  port: 8081/' /etc/shinyproxy/application.yml
-sudo sed -i 's|127.0.0.1:8080|127.0.0.1:8081|' /etc/nginx/sites-available/omicsapp
+curl -sI http://127.0.0.1:8081 | head -3
 ```
 
-`curl -sI http://127.0.0.1:8081 | head -3` afterwards: if the `Server`
-header names something else, that port belongs to another service too.
+If the `Server` header names something else, that port belongs to
+another service too.
 
 ### 7. nginx and firewall
 
