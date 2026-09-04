@@ -137,7 +137,7 @@ integration_view_server <- function(id,
             "Sample-level integration needs to know which sample in each ",
             "layer came from the same person. Add a `donor` column to ",
             "each layer's sample metadata and re-import those layers, or ",
-            "rename the samples so they share a leading id — RD001-C ",
+            "rename the samples so they share a leading id \u2014 RD001-C ",
             "and RD001_Folli both give RD001. Nothing already computed ",
             "has to be re-run: donor is read by Integration and by ",
             "nothing else."),
@@ -152,7 +152,7 @@ integration_view_server <- function(id,
         sample_id = notice(sprintf("%d pairs, from sample ids that match outright.", n),
                            kind = "info"),
         suggested = notice(
-          sprintf("%d pairs, guessed from the sample ids — check them", n),
+          sprintf("%d pairs, guessed from the sample ids \u2014 check them", n),
           paste0("Nothing states that these are the same person; the ids ",
                  "merely share a leading part. Accept the pairing to keep ",
                  "it with the project, or state it properly with a donor ",
@@ -260,7 +260,7 @@ integration_view_server <- function(id,
     shiny::observeEvent(can_run(), {
       # Auto-run as soon as prerequisites become true; observers
       # higher up (project change, new diff bundle) drive this.
-      # `ignoreInit = TRUE` keeps this quiet on session start —
+      # `ignoreInit = TRUE` keeps this quiet on session start --
       # otherwise the first evaluation of can_run() (=FALSE) would
       # fire `is_demo(TRUE)` unnecessarily and, combined with a
       # Re-run click in the same flush, could double-run do_run().

@@ -321,7 +321,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           "No depth summary for this layer."
         } else {
           low <- omicsCore::qc_depth_outliers(d)
-          sprintf("%d samples · median library %s · %s",
+          sprintf("%d samples \u00b7 median library %s \u00b7 %s",
                   nrow(d),
                   format(round(stats::median(d$library_size)), big.mark = ","),
                   if (length(low) == 0L) "none shallow"
