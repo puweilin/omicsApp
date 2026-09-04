@@ -50,6 +50,23 @@ git checkout main
 git status --short   # must be empty, or the image matches no commit
 ```
 
+**Getting it onto the server.** There are no git credentials there, so
+this is a copy from the machine you work on, not a `git pull`:
+
+```bash
+rsync -avz --delete \
+  --exclude '.git/' \
+  --exclude 'deploy/keycloak/.env' \
+  ~/SciProject/CHISSS/omicsApp/ ps@192.168.51.52:~/omicsApp/
+```
+
+Both flags earn their place. `--delete` is what removes a script that
+was deleted upstream — otherwise it lingers on the server and someone
+runs it a year later. The exclusion protects `deploy/keycloak/.env`,
+which holds the Keycloak secrets, exists only on the server, and would
+otherwise be deleted by the next sync. (rsync does not delete excluded
+files, so naming it here is what keeps it.)
+
 ### 1. Host prerequisites
 
 Four things, and only four — everything else the application needs is
@@ -399,14 +416,30 @@ The data is on the HDD, so the backup goes to the **SSD** — a different
 physical disk, which is the point. There is ample room: 75 GB a year
 against 4 TB.
 
+**Two directories, not one.** `users/` is the work; `keycloak-db/` is
+the accounts. Without the second, a restore gives you every file and
+nobody who can log in to reach it — and the directory names are UUIDs,
+so there is no way to work out whose is whose after the fact.
+
 ```bash
 sudo mkdir -p /backup/omicsapp
-sudo rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp/users/
+sudo rsync -a --delete /srv/omicsapp/users/       /backup/omicsapp/users/
+sudo rsync -a --delete /srv/omicsapp/keycloak-db/ /backup/omicsapp/keycloak-db/
 ```
 
 ```cron
 # /etc/cron.d/omicsapp-backup — nightly at 02:30
 30 2 * * *  root  rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp/users/
+35 2 * * *  root  rsync -a --delete /srv/omicsapp/keycloak-db/ /backup/omicsapp/keycloak-db/
+```
+
+Copying Postgres' files while it is running gives you a backup that may
+need crash recovery to open. That is usually fine and is much better
+than nothing, but if these accounts ever become hard to recreate, take a
+real dump instead:
+
+```cron
+25 2 * * *  root  docker exec keycloak-db pg_dump -U keycloak keycloak | gzip > /backup/omicsapp/keycloak.sql.gz
 ```
 
 Two things this does not cover, so decide about them explicitly:
