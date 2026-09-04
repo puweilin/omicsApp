@@ -14,7 +14,8 @@ make_proteo <- function() {
     row.names = rownames(expr),
     stringsAsFactors = FALSE
   )
-  omics_input(expr, meta, feat, omics_type = "proteomics")
+  omics_input(expr, meta, feat, omics_type = "proteomics",
+              assay_type = "normalized_intensity")
 }
 
 make_rna <- function() {
@@ -34,7 +35,8 @@ make_rna <- function() {
     row.names = rownames(expr),
     stringsAsFactors = FALSE
   )
-  omics_input(expr, meta, feat, omics_type = "rnaseq")
+  omics_input(expr, meta, feat, omics_type = "rnaseq",
+              assay_type = "raw_count")
 }
 
 test_that("omics_project() constructs an empty project", {

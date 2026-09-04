@@ -6,7 +6,8 @@
 # parses and quietly omits an argument is the failure worth hunting.
 
 rs_input <- function(omics_type = "proteomics", source_path = "raw/x.xlsx",
-                     assay_type = "intensity") {
+                     assay_type = if (omics_type == "rnaseq") "logcpm"
+                                  else "normalized_intensity") {
   mat <- matrix(as.numeric(1:24), nrow = 6,
                 dimnames = list(paste0("g", 1:6), paste0("s", 1:4)))
   meta <- data.frame(group = c("A", "A", "B", "B"),

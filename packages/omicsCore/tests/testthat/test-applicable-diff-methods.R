@@ -22,7 +22,7 @@ test_that("raw counts get the count-native engines only", {
 })
 
 test_that("continuous data never offers a count model", {
-  for (inp in list(make_input("proteomics", "intensity"),
+  for (inp in list(make_input("proteomics", "normalized_intensity"),
                    make_input("proteomics", "normalized_intensity"),
                    make_input("rnaseq", "tpm"),
                    make_input("rnaseq", "fpkm"))) {
@@ -42,11 +42,11 @@ test_that("rnaseq only counts as counts when the assay says so", {
 
 test_that("auto is always offered", {
   expect_true("auto" %in% applicable_diff_methods(make_input("rnaseq", "raw_count")))
-  expect_true("auto" %in% applicable_diff_methods(make_input("proteomics", "intensity")))
+  expect_true("auto" %in% applicable_diff_methods(make_input("proteomics", "normalized_intensity")))
 })
 
 test_that("a continuous predictor narrows to the regression backends", {
-  m <- applicable_diff_methods(make_input("proteomics", "intensity"),
+  m <- applicable_diff_methods(make_input("proteomics", "normalized_intensity"),
                                analysis_type = "continuous")
   expect_true(all(c("limma", "lm") %in% m))
   # A two-sample t-test has no continuous predictor to regress on.
@@ -57,14 +57,14 @@ test_that("every offered method is one run_diff() accepts", {
   # A gate that offers a name the dispatcher rejects would trade a
   # silent wrong answer for a loud crash -- better, but still a bug.
   for (inp in list(make_input("rnaseq", "raw_count"),
-                   make_input("proteomics", "intensity"))) {
+                   make_input("proteomics", "normalized_intensity"))) {
     expect_true(all(applicable_diff_methods(inp) %in% SUPPORTED_DIFF_METHODS))
   }
 })
 
 test_that("auto never resolves to a method the gate would have hidden", {
   skip_if_not_installed("limma")
-  inp <- make_input("proteomics", "intensity")
+  inp <- make_input("proteomics", "normalized_intensity")
   chosen <- auto_select_diff_method(inp, "group")
   expect_true(chosen %in% applicable_diff_methods(inp))
 })

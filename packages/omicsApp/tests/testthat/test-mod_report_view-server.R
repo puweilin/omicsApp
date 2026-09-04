@@ -26,7 +26,7 @@ test_that("report view boots with live project and bundles attached", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   inp <- parsed$input
   proj <- omicsCore::omics_project(
     name        = "test-proj",
@@ -58,7 +58,7 @@ test_that("report view boots when project has no bundles yet", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   proj <- omicsCore::omics_project(
     name        = "empty-proj",
     experiments = list(proteomics = parsed$input)
@@ -94,7 +94,7 @@ test_that("the code panel shows the calls that produced the project", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  inp <- omicsCore::read_omics(xlsx, omics_type = "proteomics")$input
+  inp <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")$input
   inp$source_path <- xlsx
   proj <- omicsCore::omics_project("panel", experiments = list(proteomics = inp))
   proj$bundles <- list()

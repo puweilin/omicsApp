@@ -48,7 +48,7 @@ test_that("qc view handles project with single experiment", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   proj <- omicsCore::omics_project(
     name = "test",
     experiments = list(proteomics = parsed$input)

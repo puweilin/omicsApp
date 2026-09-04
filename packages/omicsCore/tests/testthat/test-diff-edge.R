@@ -16,7 +16,7 @@ make_diff_input <- function(n_feat = 20, n_samp = 8) {
     feature_name = paste0("Gene", seq_len(n_feat)),
     stringsAsFactors = FALSE
   )
-  omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "intensity")
+  omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "normalized_intensity")
 }
 
 # ---- run_diff: basic execution -----------------------------------------

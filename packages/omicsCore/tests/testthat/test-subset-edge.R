@@ -11,7 +11,7 @@ make_subset_input <- function() {
                      feature_name = paste0("Gene", 1:10),
                      stringsAsFactors = FALSE)
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 # ---- subset_omics ------------------------------------------------------

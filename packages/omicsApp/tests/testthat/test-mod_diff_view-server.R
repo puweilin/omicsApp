@@ -39,7 +39,7 @@ test_that("diff view runs run_diff() against the live project", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   inp <- parsed$input
   proj <- omicsCore::omics_project(
     name        = "test",
@@ -84,7 +84,7 @@ test_that("diff view surfaces validation errors instead of crashing", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   proj <- omicsCore::omics_project(
     name        = "test",
     experiments = list(proteomics = parsed$input)

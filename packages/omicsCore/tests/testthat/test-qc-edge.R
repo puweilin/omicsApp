@@ -14,7 +14,7 @@ make_small_input <- function(nrow = 10, ncol = 8) {
     feature_name = paste0("Gene", seq_len(nrow)),
     stringsAsFactors = FALSE
   )
-  omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "intensity")
+  omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "normalized_intensity")
 }
 
 # ---- qc_missingness ----------------------------------------------------
@@ -179,7 +179,8 @@ test_that("qc_outliers on single sample errors for pca", {
   meta <- data.frame(group = "A", row.names = "s1")
   feat <- data.frame(feature_id = paste0("g", 1:5), feature_name = paste0("G", 1:5),
                      stringsAsFactors = FALSE)
-  inp <- omics_input(mat, meta, feat, omics_type = "proteomics")
+  inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
+                     assay_type = "normalized_intensity")
   # prcomp needs >= 2 observations; single sample should error
   expect_error(qc_outliers(inp, method = "pca"))
 })
@@ -189,7 +190,8 @@ test_that("qc_outliers on single sample works for connectivity", {
   meta <- data.frame(group = "A", row.names = "s1")
   feat <- data.frame(feature_id = paste0("g", 1:5), feature_name = paste0("G", 1:5),
                      stringsAsFactors = FALSE)
-  inp <- omics_input(mat, meta, feat, omics_type = "proteomics")
+  inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
+                     assay_type = "normalized_intensity")
   res <- qc_outliers(inp, method = "connectivity")
   expect_equal(length(res$flagged_samples), 0)
 })
@@ -199,7 +201,8 @@ test_that("qc_outliers on single sample works for iqr", {
   meta <- data.frame(group = "A", row.names = "s1")
   feat <- data.frame(feature_id = paste0("g", 1:5), feature_name = paste0("G", 1:5),
                      stringsAsFactors = FALSE)
-  inp <- omics_input(mat, meta, feat, omics_type = "proteomics")
+  inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
+                     assay_type = "normalized_intensity")
   res <- qc_outliers(inp, method = "iqr")
   expect_equal(res$method, "iqr")
 })

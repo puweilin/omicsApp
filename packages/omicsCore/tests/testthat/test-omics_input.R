@@ -43,7 +43,8 @@ test_that("omics_input() rejects mismatched dimensions", {
   feat <- data.frame(feature_id = paste0("g", 1:4),
                      row.names = paste0("g", 1:4))
   expect_error(
-    omics_input(expr, meta, feat, omics_type = "proteomics"),
+    omics_input(expr, meta, feat, omics_type = "proteomics",
+                assay_type = "normalized_intensity"),
     "ncol\\(expr_mat\\)"
   )
 })
@@ -57,7 +58,8 @@ test_that("omics_input() requires feature_id column", {
   feat <- data.frame(symbol = paste0("g", 1:4),
                      row.names = paste0("g", 1:4))
   expect_error(
-    omics_input(expr, meta, feat, omics_type = "proteomics"),
+    omics_input(expr, meta, feat, omics_type = "proteomics",
+                assay_type = "normalized_intensity"),
     "feature_id"
   )
 })

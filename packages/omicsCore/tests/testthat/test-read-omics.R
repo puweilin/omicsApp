@@ -183,7 +183,8 @@ test_that("read_omics ImportReport carries one row per sheet", {
   on.exit(unlink(path), add = TRUE)
   write_demo_workbook(path, expr)
 
-  out <- read_omics(path, omics_type = "proteomics")
+  out <- read_omics(path, omics_type = "proteomics",
+                    assay_type = "normalized_intensity")
   expect_equal(nrow(out$report$sheets), 3L)
   expect_setequal(out$report$sheets$role,
                   c("matrix", "metadata", "feature_annot"))
@@ -208,7 +209,8 @@ test_that("read_omics still produces a report with no metadata sheet", {
   on.exit(unlink(path), add = TRUE)
   write_demo_workbook(path, expr, include_meta = FALSE)
 
-  out <- read_omics(path, omics_type = "proteomics")
+  out <- read_omics(path, omics_type = "proteomics",
+                    assay_type = "normalized_intensity")
   expect_s3_class(out$input, "omics_input")
   # Synthetic sample_id metadata column should fill in.
   expect_true("sample_id" %in% colnames(out$input$meta_df))
@@ -225,7 +227,7 @@ test_that("read_omics reads a TSV matrix file", {
   utils::write.table(df, file = path, sep = "\t",
                      quote = FALSE, row.names = FALSE)
 
-  out <- read_omics(path, omics_type = "rnaseq")
+  out <- read_omics(path, omics_type = "rnaseq", assay_type = "logcpm")
   expect_s3_class(out$input, "omics_input")
   expect_equal(nrow(out$report$sheets), 1L)
   expect_identical(out$report$sheets$role, "matrix")
@@ -239,7 +241,8 @@ test_that("read_omics passes an omics_input through unchanged", {
                      row.names = colnames(expr), stringsAsFactors = FALSE)
   feat <- data.frame(feature_id = rownames(expr),
                      row.names = rownames(expr), stringsAsFactors = FALSE)
-  input <- omics_input(expr, meta, feat, omics_type = "proteomics")
+  input <- omics_input(expr, meta, feat, omics_type = "proteomics",
+                       assay_type = "normalized_intensity")
   path <- tempfile(fileext = ".rds")
   on.exit(unlink(path), add = TRUE)
   saveRDS(input, path)
@@ -258,7 +261,8 @@ test_that("read_omics RDS path tolerates a bare data.frame", {
   on.exit(unlink(path), add = TRUE)
   saveRDS(df, path)
 
-  out <- read_omics(path, omics_type = "proteomics")
+  out <- read_omics(path, omics_type = "proteomics",
+                    assay_type = "normalized_intensity")
   expect_s3_class(out$report, "ImportReport")
   expect_s3_class(out$input, "omics_input")
 })
@@ -282,7 +286,8 @@ test_that("read_omics flags an empty workbook gracefully", {
   on.exit(unlink(path), add = TRUE)
   openxlsx::write.xlsx(list(empty = data.frame()), file = path, overwrite = TRUE)
 
-  out <- read_omics(path, omics_type = "proteomics")
+  out <- read_omics(path, omics_type = "proteomics",
+                    assay_type = "normalized_intensity")
   expect_null(out$input)
   expect_true(length(out$report$warnings) > 0L)
 })

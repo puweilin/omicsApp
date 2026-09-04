@@ -31,7 +31,7 @@ test_that("integration view stays on demo when project has only one experiment",
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   proj <- omicsCore::omics_project(
     name        = "single-layer",
     experiments = list(proteomics = parsed$input)
@@ -57,12 +57,12 @@ test_that("integration view runs concordance when two compatible layers exist", 
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   inp_a <- parsed$input
   # Build a second compatible layer: same meta_df, fresh expression.
   inp_b <- inp_a
   inp_b$omics_type <- "rnaseq"
-  inp_b$assay_type <- "log_expr"  # treat as log space so ttest is happy
+  inp_b$assay_type <- "logcpm"  # log space, so ttest is happy
   proj <- omicsCore::omics_project(
     name        = "dual",
     experiments = list(proteomics = inp_a, rnaseq = inp_b)

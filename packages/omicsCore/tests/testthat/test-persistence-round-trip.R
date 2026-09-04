@@ -4,14 +4,15 @@
 # fingerprint stops recognising a re-upload, or the exported script
 # loses the path to the file it was generated from.
 
-rt_input <- function(...) {
+rt_input <- function(assay_type = "normalized_intensity", ...) {
   mat <- matrix(as.numeric(1:24), nrow = 6,
                 dimnames = list(paste0("g", 1:6), paste0("s", 1:4)))
   meta <- data.frame(group = c("A", "A", "B", "B"),
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:6),
                      feature_symbol = paste0("SYM", 1:6))
-  omics_input(mat, meta, feat, omics_type = "proteomics", ...)
+  omics_input(mat, meta, feat, omics_type = "proteomics",
+              assay_type = assay_type, ...)
 }
 
 save_and_load <- function(project) {
@@ -23,7 +24,7 @@ save_and_load <- function(project) {
 
 test_that("the import fingerprint survives a save/load cycle", {
   skip_if_not_installed("qs2")
-  inp <- rt_input(assay_type = "intensity",
+  inp <- rt_input(assay_type = "normalized_intensity",
                   source_fingerprint = "abc123:proteomics:intensity")
   back <- save_and_load(omics_project("p", experiments = list(proteomics = inp)))
   # Without this, a restored session cannot tell a re-upload of the same
@@ -58,7 +59,7 @@ test_that("a project saved before these fields existed still loads", {
 test_that("bundles survive well enough to export a script from a restored project", {
   skip_if_not_installed("qs2")
   skip_if_not_installed("limma")
-  inp <- rt_input(assay_type = "intensity", source_path = "raw/cheek.xlsx")
+  inp <- rt_input(assay_type = "normalized_intensity", source_path = "raw/cheek.xlsx")
   dif <- run_diff(inp, method = "limma", analysis_type = "group",
                   group_col = "group", control_group = "A", case_group = "B")
   proj <- omics_project("restored", experiments = list(proteomics = inp))
@@ -78,7 +79,7 @@ test_that("bundles survive well enough to export a script from a restored projec
 test_that("a restored bundle still plots", {
   skip_if_not_installed("qs2")
   skip_if_not_installed("limma")
-  inp <- rt_input(assay_type = "intensity")
+  inp <- rt_input(assay_type = "normalized_intensity")
   dif <- run_diff(inp, method = "limma", analysis_type = "group",
                   group_col = "group", control_group = "A", case_group = "B")
   proj <- omics_project("p", experiments = list(proteomics = inp))

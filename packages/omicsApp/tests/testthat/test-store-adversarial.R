@@ -26,7 +26,7 @@ adv_project <- function(name = "adv") {
   meta <- data.frame(group = c("A", "A", "B", "B"),
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:3))
-  inp <- omicsCore::omics_input(mat, meta, feat, omics_type = "proteomics")
+  inp <- omicsCore::omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "normalized_intensity")
   omicsCore::omics_project(name = name,
                            experiments = list(proteomics = inp))
 }

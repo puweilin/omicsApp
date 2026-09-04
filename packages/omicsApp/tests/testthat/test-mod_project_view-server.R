@@ -23,7 +23,7 @@ test_that("project view shows live experiment when project has one layer", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   proj <- omicsCore::omics_project(
     name        = "single-layer",
     experiments = list(proteomics = parsed$input)
@@ -44,7 +44,7 @@ test_that("project view lists both experiments when project has two layers", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   inp_a <- parsed$input
   inp_b <- inp_a
   inp_b$omics_type <- "rnaseq"

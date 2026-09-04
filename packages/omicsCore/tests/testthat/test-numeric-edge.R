@@ -14,7 +14,7 @@ make_numeric_input <- function(n_feat = 20, n_samp = 8) {
   feat <- data.frame(feature_id = rownames(mat),
                      stringsAsFactors = FALSE)
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 make_count_input <- function(n_feat = 30, n_samp = 8) {
@@ -317,7 +317,7 @@ make_dual_proj_int <- function() {
   colnames(i2$expr_mat) <- paste0("t", 1:6)
   rownames(i2$meta_df) <- paste0("t", 1:6)
   i2$omics_type <- "rnaseq"
-  i2$assay_type <- "normalized_count"
+  i2$assay_type <- "logcpm"
   proj <- omics_project("dual",
                         experiments = list(proteomics = i1, rnaseq = i2))
   d1 <- run_diff(i1, method = "ttest", analysis_type = "group",

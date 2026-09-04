@@ -11,7 +11,7 @@ make_persist_project <- function() {
                      feature_name = paste0("Gene", 1:20),
                      stringsAsFactors = FALSE)
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   proj <- omics_project("persist_test")
   proj <- add_experiment(proj, "prot", inp)
   proj
@@ -27,7 +27,7 @@ make_persist_input <- function() {
                      feature_name = paste0("Gene", 1:20),
                      stringsAsFactors = FALSE)
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 # ---- save_project / load_project ---------------------------------------

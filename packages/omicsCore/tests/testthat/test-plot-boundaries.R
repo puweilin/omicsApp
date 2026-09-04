@@ -13,7 +13,7 @@ pb_input <- function(n_features = 6L, values = NULL) {
   feat <- data.frame(feature_id = paste0("g", seq_len(n)),
                      feature_symbol = paste0("SYM", seq_len(n)))
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 pb_diff <- function(input = pb_input()) {
@@ -172,7 +172,7 @@ pb_split_diff <- function() {
   feat <- data.frame(feature_id = rownames(mat),
                      feature_symbol = rownames(mat))
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   run_diff(inp, method = "limma", analysis_type = "group",
            group_col = "group", control_group = "A", case_group = "B")
 }

@@ -37,7 +37,7 @@ fixture_project <- function(source_path = NULL) {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:6))
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity", source_path = source_path)
+                     assay_type = "normalized_intensity", source_path = source_path)
   proj <- omics_project("fixture", experiments = list(proteomics = inp))
   proj$bundles <- list()
   proj
@@ -224,7 +224,7 @@ test_that("an exported script reproduces the analysis it describes", {
   write_tiny_workbook(data_file)
 
   parsed <- read_omics(data_file, omics_type = "proteomics",
-                       assay_type = "intensity")
+                       assay_type = "normalized_intensity")
   inp <- parsed$input
   inp$source_path <- data_file
 

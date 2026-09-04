@@ -13,6 +13,7 @@ fake_input <- function(fingerprint = NULL, n_features = 3L) {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", seq_len(n_features)))
   omicsCore::omics_input(mat, meta, feat, omics_type = "proteomics",
+                         assay_type = "normalized_intensity",
                          source_fingerprint = fingerprint)
 }
 

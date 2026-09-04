@@ -11,7 +11,7 @@ make_tiny_input <- function(n_feat = 3, n_samp = 4) {
   )
   feat <- data.frame(feature_id = rownames(mat), stringsAsFactors = FALSE)
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 # Build a minimal valid diff_result_df conforming to the schema in
@@ -50,7 +50,7 @@ test_that("omics_input accepts a 1-feature matrix", {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = "g1", stringsAsFactors = FALSE)
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   expect_equal(nrow(inp$expr_mat), 1)
 })
 
@@ -60,7 +60,7 @@ test_that("omics_input accepts a 2-sample matrix", {
   meta <- data.frame(group = c("A", "B"), row.names = c("s1", "s2"))
   feat <- data.frame(feature_id = paste0("g", 1:3))
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   expect_equal(ncol(inp$expr_mat), 2)
 })
 
@@ -70,7 +70,7 @@ test_that("summarize_omics handles 1-feature input", {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = "g1")
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   s <- summarize_omics(inp)
   expect_true(is.list(s) || inherits(s, "data.frame") || is.character(s))
 })
@@ -85,7 +85,7 @@ test_that("omics_input accepts matrix with all-NA feature", {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:5))
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
-                     assay_type = "intensity")
+                     assay_type = "normalized_intensity")
   expect_true(all(is.na(inp$expr_mat[1, ])))
 })
 
@@ -97,7 +97,7 @@ test_that("omics_input accepts matrix with constant feature", {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:5))
   expect_no_error(omics_input(mat, meta, feat, omics_type = "proteomics",
-                              assay_type = "intensity"))
+                              assay_type = "normalized_intensity"))
 })
 
 test_that("omics_input accepts matrix with all-zero feature", {
@@ -108,7 +108,7 @@ test_that("omics_input accepts matrix with all-zero feature", {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:5))
   expect_no_error(omics_input(mat, meta, feat, omics_type = "proteomics",
-                              assay_type = "intensity"))
+                              assay_type = "normalized_intensity"))
 })
 
 test_that("omics_input accepts negative values (log-transformed data)", {
@@ -118,7 +118,7 @@ test_that("omics_input accepts negative values (log-transformed data)", {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:5))
   expect_no_error(omics_input(mat, meta, feat, omics_type = "proteomics",
-                              assay_type = "log_intensity"))
+                              assay_type = "normalized_intensity"))
 })
 
 test_that("omics_input accepts Inf values (downstream may filter)", {
@@ -130,7 +130,7 @@ test_that("omics_input accepts Inf values (downstream may filter)", {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:5))
   expect_no_error(omics_input(mat, meta, feat, omics_type = "proteomics",
-                              assay_type = "intensity"))
+                              assay_type = "normalized_intensity"))
 })
 
 test_that("omics_input accepts NaN values", {
@@ -141,7 +141,7 @@ test_that("omics_input accepts NaN values", {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:5))
   expect_no_error(omics_input(mat, meta, feat, omics_type = "proteomics",
-                              assay_type = "intensity"))
+                              assay_type = "normalized_intensity"))
 })
 
 # ---- Integer vs double matrices ----------------------------------------

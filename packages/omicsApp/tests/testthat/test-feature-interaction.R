@@ -24,7 +24,7 @@ fi_input <- function(fingerprint = NULL, source_path = NULL, n = 6L) {
   feat <- data.frame(feature_id = paste0("g", seq_len(n)),
                      feature_symbol = paste0("SYM", seq_len(n)))
   omicsCore::omics_input(mat, meta, feat, omics_type = "proteomics",
-                         assay_type = "intensity",
+                         assay_type = "normalized_intensity",
                          source_fingerprint = fingerprint,
                          source_path = source_path)
 }

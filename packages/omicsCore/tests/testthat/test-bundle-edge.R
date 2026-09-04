@@ -181,7 +181,7 @@ test_that("pick_features_by_variance returns top-N feature_ids", {
                 dimnames = list(paste0("g", 1:10), paste0("s", 1:6)))
   # row 1 has highest variance
   mat[1, ] <- c(0, 100, 0, 100, 0, 100)
-  out <- pick_features_by_variance(mat, assay_type = "intensity",
+  out <- pick_features_by_variance(mat, assay_type = "normalized_intensity",
                                    n_top = 3L, features = rownames(mat))
   expect_true("g1" %in% out)
 })
@@ -189,7 +189,7 @@ test_that("pick_features_by_variance returns top-N feature_ids", {
 test_that("pick_features_by_variance n_top larger than rows returns all rows", {
   mat <- matrix(rnorm(30), nrow = 5, ncol = 6,
                 dimnames = list(paste0("g", 1:5), paste0("s", 1:6)))
-  out <- pick_features_by_variance(mat, assay_type = "intensity",
+  out <- pick_features_by_variance(mat, assay_type = "normalized_intensity",
                                    n_top = 100L, features = rownames(mat))
   expect_equal(length(out), 5)
 })
@@ -272,7 +272,7 @@ make_summary_input <- function(n_feat = 10, n_samp = 6) {
                      row.names = colnames(mat))
   feat <- data.frame(feature_id = rownames(mat))
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 test_that("summarize_omics_input returns a list for a valid input", {

@@ -12,7 +12,7 @@ make_io_input <- function(n_feat = 8, n_samp = 6) {
   )
   feat <- data.frame(feature_id = rownames(mat), stringsAsFactors = FALSE)
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 # ---- save_project / load_project --------------------------------------
@@ -132,12 +132,12 @@ test_that("read_omics_rds round-trips an omics_input", {
   on.exit(unlink(tf), add = TRUE)
   saveRDS(inp, tf)
   result <- read_omics_rds(tf, omics_type = "proteomics",
-                           assay_type = "intensity")
+                           assay_type = "normalized_intensity")
   expect_true(is.list(result) || is_omics_input(result))
 })
 
 test_that("read_omics_rds errors on nonexistent file", {
-  expect_error(read_omics_rds("/nope.rds"))
+  expect_error(suppressWarnings(read_omics_rds("/nope.rds")))
 })
 
 # ---- write_table / write_matrix ---------------------------------------

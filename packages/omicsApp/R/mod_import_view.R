@@ -84,11 +84,24 @@ import_view_server <- function(id,
       assay_type <- if (omics_type == "rnaseq") "raw_count" else "raw_intensity"
 
       out <- tryCatch(
-        omicsCore::read_omics(
-          f$datapath,
-          omics_type = omics_type,
-          assay_type = assay_type,
-          sheet_roles = role_overrides()
+        # The scale check inside omics_input() is muffled for this one
+        # call and nothing else: the label handed in here is the
+        # modality's default, and it is replaced from the values a few
+        # lines down. Warning about a label that is about to be
+        # corrected only trains people to ignore the warning that
+        # matters, the one at confirm time.
+        withCallingHandlers(
+          omicsCore::read_omics(
+            f$datapath,
+            omics_type = omics_type,
+            assay_type = assay_type,
+            sheet_roles = role_overrides()
+          ),
+          warning = function(w) {
+            if (grepl("implies (linear|log-scale) values", conditionMessage(w))) {
+              invokeRestart("muffleWarning")
+            }
+          }
         ),
         error = function(e) {
           list(

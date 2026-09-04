@@ -11,7 +11,7 @@ make_dual_project <- function() {
                       feature_name = paste0("Gene", 1:20),
                       stringsAsFactors = FALSE)
   inp1 <- omics_input(mat1, meta1, feat1, omics_type = "proteomics",
-                      assay_type = "intensity")
+                      assay_type = "normalized_intensity")
 
   mat2 <- matrix(rnorm(100, mean = 10, sd = 2), nrow = 20, ncol = 5)
   rownames(mat2) <- paste0("gene_", 1:20)
@@ -22,7 +22,7 @@ make_dual_project <- function() {
                       feature_name = paste0("Gene", 1:20),
                       stringsAsFactors = FALSE)
   inp2 <- omics_input(mat2, meta2, feat2, omics_type = "rnaseq",
-                      assay_type = "normalized_count")
+                      assay_type = "logcpm")
 
   omics_project("dual", experiments = list(proteomics = inp1, rnaseq = inp2))
 }

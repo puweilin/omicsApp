@@ -6,7 +6,7 @@
 # over the real one.
 
 tiny_project <- function(name = "p", n = 3L) {
-  m <- matrix(as.numeric(seq_len(n * 4)), n, 4,
+  m <- matrix(as.numeric(seq_len(n * 4)) / 10, n, 4,
               dimnames = list(paste0("g", seq_len(n)), paste0("s", 1:4)))
   meta <- data.frame(group = c("A", "A", "B", "B"), row.names = paste0("s", 1:4))
   omics_project(name = name, experiments = list(proteomics = omics_input(

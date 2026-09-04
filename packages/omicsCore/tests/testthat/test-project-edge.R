@@ -10,7 +10,7 @@ make_proj_input <- function() {
   feat <- data.frame(feature_id = paste0("gene_", 1:10),
                      stringsAsFactors = FALSE)
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 # ---- omics_project: construction ---------------------------------------

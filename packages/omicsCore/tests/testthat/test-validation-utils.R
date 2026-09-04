@@ -212,7 +212,7 @@ make_valid_input <- function() {
   mat <- matrix(1:12, nrow = 3, dimnames = list(paste0("g", 1:3), paste0("s", 1:4)))
   meta <- data.frame(group = 1:4, row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:3))
-  omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "intensity")
+  omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "normalized_intensity")
 }
 
 test_that("validate_omics_input returns TRUE for valid input", {

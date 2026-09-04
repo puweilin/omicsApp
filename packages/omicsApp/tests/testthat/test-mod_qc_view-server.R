@@ -35,7 +35,7 @@ test_that("qc view re-runs run_qc against the live project", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   inp <- parsed$input
   proj <- omicsCore::omics_project(
     name        = "test",
@@ -78,7 +78,7 @@ test_that("qc view surfaces run_qc errors instead of crashing", {
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
   write_tiny_omics_xlsx(xlsx, n_samples = 6L)
-  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics")
+  parsed <- omicsCore::read_omics(xlsx, omics_type = "proteomics", assay_type = "normalized_intensity")
   inp <- parsed$input
   proj <- omicsCore::omics_project(
     name        = "test",

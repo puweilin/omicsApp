@@ -12,7 +12,7 @@ make_valid_input <- function(n_feat = 5, n_samp = 6) {
   )
   feat <- data.frame(feature_id = rownames(mat), stringsAsFactors = FALSE)
   omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = "intensity")
+              assay_type = "normalized_intensity")
 }
 
 make_full_diff_df <- function(n = 5) {
@@ -286,7 +286,7 @@ test_that("coerce_to_continuous handles raw_count matrix", {
 
 test_that("coerce_to_continuous handles intensity matrix", {
   mat <- matrix(rnorm(20, mean = 10), nrow = 5)
-  out <- coerce_to_continuous(mat, assay_type = "intensity")
+  out <- coerce_to_continuous(mat, assay_type = "normalized_intensity")
   expect_true(is.matrix(out))
 })
 

@@ -13,7 +13,7 @@ make_test_input <- function() {
     feature_name = paste0("Gene", 1:10),
     stringsAsFactors = FALSE
   )
-  omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "intensity")
+  omics_input(mat, meta, feat, omics_type = "proteomics", assay_type = "normalized_intensity")
 }
 
 # ---- summarize_omics ---------------------------------------------------
