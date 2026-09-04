@@ -145,6 +145,28 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # `registered_rows` stops a second registration when the project is
     # replaced, which would otherwise fire the callback once per
     # duplicate.
+    pending_drop <- shiny::reactiveVal(NULL)
+    drop_layer_confirm <- function(session, tag) {
+      pending_drop(tag)
+      shiny::showModal(shiny::modalDialog(
+        title = sprintf("Remove layer '%s'?", tag),
+        htmltools::tags$p(
+          "The imported matrix, its metadata and every result computed ",
+          "on it go with it. Other layers in this project are untouched."
+        ),
+        htmltools::tags$p(
+          class = "muted",
+          "Saved projects on disk are not affected until you save again."
+        ),
+        footer = htmltools::tagList(
+          shiny::modalButton("Cancel"),
+          shiny::actionButton(session$ns("confirm_drop_layer"), "Remove",
+                              class = "btn btn-danger")
+        ),
+        easyClose = TRUE
+      ))
+    }
+
     registered_rows <- new.env(parent = emptyenv())
     shiny::observe({
       n <- length(resolved()$project$experiments)
@@ -161,8 +183,38 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
             tags_now <- names(resolved()$project$experiments)
             if (idx <= length(tags_now)) on_view_layer(tags_now[[idx]])
           }, ignoreInit = TRUE)
+
+          shiny::observeEvent(input[[paste0("drop_layer_", idx)]], {
+            proj <- current_project()
+            if (is.null(proj)) return()
+            tags_now <- names(proj$experiments)
+            if (idx > length(tags_now)) return()
+            drop_layer_confirm(session, tags_now[[idx]])
+          }, ignoreInit = TRUE)
         })
       }
+    })
+
+    # Confirmed, unlike the View link next to it: removing a layer throws
+    # away an import and every result computed on it, and the two links
+    # are one word apart.
+    shiny::observeEvent(input$confirm_drop_layer, {
+      proj <- current_project()
+      tag <- shiny::isolate(pending_drop())
+      shiny::removeModal()
+      if (is.null(proj) || is.null(tag) || !tag %in% names(proj$experiments)) {
+        return()
+      }
+      proj$experiments[[tag]] <- NULL
+      # A link naming a layer that is gone would pair samples to nothing.
+      if (!is.null(proj$sample_link) && nrow(proj$sample_link) > 0L) {
+        proj$sample_link <- proj$sample_link[proj$sample_link$tag != tag, ,
+                                             drop = FALSE]
+      }
+      current_project(proj)
+      pending_drop(NULL)
+      shiny::showNotification(sprintf("Removed layer '%s'.", tag),
+                              type = "message")
     })
 
     # ---- saved-project store -----------------------------------------
@@ -411,8 +463,18 @@ project_experiments_card <- function(experiments, ns = NULL) {
                   if (is.null(ns)) {
                     htmltools::tags$span(class = "muted", "View \u2192")
                   } else {
-                    shiny::actionLink(ns(paste0("view_layer_", i)),
-                                      "View \u2192")
+                    htmltools::tagList(
+                      shiny::actionLink(ns(paste0("view_layer_", i)),
+                                        "View \u2192"),
+                      # Per layer, because a project is usually only
+                      # wrong in one of them: re-importing a mistaken
+                      # RNA-seq layer should not cost the proteomics
+                      # work sitting next to it.
+                      htmltools::tags$span(class = "muted", " \u00b7 "),
+                      shiny::actionLink(ns(paste0("drop_layer_", i)),
+                                        "Remove",
+                                        class = "text-danger")
+                    )
                   }
                 )
               )

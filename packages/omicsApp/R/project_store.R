@@ -89,6 +89,16 @@ quota_exceeded <- function(dir = omicsapp_data_dir()) {
 #'   when no quota is configured.
 #' @keywords internal
 #' @noRd
+# A size a person can read. The number matters here -- it is what tells
+# someone whether deleting a project actually gave them room back.
+format_bytes <- function(bytes) {
+  if (!is.finite(bytes) || bytes <= 0) return("0 B")
+  units <- c("B", "KB", "MB", "GB", "TB")
+  i <- min(length(units), 1L + floor(log(bytes, 1024)))
+  sprintf(if (i == 1L) "%.0f %s" else "%.1f %s",
+          bytes / 1024^(i - 1L), units[[i]])
+}
+
 usage_label <- function(dir = omicsapp_data_dir()) {
   used_gb <- data_dir_usage_bytes(dir) / 1024^3
   quota <- omicsapp_quota_gb()
@@ -324,12 +334,73 @@ store_delete_project <- function(slug, dir = omicsapp_data_dir()) {
   if (!file.exists(path)) {
     return(list(ok = FALSE, message = sprintf("'%s' no longer exists.", slug)))
   }
+
+  # Read before removing: the project is the only record of which
+  # uploads belong to it.
+  mine <- project_fingerprints(path)
+
   removed <- suppressWarnings(file.remove(path))
-  if (isTRUE(removed)) {
-    list(ok = TRUE, message = sprintf("Deleted '%s'.", slug))
-  } else {
-    list(ok = FALSE, message = sprintf("Could not delete '%s'.", slug))
+  if (!isTRUE(removed)) {
+    return(list(ok = FALSE, message = sprintf("Could not delete '%s'.", slug)))
   }
+
+  freed <- prune_orphan_uploads(mine, dir)
+  msg <- if (freed$n > 0L) {
+    sprintf("Deleted '%s' and %d archived upload(s), %s freed.",
+            slug, freed$n, freed$label)
+  } else {
+    sprintf("Deleted '%s'.", slug)
+  }
+  list(ok = TRUE, message = msg)
+}
+
+# The fingerprints of every layer in a saved project, as the 12-character
+# digests store_raw_upload() names its files with.
+project_fingerprints <- function(path) {
+  proj <- tryCatch(omicsCore::load_project(path), error = function(e) NULL)
+  if (is.null(proj)) return(character(0))
+  fps <- vapply(proj$experiments,
+                function(e) e$source_fingerprint %||% NA_character_,
+                character(1L))
+  fps <- fps[!is.na(fps) & nzchar(fps)]
+  unique(substr(sub(":.*$", "", fps), 1L, 12L))
+}
+
+# Archived uploads are what actually fill the quota -- a project is a few
+# MB, the workbook behind it can be 170 -- so deleting a project without
+# them frees nothing the user can see.
+#
+# Only the ones nothing else refers to. Two projects built from one file
+# share its digest, and removing the archive because one of them went
+# would quietly take it from the other.
+prune_orphan_uploads <- function(digests, dir = omicsapp_data_dir()) {
+  none <- list(n = 0L, label = "0 B")
+  if (length(digests) == 0L) return(none)
+
+  # Through list_saved_projects() rather than a glob: projects are `.omp`,
+  # not `.rds`, and a pattern written from memory matched nothing --
+  # which made every upload look orphaned and deleted a file another
+  # project was still using.
+  #
+  # The autosave is deliberately included: it holds a real project, and
+  # an upload it refers to is one a restore would need.
+  others <- c(list_saved_projects(dir)$path,
+              file.path(dir, paste0(AUTOSAVE_SLUG, ".omp")))
+  others <- others[file.exists(others)]
+  still_used <- unlist(lapply(others, project_fingerprints), use.names = FALSE)
+  orphans <- setdiff(digests, still_used %||% character(0))
+  if (length(orphans) == 0L) return(none)
+
+  raw <- raw_dir(dir, create = FALSE)
+  if (!dir.exists(raw)) return(none)
+  files <- list.files(raw, full.names = TRUE)
+  hit <- files[grepl(paste0("__(", paste(orphans, collapse = "|"), ")\\."),
+                     basename(files))]
+  if (length(hit) == 0L) return(none)
+
+  bytes <- sum(file.size(hit), na.rm = TRUE)
+  ok <- suppressWarnings(file.remove(hit))
+  list(n = sum(ok), label = format_bytes(bytes))
 }
 
 #' Read a saved project back out of the store
