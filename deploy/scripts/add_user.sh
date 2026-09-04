@@ -73,19 +73,15 @@ else
 fi
 
 echo
-echo "Add this to the proxy.users list in application.yml:"
-echo
-if command -v htpasswd >/dev/null 2>&1; then
-    echo "  Generate the hash with:"
-    echo "    htpasswd -bnBC 10 \"\" 'THE-PASSWORD' | tr -d ':\\n'"
-else
-    echo "  htpasswd not found (apt-get install apache2-utils) --"
-    echo "  generate the bcrypt hash on another machine."
-fi
+echo "Add this to the proxy.users list in application.yml."
+echo "The password is plain text: simple authentication compares the"
+echo "field literally, so a bcrypt hash there is a password nobody can"
+echo "type. The file is the protection -- mode 600, owned by the"
+echo "shinyproxy service account."
 cat <<YAML
 
     - name: ${USERNAME}
-      password: "{bcrypt}REPLACE_WITH_HASH"
+      password: "CHOOSE-A-PASSWORD"
       groups: [lab]
 
 YAML

@@ -1,29 +1,39 @@
 #!/usr/bin/env bash
 #
-# Create N test accounts: private directories, random passwords, bcrypt
-# hashes, and the YAML block to paste into application.yml.
+# Create N test accounts: private directories, random passwords, and
+# the YAML block that configures them.
 #
 #   sudo deploy/scripts/make_test_users.sh 10
 #
 # Passwords are generated here and written to a file only you can read.
 # They are never printed to the terminal, so they do not end up in a
-# scrollback buffer or a shell history, and nothing has to type them
-# anywhere on your behalf.
+# scrollback buffer or a shell history.
+#
+# They go into the YAML in plain text, because that is the only thing
+# ShinyProxy's simple authentication accepts. Its backend does
+#     .password("{noop}" + user.password)
+# -- {noop} meaning "compare literally" -- so a bcrypt hash there is not
+# a hash, it is a password that happens to look like one. The official
+# documentation says as much by only ever showing plaintext, and warns
+# that this method is less secure than LDAP or OIDC for exactly this
+# reason.
+#
+# The protection is the file: /etc/shinyproxy/application.yml is mode
+# 600 and owned by the service account.
 #
 # Two files land next to you:
 #
 #   omicsapp-users.yml        hashes only -- paste into application.yml
 #   omicsapp-passwords.txt    mode 600 -- hand out, then delete
 #
-# Delete the second one once the accounts are distributed. A bcrypt
-# hash is not reversible; that file is the only copy.
+# Delete the handout file once the accounts are distributed.
 
 set -euo pipefail
 
 COUNT="${1:-10}"
 PREFIX="${USER_PREFIX:-test}"
 GROUP="${USER_GROUP:-lab}"
-COST="${BCRYPT_COST:-10}"
+
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADD_USER="${SCRIPT_DIR}/add_user.sh"
@@ -34,9 +44,6 @@ esac
 [ "$COUNT" -ge 1 ] && [ "$COUNT" -le 200 ] || {
     echo "error: count must be 1-200" >&2; exit 2; }
 
-command -v htpasswd >/dev/null 2>&1 || {
-    echo "error: htpasswd not found. sudo apt-get install -y apache2-utils" >&2
-    exit 1; }
 [ -x "$ADD_USER" ] || { echo "error: $ADD_USER not found" >&2; exit 1; }
 
 # Written where the invoking user can reach them, not in root's cwd.
@@ -73,12 +80,10 @@ for i in $(seq 1 "$COUNT"); do
     pw=${raw:0:12}
     [ ${#pw} -eq 12 ] || { echo "error: could not generate a password" >&2; exit 1; }
 
-    hash=$(htpasswd -bnBC "$COST" "" "$pw" | tr -d ':\n')
-
     "$ADD_USER" "$name" >/dev/null
 
-    printf '    - name: %s\n      password: "{bcrypt}%s"\n      groups: [%s]\n' \
-        "$name" "$hash" "$GROUP" >> "$YAML"
+    printf '    - name: %s\n      password: "%s"\n      groups: [%s]\n' \
+        "$name" "$pw" "$GROUP" >> "$YAML"
     printf '%-12s  %s\n' "$name" "$pw" >> "$SECRETS"
 
     echo "created ${name}"
@@ -101,8 +106,11 @@ ${COUNT} accounts created.
       the file will not be in the config.
 
   ${SECRETS}
-      mode 600, the only copy of the passwords. Hand them out, then:
+      mode 600, the same passwords in a form you can hand out. Once
+      they are distributed:
           shred -u ${SECRETS}
+      The config keeps its own copy -- simple authentication has no
+      other option -- so that file is not the last one standing.
 
 Restarting ShinyProxy drops sessions that are running, so do it when
 nobody is mid-analysis.

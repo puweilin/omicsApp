@@ -191,11 +191,18 @@ sudo chmod 600 /etc/shinyproxy/application.yml
 # Spring stack trace, and exits 0 -- which systemd reports as
 # "Deactivated successfully".
 sudo chown shinyproxy:shinyproxy /etc/shinyproxy/application.yml
-htpasswd -bnBC 10 "" 'the-password' | tr -d ':\n'   # paste into proxy.users
 ```
 
-Log in with one test account before hashing everyone's password: the
-`{bcrypt}` prefix depends on the ShinyProxy version.
+Passwords go in as plain text. Simple authentication compares the field
+literally -- its backend does `.password("{noop}" + user.password)` --
+so a bcrypt hash is not a hash there, it is a password nobody can type,
+and the only symptom is a login that fails. The protection is the file:
+mode 600, owned by the service account. Anything stronger means a
+different backend (LDAP, OpenID, SAML).
+
+`deploy/scripts/make_test_users.sh` generates accounts and
+`install_users.sh` writes them in; the latter refuses an encoder prefix
+for the reason above.
 
 **Check both ports first.** This is a shared machine, and 8080 is what
 everyone reaches for -- but ShinyProxy binds a second one too, for the

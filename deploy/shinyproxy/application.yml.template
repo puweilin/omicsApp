@@ -8,9 +8,7 @@
 #   chmod 600 application.yml
 #
 # Verify against your ShinyProxy version: `minimum-seats-available` is
-# 3.x syntax (2.x used `container-pre-initialization`), and bcrypt
-# password support should be confirmed with one test login before you
-# hash the rest.
+# 3.x syntax (2.x used `container-pre-initialization`).
 
 proxy:
   port: 8080
@@ -23,13 +21,19 @@ proxy:
   # is a feature rather than a limitation.
   authentication: simple
   admin-groups: [admins]
+  # Passwords are plain text, because that is what simple
+  # authentication compares against: the backend does
+  #     .password("{noop}" + user.password)
+  # so a {bcrypt} prefix is not a hash, it is a password nobody can
+  # type. The file is the protection -- mode 600, owned by the
+  # shinyproxy service account. For anything stronger the answer is a
+  # different backend: LDAP, OpenID, SAML.
   users:
     - name: puweilin
-      # htpasswd -bnBC 10 "" 'the-password' | tr -d ':\n'
-      password: "{bcrypt}REPLACE_ME"
+      password: "REPLACE_ME"
       groups: [admins]
     # - name: colleague
-    #   password: "{bcrypt}REPLACE_ME"
+    #   password: "REPLACE_ME"
     #   groups: [lab]
 
   # ---- session lifecycle ----------------------------------------------

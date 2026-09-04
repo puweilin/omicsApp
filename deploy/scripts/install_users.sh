@@ -73,9 +73,19 @@ bad = [l for l in entries if "REPLACE_ME" in l]
 if bad:
     sys.exit("error: %d entr(y|ies) still say REPLACE_ME" % len(bad))
 
-n_hashes = sum(1 for l in entries if "{bcrypt}" in l)
-if n_hashes != n_users:
-    sys.exit("error: %d users but %d bcrypt hashes" % (n_users, n_hashes))
+# ShinyProxy's simple backend does .password("{noop}" + user.password):
+# the field is compared literally. A {bcrypt} prefix is not a hash
+# there, it is a password nobody can type, and the only symptom is that
+# the login fails.
+enc = [l for l in entries if re.search(r'password:\s*"?\{(bcrypt|noop|pbkdf2|argon2)\}', l)]
+if enc:
+    sys.exit("error: %d password(s) carry an encoder prefix. Simple "
+             "authentication compares the field literally, so these "
+             "cannot be typed. Use the plain password." % len(enc))
+
+n_pw = sum(1 for l in entries if re.match(r'^\s*password:', l))
+if n_pw != n_users:
+    sys.exit("error: %d users but %d passwords" % (n_users, n_pw))
 
 out = lines[:start + 1] + entries + lines[end:]
 
