@@ -185,6 +185,12 @@ df -h /srv    # should show the 60 TB volume, not the root filesystem
 sudo mkdir -p /etc/shinyproxy
 sudo cp deploy/shinyproxy/application.yml.template /etc/shinyproxy/application.yml
 sudo chmod 600 /etc/shinyproxy/application.yml
+# Owner as well as mode. The .deb's unit runs the service as
+# `shinyproxy`, so a root-owned 600 file is one it cannot read: it
+# starts, fails on "application.yml (Permission denied)" buried under a
+# Spring stack trace, and exits 0 -- which systemd reports as
+# "Deactivated successfully".
+sudo chown shinyproxy:shinyproxy /etc/shinyproxy/application.yml
 htpasswd -bnBC 10 "" 'the-password' | tr -d ':\n'   # paste into proxy.users
 ```
 
@@ -490,20 +496,22 @@ Leave these until the acceptance checklist passes. First deployments go
 wrong for ordinary reasons, and every extra variable is one more
 candidate.
 
-**Give ShinyProxy its own account.** The official package runs it as
-root. It does not need to be — it needs to reach the Docker socket,
-which is group membership, not privilege:
+**ShinyProxy already has its own account.** The 3.1.1 `.deb` creates a
+`shinyproxy` system user, adds it to `docker`, and ships a unit that
+uses it:
 
-```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin shinyproxy
-sudo usermod -aG docker shinyproxy
-sudo chown shinyproxy /etc/shinyproxy/application.yml
-# then, in the systemd unit:  User=shinyproxy   Group=docker
+```
+User=shinyproxy   Group=shinyproxy   WorkingDirectory=/etc/shinyproxy
+uid=997(shinyproxy) gid=1004(shinyproxy) groups=1004(shinyproxy),125(docker)
 ```
 
-A dedicated account rather than a person's: a stolen SSH key should not
-hand over the service, and a compromised service should not reach
-someone's files.
+So there is nothing to do here, only something to know — and one thing
+to get right, which is why step 6 chowns the config: a root-owned 600
+`application.yml` is one the service cannot read.
+
+A dedicated account rather than a person's is the right shape anyway: a
+stolen SSH key should not hand over the service, and a compromised
+service should not reach someone's files.
 
 Be clear about what this buys, though. **Membership of the `docker`
 group is equivalent to root** — anything that can reach the socket can

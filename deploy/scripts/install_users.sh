@@ -91,10 +91,19 @@ after = [k for k in keys(out[:start] + out[start + 1 + len(entries):])]
 if before != after:
     sys.exit("error: splice would change keys outside the users list")
 
+# Owner as well as mode. The service runs as `shinyproxy` and the file
+# is 600, so a rewrite that lands as root:root is one the service
+# cannot read -- and it fails at the next restart, not at this one,
+# which puts the cause and the symptom on different days.
+st = os.stat(backup)
 fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target) or ".")
 with os.fdopen(fd, "w") as fh:
     fh.write("\n".join(out) + "\n")
-os.chmod(tmp, os.stat(backup).st_mode & 0o7777)
+os.chmod(tmp, st.st_mode & 0o7777)
+try:
+    os.chown(tmp, st.st_uid, st.st_gid)
+except PermissionError:
+    pass          # not root; the mode is what mattered
 os.replace(tmp, target)
 
 print("%d user(s) written to %s" % (n_users, target))
