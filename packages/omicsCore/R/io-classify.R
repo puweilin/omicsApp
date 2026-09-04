@@ -96,18 +96,22 @@ detect_orientation <- function(df) {
     return(list(orientation = "ambiguous", confidence = 0,
                 notes = "input is not a data.frame"))
   }
-  # Strip a leading ID column if present.
+  # Strip a leading ID column if present (by content or, for numeric
+  # identifiers such as Entrez ids, by name -- see first_column_is_id()).
   body <- df
-  first_col_is_id <- ncol(df) > 1L &&
-    !is.numeric(df[[1L]]) &&
-    !is.logical(df[[1L]])
+  first_col_is_id <- ncol(df) > 1L && first_column_is_id(df)
   if (first_col_is_id) {
     row_labels <- as.character(df[[1L]])
     body <- df[, -1L, drop = FALSE]
   } else {
     row_labels <- rownames(df)
   }
-  col_labels <- colnames(body)
+  # Trimmed before judging. A cell " ENSG00000000001 " is not an
+  # Ensembl id to the regex, and with no feature-like rows the sample
+  # names "S01".."S06" -- which pass as gene symbols -- decided the
+  # orientation, and the matrix came back transposed.
+  row_labels <- trimws(row_labels)
+  col_labels <- trimws(colnames(body))
   rows_look_like_features <- looks_like_feature_labels(row_labels)
   cols_look_like_features <- looks_like_feature_labels(col_labels)
 
@@ -119,7 +123,13 @@ detect_orientation <- function(df) {
     return(list(orientation = "features_in_rows", confidence = 0.9,
                 notes = "row labels look like feature IDs"))
   }
-  if (cols_look_like_features && !rows_look_like_features) {
+  # Column labels alone are weaker evidence than row labels: "S01" passes
+  # for a gene symbol, so a matrix with no id column and a handful of
+  # samples used to come back transposed. Unless the columns carry a
+  # strong identifier pattern (UniProt, Ensembl, RefSeq), the shape has
+  # to agree -- a transposed matrix has far more columns than rows.
+  if (cols_look_like_features && !rows_look_like_features &&
+      (strongly_feature_like(col_labels) || ncol(body) >= nrow(body))) {
     return(list(orientation = "samples_in_rows", confidence = 0.9,
                 notes = "column labels look like feature IDs"))
   }
@@ -183,8 +193,8 @@ classify_sheet_role <- function(df, name = NA_character_) {
   # which is why the confidence is low enough for the review step to
   # show it as a guess.
   n_numeric <- round(numeric_fraction * ncol(df))
-  first_col_ids <- !is.numeric(df[[1L]]) && !is.logical(df[[1L]]) &&
-    looks_like_feature_labels(df[[1L]])
+  first_col_ids <- first_column_is_id(df) &&
+    (is.numeric(df[[1L]]) || looks_like_feature_labels(df[[1L]]))
   if (n_numeric >= 3L && numeric_fraction >= 0.5 && first_col_ids &&
       !has_meta_hint && nrow(df) >= 20L) {
     orient <- detect_orientation(df)
@@ -263,8 +273,21 @@ compute_numeric_fraction <- function(df) {
   mean(numeric_cols)
 }
 
+# UniProt, Ensembl or RefSeq accessions, which nothing else looks like.
+strongly_feature_like <- function(labels) {
+  labels <- trimws(as.character(labels))
+  labels <- labels[!is.na(labels) & nzchar(labels)]
+  if (length(labels) < 4L) return(FALSE)
+  strong <- ID_COLUMN_PATTERNS[c("uniprot", "ensembl_gene", "ensembl_tx", "refseq")]
+  probe <- utils::head(labels, 200L)
+  hits <- vapply(probe, function(s) {
+    any(vapply(strong, function(pat) grepl(pat, s, perl = TRUE), logical(1)))
+  }, logical(1))
+  mean(hits) >= 0.5
+}
+
 looks_like_feature_labels <- function(labels) {
-  labels <- as.character(labels)
+  labels <- trimws(as.character(labels))
   labels <- labels[!is.na(labels) & nzchar(labels)]
   if (length(labels) < 4L) return(FALSE)
   probe <- utils::head(labels, 200L)

@@ -284,8 +284,16 @@ read_omics_csv <- function(path, omics_type, assay_type,
   )
   sheets <- setNames(list(df), nm)
   sheet_table <- apply_sheet_roles(sheet_table, sheet_roles)
-  build_input_from_sheets(sheets, sheet_table, source = path,
-                          omics_type = omics_type, assay_type = assay_type)
+  out <- build_input_from_sheets(sheets, sheet_table, source = path,
+                                 omics_type = omics_type, assay_type = assay_type)
+  # read.table renames a repeated column quietly ("S01.1"); a sample
+  # sheet will not match the new name, and the user should know why.
+  if (length(duplicated_headers) > 0L) {
+    out$report <- add_import_warning(out$report, sprintf(
+      "Column name(s) repeated in the header and made unique: %s.",
+      paste(sprintf("'%s'", duplicated_headers), collapse = ", ")))
+  }
+  out
 }
 
 read_omics_rds <- function(path, omics_type, assay_type,
@@ -382,6 +390,8 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   cols <- select_sample_columns(sheets[[matrix_sheet]])
   for (note in cols$notes) report <- add_import_warning(report, note)
   mat <- materialize_matrix(cols$df, orient)
+  for (note in attr(mat, "notes")) report <- add_import_warning(report, note)
+  attr(mat, "notes") <- NULL
   if (is.null(mat)) {
     report <- add_import_warning(report,
       "Could not coerce the picked matrix sheet to a numeric matrix.")
@@ -531,13 +541,38 @@ select_measurement_columns <- function(mat) {
   list(mat = out, note = note)
 }
 
+# Column names that announce an identifier column, so a first column of
+# Entrez ids or probe numbers is not taken for a sample. Matched as a
+# whole word inside the lower-cased name: "gene_id", "GeneID", "Entrez",
+# "probe" all count; "S1" and "Intensity" do not.
+ID_COLUMN_NAME_RE <- paste0(
+  "(^|[^a-z])(id|ids|gene|genes|geneid|geneids|entrez|entrezid|probe|probeid|",
+  "feature|features|protein|proteins|uniprot|ensembl|accession|symbol|",
+  "name|transcript|locus)([^a-z]|$)")
+
+first_column_is_id <- function(df) {
+  if (!is.data.frame(df) || ncol(df) == 0L) return(FALSE)
+  first <- df[[1L]]
+  if (!is.numeric(first) && !is.logical(first)) return(TRUE)
+  # Numeric, but named like identifiers and unique: Entrez ids, probe
+  # numbers. Without this the column became a sample, and with the
+  # sheet now mostly "samples in rows" the whole matrix came out
+  # transposed, with no warning anywhere.
+  is.numeric(first) && ncol(df) > 1L &&
+    grepl(ID_COLUMN_NAME_RE, tolower(colnames(df)[1L])) &&
+    !anyNA(first) && !anyDuplicated(first)
+}
+
+# Rows a spreadsheet adds under the data and a pipeline never would.
+SUMMARY_ROW_RE <- "^(total|totals|sum|mean|average|grand total)$"
+
 materialize_matrix <- function(df, orientation) {
   if (is.null(df)) return(NULL)
   if (!is.data.frame(df) || nrow(df) == 0L || ncol(df) == 0L) return(NULL)
-  # If the first column is non-numeric, treat it as the ID column.
+  notes <- character(0)
   id_col <- NULL
-  if (!is.numeric(df[[1L]]) && !is.logical(df[[1L]])) {
-    id_col <- as.character(df[[1L]])
+  if (first_column_is_id(df)) {
+    id_col <- trimws(as.character(df[[1L]]))
     df <- df[, -1L, drop = FALSE]
   }
   # Text columns are read as numbers where every cell is a number or a
@@ -552,7 +587,7 @@ materialize_matrix <- function(df, orientation) {
   mat <- as.matrix(as.data.frame(lapply(df, function(c) {
     if (is.numeric(c)) c else suppressWarnings(as.numeric(as.character(c)))
   }), check.names = FALSE))
-  colnames(mat) <- colnames(df)
+  colnames(mat) <- trimws(colnames(df))
   if (!is.null(id_col)) {
     rownames(mat) <- make_unique_labels(id_col)
   } else if (!is.null(rownames(df))) {
@@ -560,9 +595,25 @@ materialize_matrix <- function(df, orientation) {
   } else {
     rownames(mat) <- paste0("f", seq_len(nrow(mat)))
   }
+  # A column with no values is a blank in the spreadsheet, not a sample.
+  empty <- colSums(!is.na(mat)) == 0L
+  if (any(empty) && !all(empty)) {
+    notes <- c(notes, sprintf("Dropped %d column(s) with no values: %s.",
+                              sum(empty), paste(colnames(mat)[empty], collapse = ", ")))
+    mat <- mat[, !empty, drop = FALSE]
+  }
+  # And a "Total" row is a spreadsheet's sum, not a feature.
+  summary_row <- grepl(SUMMARY_ROW_RE, tolower(trimws(rownames(mat))))
+  if (any(summary_row) && !all(summary_row)) {
+    notes <- c(notes, sprintf("Dropped %d summary row(s): %s.",
+                              sum(summary_row),
+                              paste(rownames(mat)[summary_row], collapse = ", ")))
+    mat <- mat[!summary_row, , drop = FALSE]
+  }
   if (identical(orientation, "samples_in_rows")) {
     mat <- t(mat)
   }
+  attr(mat, "notes") <- notes
   mat
 }
 

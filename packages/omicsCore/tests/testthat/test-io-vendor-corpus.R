@@ -329,3 +329,99 @@ test_that("a sample sheet is not mistaken for a matrix", {
   cls <- classify_sheet_role(meta, name = "samples")
   expect_identical(cls$role, "metadata")
 })
+
+# ---- identifiers that are not what the reader expected ----------------------
+
+test_that("numeric identifiers stay identifiers, and the matrix stays the right way up", {
+  # Entrez ids are numbers. Read as data, the first column became a
+  # sample and the sheet, now mostly "samples in rows", came back
+  # transposed -- 7 samples by 40 features -- with no warning anywhere.
+  for (id_name in c("entrez_id", "GeneID", "Entrez")) {
+    df <- data.frame(1000L + seq_len(N_FEAT), COUNTS, check.names = FALSE,
+                     stringsAsFactors = FALSE)
+    colnames(df)[1L] <- id_name
+    out <- read_counts(vendor_file(df, ".csv", sep = ","))
+    expect_sample_block(out, as.character(1000L + seq_len(N_FEAT)), COUNTS)
+  }
+})
+
+test_that("zero-padded probe ids keep their zeros", {
+  df <- data.frame(probe = sprintf("%04d", seq_len(N_FEAT)), COUNTS,
+                   check.names = FALSE, stringsAsFactors = FALSE)
+  out <- read_counts(vendor_file(df, ".tsv"))
+  expect_sample_block(out, sprintf("%04d", seq_len(N_FEAT)), COUNTS)
+})
+
+test_that("in a delimited file the first column is the identifiers, whatever it holds", {
+  # Text files are read with the first column as text, so probe ids
+  # keep their zeros and Entrez ids are never summed. The cost is that
+  # a file with no id column at all reads its first sample as ids --
+  # which is what a file without identifiers deserves, and every
+  # pipeline writes one.
+  df <- data.frame(S00 = COUNTS[, 1L], COUNTS, check.names = FALSE)
+  out <- read_counts(vendor_file(df, ".tsv"))
+  expect_identical(ncol(out$input$expr_mat), N_SAMP)
+  expect_identical(nrow(out$input$expr_mat), N_FEAT)
+})
+
+test_that("in a workbook a numeric first column is data unless it is named like an id", {
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("readxl")
+  # A spreadsheet types its cells, so a numeric first column arrives as
+  # numbers and the name decides: "S00" is a sample, "entrez_id" is not.
+  as_sample <- data.frame(S00 = COUNTS[, 1L], COUNTS, check.names = FALSE)
+  f1 <- tempfile(fileext = ".xlsx"); openxlsx::write.xlsx(as_sample, f1)
+  out <- read_counts(f1)
+  expect_identical(ncol(out$input$expr_mat), N_SAMP + 1L)
+  expect_true("S00" %in% colnames(out$input$expr_mat))
+
+  as_ids <- data.frame(entrez_id = 1000L + seq_len(N_FEAT), COUNTS, check.names = FALSE)
+  f2 <- tempfile(fileext = ".xlsx"); openxlsx::write.xlsx(as_ids, f2)
+  out <- read_counts(f2)
+  expect_sample_block(out, as.character(1000L + seq_len(N_FEAT)), COUNTS)
+})
+
+test_that("whitespace around identifiers and sample names is not part of them", {
+  df <- data.frame(paste0(" ", GENE_IDS, " "), COUNTS, check.names = FALSE,
+                   stringsAsFactors = FALSE)
+  colnames(df) <- c("gene_id", paste0(" ", SAMPLES, " "))
+  out <- read_counts(vendor_file(df, ".tsv"))
+  expect_sample_block(out, GENE_IDS, COUNTS)
+})
+
+test_that("numeric sample names are kept as written", {
+  df <- plain_counts_table()
+  colnames(df)[-1L] <- as.character(seq_len(N_SAMP))
+  out <- read_counts(vendor_file(df, ".csv", sep = ","))
+  expect_identical(colnames(out$input$expr_mat), as.character(seq_len(N_SAMP)))
+  expect_identical(rownames(out$input$expr_mat), GENE_IDS)
+})
+
+test_that("a repeated sample name is made unique, and the report says so", {
+  df <- plain_counts_table()
+  colnames(df)[3L] <- "S01"
+  out <- read_counts(vendor_file(df, ".tsv"))
+  expect_identical(ncol(out$input$expr_mat), N_SAMP)
+  expect_false(anyDuplicated(colnames(out$input$expr_mat)) > 0L)
+  expect_true(any(grepl("repeated", out$report$warnings)))
+  expect_true(any(grepl("'S01'", out$report$warnings, fixed = TRUE)))
+})
+
+test_that("columns with no values are not samples", {
+  df <- plain_counts_table()
+  df$blank <- ""
+  df$allna <- "NA"
+  out <- read_counts(vendor_file(df, ".csv", sep = ","))
+  expect_sample_block(out, GENE_IDS, COUNTS)
+  expect_true(any(grepl("no values", out$report$warnings)))
+  expect_true(any(grepl("blank, allna", out$report$warnings, fixed = TRUE)))
+})
+
+test_that("a Total row is a spreadsheet's sum, not a feature", {
+  df <- plain_counts_table()
+  df <- rbind(df, data.frame(gene_id = "Total", t(colSums(COUNTS)),
+                             check.names = FALSE, stringsAsFactors = FALSE))
+  out <- read_counts(vendor_file(df, ".csv", sep = ","))
+  expect_sample_block(out, GENE_IDS, COUNTS)
+  expect_true(any(grepl("summary row", out$report$warnings)))
+})
