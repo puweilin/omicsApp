@@ -197,6 +197,24 @@ htpasswd -bnBC 10 "" 'the-password' | tr -d ':\n'   # paste into proxy.users
 Log in with one test account before hashing everyone's password: the
 `{bcrypt}` prefix depends on the ShinyProxy version.
 
+**Check the port is free first.** This is a shared machine, and 8080 is
+what everyone reaches for:
+
+```bash
+sudo ss -tln | grep ':8080 ' && echo "TAKEN -- pick another port"
+```
+
+If it is taken, change it in *both* places or the two halves will
+disagree without either complaining:
+
+```bash
+sudo sed -i 's/^  port: 8080$/  port: 8081/' /etc/shinyproxy/application.yml
+sudo sed -i 's|127.0.0.1:8080|127.0.0.1:8081|' /etc/nginx/sites-available/omicsapp
+```
+
+`curl -sI http://127.0.0.1:8081 | head -3` afterwards: if the `Server`
+header names something else, that port belongs to another service too.
+
 ### 7. nginx and firewall
 
 ```bash
@@ -205,6 +223,13 @@ sudo ln -s /etc/nginx/sites-available/omicsapp /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo ufw allow from 192.168.51.0/24 to any port 80 proto tcp
 ```
+
+Leave `sites-enabled/default` alone. nginx picks a server block by
+matching the request's `Host` against `server_name`, and an exact match
+beats `default_server`, so `http://192.168.51.52` reaches this app while
+everything else still reaches whatever was there before. Removing the
+default site is not needed and takes down any static content a
+colleague was serving from it.
 
 Users then reach the app at `http://192.168.51.52`.
 
