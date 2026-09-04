@@ -81,7 +81,18 @@ proxy:
   default-stop-proxy-on-logout: true
 
   docker:
-    internal-networking: true
+    # false, because ShinyProxy runs on the host as a systemd service.
+    #
+    # `true` tells it to reach each container by the container's own
+    # hostname on the Docker network, which only resolves through
+    # Docker's embedded DNS -- available to containers, not to a process
+    # on the host. The container starts fine and then the health check
+    # fails with `UnknownHostException: <container id>`, which reads
+    # like the app crashed rather than like a networking option.
+    #
+    # Set it to true only if ShinyProxy itself is moved into a container
+    # on the same network.
+    internal-networking: false
 
   specs:
     - id: omicsapp
