@@ -89,8 +89,10 @@ test_that("OPTIONAL_GROUPS enrichment lists fgsea", {
   expect_true("fgsea" %in% OPTIONAL_GROUPS$enrichment)
 })
 
-test_that("OPTIONAL_GROUPS imputation lists missForest", {
-  expect_true("missForest" %in% OPTIONAL_GROUPS$imputation)
+test_that("OPTIONAL_GROUPS imputation lists imputeLCMD", {
+  # DEP delegates its left-censored methods to imputeLCMD; that is the
+  # package a user has to have for MinProb, MinDet and QRILC.
+  expect_true("imputeLCMD" %in% OPTIONAL_GROUPS$imputation)
 })
 
 test_that("check_install with no missing groups returns invisibly", {

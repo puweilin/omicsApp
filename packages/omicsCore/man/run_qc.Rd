@@ -8,7 +8,7 @@ run_qc(
   input,
   missing_threshold = 0.5,
   sample_missing_threshold = NULL,
-  impute_method = c("none", "min", "half_min", "mean", "knn", "missforest", "bpca"),
+  impute_method = NULL,
   outlier_method = NULL,
   outlier_sd_threshold = 3,
   ...
@@ -23,9 +23,11 @@ above this are flagged and removed from \code{cleaned_input}. Default \code{0.5}
 \item{sample_missing_threshold}{Optional sample missing-rate cutoff.
 Samples above this are flagged and removed.}
 
-\item{impute_method}{One of \code{"none"}, \code{"min"}, \code{"half_min"}, \code{"mean"},
-\code{"knn"}, \code{"missforest"}, \code{"bpca"}. Applied to the expression matrix of
-\code{cleaned_input} after filtering. Defaults to \code{"none"}.}
+\item{impute_method}{One of \link{IMPUTE_METHODS} -- DEP's method set.
+Applied to the expression matrix of \code{cleaned_input} after filtering.
+\code{NULL} (the default) resolves per modality via
+\code{\link[=resolve_impute_method]{resolve_impute_method()}}: \code{"MinProb"} for proteomics, \code{"none"} for
+counts.}
 
 \item{outlier_method}{One of \code{"none"}, \code{"pca"}, \code{"connectivity"}, \code{"iqr"},
 or a vector of those (other than \code{"none"}) to union their flags.}
@@ -56,10 +58,14 @@ consumed directly by downstream analysis functions.
 Sensible defaults:
 \itemize{
 \item \code{omics_type == "proteomics"} → \code{outlier_method = "pca"},
-\code{impute_method = "none"} (proteomics imputation is opt-in because
-\code{missForest} / \code{pcaMethods} are Suggests).
+\code{impute_method = "MinProb"}. Missingness in DIA/DDA is mostly
+left-censored -- a protein is absent because it fell below the
+detection limit -- and leaving \code{NA} is not the neutral choice it
+looks like: limma drops what it cannot fit, so "none" is
+complete-case analysis taken silently.
 \item \code{omics_type == "rnaseq"} → \code{outlier_method = "connectivity"},
-\code{impute_method = "none"} (counts should not be imputed).
+\code{impute_method = "none"}. A zero count is an observation, and
+imputing it feeds a negative-binomial model numbers it never saw.
 }
 
 Pass explicit arguments to override the defaults.
@@ -80,12 +86,14 @@ bundle
 }
 \seealso{
 Other qc: 
+\code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link{impute_matrix}()},
 \code{\link{plot_qc}()},
 \code{\link{qc_depth}()},
 \code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},
 \code{\link{qc_outliers}()},
+\code{\link{resolve_impute_method}()},
 \code{\link{winsorize_counts}()}
 }
 \concept{qc}

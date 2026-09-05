@@ -39,11 +39,13 @@ All three methods are pure base R; no Suggests packages required.
 }
 \seealso{
 Other qc: 
+\code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link{impute_matrix}()},
 \code{\link{plot_qc}()},
 \code{\link{qc_depth}()},
 \code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},
+\code{\link{resolve_impute_method}()},
 \code{\link{run_qc}()},
 \code{\link{winsorize_counts}()}
 }

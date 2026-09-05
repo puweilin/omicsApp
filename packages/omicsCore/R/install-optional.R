@@ -8,9 +8,9 @@
 # differential-expression, enrichment, and persistence paths.
 OPTIONAL_GROUPS <- list(
   rnaseq      = c("DESeq2", "edgeR", "tximport", "GenomicFeatures"),
-  proteomics  = c("missForest", "pcaMethods", "vsn"),
+  proteomics  = c("imputeLCMD", "pcaMethods", "vsn"),
   enrichment  = c("fgsea", "GSVA"),
-  imputation  = c("impute", "missForest", "pcaMethods"),
+  imputation  = c("imputeLCMD", "impute", "pcaMethods"),
   viz         = c("ComplexHeatmap", "circlize", "ggrepel", "patchwork", "ggpubr"),
   persistence = character(0)
 )

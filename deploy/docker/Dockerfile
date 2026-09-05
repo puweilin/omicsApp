@@ -64,7 +64,7 @@ RUN R -q -e 'pkgs <- c( \
       "tibble","dplyr","stringr","readxl","openxlsx","jsonlite","scales", \
       "rlang","msigdbr","qs2", \
       "ggrepel","patchwork","circlize","here","knitr","rmarkdown", \
-      "missForest","ActivePathways","pkgload"); \
+      "imputeLCMD","ActivePathways","pkgload"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("CRAN packages failed to install: ", \

@@ -120,7 +120,7 @@ test_that("bundles are emitted in dependency order", {
              params = list(method = "limma", analysis_type = "group")),
     qc = new_analysis_bundle("run_qc",
            input_info = list(omics_type = "proteomics"),
-           params = list(impute_method = "half_min"))
+           params = list(impute_method = "MinProb"))
   )
   lines <- export_script(proj)
   # Listed out of order above; enrichment consumes `diff`, so the script
@@ -170,7 +170,7 @@ test_that("each analysis emits the figure its view shows", {
   proj <- fixture_project("raw/x.xlsx")
   proj$bundles <- list(
     qc = new_analysis_bundle("run_qc", list(omics_type = "proteomics"),
-           params = list(impute_method = "half_min")),
+           params = list(impute_method = "MinProb")),
     diff = new_analysis_bundle("run_diff", list(omics_type = "proteomics"),
              params = list(method = "limma")),
     enrich = new_analysis_bundle("run_enrichment",

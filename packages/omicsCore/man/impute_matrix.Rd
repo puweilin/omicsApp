@@ -4,49 +4,53 @@
 \alias{impute_matrix}
 \title{Impute missing values in an expression matrix}
 \usage{
-impute_matrix(
-  mat,
-  method = c("none", "min", "half_min", "mean", "knn", "missforest", "bpca"),
-  ...
-)
+impute_matrix(mat, method = IMPUTE_METHODS, ...)
 }
 \arguments{
-\item{mat}{A numeric matrix.}
+\item{mat}{A numeric matrix, features in rows.}
 
-\item{method}{One of the methods listed above.}
+\item{method}{One of \link{IMPUTE_METHODS}.}
 
-\item{...}{Additional arguments forwarded to the backend.}
+\item{...}{Forwarded to the backend (\code{q} for MinProb/MinDet, \code{k} for
+knn, \code{shift}/\code{scale} for man).}
 }
 \value{
 A numeric matrix with the same dimensions and names as \code{mat}.
 }
 \description{
-Dispatcher over several imputation backends:
+The methods are DEP's, so a choice made here means the same thing it
+means in the proteomics literature.
 }
 \details{
 \itemize{
-\item \code{"none"} — return the matrix unchanged.
-\item \code{"min"} — replace \code{NA} per feature with that feature's minimum observed
-value. Pure base R, always available.
-\item \code{"half_min"} — replace \code{NA} per feature with half its minimum observed
-value. Pure base R, common proteomics default.
-\item \code{"mean"} — replace \code{NA} per feature with its row mean. Pure base R.
-\item \code{"knn"} — k-nearest-neighbor imputation via the \code{impute} Bioconductor
-package (Suggests).
-\item \code{"missforest"} — Random-forest imputation via \code{missForest} (Suggests).
-\item \code{"bpca"} — Bayesian PCA via \code{pcaMethods} (Suggests).
+\item \code{"none"} — leave \code{NA}. Not neutral: downstream this becomes
+complete-case analysis.
+\item \code{"MinProb"} — random draws from a narrow gaussian near the observed
+minimum (MNAR). The default for proteomics.
+\item \code{"MinDet"} — a low quantile of the observed values, deterministic (MNAR).
+\item \code{"QRILC"} — quantile regression for left-censored data (MNAR).
+\item \code{"min"} — the observed minimum of that feature (MNAR).
+\item \code{"zero"} — zero (MNAR). Offered for parity; it distorts variance.
+\item \code{"knn"} — k-nearest neighbours (MAR).
+\item \code{"MLE"} — maximum likelihood (MAR).
+\item \code{"bpca"} — Bayesian PCA (MAR).
+\item \code{"mixed"} — MAR or MNAR per feature, chosen by a test.
+\item \code{"man"} — manual shift/scale, as in DEP's \code{shift}/\code{scale} arguments.
 }
 
-Backends listed in Suggests raise an instructive error pointing at
-\code{\link[=install_optional]{install_optional()}} when the package is missing.
+MNAR methods assume log-scale data, which is the scale DEP's workflow
+imputes on. On linear intensities they will place imputed values on a
+scale the observed values are not on.
 }
 \seealso{
 Other qc: 
+\code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link{plot_qc}()},
 \code{\link{qc_depth}()},
 \code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},
 \code{\link{qc_outliers}()},
+\code{\link{resolve_impute_method}()},
 \code{\link{run_qc}()},
 \code{\link{winsorize_counts}()}
 }

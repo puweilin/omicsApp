@@ -131,34 +131,56 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     # Imputation is offered for proteomics and withheld everywhere else.
     #
-    # A missing intensity in DIA proteomics usually means "below the
-    # detection limit", which is information, and filling it in is a
-    # judgement the analyst should make deliberately -- hence "none" by
-    # default, and hence a control rather than a hidden default.
+    # A missing intensity in DIA usually means "below the detection
+    # limit". Leaving it NA is not the neutral option it looks like:
+    # limma drops a feature it cannot fit, so "none" is complete-case
+    # analysis chosen silently. run_qc() therefore defaults proteomics to
+    # MinProb and this control opens on the same value.
     #
-    # A missing count does not mean that. A zero is an observation, and
-    # imputing counts feeds DESeq2 numbers its model never saw. run_qc()
-    # documents the same split.
+    # A missing count is a different thing. A zero is an observation, and
+    # imputing counts feeds DESeq2 numbers its model never saw -- so the
+    # control is not offered there at all.
+    #
+    # DEP's method set and DEP's spelling, so a choice made here means
+    # what it means in the proteomics literature and in every paper the
+    # analyst has read. Grouped by assumption, because that is the choice
+    # actually being made: MNAR says a value is missing *because* it was
+    # low, MAR says it is missing for reasons unrelated to its size.
     impute_choices <- shiny::reactive({
-      all <- c("none (leave NA visible)" = "none",
-               "Row minimum"             = "min",
-               "Half row minimum"        = "half_min",
-               "Row mean"                = "mean",
-               "k-nearest neighbours"    = "knn",
-               "missForest"              = "missforest",
-               "Bayesian PCA"            = "bpca")
-      # An option that errors on selection is worse than one that is not
-      # offered: the backends stop with an install hint, which arrives as
-      # a red notice over a view that was working a moment ago.
-      needs <- c(knn = "impute", missforest = "missForest", bpca = "pcaMethods")
-      keep <- vapply(all, function(v) {
-        # Single bracket: `needs[["mean"]]` errors on a name that is not
-        # there, where `needs["mean"]` gives NA and lets the method
-        # through as needing nothing.
-        pkg <- unname(needs[v])
-        is.na(pkg) || has_pkg(pkg)
-      }, logical(1L))
-      all[keep]
+      grouped <- list(
+        "Left-censored (MNAR)" = c(
+          "MinProb \u2014 draw near the minimum" = "MinProb",
+          "MinDet \u2014 low quantile"           = "MinDet",
+          "QRILC \u2014 quantile regression"     = "QRILC",
+          "min \u2014 feature minimum"           = "min",
+          "zero"                                 = "zero"),
+        "Random (MAR)" = c(
+          "knn \u2014 k-nearest neighbours" = "knn",
+          "MLE \u2014 maximum likelihood"   = "MLE",
+          "bpca \u2014 Bayesian PCA"        = "bpca"),
+        "Other" = c(
+          "mixed \u2014 MAR/MNAR per feature" = "mixed",
+          "man \u2014 manual shift/scale"     = "man",
+          "none \u2014 leave NA"              = "none")
+      )
+      # An option that errors on selection is worse than one not offered:
+      # the backends stop with an install hint, which arrives as a red
+      # notice over a view that was working a moment ago.
+      needs <- c(MinProb = "imputeLCMD", MinDet = "imputeLCMD",
+                 QRILC = "imputeLCMD", knn = "imputeLCMD",
+                 MLE = "imputeLCMD", mixed = "imputeLCMD",
+                 bpca = "pcaMethods")
+      out <- lapply(grouped, function(g) {
+        keep <- vapply(g, function(v) {
+          # Single bracket: `needs[["min"]]` errors on a name that is not
+          # there, where `needs["min"]` gives NA and lets the method
+          # through as needing nothing.
+          pkg <- unname(needs[v])
+          is.na(pkg) || has_pkg(pkg)
+        }, logical(1L))
+        g[keep]
+      })
+      out[lengths(out) > 0L]
     })
 
     impute_applies <- shiny::reactive({
@@ -169,9 +191,16 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     output$ui_impute <- shiny::renderUI({
       if (!impute_applies()) return(NULL)
-      sel <- shiny::isolate(input$impute_method)
       choices <- impute_choices()
-      if (is.null(sel) || !sel %in% choices) sel <- "none"
+      offered <- unlist(choices, use.names = FALSE)
+      sel <- shiny::isolate(input$impute_method)
+      # Defaults to what run_qc() would resolve on its own, so the
+      # control opens showing what is actually running rather than
+      # imposing a different answer the moment it renders.
+      if (is.null(sel) || !sel %in% offered) {
+        sel <- omicsCore::resolve_impute_method("proteomics")
+      }
+      if (!sel %in% offered) sel <- "none"
       shiny::selectInput(session$ns("impute_method"),
                          label = "Imputation (proteomics)",
                          choices = choices, selected = sel)
@@ -186,7 +215,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # input's last value, so switching from a proteomics layer with
       # `knn` selected to a counts layer would otherwise impute counts
       # with a control the user can no longer see.
-      imp <- if (impute_applies()) input$impute_method %||% "none" else "none"
+      # NULL lets run_qc() resolve it per modality, which is where that
+      # decision belongs -- and means the control and a plain
+      # run_qc(input) agree instead of quietly differing.
+      imp <- if (!impute_applies()) "none" else input$impute_method
 
       # The demo runs through run_qc() like a real project rather than
       # returning a fixed bundle. Both controls above are enabled, and

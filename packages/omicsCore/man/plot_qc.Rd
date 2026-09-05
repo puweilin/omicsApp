@@ -29,11 +29,13 @@ Builds standard ggplot panels from a \code{\link[=run_qc]{run_qc()}} bundle.
 }
 \seealso{
 Other qc: 
+\code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link{impute_matrix}()},
 \code{\link{qc_depth}()},
 \code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},
 \code{\link{qc_outliers}()},
+\code{\link{resolve_impute_method}()},
 \code{\link{run_qc}()},
 \code{\link{winsorize_counts}()}
 }

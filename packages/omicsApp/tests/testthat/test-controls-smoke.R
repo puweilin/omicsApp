@@ -226,10 +226,10 @@ test_that("the imputation control reaches run_qc and changes the result", {
     expect_identical(b$params$impute_method, "none")
     expect_true(anyNA(b$results$cleaned_input$expr_mat))
 
-    session$setInputs(impute_method = "half_min")
+    session$setInputs(impute_method = "MinDet")
     session$flushReact()
     b <- last_bundle()
-    expect_identical(b$params$impute_method, "half_min")
+    expect_identical(b$params$impute_method, "MinDet")
     # The point of the control: the NAs are gone afterwards.
     expect_false(anyNA(b$results$cleaned_input$expr_mat))
   })
@@ -238,7 +238,7 @@ test_that("the imputation control reaches run_qc and changes the result", {
 test_that("counts are never imputed, even with a method left selected", {
   proj <- shiny::reactiveVal(sm_project())
   shiny::testServer(qc_view_server, args = list(current_project = proj), {
-    session$setInputs(layer = "prot", impute_method = "half_min")
+    session$setInputs(layer = "prot", impute_method = "MinDet")
     session$flushReact()
     expect_true(rendered(output$ui_impute))
 
@@ -257,10 +257,13 @@ test_that("only methods whose packages are installed are offered", {
   shiny::testServer(qc_view_server, args = list(current_project = proj), {
     session$setInputs(layer = "prot")
     session$flushReact()
-    choices <- impute_choices()
+    # Grouped by MAR/MNAR for the dropdown, so flatten before asking
+    # what is on offer.
+    choices <- unlist(impute_choices(), use.names = FALSE)
     expect_true("none" %in% choices)
+    expect_true("MinProb" %in% choices)
     # An option that errors on selection is worse than one not offered.
-    needs <- c(knn = "impute", missforest = "missForest", bpca = "pcaMethods")
+    needs <- c(MinProb = "imputeLCMD", QRILC = "imputeLCMD", bpca = "pcaMethods")
     for (m in names(needs)) {
       if (!has_pkg(needs[[m]])) {
         expect_false(m %in% choices, info = m)

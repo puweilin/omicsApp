@@ -89,12 +89,12 @@ test_that("impute_matrix min replaces NA with row min", {
   expect_equal(out["b", "s3"], 2)   # row 'b' min = 2
 })
 
-test_that("impute_matrix half_min halves the row min", {
+test_that("impute_matrix min fills with the row minimum", {
   # row 'a' = c(2, NA); row 'b' = c(8, 4)
   m <- matrix(c(2, 8, NA, 4), nrow = 2,
               dimnames = list(c("a", "b"), c("s1", "s2")))
-  out <- impute_matrix(m, method = "half_min")
-  expect_equal(out["a", "s2"], 1)   # half of row 'a' min (2) = 1
+  out <- impute_matrix(m, method = "min")
+  expect_equal(out["a", "s2"], 2)   # row 'a' min
   expect_false(anyNA(out))
 })
 

@@ -130,7 +130,7 @@ test_that("export_report() refuses without rmarkdown", {
 test_that("each imputation method names its package when absent", {
   inp <- tiny_input()
   inp$expr_mat[1:3, 1:2] <- NA
-  cases <- c(knn = "impute", missforest = "missForest", bpca = "pcaMethods")
+  cases <- c(MinProb = "imputeLCMD", QRILC = "imputeLCMD", bpca = "pcaMethods")
   for (method in names(cases)) {
     absent(cases[[method]])
     err <- tryCatch(impute_matrix(inp$expr_mat, method = method),

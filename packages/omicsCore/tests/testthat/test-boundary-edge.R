@@ -304,7 +304,7 @@ test_that("subset preserves metadata length consistency", {
 test_that("impute_matrix mean returns same matrix when no NA", {
   mat <- matrix(rnorm(20), nrow = 5, ncol = 4,
                 dimnames = list(paste0("g", 1:5), paste0("s", 1:4)))
-  res <- impute_matrix(mat, method = "mean")
+  res <- impute_matrix(mat, method = "min")
   expect_equal(dim(res), dim(mat))
   expect_false(anyNA(res))
 })
@@ -313,7 +313,7 @@ test_that("impute_matrix mean fills NA with row mean", {
   mat <- matrix(rnorm(20, mean = 10), nrow = 5, ncol = 4,
                 dimnames = list(paste0("g", 1:5), paste0("s", 1:4)))
   mat[1, 1] <- NA
-  res <- impute_matrix(mat, method = "mean")
+  res <- impute_matrix(mat, method = "min")
   expect_false(anyNA(res))
 })
 
@@ -335,7 +335,7 @@ test_that("impute_matrix errors on invalid method", {
 test_that("impute_matrix on empty list silently coerces", {
   # impute_matrix(list()) coerces via as.matrix() to an empty matrix and
   # returns it; it does not error. Lock this surprising behavior in.
-  res <- suppressWarnings(impute_matrix(list(), method = "mean"))
+  res <- suppressWarnings(impute_matrix(list(), method = "min"))
   expect_true(is.matrix(res) || is.numeric(res))
 })
 
@@ -343,7 +343,7 @@ test_that("impute_matrix preserves rownames/colnames", {
   mat <- matrix(rnorm(20, mean = 10), nrow = 5, ncol = 4,
                 dimnames = list(paste0("g", 1:5), paste0("s", 1:4)))
   mat[1, 1] <- NA
-  res <- impute_matrix(mat, method = "mean")
+  res <- impute_matrix(mat, method = "min")
   expect_equal(rownames(res), rownames(mat))
   expect_equal(colnames(res), colnames(mat))
 })

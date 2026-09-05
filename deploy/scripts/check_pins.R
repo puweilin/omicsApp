@@ -30,7 +30,7 @@ CRAN_PKGS <- c(
   "tibble", "dplyr", "stringr", "readxl", "openxlsx", "jsonlite", "scales",
   "rlang", "msigdbr", "qs2",
   "ggrepel", "patchwork", "circlize", "here", "knitr", "rmarkdown",
-  "missForest", "ActivePathways", "pkgload"
+  "imputeLCMD", "ActivePathways", "pkgload"
 )
 BIOC_PKGS <- c(
   "limma", "clusterProfiler", "DESeq2", "edgeR", "S4Vectors", "enrichplot",

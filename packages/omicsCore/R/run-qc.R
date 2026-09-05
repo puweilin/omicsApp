@@ -9,10 +9,14 @@
 #' Sensible defaults:
 #'
 #' * `omics_type == "proteomics"` → `outlier_method = "pca"`,
-#'   `impute_method = "none"` (proteomics imputation is opt-in because
-#'   `missForest` / `pcaMethods` are Suggests).
+#'   `impute_method = "MinProb"`. Missingness in DIA/DDA is mostly
+#'   left-censored -- a protein is absent because it fell below the
+#'   detection limit -- and leaving `NA` is not the neutral choice it
+#'   looks like: limma drops what it cannot fit, so "none" is
+#'   complete-case analysis taken silently.
 #' * `omics_type == "rnaseq"` → `outlier_method = "connectivity"`,
-#'   `impute_method = "none"` (counts should not be imputed).
+#'   `impute_method = "none"`. A zero count is an observation, and
+#'   imputing it feeds a negative-binomial model numbers it never saw.
 #'
 #' Pass explicit arguments to override the defaults.
 #'
@@ -21,9 +25,11 @@
 #'   above this are flagged and removed from `cleaned_input`. Default `0.5`.
 #' @param sample_missing_threshold Optional sample missing-rate cutoff.
 #'   Samples above this are flagged and removed.
-#' @param impute_method One of `"none"`, `"min"`, `"half_min"`, `"mean"`,
-#'   `"knn"`, `"missforest"`, `"bpca"`. Applied to the expression matrix of
-#'   `cleaned_input` after filtering. Defaults to `"none"`.
+#' @param impute_method One of [IMPUTE_METHODS] -- DEP's method set.
+#'   Applied to the expression matrix of `cleaned_input` after filtering.
+#'   `NULL` (the default) resolves per modality via
+#'   [resolve_impute_method()]: `"MinProb"` for proteomics, `"none"` for
+#'   counts.
 #' @param outlier_method One of `"none"`, `"pca"`, `"connectivity"`, `"iqr"`,
 #'   or a vector of those (other than `"none"`) to union their flags.
 #' @param outlier_sd_threshold Z-score / IQR multiplier passed to
@@ -57,13 +63,22 @@ run_qc <- function(
   input,
   missing_threshold = 0.5,
   sample_missing_threshold = NULL,
-  impute_method = c("none", "min", "half_min", "mean", "knn", "missforest", "bpca"),
+  impute_method = NULL,
   outlier_method = NULL,
   outlier_sd_threshold = 3,
   ...
 ) {
   validate_omics_input(input)
-  impute_method <- match.arg(impute_method)
+
+  # NULL rather than a fixed default, resolved per modality like
+  # outlier_method below. Proteomics gets MinProb because its
+  # missingness is left-censored; counts get "none" because a zero is an
+  # observation. One global default would be wrong for one of them
+  # whichever way it went.
+  if (is.null(impute_method)) {
+    impute_method <- resolve_impute_method(input$omics_type)
+  }
+  impute_method <- match.arg(impute_method, IMPUTE_METHODS)
 
   # Resolve outlier defaults per omics_type.
   if (is.null(outlier_method)) {

@@ -46,7 +46,7 @@ Suggests:
     ggrepel,
     ggpubr,
     impute,
-    missForest,
+    imputeLCMD,
     pcaMethods,
     vsn,
     tximport,

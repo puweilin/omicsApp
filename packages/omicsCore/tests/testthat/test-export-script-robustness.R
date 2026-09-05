@@ -47,7 +47,7 @@ test_that("every project shape yields a script that parses", {
       list(proteomics = rs_input("proteomics"), rnaseq = rs_input("rnaseq")),
       list(
         qc = new_analysis_bundle("run_qc", list(omics_type = "proteomics"),
-               params = list(impute_method = "half_min")),
+               params = list(impute_method = "MinProb")),
         diff = new_analysis_bundle("run_diff", list(omics_type = "proteomics"),
                  params = list(method = "limma", analysis_type = "group")),
         enrich = new_analysis_bundle("run_enrichment",

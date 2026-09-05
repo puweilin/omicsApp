@@ -42,13 +42,23 @@ test_that("impute_matrix min replaces NAs with per-feature minimum", {
   expect_equal(colnames(res), colnames(mat))
 })
 
-test_that("impute_matrix half_min imputes half the feature minimum", {
+test_that("MinDet imputes at the bottom of the sample, not of the feature", {
+  # The substantive difference from the old per-feature `half_min`: a
+  # detection limit is a property of the run, not of the protein. So the
+  # value comes from a low quantile of the *column* it sits in, and two
+  # NAs in the same feature but different samples get different values.
   mat <- make_test_mat()
   mat[3, c(4, 6)] <- NA_real_
-  res <- impute_matrix(mat, method = "half_min")
-  r3_half_min <- 0.5 * min(mat[3, ], na.rm = TRUE)
-  expect_equal(res[3, 4], r3_half_min)
-  expect_equal(res[3, 6], r3_half_min)
+  res <- impute_matrix(mat, method = "MinDet")
+
+  expect_false(anyNA(res))
+  for (j in c(4L, 6L)) {
+    obs <- mat[, j][!is.na(mat[, j])]
+    expect_lte(res[3, j], stats::median(obs))
+    expect_lte(abs(res[3, j] - min(obs)), 0.1 * diff(range(obs)))
+  }
+  # Deterministic, unlike MinProb -- same input, same answer.
+  expect_identical(res, impute_matrix(mat, method = "MinDet"))
 })
 
 test_that("impute_matrix min handles features with no non-NA values", {
@@ -59,28 +69,48 @@ test_that("impute_matrix min handles features with no non-NA values", {
   expect_equal(as.vector(res[5, ]), rep(0, ncol(mat)))
 })
 
-# ---- impute_matrix: mean method -----------------------------------------
+# ---- MAR vs MNAR --------------------------------------------------------
 
-test_that("impute_matrix mean replaces NAs with row means", {
-  mat <- make_test_mat()
-  mat[4, c(1, 2, 3)] <- NA_real_
-  res <- impute_matrix(mat, method = "mean")
-  expect_false(anyNA(res))
-  r4_mean <- mean(mat[4, ], na.rm = TRUE)
-  expect_equal(res[4, 1], r4_mean)
-  expect_equal(res[4, 2], r4_mean)
-  expect_equal(res[4, 3], r4_mean)
+test_that("MAR methods stay inside the observed range, MNAR go below it", {
+  # This is the whole reason the control groups them. knn infers the
+  # missing value from samples where the protein *was* seen; MinProb
+  # assumes it is missing because it was too low to see. Picking the
+  # wrong one is not a rounding difference.
+  set.seed(7)
+  mat <- matrix(stats::rnorm(120, 20, 2), nrow = 15,
+                dimnames = list(paste0("g", 1:15), paste0("s", 1:8)))
+  mat[sample(length(mat), 25)] <- NA_real_
+  obs_min <- min(mat, na.rm = TRUE)
+
+  mnar <- impute_matrix(mat, method = "MinProb")
+  mar  <- impute_matrix(mat, method = "knn")
+  filled <- is.na(mat)
+
+  expect_lt(min(mnar[filled]), obs_min)
+  expect_gte(min(mar[filled]), obs_min)
 })
 
-test_that("impute_matrix mean handles features with all NAs", {
-  mat <- make_test_mat()
-  mat[6, ] <- NA_real_
-  mat[7, ] <- NA_real_
-  res <- impute_matrix(mat, method = "mean")
-  expect_false(anyNA(res))
-  # NaN row means become 0
-  expect_equal(as.vector(res[6, ]), rep(0, ncol(mat)))
-  expect_equal(as.vector(res[7, ]), rep(0, ncol(mat)))
+test_that("every method fills every NA and keeps the shape", {
+  set.seed(8)
+  mat <- matrix(stats::rnorm(120, 20, 2), nrow = 15,
+                dimnames = list(paste0("g", 1:15), paste0("s", 1:8)))
+  mat[sample(length(mat), 25)] <- NA_real_
+  for (m in setdiff(IMPUTE_METHODS, "none")) {
+    res <- impute_matrix(mat, method = m)
+    expect_false(anyNA(res), info = m)
+    expect_identical(dimnames(res), dimnames(mat), info = m)
+  }
+})
+
+test_that("draws are reproducible, so a report and its script agree", {
+  set.seed(9)
+  mat <- matrix(stats::rnorm(80, 20, 2), nrow = 10,
+                dimnames = list(paste0("g", 1:10), paste0("s", 1:8)))
+  mat[sample(length(mat), 15)] <- NA_real_
+  for (m in c("MinProb", "QRILC", "man")) {
+    expect_identical(impute_matrix(mat, method = m),
+                     impute_matrix(mat, method = m), info = m)
+  }
 })
 
 # ---- impute_matrix: error for missing backend packages -----------------
@@ -98,7 +128,7 @@ test_that("impute_matrix works on single-row matrix", {
 test_that("impute_matrix works on single-column matrix", {
   mat <- matrix(1:8, ncol = 1, dimnames = list(paste0("g", 1:8), "s1"))
   mat[3, 1] <- NA_real_
-  res <- impute_matrix(mat, method = "mean")
+  res <- impute_matrix(mat, method = "min")
   expect_false(anyNA(res))
   expect_equal(dim(res), c(8, 1))
 })
