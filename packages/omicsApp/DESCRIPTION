@@ -30,7 +30,7 @@ Imports:
     promises,
     future
 Remotes:
-    omicsCore=local::../omicsCore
+    omicsCore=puweilin/omicsApp/packages/omicsCore
 Suggests:
     testthat (>= 3.0.0),
     later,
