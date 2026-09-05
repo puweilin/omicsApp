@@ -207,3 +207,64 @@ test_that("the Integration pairing control writes the pairing", {
     expect_true(rendered(output$pairing_note))
   })
 })
+
+# ---- QC imputation ----------------------------------------------------
+# Offered for proteomics, withheld for counts. A missing intensity in DIA
+# usually means "below the detection limit", which is information worth
+# filling in deliberately; a missing count does not mean that, and
+# imputing counts feeds DESeq2 numbers its model never saw.
+
+test_that("the imputation control reaches run_qc and changes the result", {
+  proj <- shiny::reactiveVal(sm_project())
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "prot")
+    session$flushReact()
+
+    session$setInputs(impute_method = "none")
+    session$flushReact()
+    b <- last_bundle()
+    expect_identical(b$params$impute_method, "none")
+    expect_true(anyNA(b$results$cleaned_input$expr_mat))
+
+    session$setInputs(impute_method = "half_min")
+    session$flushReact()
+    b <- last_bundle()
+    expect_identical(b$params$impute_method, "half_min")
+    # The point of the control: the NAs are gone afterwards.
+    expect_false(anyNA(b$results$cleaned_input$expr_mat))
+  })
+})
+
+test_that("counts are never imputed, even with a method left selected", {
+  proj <- shiny::reactiveVal(sm_project())
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "prot", impute_method = "half_min")
+    session$flushReact()
+    expect_true(rendered(output$ui_impute))
+
+    # Shiny keeps an input's value when its control is removed, so the
+    # hidden `half_min` would otherwise follow the user to a counts
+    # layer and impute it with a control they can no longer see.
+    session$setInputs(layer = "rna")
+    session$flushReact()
+    expect_null(output$ui_impute)
+    expect_identical(last_bundle()$params$impute_method, "none")
+  })
+})
+
+test_that("only methods whose packages are installed are offered", {
+  proj <- shiny::reactiveVal(sm_project())
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    choices <- impute_choices()
+    expect_true("none" %in% choices)
+    # An option that errors on selection is worse than one not offered.
+    needs <- c(knn = "impute", missforest = "missForest", bpca = "pcaMethods")
+    for (m in names(needs)) {
+      if (!has_pkg(needs[[m]])) {
+        expect_false(m %in% choices, info = m)
+      }
+    }
+  })
+})

@@ -129,10 +129,64 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       last_error(NULL)
     }, ignoreInit = TRUE)
 
+    # Imputation is offered for proteomics and withheld everywhere else.
+    #
+    # A missing intensity in DIA proteomics usually means "below the
+    # detection limit", which is information, and filling it in is a
+    # judgement the analyst should make deliberately -- hence "none" by
+    # default, and hence a control rather than a hidden default.
+    #
+    # A missing count does not mean that. A zero is an observation, and
+    # imputing counts feeds DESeq2 numbers its model never saw. run_qc()
+    # documents the same split.
+    impute_choices <- shiny::reactive({
+      all <- c("none (leave NA visible)" = "none",
+               "Row minimum"             = "min",
+               "Half row minimum"        = "half_min",
+               "Row mean"                = "mean",
+               "k-nearest neighbours"    = "knn",
+               "missForest"              = "missforest",
+               "Bayesian PCA"            = "bpca")
+      # An option that errors on selection is worse than one that is not
+      # offered: the backends stop with an install hint, which arrives as
+      # a red notice over a view that was working a moment ago.
+      needs <- c(knn = "impute", missforest = "missForest", bpca = "pcaMethods")
+      keep <- vapply(all, function(v) {
+        # Single bracket: `needs[["mean"]]` errors on a name that is not
+        # there, where `needs["mean"]` gives NA and lets the method
+        # through as needing nothing.
+        pkg <- unname(needs[v])
+        is.na(pkg) || has_pkg(pkg)
+      }, logical(1L))
+      all[keep]
+    })
+
+    impute_applies <- shiny::reactive({
+      a <- active()
+      inp <- if (a$is_demo) example_qc_input() else a$input
+      identical(inp$omics_type %||% "", "proteomics")
+    })
+
+    output$ui_impute <- shiny::renderUI({
+      if (!impute_applies()) return(NULL)
+      sel <- shiny::isolate(input$impute_method)
+      choices <- impute_choices()
+      if (is.null(sel) || !sel %in% choices) sel <- "none"
+      shiny::selectInput(session$ns("impute_method"),
+                         label = "Imputation (proteomics)",
+                         choices = choices, selected = sel)
+    })
+
     shiny::observe({
       a <- active()
       thr   <- input$missing_threshold %||% 0.5
       out_m <- input$outlier_method   %||% "iqr"
+      # Read here rather than trusted from the input: the control is
+      # hidden when the layer is not proteomics, but Shiny keeps an
+      # input's last value, so switching from a proteomics layer with
+      # `knn` selected to a counts layer would otherwise impute counts
+      # with a control the user can no longer see.
+      imp <- if (impute_applies()) input$impute_method %||% "none" else "none"
 
       # The demo runs through run_qc() like a real project rather than
       # returning a fixed bundle. Both controls above are enabled, and
@@ -144,7 +198,8 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         omicsCore::run_qc(
           qc_input,
           missing_threshold = thr,
-          outlier_method    = out_m
+          outlier_method    = out_m,
+          impute_method     = imp
         ),
         error = function(e) e)
 
@@ -383,7 +438,10 @@ qc_controls_card <- function(ns) {
           selected = "iqr",
           inline   = TRUE
         )
-      )
+      ),
+      # Proteomics only, and rendered from the server because the choices
+      # depend on the layer and on which optional packages are installed.
+      shiny::uiOutput(ns("ui_impute"))
     )
   )
 }
