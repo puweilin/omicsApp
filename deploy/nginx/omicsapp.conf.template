@@ -1,5 +1,9 @@
 # nginx front end for omicsApp: ShinyProxy at /, Keycloak at /auth.
 #
+# deploy/scripts/render.sh writes omicsapp.conf from this template, with
+# @OMICSAPP_HOST@ replaced by the address in deploy/host.env. Edit the
+# template; the rendered file is gitignored.
+#
 #   sudo cp omicsapp.conf /etc/nginx/sites-available/omicsapp
 #   sudo ln -s /etc/nginx/sites-available/omicsapp /etc/nginx/sites-enabled/
 #   sudo nginx -t && sudo systemctl reload nginx
@@ -17,12 +21,12 @@
 #   sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
 #     -keyout /etc/ssl/private/omicsapp.key \
 #     -out /etc/ssl/certs/omicsapp.crt \
-#     -subj "/CN=192.168.51.52" \
-#     -addext "subjectAltName=IP:192.168.51.52,DNS:omics.local,DNS:omics"
+#     -subj "/CN=@OMICSAPP_HOST@" \
+#     -addext "subjectAltName=@OMICSAPP_HOST_SAN@,DNS:omics.local,DNS:omics"
 #
 # The subjectAltName is not decoration. Java validates the address it
 # connected to against the SAN list and ignores CN entirely, so a
-# certificate without `IP:192.168.51.52` fails the next step.
+# certificate without `@OMICSAPP_HOST_SAN@` fails the next step.
 #
 #   sudo cp /etc/ssl/certs/omicsapp.crt /usr/local/share/ca-certificates/
 #   sudo update-ca-certificates
@@ -38,7 +42,7 @@
 
 server {
     listen 80;
-    server_name omics.local omics 192.168.51.52;
+    server_name omics.local omics @OMICSAPP_HOST@;
 
     # Everything is behind Keycloak now, so there is nothing left that
     # is safe to serve over plain HTTP.
@@ -69,7 +73,7 @@ server {
     # mDNS does not cross subnets. If the institution runs DNS, an A
     # record beats this and works everywhere -- list both, they do not
     # conflict.
-    server_name omics.local omics 192.168.51.52;
+    server_name omics.local omics @OMICSAPP_HOST@;
 
     ssl_certificate     /etc/ssl/certs/omicsapp.crt;
     ssl_certificate_key /etc/ssl/private/omicsapp.key;

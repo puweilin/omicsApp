@@ -1,5 +1,6 @@
 # Keycloak, the identity provider behind ShinyProxy.
 #
+#   deploy/scripts/render.sh   # writes docker-compose.yml from this template
 #   cp .env.template .env      # fill in the three secrets
 #   chmod 600 .env
 #   sudo docker compose up -d
@@ -70,7 +71,7 @@ services:
       #
       # The full URL form, including the /auth path, because nginx
       # serves it at a sub-path of the same host.
-      KC_HOSTNAME: https://192.168.51.52/auth
+      KC_HOSTNAME: https://@OMICSAPP_HOST@/auth
       KC_HTTP_RELATIVE_PATH: /auth
 
       # nginx terminates TLS, so the hop from nginx to here is plain

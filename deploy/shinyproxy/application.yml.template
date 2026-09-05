@@ -1,11 +1,14 @@
 # ShinyProxy configuration for omicsApp.
 #
-# Copy to application.yml on the server, fill in the users, and keep it
-# out of git -- .gitignore already excludes application.yml. Even in a
-# private repository a password committed once stays in the history.
+# deploy/scripts/render.sh writes application.yml from this file with the
+# server's address (@OMICSAPP_HOST@, from deploy/host.env) filled in;
+# copy that to the server and fill in the client secret there.
+# application.yml stays out of git -- .gitignore excludes it. Even in a
+# private repository a secret committed once stays in the history.
 #
-#   cp application.yml.template application.yml
-#   chmod 600 application.yml
+#   deploy/scripts/render.sh
+#   sudo cp application.yml /etc/shinyproxy/application.yml
+#   sudo chmod 600 /etc/shinyproxy/application.yml
 #
 # Written for ShinyProxy 3.2.4. Anything older cannot start a container
 # on Docker 28+ at all -- see "Things that will bite you" in the README.
@@ -35,10 +38,10 @@ proxy:
   authentication: openid
   admin-groups: [admins]
   openid:
-    auth-url:  https://192.168.51.52/auth/realms/omicsapp/protocol/openid-connect/auth
-    token-url: https://192.168.51.52/auth/realms/omicsapp/protocol/openid-connect/token
-    jwks-url:  https://192.168.51.52/auth/realms/omicsapp/protocol/openid-connect/certs
-    logout-url: https://192.168.51.52/auth/realms/omicsapp/protocol/openid-connect/logout
+    auth-url:  https://@OMICSAPP_HOST@/auth/realms/omicsapp/protocol/openid-connect/auth
+    token-url: https://@OMICSAPP_HOST@/auth/realms/omicsapp/protocol/openid-connect/token
+    jwks-url:  https://@OMICSAPP_HOST@/auth/realms/omicsapp/protocol/openid-connect/certs
+    logout-url: https://@OMICSAPP_HOST@/auth/realms/omicsapp/protocol/openid-connect/logout
     client-id: shinyproxy
     client-secret: REPLACE_ME
 

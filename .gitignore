@@ -36,3 +36,11 @@ renv/
 # Deployment secrets — the template is committed, the filled-in file is not.
 deploy/shinyproxy/application.yml
 .env
+
+# The server's address, and the files deploy/scripts/render.sh writes
+# from the .template neighbours that carry it. They describe one
+# server, not the software.
+deploy/host.env
+deploy/nginx/omicsapp.conf
+deploy/keycloak/docker-compose.yml
+deploy/keycloak/omicsapp-realm.json

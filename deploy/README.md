@@ -26,10 +26,13 @@ memory cannot take anyone else down with it.
 |---|---|
 | `docker/Dockerfile` | The image. Build from the **repository root**. |
 | `docker/prewarm_genesets.R` | Bakes the MSigDB tables in at build time. |
-| `shinyproxy/application.yml.template` | Copy to `application.yml` on the server and fill in the client secret. |
-| `nginx/omicsapp.conf` | Reverse proxy: TLS, the WebSocket headers Shiny needs, and Keycloak at `/auth`. |
+| `host.env.template` | The server's address, the one thing every deployment sets differently. Copy to `host.env` (gitignored) and fill in. |
+| `scripts/render.sh` | Writes the four files that carry that address from their `.template` neighbours. |
+| `rsync.exclude` | What step 0's `rsync --delete` must leave alone on the server: the secrets, `host.env`, and the rendered files. |
+| `shinyproxy/application.yml.template` | Rendered to `application.yml`; copy that to the server and fill in the client secret. |
+| `nginx/omicsapp.conf.template` | Reverse proxy: TLS, the WebSocket headers Shiny needs, and Keycloak at `/auth`. Rendered to `omicsapp.conf`. |
 | `nginx/nginx-limits.conf` | systemd drop-in raising nginx's file-descriptor limit. |
-| `keycloak/` | The identity provider: compose file, realm definition, and its own README. |
+| `keycloak/` | The identity provider: compose file and realm definition (both rendered from `.template`), and its own README. |
 | `cron/omicsapp-backup` | Nightly backup of the work **and** the account database. |
 | `scripts/build_image.sh` | Wrapper that gets the build context right. |
 | `scripts/add_user.sh` | Creates an account in Keycloak and its storage directory, in that order. |
@@ -56,21 +59,21 @@ git status --short   # must be empty, or the image matches no commit
 this is a copy from the machine you work on, not a `git pull`:
 
 ```bash
-rsync -avz --delete \
-  --exclude '.git/' \
-  --exclude 'deploy/keycloak/.env' \
-  ~/SciProject/CHISSS/omicsApp/ ps@192.168.51.52:~/omicsApp/
+rsync -avz --delete --exclude-from=deploy/rsync.exclude \
+  ~/SciProject/CHISSS/omicsApp/ <user>@<server-ip>:~/omicsApp/
 ```
 
 Both flags earn their place. `--delete` is what removes a script that
 was deleted upstream — otherwise it lingers on the server and someone
-runs it a year later. The exclusion protects `deploy/keycloak/.env`,
-which holds the Keycloak secrets, exists only on the server, and would
-otherwise be deleted by the next sync. (rsync does not delete excluded
-files, so naming it here is what keeps it.)
+runs it a year later. The exclude list protects what exists only on the
+server: `deploy/keycloak/.env` with the Keycloak secrets,
+`deploy/host.env` with the address, and the four files `render.sh`
+writes from them (step 1). rsync does not delete excluded paths, so
+naming them there is what keeps them.
 
-Expect about 3 MB/s. That is the host's network link, not rsync or the
-laptop — see [Network](#network) — and it is why `-z` is in the command.
+If the copy is slow, that is the host's network link, not rsync or the
+laptop; `-z` is in the command because the source is text and compresses
+several times over.
 
 ### 1. Host prerequisites
 
@@ -130,6 +133,25 @@ can ask it for a privileged container mounting the host filesystem:
 ```bash
 sudo usermod -aG docker "$USER"
 ```
+
+**The server's address.** Four files carry it — nginx's `server_name`
+and the certificate it expects, Keycloak's `KC_HOSTNAME`, the realm's
+redirect URIs, ShinyProxy's OIDC endpoints — and they have to agree. So
+it is written once, in `deploy/host.env`, and `render.sh` writes the
+four files from their `.template` neighbours:
+
+```bash
+cp deploy/host.env.template deploy/host.env
+$EDITOR deploy/host.env             # OMICSAPP_HOST=<server-ip or DNS name>
+deploy/scripts/render.sh
+```
+
+`host.env` and the rendered files are gitignored and excluded from the
+step 0 sync: they describe this server, not the software. Re-run
+`render.sh` after a sync that changed a template, and after any change
+of address — then re-copy the nginx site (step 7), bring Keycloak up
+again with the new compose file, and re-import the realm, because the
+address is baked into all three.
 
 ### 2. Pre-flight (2 minutes, saves an hour)
 
@@ -234,7 +256,7 @@ df -h /srv    # should show the 60 TB volume, not the root filesystem
 
 ```bash
 sudo mkdir -p /etc/shinyproxy
-sudo cp deploy/shinyproxy/application.yml.template /etc/shinyproxy/application.yml
+sudo cp deploy/shinyproxy/application.yml /etc/shinyproxy/application.yml   # rendered in step 1
 sudo chmod 600 /etc/shinyproxy/application.yml
 # Owner as well as mode. The .deb's unit runs the service as
 # `shinyproxy`, so a root-owned 600 file is one it cannot read: it
@@ -297,12 +319,17 @@ sudo cp deploy/nginx/nginx-limits.conf /etc/systemd/system/nginx.service.d/limit
 sudo systemctl daemon-reload
 
 sudo nginx -t && sudo systemctl restart nginx
-sudo ufw allow from 192.168.51.0/24 to any port 443 proto tcp
-sudo ufw allow from 192.168.51.0/24 to any port 80 proto tcp
+sudo ufw allow from <lan-cidr> to any port 443 proto tcp
+sudo ufw allow from <lan-cidr> to any port 80 proto tcp
 ```
 
 `restart`, not `reload`, for that first one: a reload keeps the running
 master, and the master is what holds the old limit.
+
+`<lan-cidr>` is the network's real prefix, read from `ip -br addr` on
+the host rather than assumed. A rule written as a `/24` on a `/21`
+admits a quarter of the building and refuses the rest, and it stays
+latent for exactly as long as ufw is not enforcing.
 
 Confirm it took:
 
@@ -312,12 +339,12 @@ grep 'Max open files' /proc/$(cat /var/run/nginx.pid)/limits
 
 Leave `sites-enabled/default` alone. nginx picks a server block by
 matching the request's `Host` against `server_name`, and an exact match
-beats `default_server`, so `http://192.168.51.52` reaches this app while
+beats `default_server`, so `http://<server-ip>` reaches this app while
 everything else still reaches whatever was there before. Removing the
 default site is not needed and takes down any static content a
 colleague was serving from it.
 
-Users then reach the app at `http://192.168.51.52`.
+Users then reach the app at `https://<server-ip>`; plain `http://` redirects there.
 
 ### 8. Acceptance
 
@@ -404,12 +431,12 @@ one.
 **Restarting ShinyProxy drops running sessions.** Adding a user requires
 a restart, so do it when nobody is mid-analysis.
 
-**The host has no cable in it.** Anything copied *to* 192.168.51.52
-arrives at about 3 MB/s, whoever sends it: the host's only link is a USB
-Wi-Fi adapter whose downlink drops frames under load. The step 0
-`rsync` is slow for that reason and no other. [Network](#network) has
-the measurements, and the reason plugging a cable in is not by itself
-enough.
+**A slow copy to the host is the host's link, not rsync.** When the
+step 0 sync crawls, measure the direction before blaming the tool:
+inbound to a host whose only link is Wi-Fi can be an order of magnitude
+slower than outbound from it, whoever sends. The measurements for this
+deployment, and what changing the link would do to the address the four
+rendered files carry, are in the lab's internal notes rather than here.
 
 **`customHeader` authentication is available but not used.** It arrived
 in 3.2.0, so the pinned 3.2.4 has it, and pairing it with a
@@ -487,102 +514,6 @@ On the 7 GB image, because it changes the arithmetic: layers are
 — there is one copy on disk, and each container adds only its writable
 layer, which stays tiny because all data goes to the bind mount rather
 than into the container.
-
-## Network
-
-**The host is on Wi-Fi.** Both onboard Ethernet ports, `eno1` and
-`eno2`, are up with no carrier — nothing is plugged into them — and the
-only link to the LAN is a MediaTek MT7612U USB adapter
-(`wlxfc221c300109`, in-kernel `mt76x2u` driver), associated to `OANET`
-on channel 64 at -66 dBm. 192.168.51.52 is a 24-hour DHCP lease from
-192.168.48.1 on that adapter's MAC, `fc:22:1c:30:01:09`. The LAN is
-192.168.48.0/21, not a /24 — that matters below.
-
-**Anything sent *to* the host arrives at about 3 MB/s.** Measured
-2026-09-04 with 30–60 MB transfers, TCP over ssh and nc, from three
-sources:
-
-| Direction | Throughput |
-|---|---|
-| Laptop (Wi-Fi, -45 dBm) → host | 1.8–3.4 MB/s |
-| Host → laptop | 18–22 MB/s |
-| Wired LAN host 192.168.48.182 → host | 2.5–3.0 MB/s |
-| Host → 192.168.48.182 | 13.8 MB/s |
-| Laptop → 192.168.48.182, same minute | 18–21 MB/s |
-| Laptop → host, four streams in parallel | 7.8 MB/s aggregate |
-
-The direction is what matters, not who initiates: data entering the
-host crosses the slow hop whether `rsync` pushes it, `curl` pulls it or
-`docker pull` fetches it. At these rates a gigabyte is six minutes in
-and one minute out.
-
-**The loss is on the access-point → adapter hop, and only under load.**
-During one 30 MB upload the host's TCP stack queued 3,073 out-of-order
-segments in 25,846 received (`TcpExt.TCPOFOQueue` in
-`/proc/net/netstat`): roughly one segment in eight arrived after a
-later one, which means the earlier one was dropped in the air and the
-sender had to retransmit it. The host itself retransmitted one segment.
-An idle `ping -s 1400` of 150 packets loses none, so this is loss under
-load, not a broken link. Everything on the host that could have caused
-it was checked and is not it: the adapter's transmit side is fine (the
-host → anything rows), it negotiates 300 Mb/s out and 270 Mb/s in,
-power saving is off (NetworkManager's `default-wifi-powersave-on.conf`
-asks for it; `iwconfig` reports `Power Management:off`), it is on a USB
-3.0 port, there is no rate-limiting qdisc, and the load average was
-0.1. Nor is it the sender: the same laptop pushed 20 MB/s into the
-wired host at the same time, and the wired host got the same 3 MB/s
-into this one. (The laptop's own Wi-Fi shows periodic 25–90 ms RTT
-spikes to every LAN address — macOS AWDL, `awdl0` active with AirDrop
-set to Everyone — which adds jitter and is unrelated to the asymmetry.)
-
-Whether it is the adapter or where it sits is not settled. -66 dBm on a
-stub antenna inside a rack is consistent with either, and the only
-other `OANET` radio the host can see, on channel 161, is weaker. The
-cheap experiment is a USB extension cable: move the adapter out of the
-chassis, and if the signal reaches -55 dBm and the upload rate does not
-move, it is the adapter.
-
-```bash
-iwconfig wlxfc221c300109 | grep -E "Signal|Bit Rate"
-```
-
-**The fix is a cable; the address is the part to plan.** The TLS
-certificate (`subjectAltName=IP:192.168.51.52`), Keycloak's
-`KC_HOSTNAME`, ShinyProxy's OIDC URLs and the realm's redirect URIs all
-carry 192.168.51.52, and that lease belongs to the Wi-Fi MAC. Plugging
-in `eno1` activates NetworkManager's `Wired connection 1`, which is
-DHCP, so the port comes up with a *different* address while the Wi-Fi
-keeps the old one — two MACs holding addresses on one subnet, and every
-peer's ARP table free to disagree about which one 192.168.51.52 is. In
-order:
-
-1. Ask IT to reserve 192.168.51.52 for `eno1`'s MAC,
-   `18:9b:a5:86:df:23` (`eno2` is `18:9b:a5:86:df:22`).
-2. Take the Wi-Fi profile down and stop it coming back on its own:
-
-   ```bash
-   nmcli connection modify OANET connection.autoconnect no
-   nmcli connection down OANET
-   ```
-
-3. Plug the cable in, and check that `ip -br addr show eno1` shows
-   192.168.51.52/21 before touching anything else. Nothing in the
-   application needs to change if the address survives.
-
-**Step 7's firewall rule covers a quarter of the LAN.** `ufw allow from
-192.168.51.0/24` was written for a /24. On the real /21 it admits
-192.168.51.x and refuses 48.x–50.x and 52.x–55.x — which includes the
-laptop this was diagnosed from. It has not bitten because ufw is not
-enforcing (`ENABLED=no` in `/etc/ufw/ufw.conf`, although the service is
-running); enable it and the app disappears for most of the building.
-The rule wants `192.168.48.0/21`.
-
-**Until the cable, work with the asymmetry.** `-z` in the step 0 rsync
-is doing real work — source is text and compresses several times over
-— so keep it. Split anything large into parallel streams; four gave
-2.5× the throughput of one. And keep the directions straight: copying
-*out* of the host — the exported image, results someone wants on their
-laptop — is the cheap one.
 
 ## Resources
 
@@ -757,7 +688,7 @@ What to preserve, in order of how much it hurts to lose:
 | User data | `/srv/omicsapp/users` | On the HDD; do not format that disk |
 | ShinyProxy config | `/etc/shinyproxy/application.yml` | Contains password hashes — copy with mode 600 |
 | The image | `docker save` | Rebuildable, but that is an hour |
-| nginx site | `/etc/nginx/sites-available/omicsapp` | Also in this repository |
+| nginx site | `/etc/nginx/sites-available/omicsapp` | Rendered from `nginx/omicsapp.conf.template` and `host.env` |
 | The code | — | On GitHub; nothing to do |
 
 Docker itself is **not** on that list. It lives on the system disk and

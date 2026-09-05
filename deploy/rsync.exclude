@@ -1,0 +1,12 @@
+# What the README's `rsync --delete` must leave alone on the server:
+# everything that exists only there. rsync does not delete excluded
+# paths, so naming them here is what keeps them.
+#
+#   rsync -avz --delete --exclude-from=deploy/rsync.exclude ...
+.git/
+deploy/keycloak/.env
+deploy/host.env
+deploy/nginx/omicsapp.conf
+deploy/keycloak/docker-compose.yml
+deploy/keycloak/omicsapp-realm.json
+deploy/shinyproxy/application.yml

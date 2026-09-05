@@ -100,7 +100,7 @@ test_that("every package the image installs is one the packages declare", {
 test_that("nginx forwards to the port ShinyProxy listens on", {
   root <- skip_unless_deploy()
   sp <- read_deploy(root, "shinyproxy", "application.yml.template")
-  nginx <- read_deploy(root, "nginx", "omicsapp.conf")
+  nginx <- read_deploy(root, "nginx", "omicsapp.conf.template")
   port <- yaml_value(sp, "port")
   expect_match(port, "^[0-9]+$")
   forwarded <- grep("proxy_pass http://127\\.0\\.0\\.1:[0-9]+;", nginx, value = TRUE)
@@ -168,7 +168,7 @@ test_that("the servlet session outlives the heartbeat timeout", {
 
 test_that("nginx carries the WebSocket and the forwarded scheme, and no http2", {
   root <- skip_unless_deploy()
-  nginx <- read_deploy(root, "nginx", "omicsapp.conf")
+  nginx <- read_deploy(root, "nginx", "omicsapp.conf.template")
   code <- nginx[!grepl("^\\s*#", nginx)]
   expect_false(any(grepl("http2", code)))
   expect_true(any(grepl("proxy_set_header Upgrade\\s+\\$http_upgrade", code)))
@@ -179,7 +179,7 @@ test_that("nginx carries the WebSocket and the forwarded scheme, and no http2", 
 
 test_that("nginx accepts uploads at least as large as the app does", {
   root <- skip_unless_deploy()
-  nginx <- read_deploy(root, "nginx", "omicsapp.conf")
+  nginx <- read_deploy(root, "nginx", "omicsapp.conf.template")
   line <- grep("client_max_body_size", nginx, value = TRUE)
   expect_length(line, 1L)
   nginx_mb <- as.numeric(sub(".*client_max_body_size\\s+([0-9]+)M;.*", "\\1", line))
@@ -191,7 +191,7 @@ test_that("nginx accepts uploads at least as large as the app does", {
 
 test_that("the password policy is the same number everywhere it is written", {
   root <- skip_unless_deploy()
-  realm <- read_deploy(root, "keycloak", "omicsapp-realm.json")
+  realm <- read_deploy(root, "keycloak", "omicsapp-realm.json.template")
   policy <- grep("\"passwordPolicy\"", realm, value = TRUE)
   expect_length(policy, 1L)
   floor <- as.integer(sub(".*length\\(([0-9]+)\\).*", "\\1", policy))
@@ -272,4 +272,109 @@ test_that("the CRAN snapshot is a date the check_pins script can read", {
   snap <- sub("^ARG CRAN_SNAPSHOT=", "", grep("^ARG CRAN_SNAPSHOT=", docker, value = TRUE))
   expect_length(snap, 1L)
   expect_false(is.na(as.Date(snap, format = "%Y-%m-%d")))
+})
+
+# ---- the server's address, which four files carry ---------------------------
+#
+# It used to be written into all four by hand, and the day it changes
+# they change together or not at all. Now it lives in host.env and
+# render.sh writes the four. These check that no tracked deploy file
+# names a site, that every carrier is a template with the token, and
+# that rendering fills every token and leaves only the client secret.
+
+rendered_outputs <- c("nginx/omicsapp.conf", "keycloak/docker-compose.yml",
+                      "keycloak/omicsapp-realm.json", "shinyproxy/application.yml")
+
+render_script <- function(root) file.path(root, "scripts", "render.sh")
+
+skip_unless_bash <- function() {
+  skip_on_os("windows")
+  skip_if(!nzchar(Sys.which("bash")), "bash not available")
+}
+
+test_that("no tracked deploy file names a site-specific address", {
+  root <- skip_unless_deploy()
+  files <- list.files(root, recursive = TRUE, full.names = TRUE, all.files = TRUE)
+  rel <- sub(paste0("^", root, "/"), "", files)
+  # The rendered files and host.env are gitignored and may exist locally.
+  files <- files[!rel %in% c(rendered_outputs, "host.env")]
+  hits <- unlist(lapply(files, function(f) {
+    lines <- readLines(f, warn = FALSE)
+    i <- grep("192\\.168\\.[0-9]+\\.[0-9]+|(^|[^0-9.])10\\.[0-9]+\\.[0-9]+\\.[0-9]+", lines)
+    if (length(i)) paste0(sub(paste0("^", root, "/"), "", f), ":", i) else character()
+  }))
+  expect_length(hits, 0L)
+})
+
+test_that("each carrier of the address is a template, rendered, ignored and kept from rsync", {
+  root <- skip_unless_deploy()
+  render <- read_deploy(root, "scripts", "render.sh")
+  excl <- read_deploy(root, "rsync.exclude")
+  ignore <- readLines(file.path(root, "..", ".gitignore"), warn = FALSE)
+  for (out in rendered_outputs) {
+    tmpl <- read_deploy(root, paste0(out, ".template"))
+    expect_true(any(grepl("@OMICSAPP_HOST@", tmpl, fixed = TRUE)), info = out)
+    expect_true(any(grepl(out, render, fixed = TRUE)), info = out)
+    expect_true(paste0("deploy/", out) %in% excl, info = out)
+    expect_true(paste0("deploy/", out) %in% ignore, info = out)
+  }
+  expect_true("deploy/host.env" %in% excl)
+  expect_true("deploy/host.env" %in% ignore)
+  expect_true("deploy/keycloak/.env" %in% excl)
+  expect_true(any(grepl("^OMICSAPP_HOST=REPLACE_ME$", read_deploy(root, "host.env.template"))))
+})
+
+test_that("render.sh fills every token and leaves only the client secret to fill", {
+  root <- skip_unless_deploy()
+  skip_unless_bash()
+  out <- withr::local_tempdir()
+  status <- system2("bash", c(render_script(root), "--host", "203.0.113.7", "--out", out),
+                    stdout = FALSE, stderr = FALSE)
+  expect_identical(status, 0L)
+  for (f in rendered_outputs) {
+    lines <- readLines(file.path(out, f), warn = FALSE)
+    expect_false(any(grepl("@OMICSAPP_", lines, fixed = TRUE)), info = f)
+    expect_true(any(grepl("203.0.113.7", lines, fixed = TRUE)), info = f)
+  }
+  nginx <- readLines(file.path(out, "nginx", "omicsapp.conf"), warn = FALSE)
+  expect_length(grep("^\\s*server_name .*203\\.0\\.113\\.7;", nginx), 2L)
+  expect_true(any(grepl("subjectAltName=IP:203.0.113.7,", nginx, fixed = TRUE)))
+  compose <- readLines(file.path(out, "keycloak", "docker-compose.yml"), warn = FALSE)
+  expect_identical(yaml_value(compose, "KC_HOSTNAME"), "https://203.0.113.7/auth")
+  sp <- readLines(file.path(out, "shinyproxy", "application.yml"), warn = FALSE)
+  expect_identical(yaml_value(sp, "auth-url"),
+                   "https://203.0.113.7/auth/realms/omicsapp/protocol/openid-connect/auth")
+  expect_identical(yaml_value(sp, "client-secret"), "REPLACE_ME")
+
+  skip_if_not_installed("jsonlite")
+  realm <- jsonlite::fromJSON(file.path(out, "keycloak", "omicsapp-realm.json"),
+                              simplifyVector = FALSE)
+  client <- realm$clients[[1L]]
+  expect_identical(client$redirectUris[[1L]], "https://203.0.113.7/login/oauth2/code/shinyproxy")
+  expect_identical(client$webOrigins[[1L]], "https://203.0.113.7")
+  expect_identical(client$attributes$post.logout.redirect.uris, "https://203.0.113.7/*")
+})
+
+test_that("a DNS name gets a DNS subjectAltName, because Java matches the entry type", {
+  root <- skip_unless_deploy()
+  skip_unless_bash()
+  out <- withr::local_tempdir()
+  status <- system2("bash", c(render_script(root), "--host", "omics.example.org", "--out", out),
+                    stdout = FALSE, stderr = FALSE)
+  expect_identical(status, 0L)
+  nginx <- readLines(file.path(out, "nginx", "omicsapp.conf"), warn = FALSE)
+  expect_true(any(grepl("subjectAltName=DNS:omics.example.org,", nginx, fixed = TRUE)))
+  expect_length(grep("^\\s*server_name .*omics\\.example\\.org;", nginx), 2L)
+})
+
+test_that("render.sh refuses an address with a scheme, port or path, and the placeholder", {
+  root <- skip_unless_deploy()
+  skip_unless_bash()
+  out <- withr::local_tempdir()
+  for (bad in c("https://10.0.0.1", "host:8443", "host/path", "REPLACE_ME")) {
+    status <- system2("bash", c(render_script(root), "--host", bad, "--out", out),
+                      stdout = FALSE, stderr = FALSE)
+    expect_false(identical(status, 0L), info = bad)
+  }
+  expect_length(list.files(out, recursive = TRUE), 0L)
 })

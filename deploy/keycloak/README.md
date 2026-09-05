@@ -55,6 +55,12 @@ Generate both values on the server; the template shows how.
 
 **3. Start it.**
 
+`docker-compose.yml` and `omicsapp-realm.json` in this directory are
+written by `deploy/scripts/render.sh` from their `.template` neighbours,
+with the server's address from `deploy/host.env` (main README, step 1).
+If `docker compose` cannot find a configuration file, that step was
+skipped.
+
 ```bash
 sudo docker compose up -d
 sudo docker compose logs -f keycloak      # wait for "Listening on"
@@ -111,7 +117,7 @@ Delete the handout file once distributed: `shred -u omicsapp-passwords.txt`
 
 ## What users can do themselves
 
-At `https://192.168.51.52/auth/realms/omicsapp/account`:
+At `https://<server-ip>/auth/realms/omicsapp/account`:
 
 - change their password
 - change their username
@@ -150,8 +156,10 @@ and signing keys from Keycloak directly — server to server, not through
 the browser — and with a self-signed certificate it will refuse. The
 browser login looks perfect and the callback then fails with a TLS error
 inside a stack trace. `update-ca-certificates` is what fixes it, and the
-certificate needs `subjectAltName=IP:192.168.51.52`, because Java
-validates against the SAN list and ignores CN.
+certificate needs the address in its `subjectAltName` — `IP:<server-ip>`,
+or `DNS:` for a name; the rendered nginx file's comments carry the exact
+`openssl` command — because Java validates against the SAN list and
+ignores CN.
 
 **`KC_PROXY_HEADERS` missing means 403.** Not a redirect loop, not a
 certificate error — a flat 403 whose message says nothing about proxies.

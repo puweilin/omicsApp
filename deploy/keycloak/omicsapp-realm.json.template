@@ -34,13 +34,13 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "https://192.168.51.52/login/oauth2/code/shinyproxy"
+        "https://@OMICSAPP_HOST@/login/oauth2/code/shinyproxy"
       ],
       "webOrigins": [
-        "https://192.168.51.52"
+        "https://@OMICSAPP_HOST@"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "https://192.168.51.52/*"
+        "post.logout.redirect.uris": "https://@OMICSAPP_HOST@/*"
       },
       "protocolMappers": [
         {
