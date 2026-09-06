@@ -36,6 +36,10 @@
 
 #' Imputation methods, grouped by what they assume
 #'
+#' `IMPUTE_METHOD_ASSUMPTION` maps each method to the missingness it
+#' assumes; `IMPUTE_METHODS` is its names, in the order the app lists
+#' them, and is what [impute_matrix()] and [run_qc()] accept.
+#'
 #' @format A named character vector: names are the method, values are
 #'   `"MNAR"`, `"MAR"`, `"either"` or `"none"`.
 #' @export
@@ -54,6 +58,8 @@ IMPUTE_METHOD_ASSUMPTION <- c(
   man      = "either"
 )
 
+#' @rdname IMPUTE_METHOD_ASSUMPTION
+#' @export
 IMPUTE_METHODS <- names(IMPUTE_METHOD_ASSUMPTION)
 
 #' Which imputation a layer gets when the caller does not say

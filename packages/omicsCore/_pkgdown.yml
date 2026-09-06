@@ -1,5 +1,5 @@
 destination: docs
-url: https://chisss.github.io/omicsCore/
+url: https://puweilin.github.io/omicsApp/omicsCore/
 template:
   bootstrap: 5
 
@@ -33,7 +33,7 @@ reference:
   - validate_omics_input
 
 - title: Project container
-  desc: Multi-omics project class
+  desc: Multi-omics project class, and linking samples across layers
   contents:
   - omics_project
   - is_omics_project
@@ -42,11 +42,26 @@ reference:
   - experiment_tags
   - load_project
   - save_project
+  - suggest_sample_link
+  - derive_sample_link
+  - sample_pairing_preview
+
+- title: Vocabularies
+  desc: Assay types, differential backends and imputation methods, as the package names them
+  contents:
+  - SUPPORTED_ASSAY_TYPES
+  - LOG_SCALE_ASSAY_TYPES
+  - infer_assay_type
+  - SUPPORTED_DIFF_METHODS
+  - applicable_diff_methods
+  - IMPUTE_METHOD_ASSUMPTION
 
 - title: Preprocessing
   desc: Filter, impute, normalize, and subset
   contents:
+  - normalize_omics
   - impute_matrix
+  - resolve_impute_method
   - winsorize_counts
   - drop_meta_na
   - select_complete_cases
@@ -60,6 +75,8 @@ reference:
   contents:
   - qc_missingness
   - qc_outliers
+  - qc_depth
+  - qc_depth_outliers
 
 - title: Analysis pipelines
   desc: Run QC, differential, enrichment, and integration
@@ -81,9 +98,13 @@ reference:
   - make_ranked_features
 
 - title: Gene sets
-  desc: List available MSigDB gene sets
+  desc: MSigDB gene sets, the on-disk cache, and gene symbols
   contents:
   - list_gene_sets
+  - geneset_cache_status
+  - refresh_geneset_cache
+  - map_ensembl_symbols
+  - hgnc_map_provenance
 
 - title: Visualization
   desc: QC, differential, enrichment, and integration plots
@@ -99,12 +120,14 @@ reference:
   - plot_gsva_heatmap
   - plot_integration
   - theme_omicsCore
+  - omics_colors
 
 - title: Export
   desc: Save results and render reports
   contents:
   - export_report
   - export_bundle
+  - export_script
   - install_optional
   - check_install
 

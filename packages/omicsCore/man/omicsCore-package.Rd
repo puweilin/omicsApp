@@ -21,6 +21,7 @@ surface.
 Useful links:
 \itemize{
   \item \url{https://github.com/puweilin/omicsApp}
+  \item \url{https://puweilin.github.io/omicsApp/omicsCore/}
   \item Report bugs at \url{https://github.com/puweilin/omicsApp/issues}
 }
 

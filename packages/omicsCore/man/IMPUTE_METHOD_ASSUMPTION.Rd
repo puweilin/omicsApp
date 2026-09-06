@@ -3,16 +3,23 @@
 \docType{data}
 \name{IMPUTE_METHOD_ASSUMPTION}
 \alias{IMPUTE_METHOD_ASSUMPTION}
+\alias{IMPUTE_METHODS}
 \title{Imputation methods, grouped by what they assume}
 \format{
 A named character vector: names are the method, values are
 \code{"MNAR"}, \code{"MAR"}, \code{"either"} or \code{"none"}.
+
+An object of class \code{character} of length 11.
 }
 \usage{
 IMPUTE_METHOD_ASSUMPTION
+
+IMPUTE_METHODS
 }
 \description{
-Imputation methods, grouped by what they assume
+\code{IMPUTE_METHOD_ASSUMPTION} maps each method to the missingness it
+assumes; \code{IMPUTE_METHODS} is its names, in the order the app lists
+them, and is what \code{\link[=impute_matrix]{impute_matrix()}} and \code{\link[=run_qc]{run_qc()}} accept.
 }
 \seealso{
 Other qc: 
