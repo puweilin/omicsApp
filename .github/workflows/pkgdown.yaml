@@ -19,6 +19,11 @@ on:
 jobs:
   pkgdown:
     runs-on: ubuntu-latest
+    # The deploy step pushes the gh-pages branch. The repository's default
+    # token is read-only, so the job asks for write access to contents
+    # explicitly; without it the push is a 403 with no further explanation.
+    permissions:
+      contents: write
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
