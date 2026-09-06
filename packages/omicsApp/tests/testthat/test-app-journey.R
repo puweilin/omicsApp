@@ -60,7 +60,11 @@ test_that("upload, run, enrich, download, replace: the wiring holds end to end",
 
   # ---- differential --------------------------------------------------
   app$click(selector = "#nav_diff")
-  app$wait_for_idle(timeout = 5000)
+  # Entering the view asks has_pkg() about every engine, and the first
+  # answer loads DESeq2 and its sixty-odd namespaces into the app
+  # process. On a CI runner that alone is longer than the 5 s the other
+  # views need.
+  app$wait_for_idle(timeout = 30000)
   app$set_inputs(`diff-method` = "ttest")
   app$click("diff-rerun")
   app$wait_for_idle(timeout = 30000)
@@ -95,7 +99,7 @@ test_that("upload, run, enrich, download, replace: the wiring holds end to end",
   app$click("import-confirm_replace")
   app$wait_for_idle(timeout = 15000)
   app$click(selector = "#nav_diff")
-  app$wait_for_idle(timeout = 5000)
+  app$wait_for_idle(timeout = 30000)   # same headroom as the first entry
   stats_after <- journey_text(app$get_value(output = "diff-stats"))
   expect_false(grepl("Tested features", stats_after, fixed = TRUE))
   # And the snapshot on disk no longer carries the old analysis
