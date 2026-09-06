@@ -70,12 +70,28 @@ A few suites are deliberately opt-in:
 | `omicsApp/tests/testthat/test-app-journey.R` | Chrome available | upload, run, enrich, download the script, replace the data, in a browser |
 | `omicsCore/tests/testthat/test-golden-rnaseq-follicle.R` | the parent project's `data/` and `results/`, or `OMICSAPP_FOLLICLE_ROOT` | the follicle counts file through filter, winsorize and edgeR, against the legacy report's table |
 | `*/tests/testthat/test-c-locale.R` | `callr` installed | the package in a child process running under `LC_ALL=C`, as a container without a locale would |
+| `omicsCore/tests/testthat/test-api-contract.R` (heavy sweep) | `OMICSCORE_FUZZ_TESTS=1` | every argument of the enrichment, GSVA, integration and report functions given every wrong value in turn |
+| `omicsApp/tests/testthat/test-two-sessions.R` | Chrome available | two browsers on one R process; what one imports the other must not see |
 
 `omicsCore/tests/testthat/fixtures/omp/` is a corpus of `.omp` files written
 by past versions; every file in it must keep opening. When the schema
 version or the bundle layout changes, add a file rather than replacing one
 (`write_omp_corpus_fixture()` in `test-omp-corpus.R` writes the current
 version's).
+
+Every exported omicsCore function answers a wrong argument by name
+(`test-api-contract.R`): the light functions are swept on every run with
+NULL, NA, a negative number, a string, an empty vector, a list, a function
+and a hollow object in each argument, and an error message that is R's own
+("argument is of length zero", "$ operator is invalid for atomic vectors")
+fails the test. The assertions live in `R/validation-utils.R`; use them in
+any new entry point rather than letting a bad value reach the engine.
+
+`test-hygiene.R` (omicsCore) and `test-app-hygiene.R` (omicsApp) hold what a
+call may not leave behind in a process that serves every user: the random
+stream, a planted seed, an open connection or device, an option, a file in
+`tempdir()`. Seed only through `with_fixed_seed()` (core) or `local_seed()`
+(app); a bare `set.seed()` in package code fails a test.
 
 Optional-dependency branches are tested by mocking `omicsCore:::is_installed()`
 and `omicsApp:::has_pkg()` (`test-lightweight-install.R`,

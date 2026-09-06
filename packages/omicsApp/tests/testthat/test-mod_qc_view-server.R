@@ -97,12 +97,12 @@ test_that("qc view surfaces run_qc errors instead of crashing", {
       # in place is awkward in testServer; the simpler way to hit
       # the error path is to pass an unsupported outlier method
       # via setInputs (radio values are validated by the choices
-      # list at the UI level, but match.arg() will reject anything
-      # else server-side).
+      # list at the UI level, but omicsCore refuses anything else by
+      # name server-side).
       session$setInputs(missing_threshold = 0.5,
                         outlier_method    = "unknown_method")
       expect_false(is.null(last_error()))
-      expect_match(last_error(), "should be one of", fixed = FALSE)
+      expect_match(last_error(), "`outlier_method` must be one or more of", fixed = TRUE)
     }
   )
 })
