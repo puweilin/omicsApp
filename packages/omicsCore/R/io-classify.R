@@ -48,6 +48,7 @@ FEATURE_NAME_HINTS <- c(
 #' @export
 #' @family io
 detect_id_columns <- function(df, max_check = 200L) {
+  assert_count(max_check, "max_check", lower = 1L)
   out <- data.frame(
     column = character(0),
     pattern = character(0),
@@ -154,6 +155,9 @@ detect_orientation <- function(df) {
 #' @export
 #' @family io
 classify_sheet_role <- function(df, name = NA_character_) {
+  if (!is.null(name) && !(is.atomic(name) && length(name) == 1L)) {
+    arg_stop("name", "a single string or NA", name)
+  }
   if (!is.data.frame(df) || nrow(df) == 0L || ncol(df) == 0L) {
     return(list(role = "unknown", confidence = 0,
                 orientation = NA_character_,

@@ -12,6 +12,8 @@
 #' @export
 #' @family omics_input
 subset_omics <- function(input, samples = NULL, features = NULL) {
+  assert_character(samples, "samples", allow_null = TRUE)
+  assert_character(features, "features", allow_null = TRUE)
   validate_omics_input(input)
   out <- input
   if (!is.null(samples)) {
@@ -32,6 +34,7 @@ subset_omics <- function(input, samples = NULL, features = NULL) {
 #' @export
 #' @family omics_input
 subset_omics_samples <- function(omics_input, sample_ids) {
+  assert_character(sample_ids, "sample_ids")
   validate_omics_input(omics_input)
 
   sample_ids <- intersect(sample_ids, colnames(omics_input$expr_mat))
@@ -69,6 +72,7 @@ subset_omics_samples <- function(omics_input, sample_ids) {
 #' @export
 #' @family omics_input
 subset_omics_features <- function(omics_input, feature_ids) {
+  assert_character(feature_ids, "feature_ids")
   validate_omics_input(omics_input)
 
   feature_ids <- intersect(feature_ids, rownames(omics_input$expr_mat))
@@ -112,6 +116,7 @@ subset_omics_features <- function(omics_input, feature_ids) {
 #' @export
 #' @family omics_input
 drop_meta_na <- function(omics_input, cols) {
+  assert_names(cols, "cols")
   validate_omics_input(omics_input)
   check_required_cols(omics_input$meta_df, cols, object_name = "meta_df")
 
@@ -131,6 +136,7 @@ drop_meta_na <- function(omics_input, cols) {
 #' @export
 #' @family omics_input
 select_complete_cases <- function(omics_input, feature_missing_cutoff = 1) {
+  assert_number(feature_missing_cutoff, "feature_missing_cutoff", lower = 0, upper = 1)
   validate_omics_input(omics_input)
 
   feature_missing <- rowMeans(is.na(omics_input$expr_mat))

@@ -16,6 +16,7 @@ plot_qc <- function(bundle,
                              "imputation"),
                     color_by = NULL,
                     ...) {
+  assert_string(color_by, "color_by", allow_null = TRUE)
   if (!is_analysis_bundle(bundle) || !identical(bundle$analysis_name, "run_qc")) {
     stop("`bundle` must be an analysis_bundle from run_qc().")
   }
@@ -312,6 +313,8 @@ plot_qc_imputation <- function(bundle) {
 #' @return A ggplot2 theme.
 #' @export
 theme_omicsCore <- function(base_size = 11, base_family = "") {
+  assert_number(base_size, "base_size", lower = 0)
+  assert_string(base_family, "base_family", allow_empty = TRUE)
   ggplot2::theme_minimal(base_size = base_size, base_family = base_family) +
     ggplot2::theme(
       plot.title = ggplot2::element_text(face = "bold", size = ggplot2::rel(1.05)),

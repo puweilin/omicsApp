@@ -141,8 +141,12 @@ test_that("run_qc with impute_method='min' fills NAs in cleaned input", {
 
 test_that("run_qc errors when filters wipe out the input", {
   x <- make_qc_input()
+  # One missing value in every feature, and a threshold that flags any:
+  # nothing survives. (A negative threshold used to be the way to say
+  # this; it is now refused as not a probability.)
+  x$expr_mat[cbind(seq_len(nrow(x$expr_mat)), 1L)] <- NA
   expect_error(
-    run_qc(x, missing_threshold = -1),  # flags everything
+    run_qc(x, missing_threshold = 0),
     "loosen the thresholds"
   )
 })

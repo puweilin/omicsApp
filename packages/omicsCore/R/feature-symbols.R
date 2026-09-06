@@ -101,6 +101,9 @@ looks_like_ensembl <- function(ids, min_fraction = 0.5) {
 #' @examples
 #' map_ensembl_symbols(c("ENSG00000141510", "ENSG00000012048"))
 map_ensembl_symbols <- function(ids) {
+  if (is.null(ids)) return(character(0))
+  if (is.factor(ids) || is.numeric(ids)) ids <- as.character(ids)
+  if (!is.character(ids)) arg_stop("ids", "a character vector", ids)
   out <- rep(NA_character_, length(ids))
   m <- hgnc_ensembl_map()
   if (is.null(m) || length(ids) == 0L) return(out)

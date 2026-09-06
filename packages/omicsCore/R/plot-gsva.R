@@ -34,6 +34,13 @@ plot_gsva_heatmap <- function(
   cluster_cols = TRUE,
   title = "GSVA"
 ) {
+  assert_count(top_n, "top_n", lower = 1L)
+  assert_character(pathways, "pathways", allow_null = TRUE)
+  assert_data_frame(meta_df, "meta_df", allow_null = TRUE)
+  assert_character(annotation_cols, "annotation_cols", allow_null = TRUE)
+  assert_flag(cluster_rows, "cluster_rows")
+  assert_flag(cluster_cols, "cluster_cols")
+  assert_string(title, "title", allow_null = TRUE, allow_empty = TRUE)
   if (!is_analysis_bundle(bundle) ||
       !identical(bundle$analysis_name, "run_gsva")) {
     stop("`bundle` must be an analysis_bundle from run_gsva().")

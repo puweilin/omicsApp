@@ -27,6 +27,9 @@ plot_enrichment <- function(
   p_cutoff = NULL,
   database = NULL
 ) {
+  assert_count(top_n, "top_n")
+  assert_number(p_cutoff, "p_cutoff", lower = 0, upper = 1, allow_null = TRUE)
+  assert_character(database, "database", allow_null = TRUE)
   view <- match.arg(view)
   p_preference <- match.arg(p_preference)
   df <- enrich_result_from_bundle(bundle)

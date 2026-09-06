@@ -26,6 +26,9 @@ filter_diff_results <- function(
 ) {
   check_diff_result_schema(result_df)
   p_preference <- match.arg(p_preference)
+  assert_number(p_cutoff, "p_cutoff", lower = 0, upper = 1)
+  assert_number(effect_cutoff, "effect_cutoff", lower = 0, allow_null = TRUE)
+  assert_number(model_fit_cutoff, "model_fit_cutoff", allow_null = TRUE)
 
   p_col <- resolve_p_col(result_df, p_preference = p_preference)
   out <- result_df[!is.na(result_df[[p_col]]) & result_df[[p_col]] < p_cutoff, , drop = FALSE]
@@ -63,6 +66,8 @@ make_ranked_features <- function(
   rank_col = "effect"
 ) {
   check_diff_result_schema(result_df)
+  assert_string(feature_col, "feature_col")
+  assert_string(rank_col, "rank_col")
 
   if (!feature_col %in% colnames(result_df)) {
     stop("Feature column not found: ", feature_col)

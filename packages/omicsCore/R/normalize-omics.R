@@ -54,6 +54,7 @@ normalize_omics <- function(
   method = c("vsn", "log2"),
   offset = 1
 ) {
+  assert_number(offset, "offset", lower = 0)
   validate_omics_input(input)
   method <- match.arg(method)
 

@@ -33,6 +33,24 @@ NULL
 #'
 #' @keywords internal
 #' @noRd
+# A seed for the frame that asks for one, and only that frame. The
+# example data used to call set.seed() outright, which is a global:
+# every session in the process shares one random stream, and loading
+# the demo reset it for all of them. The stream is put back on exit.
+local_seed <- function(seed, envir = parent.frame()) {
+  had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+  old <- if (had) get(".Random.seed", envir = globalenv(), inherits = FALSE)
+  restore <- function() {
+    if (had) assign(".Random.seed", old, envir = globalenv())
+    else suppressWarnings(rm(".Random.seed", envir = globalenv()))
+  }
+  # Added at the front: a frame that seeds twice restores to its own
+  # first state on the way out, not to the state of its second call.
+  do.call(base::on.exit, list(as.call(list(restore)), TRUE, FALSE), envir = envir)
+  set.seed(seed)
+  invisible(seed)
+}
+
 example_input <- function(omics_type = c("proteomics", "rnaseq")) {
   omics_type <- match.arg(omics_type)
 
@@ -42,7 +60,7 @@ example_input <- function(omics_type = c("proteomics", "rnaseq")) {
   groups      <- rep(c("G1", "G2"), each = n_per_group)
 
   # Deterministic age stratified by group: G1 younger, G2 older with overlap.
-  set.seed(2026L)
+  local_seed(2026L)
   ages <- c(round(stats::rnorm(n_per_group, mean = 32, sd = 6)),
             round(stats::rnorm(n_per_group, mean = 48, sd = 7)))
   sex     <- rep(c("F", "M"), length.out = n_samples)
@@ -66,7 +84,7 @@ example_input <- function(omics_type = c("proteomics", "rnaseq")) {
     descriptions <- paste0("Demo protein ", symbols)
     assay_type <- "normalized_intensity"
 
-    set.seed(2026L + 1L)
+    local_seed(2026L + 1L)
     expr <- matrix(
       stats::rnorm(n_features * n_samples, mean = 18, sd = 0.7),
       nrow = n_features,
@@ -85,7 +103,7 @@ example_input <- function(omics_type = c("proteomics", "rnaseq")) {
     descriptions <- paste0("Demo gene ", symbols)
     assay_type <- "raw_count"
 
-    set.seed(2026L + 2L)
+    local_seed(2026L + 2L)
     expr <- matrix(
       stats::rpois(n_features * n_samples, lambda = 200),
       nrow = n_features,
@@ -251,7 +269,7 @@ example_enrich_table <- function() {
     "HALLMARK_FATTY_ACID_METABOLISM",
     "HALLMARK_MYC_TARGETS_V1"
   )
-  set.seed(2026L + 4L)
+  local_seed(2026L + 4L)
   n <- length(pathways)
   nes <- c(2.31, 2.18, 2.04, 1.92, 1.81, -1.74, -1.61, -1.52,
            1.45, 1.38, 1.92, 1.55, -1.42, -1.30, 1.20)
@@ -307,7 +325,7 @@ example_enrich_table <- function() {
 #' @keywords internal
 #' @noRd
 example_integration_tables <- function() {
-  set.seed(2026L + 5L)
+  local_seed(2026L + 5L)
   n_feat <- 60L
   symbols <- example_protein_symbols(n_feat)
   feat_ids <- sprintf("F%03d", seq_len(n_feat))
@@ -431,7 +449,7 @@ example_qc_input <- function() {
   if (!is.null(.example_cache$qc_input)) return(.example_cache$qc_input)
   input <- example_proteomics_input()
   expr  <- input$expr_mat
-  set.seed(2026L + 3L)
+  local_seed(2026L + 3L)
   n_cells <- length(expr)
   na_idx  <- sample.int(n_cells, size = ceiling(0.05 * n_cells))
   expr[na_idx] <- NA_real_

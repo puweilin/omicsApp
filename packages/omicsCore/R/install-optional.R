@@ -123,6 +123,7 @@ check_install <- function(
   features = c("rnaseq", "proteomics", "enrichment", "imputation", "viz",
                "persistence")
 ) {
+  assert_names(features, "features")
   rows <- lapply(features, function(g) {
     pkgs <- resolve_install_group(g)
     installed <- vapply(pkgs, is_installed, logical(1))

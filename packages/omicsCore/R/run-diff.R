@@ -199,6 +199,17 @@ run_diff <- function(
   analysis_type <- match.arg(analysis_type)
   method <- match.arg(method, choices = SUPPORTED_DIFF_METHODS)
 
+  # An empty selection means no covariate, which is what NULL says.
+  if (length(covariates) == 0L) covariates <- NULL
+  if (length(selected_groups) == 0L) selected_groups <- NULL
+  assert_string(group_col, "group_col", allow_null = TRUE)
+  assert_label(control_group, "control_group", allow_null = TRUE)
+  assert_label(case_group, "case_group", allow_null = TRUE)
+  assert_string(continuous_col, "continuous_col", allow_null = TRUE)
+  assert_names(covariates, "covariates", allow_null = TRUE)
+  assert_string(paired_col, "paired_col", allow_null = TRUE)
+  assert_names(selected_groups, "selected_groups", allow_null = TRUE)
+
   if (method == "auto") {
     method <- auto_select_diff_method(input, analysis_type)
   }
@@ -227,6 +238,8 @@ run_diff <- function(
 
   validate_diff_args(analysis_type, method, backend_args)
   validate_diff_design(input, analysis_type, backend_args)
+  pre <- preflight_diff_matrix(input, method, analysis_type, backend_args)
+  input <- pre$input
 
   # Drop arguments the chosen backend doesn't accept (e.g. ttest has no
   # `covariates`, lm/ttest have no `paired_col`-via-limma corfit, ...).
@@ -261,7 +274,8 @@ run_diff <- function(
       diff_result_df = backend_result$results_std,
       diff_raw_df = backend_result$results_raw,
       diff_object = backend_result$model_object
-    )
+    ),
+    warnings = pre$warnings
   )
 }
 
@@ -391,6 +405,64 @@ validate_diff_design <- function(input, analysis_type, args) {
     }
   }
   invisible(TRUE)
+}
+
+# The values, checked before any engine sees them.
+#
+# A count engine given a sample with no counts answered "missing value
+# where TRUE/FALSE needed" (edgeR) or "every gene contains at least one
+# zero" (DESeq2), and one given a count past the integer range answered
+# with an invalid-object error after a coercion warning. Neither names
+# the sample or the value. The intensity engines take an infinite value
+# as it comes and hand back an infinite effect with no p-value for the
+# feature; here it becomes a missing value, and the bundle says so.
+preflight_diff_matrix <- function(input, method, analysis_type, args) {
+  mat <- input$expr_mat
+  samples <- colnames(mat)
+  if (analysis_type == "group") {
+    g <- input$meta_df[[args$group_col]]
+    in_contrast <- rownames(input$meta_df)[!is.na(g) &
+                                            g %in% c(args$control_group, args$case_group)]
+    samples <- intersect(samples, in_contrast)
+  }
+  sub <- mat[, samples, drop = FALSE]
+
+  if (method %in% c("deseq2", "edger")) {
+    n_na <- sum(is.na(sub))
+    n_inf <- sum(is.infinite(sub))
+    n_neg <- sum(sub < 0, na.rm = TRUE)
+    if (n_na + n_inf + n_neg > 0L) {
+      stop(sprintf(
+        "Counts must be finite and non-negative for method = '%s'; the matrix has %d missing, %d infinite and %d negative value(s).",
+        method, n_na, n_inf, n_neg), call. = FALSE)
+    }
+    lib <- colSums(sub)
+    empty <- names(lib)[lib == 0]
+    if (length(empty) > 0L) {
+      stop(sprintf(
+        "%d sample(s) have no counts at all: %s. Remove them before running %s.",
+        length(empty), paste(utils::head(empty, 5L), collapse = ", "), method),
+        call. = FALSE)
+    }
+    if (method == "deseq2") {
+      n_big <- sum(sub > .Machine$integer.max)
+      if (n_big > 0L) {
+        stop(sprintf(
+          "%d count(s) exceed %d, the largest value DESeq2 can store; check the units of the matrix.",
+          n_big, .Machine$integer.max), call. = FALSE)
+      }
+    }
+    return(list(input = input, warnings = character(0)))
+  }
+
+  nonfinite <- is.infinite(mat)
+  if (!any(nonfinite)) return(list(input = input, warnings = character(0)))
+  note <- sprintf(
+    "%d infinite value(s) in %d feature(s) were treated as missing.",
+    sum(nonfinite), sum(rowSums(nonfinite) > 0L))
+  input$expr_mat[nonfinite] <- NA
+  warning(note, call. = FALSE)
+  list(input = input, warnings = note)
 }
 
 validate_diff_args <- function(analysis_type, method, args) {

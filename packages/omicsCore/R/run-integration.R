@@ -93,6 +93,8 @@ run_integration <- function(
   ...
 ) {
   method <- match.arg(method)
+  assert_list(diff_bundles, "diff_bundles", allow_null = TRUE)
+  assert_string(by, "by")
   experiments <- resolve_experiment_pair(project, experiments)
   tag_a <- experiments[[1L]]
   tag_b <- experiments[[2L]]

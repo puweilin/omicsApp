@@ -68,6 +68,12 @@ run_qc <- function(
   outlier_sd_threshold = 3,
   ...
 ) {
+  assert_number(missing_threshold, "missing_threshold", lower = 0, upper = 1)
+  assert_number(sample_missing_threshold, "sample_missing_threshold",
+                lower = 0, upper = 1, allow_null = TRUE)
+  assert_subset(outlier_method, "outlier_method",
+                c("none", "pca", "connectivity", "iqr"), allow_null = TRUE)
+  assert_number(outlier_sd_threshold, "outlier_sd_threshold", lower = 0)
   validate_omics_input(input)
 
   # NULL rather than a fixed default, resolved per modality like

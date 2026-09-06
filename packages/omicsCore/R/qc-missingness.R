@@ -26,6 +26,9 @@ qc_missingness <- function(
   sample_missing_cutoff = NULL,
   feature_missing_cutoff = 0.5
 ) {
+  assert_number(sample_missing_cutoff, "sample_missing_cutoff",
+                lower = 0, upper = 1, allow_null = TRUE)
+  assert_number(feature_missing_cutoff, "feature_missing_cutoff", lower = 0, upper = 1)
   validate_omics_input(input)
   expr_mat <- input$expr_mat
 

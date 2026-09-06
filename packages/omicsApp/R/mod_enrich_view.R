@@ -314,7 +314,11 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     # The threshold the panel is read at. numericInput reports NA while
     # the box is mid-edit, and NA would empty the panel with nothing to
     # say why.
-    show_p <- shiny::reactive(input$show_p %||% "adjusted")
+    show_p <- shiny::reactive({
+      v <- input$show_p
+      if (is.null(v) || !is.character(v) || length(v) != 1L ||
+          !v %in% c("adjusted", "raw", "qvalue")) "adjusted" else v
+    })
     show_cutoff <- shiny::reactive({
       v <- input$show_cutoff
       if (is.null(v) || !is.finite(v) || v <= 0 || v > 1) 0.05 else v

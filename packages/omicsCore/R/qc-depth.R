@@ -35,6 +35,7 @@
 #' @export
 #' @family qc
 qc_depth <- function(input) {
+  validate_omics_input(input)
   mat <- input$expr_mat
   n_feat <- nrow(mat)
 
@@ -72,6 +73,10 @@ qc_depth <- function(input) {
 #' @export
 #' @family qc
 qc_depth_outliers <- function(depth_df, min_ratio = 0.3) {
+  assert_data_frame(depth_df, "depth_df")
+  check_required_cols(depth_df, c("sample_id", "library_size_ratio"),
+                      object_name = "depth_df")
+  assert_number(min_ratio, "min_ratio", lower = 0)
   r <- depth_df$library_size_ratio
   depth_df$sample_id[!is.na(r) & r < min_ratio]
 }

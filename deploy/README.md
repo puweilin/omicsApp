@@ -38,6 +38,34 @@ memory cannot take anyone else down with it.
 | `scripts/add_user.sh` | Creates an account in Keycloak and its storage directory, in that order. |
 | `scripts/list_users.sh` | Maps the UUID directory names back to people. |
 
+## The one thing every deployment sets
+
+Your server's address, written once:
+
+```bash
+cp deploy/host.env.template deploy/host.env
+$EDITOR deploy/host.env             # OMICSAPP_HOST=<server-ip or DNS name>
+deploy/scripts/render.sh
+```
+
+Four files carry that address and they have to agree — nginx's
+`server_name` and the certificate it expects, Keycloak's `KC_HOSTNAME`,
+the realm's redirect URIs, ShinyProxy's OIDC endpoints. Each is tracked
+as a `.template` with `@OMICSAPP_HOST@` where the address goes;
+`render.sh` writes the real file beside it.
+
+So `deploy/host.env` is the only file you edit that is about *your*
+machine rather than about the software. It and the four rendered files
+are gitignored and excluded from the sync below: they describe this
+server, and the next person's server is not this one.
+
+Re-run `render.sh` after a sync that changed a template, and after any
+change of address — then re-copy the nginx site, bring Keycloak up again
+with the new compose file, and re-import the realm, because the address
+is baked into all three.
+
+Everything else below is the same on any machine.
+
 ## First deployment
 
 Verify each step before starting the next. Standing the whole stack up
@@ -134,24 +162,9 @@ can ask it for a privileged container mounting the host filesystem:
 sudo usermod -aG docker "$USER"
 ```
 
-**The server's address.** Four files carry it — nginx's `server_name`
-and the certificate it expects, Keycloak's `KC_HOSTNAME`, the realm's
-redirect URIs, ShinyProxy's OIDC endpoints — and they have to agree. So
-it is written once, in `deploy/host.env`, and `render.sh` writes the
-four files from their `.template` neighbours:
-
-```bash
-cp deploy/host.env.template deploy/host.env
-$EDITOR deploy/host.env             # OMICSAPP_HOST=<server-ip or DNS name>
-deploy/scripts/render.sh
-```
-
-`host.env` and the rendered files are gitignored and excluded from the
-step 0 sync: they describe this server, not the software. Re-run
-`render.sh` after a sync that changed a template, and after any change
-of address — then re-copy the nginx site (step 7), bring Keycloak up
-again with the new compose file, and re-import the realm, because the
-address is baked into all three.
+**The server's address** is set once, at the top of this file, before
+any of these steps. If `render.sh` has not been run, the files the later
+steps copy still say `@OMICSAPP_HOST@` and nothing will resolve.
 
 ### 2. Pre-flight (2 minutes, saves an hour)
 

@@ -40,6 +40,9 @@ new_import_report <- function(
   source = NA_character_
 ) {
   sheets <- coerce_sheet_table(sheets)
+  if (!is.null(warnings) && !is.atomic(warnings)) {
+    arg_stop("warnings", "a character vector", warnings)
+  }
   if (!is.character(warnings)) warnings <- as.character(warnings)
   if (is.null(suggested_input)) suggested_input <- list()
   if (!is.list(suggested_input)) {
@@ -114,7 +117,7 @@ print.ImportReport <- function(x, ...) {
 #' @export
 #' @family io
 import_report_sheets <- function(report) {
-  stopifnot(is_import_report(report))
+  if (!is_import_report(report)) arg_stop("report", "an `ImportReport`", report)
   report$sheets
 }
 
@@ -126,7 +129,7 @@ import_report_sheets <- function(report) {
 #' @export
 #' @family io
 import_report_warnings <- function(report) {
-  stopifnot(is_import_report(report))
+  if (!is_import_report(report)) arg_stop("report", "an `ImportReport`", report)
   report$warnings
 }
 

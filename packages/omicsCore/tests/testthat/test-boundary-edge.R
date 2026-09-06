@@ -332,11 +332,11 @@ test_that("impute_matrix errors on invalid method", {
   expect_error(impute_matrix(mat, method = "nope"), "should be one of")
 })
 
-test_that("impute_matrix on empty list silently coerces", {
-  # impute_matrix(list()) coerces via as.matrix() to an empty matrix and
-  # returns it; it does not error. Lock this surprising behavior in.
-  res <- suppressWarnings(impute_matrix(list(), method = "min"))
-  expect_true(is.matrix(res) || is.numeric(res))
+test_that("impute_matrix refuses what is not a matrix, by name", {
+  # It used to coerce an empty list through as.matrix() and hand back
+  # an empty matrix -- a surprise this test once locked in.
+  expect_error(impute_matrix(list(), method = "min"),
+               "`mat` must be a numeric matrix, not a list of length 0.", fixed = TRUE)
 })
 
 test_that("impute_matrix preserves rownames/colnames", {

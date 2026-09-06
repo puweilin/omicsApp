@@ -26,6 +26,10 @@ plot_volcano <- function(
   effect_threshold = NULL,
   p_threshold = 0.05
 ) {
+  assert_count(top_n, "top_n")
+  assert_character(label_features, "label_features", allow_null = TRUE)
+  assert_number(effect_threshold, "effect_threshold", lower = 0, allow_null = TRUE)
+  assert_number(p_threshold, "p_threshold", lower = 0, upper = 1, allow_null = TRUE)
   result_df <- diff_result_from_bundle(bundle)
   p_basis <- match.arg(p_basis)
   p_col <- resolve_p_col(result_df, p_preference = p_basis)
@@ -113,6 +117,10 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL,
                     p_basis = c("adjusted", "raw"),
                     effect_threshold = NULL,
                     p_threshold = 0.05) {
+  assert_count(top_n, "top_n")
+  assert_character(label_features, "label_features", allow_null = TRUE)
+  assert_number(effect_threshold, "effect_threshold", lower = 0, allow_null = TRUE)
+  assert_number(p_threshold, "p_threshold", lower = 0, upper = 1, allow_null = TRUE)
   result_df <- diff_result_from_bundle(bundle)
   if (all(is.na(result_df$base_mean))) {
     stop("`base_mean` is all NA in this bundle; MA plot is not available.")
@@ -174,6 +182,9 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL,
 #' @export
 #' @family diff
 plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
+  assert_string(color_by, "color_by", allow_null = TRUE)
+  assert_string(shape_by, "shape_by", allow_null = TRUE)
+  assert_flag(log2, "log2", allow_null = TRUE)
   validate_omics_input(input)
   if (is.null(log2)) {
     log2 <- identical(input$assay_type, "raw_count")
@@ -233,6 +244,9 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
 #' @export
 #' @family diff
 plot_feature_expression <- function(input, features, group_by, color_by = NULL) {
+  assert_character(features, "features")
+  assert_string(group_by, "group_by")
+  assert_string(color_by, "color_by", allow_null = TRUE)
   validate_omics_input(input)
   if (length(features) == 0L) {
     stop("`features` must contain at least one feature.")
@@ -285,7 +299,11 @@ plot_feature_expression <- function(input, features, group_by, color_by = NULL) 
 
   ggplot2::ggplot(long, base_aes) +
     ggplot2::geom_boxplot(outlier.shape = NA, fill = "#EAEEF4", color = "#3F4A5A") +
-    ggplot2::geom_jitter(width = 0.18, height = 0, alpha = 0.7, size = 1.6) +
+    # A pinned jitter: the figure is the same on every render, and the
+    # draw leaves the caller's random stream where it was.
+    ggplot2::geom_point(
+      position = ggplot2::position_jitter(width = 0.18, height = 0, seed = 1L),
+      alpha = 0.7, size = 1.6) +
     ggplot2::facet_wrap(~ .data$feature_symbol, scales = "free_y") +
     ggplot2::labs(
       title = "Feature expression",

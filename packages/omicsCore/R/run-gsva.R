@@ -45,6 +45,11 @@ run_gsva <- function(
 ) {
   validate_omics_input(input)
   method <- match.arg(method)
+  assert_list(gene_sets, "gene_sets", allow_null = TRUE)
+  assert_character(database, "database", allow_null = TRUE)
+  assert_count(min_size, "min_size", lower = 1L)
+  assert_count(max_size, "max_size", lower = 1L)
+  assert_choice(kcdf, "kcdf", c("Gaussian", "Poisson", "none"), allow_null = TRUE)
 
   if (!is_installed("GSVA")) {
     stop(

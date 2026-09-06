@@ -36,6 +36,9 @@ plot_integration <- function(
   label_features = NULL,
   p_cutoff = 0.05
 ) {
+  assert_count(top_n, "top_n")
+  assert_character(label_features, "label_features", allow_null = TRUE)
+  assert_number(p_cutoff, "p_cutoff", lower = 0, upper = 1)
   view <- match.arg(view)
   df <- integration_result_from_bundle(bundle)
   method <- bundle$params$method

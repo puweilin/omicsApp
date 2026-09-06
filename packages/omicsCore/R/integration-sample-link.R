@@ -54,6 +54,7 @@ sample_stem <- function(x) sub("[-_. ].*$", "", as.character(x))
 #' @export
 #' @family integrate
 derive_sample_link <- function(project) {
+  assert_project(project)
   exps <- project$experiments
   if (length(exps) < 2L) return(NULL)
 
@@ -89,6 +90,9 @@ derive_sample_link <- function(project) {
 #' @export
 #' @family integrate
 suggest_sample_link <- function(project, tag_a, tag_b) {
+  assert_project(project)
+  assert_label(tag_a, "tag_a")
+  assert_label(tag_b, "tag_b")
   exps <- project$experiments
   if (!all(c(tag_a, tag_b) %in% names(exps))) return(NULL)
 
@@ -129,6 +133,9 @@ suggest_sample_link <- function(project, tag_a, tag_b) {
 #' @export
 #' @family integrate
 sample_pairing_preview <- function(project, tag_a, tag_b) {
+  assert_project(project)
+  assert_label(tag_a, "tag_a")
+  assert_label(tag_b, "tag_b")
   exps <- project$experiments
   empty <- function(src) {
     list(pairs = data.frame(donor_id = character(0),

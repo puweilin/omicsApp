@@ -19,7 +19,8 @@
 #' @export
 #' @family qc
 winsorize_counts <- function(count_mat, k = 20) {
-  count_mat <- as.matrix(count_mat)
+  count_mat <- assert_numeric_matrix(count_mat, "count_mat")
+  assert_number(k, "k", lower = 0)
   n_genes <- nrow(count_mat)
 
   qmat <- apply(

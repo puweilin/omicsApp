@@ -25,7 +25,7 @@ TEMPLATE_CONDITION <- c("G1", "G1", "G1", "G2", "G2", "G2")
 #' @noRd
 import_template_sheets <- function(omics_type = c("proteomics", "rnaseq")) {
   omics_type <- match.arg(omics_type)
-  set.seed(1L)
+  local_seed(1L)
 
   n_feat <- 8L
   sample_ids <- if (omics_type == "proteomics") {

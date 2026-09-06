@@ -29,6 +29,7 @@ qc_outliers <- function(
   method = c("pca", "connectivity", "iqr"),
   sd_threshold = 3
 ) {
+  assert_number(sd_threshold, "sd_threshold", lower = 0)
   validate_omics_input(input)
   method <- match.arg(method, several.ok = TRUE)
   expr_mat <- input$expr_mat

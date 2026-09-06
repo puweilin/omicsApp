@@ -1,0 +1,22 @@
+{
+  "analysis_name": "run_diff",
+  "input_info": {
+    "omics_type": "proteomics",
+    "assay_type": "normalized_intensity",
+    "n_samples": 12,
+    "n_features": 160
+  },
+  "params": {
+    "method": "limma",
+    "analysis_type": "group",
+    "comparison": "G2_vs_G1",
+    "group_col": "group",
+    "control_group": "G1",
+    "case_group": "G2",
+    "covariates": null,
+    "paired_col": null
+  },
+  "messages": [],
+  "warnings": [],
+  "exported_at": "2026-09-06T09:38:49+0800"
+}

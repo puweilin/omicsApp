@@ -29,6 +29,9 @@ ORGANISM_ALIASES <- c(
 )
 
 normalize_organism <- function(organism) {
+  if (!is.character(organism) && !is.factor(organism)) {
+    arg_stop("organism", "a single string", organism)
+  }
   if (length(organism) != 1L || is.na(organism)) {
     stop("`organism` must be a single non-missing string.")
   }
@@ -41,6 +44,9 @@ normalize_organism <- function(organism) {
 }
 
 normalize_enrich_database <- function(database) {
+  if (!is.character(database) && !is.factor(database)) {
+    arg_stop("database", "a single string", database)
+  }
   if (length(database) != 1L || is.na(database)) {
     stop("`database` must be a single non-missing string.")
   }

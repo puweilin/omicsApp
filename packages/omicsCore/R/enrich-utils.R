@@ -23,6 +23,8 @@ filter_enrich_results <- function(
   direction = NULL
 ) {
   p_preference <- match.arg(p_preference)
+  assert_number(p_cutoff, "p_cutoff", lower = 0, upper = 1)
+  assert_count(min_genes, "min_genes", allow_null = TRUE)
 
   if (!is.data.frame(enrich_df)) {
     if (methods::is(enrich_df, "enrichResult") || methods::is(enrich_df, "gseaResult")) {

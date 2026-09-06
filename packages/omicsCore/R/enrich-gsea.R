@@ -24,11 +24,11 @@ run_gsea_database <- function(
 
   terms <- build_term_tables(database = database, organism = organism)
 
-  if (isTRUE(seed) && !exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
-    set.seed(123L)
-  }
-
-  tryCatch(
+  # The permutations draw from the random stream. Pinned so that two
+  # runs on one ranking agree, and put back so that the caller's own
+  # stream is where they left it -- it used to be advanced by every
+  # GSEA run, and in a fresh session a global seed was planted.
+  with_fixed_seed(if (isTRUE(seed)) 123L else NULL, tryCatch(
     clusterProfiler::GSEA(
       geneList = ranked_features,
       TERM2GENE = terms$term2gene,
@@ -44,7 +44,7 @@ run_gsea_database <- function(
               call. = FALSE)
       NULL
     }
-  )
+  ))
 }
 
 # Build a ranked vector from a diff bundle and run GSEA against a database.

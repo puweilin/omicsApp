@@ -284,6 +284,7 @@ geneset_cache_status <- function(
   databases = SUPPORTED_ENRICH_DATABASES,
   organism = "Hs"
 ) {
+  assert_names(databases, "databases")
   organism <- normalize_organism(organism)
   databases <- unique(vapply(databases, normalize_enrich_database, character(1L)))
   dir <- geneset_cache_dir()

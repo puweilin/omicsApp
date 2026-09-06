@@ -80,6 +80,17 @@ run_enrichment <- function(
 
   # Accept a single value or vector and coerce through normalization.
   if (missing(database)) database <- "hallmark"
+  assert_names(database, "database")
+  assert_number(p_cutoff, "p_cutoff", lower = 0, upper = 1)
+  assert_number(output_p_cutoff, "output_p_cutoff", lower = 0, upper = 1,
+                allow_null = TRUE)
+  assert_number(effect_cutoff, "effect_cutoff", lower = 0, allow_null = TRUE)
+  assert_choice(p_adjust_method, "p_adjust_method", stats::p.adjust.methods)
+  assert_count(min_size, "min_size", lower = 1L)
+  assert_count(max_size, "max_size", lower = 1L)
+  if (min_size > max_size) {
+    stop("`min_size` must not exceed `max_size`.", call. = FALSE)
+  }
   databases <- vapply(database, normalize_enrich_database, character(1L))
   databases <- unique(databases)
   organism <- normalize_organism(organism)

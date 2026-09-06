@@ -233,6 +233,9 @@ canonical_assay_type <- function(assay_type) {
 #' infer_assay_type(matrix(2^rnorm(40, 20, 2), nrow = 10), "proteomics")
 #' infer_assay_type(matrix(rpois(40, 200), nrow = 10), "rnaseq")
 infer_assay_type <- function(expr_mat, omics_type) {
+  if (!is.matrix(expr_mat) && !is.data.frame(expr_mat)) {
+    arg_stop("expr_mat", "a matrix or data.frame", expr_mat)
+  }
   if (identical(omics_type, "rnaseq")) return("raw_count")
   if (!identical(omics_type, "proteomics")) return(NA_character_)
 

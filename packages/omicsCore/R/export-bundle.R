@@ -55,6 +55,9 @@ export_bundle <- function(
   width = 7,
   height = 5
 ) {
+  assert_string(prefix, "prefix", allow_null = TRUE, allow_empty = TRUE)
+  assert_number(width, "width", lower = 0)
+  assert_number(height, "height", lower = 0)
   if (!is_analysis_bundle(bundle)) {
     stop("`bundle` must be an analysis_bundle.")
   }

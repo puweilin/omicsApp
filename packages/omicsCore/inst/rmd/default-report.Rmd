@@ -16,17 +16,36 @@ params:
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
                       fig.width = 7, fig.height = 5)
 `%||%` <- function(a, b) if (is.null(a)) b else a
+# Anything a person typed -- a project name, a layer tag, a group
+# label, a feature id -- is inserted into markdown here, and markdown
+# passes raw HTML through. Escaped once, at the seam, so a name that
+# carries "<script>" reads as that text rather than running as it.
+esc <- function(x) {
+  x <- as.character(x)
+  x <- gsub("&", "&amp;", x, fixed = TRUE)
+  x <- gsub("<", "&lt;", x, fixed = TRUE)
+  gsub(">", "&gt;", x, fixed = TRUE)
+}
+esc_df <- function(df) {
+  for (nm in names(df)) {
+    if (is.character(df[[nm]]) || is.factor(df[[nm]])) {
+      df[[nm]] <- esc(as.character(df[[nm]]))
+    }
+  }
+  names(df) <- esc(names(df))
+  df
+}
 project <- params$project
 project_name <- params$project_name
 bundles <- if (is.null(project$bundles)) list() else project$bundles
 ```
 
-# `r project_name`
+# `r esc(project_name)`
 
 ## Project overview
 
-- **Project:** `r project$name %||% project_name`
-- **Experiments:** `r paste(omicsCore::experiment_tags(project), collapse = ", ")`
+- **Project:** `r esc(project$name %||% project_name)`
+- **Experiments:** `r paste(esc(omicsCore::experiment_tags(project)), collapse = ", ")`
 - **Sample link:** `r if (!is.null(project$sample_link)) paste0(nrow(project$sample_link), " mapping rows") else "none"`
 
 ```{r overview-table}
@@ -43,7 +62,7 @@ if (length(exp_tags) > 0L) {
       stringsAsFactors = FALSE
     )
   })
-  knitr::kable(do.call(rbind, rows))
+  knitr::kable(esc_df(do.call(rbind, rows)))
 }
 ```
 
@@ -55,14 +74,14 @@ if (length(bundles) == 0L) {
 } else {
   for (nm in names(bundles)) {
     b <- bundles[[nm]]
-    cat("\n### ", nm, " (`", b$analysis_name, "`)\n\n", sep = "")
+    cat("\n### ", esc(nm), " (", esc(b$analysis_name), ")\n\n", sep = "")
     cat("- Params:", length(b$params), "entries\n")
-    cat("- Result keys: ", paste(names(b$results), collapse = ", "), "\n\n")
+    cat("- Result keys: ", paste(esc(names(b$results)), collapse = ", "), "\n\n")
     for (rk in names(b$results)) {
       obj <- b$results[[rk]]
       if (is.data.frame(obj) && nrow(obj) > 0L) {
-        cat("\n**", rk, "** (top 10 rows)\n\n", sep = "")
-        print(knitr::kable(utils::head(obj, 10L)))
+        cat("\n**", esc(rk), "** (top 10 rows)\n\n", sep = "")
+        print(knitr::kable(esc_df(utils::head(obj, 10L))))
       }
     }
   }

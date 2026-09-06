@@ -114,7 +114,7 @@ resolve_impute_method <- function(omics_type) {
 #' @family qc
 impute_matrix <- function(mat, method = IMPUTE_METHODS, ...) {
   method <- match.arg(method, IMPUTE_METHODS)
-  mat <- as.matrix(mat)
+  mat <- assert_numeric_matrix(mat, "mat")
   if (method == "none" || !anyNA(mat)) {
     return(mat)
   }

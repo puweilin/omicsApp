@@ -39,6 +39,9 @@ omics_project <- function(
   if (!is.list(experiments)) {
     stop("`experiments` must be a (possibly empty) named list of omics_input objects.")
   }
+  assert_data_frame(sample_link, "sample_link", allow_null = TRUE)
+  assert_data_frame(feature_link, "feature_link", allow_null = TRUE)
+  assert_list(metadata, "metadata")
   if (length(experiments) > 0L) {
     if (is.null(names(experiments)) || any(!nzchar(names(experiments)))) {
       stop("All entries in `experiments` must be named.")
@@ -130,6 +133,7 @@ remove_experiment <- function(project, name) {
   if (!is_omics_project(project)) {
     stop("`project` must be an `omics_project`.")
   }
+  assert_string(name, "name")
   if (!name %in% names(project$experiments)) {
     stop("Experiment tag not found in project: ", name)
   }

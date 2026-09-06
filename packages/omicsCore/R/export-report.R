@@ -52,6 +52,8 @@ export_report <- function(
   template = NULL,
   overwrite = FALSE
 ) {
+  assert_string(template, "template", allow_null = TRUE)
+  assert_flag(overwrite, "overwrite")
   if (!is_omics_project(project)) {
     stop("`project` must be an `omics_project`.")
   }
@@ -81,10 +83,20 @@ export_report <- function(
   if (!nzchar(out_dir)) out_dir <- "."
   dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
+  # Knitting writes its figure directory beside the input by default,
+  # and the input is the template inside the installed package -- a
+  # location that is read-only on a shared server and shared by every
+  # session on any other. A private scratch directory instead, gone
+  # when the render is.
+  scratch <- tempfile("omicsCore-report-")
+  dir.create(scratch)
+  on.exit(unlink(scratch, recursive = TRUE), add = TRUE)
+
   rmarkdown::render(
     input = rmd_path,
     output_file = basename(path),
     output_dir = out_dir,
+    intermediates_dir = scratch,
     output_format = output_format,
     params = list(
       project = project,

@@ -83,8 +83,12 @@ build_deseq_dataset <- function(input, count_mat, col_data, design) {
   )
 }
 
+# DESeq2 draws from the random stream while it fits, so a differential
+# run used to leave the caller's stream somewhere else -- and in a fresh
+# session, to create a `.Random.seed` that was not there before. The
+# stream is pinned for the fit and put back.
 deseq_with_dispersion_fallback <- function(dds) {
-  tryCatch(
+  with_fixed_seed(1L, tryCatch(
     DESeq2::DESeq(dds, quiet = TRUE),
     error = function(e) {
       msg <- conditionMessage(e)
@@ -95,7 +99,7 @@ deseq_with_dispersion_fallback <- function(dds) {
       DESeq2::dispersions(dds_fb) <- S4Vectors::mcols(dds_fb)$dispGeneEst
       DESeq2::nbinomWaldTest(dds_fb, quiet = TRUE)
     }
-  )
+  ))
 }
 
 #' DESeq2 two-group differential test

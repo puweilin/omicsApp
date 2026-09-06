@@ -62,6 +62,16 @@ plot_heatmap <- function(
   show_rownames = NULL,
   title = NULL
 ) {
+  if (!inherits(x, "omics_input") && !is_analysis_bundle(x)) {
+    arg_stop("x", "an `omics_input` or an analysis_bundle from run_diff()", x)
+  }
+  assert_count(n_top, "n_top", lower = 1L)
+  assert_character(features, "features", allow_null = TRUE)
+  assert_character(annotation_cols, "annotation_cols", allow_null = TRUE)
+  assert_flag(cluster_rows, "cluster_rows")
+  assert_flag(cluster_cols, "cluster_cols")
+  assert_flag(show_rownames, "show_rownames", allow_null = TRUE)
+  assert_string(title, "title", allow_null = TRUE, allow_empty = TRUE)
   scale <- match.arg(scale)
   sel <- resolve_heatmap_selection(x, input = input, n_top = n_top,
                                     features = features)
