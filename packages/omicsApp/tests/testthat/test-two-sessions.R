@@ -53,7 +53,10 @@ test_that("what one session imports, the other does not see", {
   # The other browser still has nothing, and its views still show the demo.
   expect_match(picker(second), "no project loaded", fixed = TRUE)
   second$click(selector = "#nav_diff")
-  second$wait_for_idle(timeout = 5000)
+  # The view's first visit asks has_pkg() about every engine, which
+  # loads DESeq2 and its dependencies into the app process; on a CI
+  # runner that is well over 5 s (see test-app-journey.R).
+  second$wait_for_idle(timeout = 30000)
   expect_match(picker(second), "no project loaded", fixed = TRUE)
 
   # And running the demo there changes nothing here. The demo result is
