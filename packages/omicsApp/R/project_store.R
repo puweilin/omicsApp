@@ -562,9 +562,16 @@ store_raw_upload <- function(path, name, fingerprint,
     return(skip("Upload has no fingerprint; not archived."))
   }
   digest <- substr(sub(":.*$", "", fingerprint), 1L, 12L)
-  stem <- project_slug(tools::file_path_sans_ext(name %||% "upload"))
+  # Not tools::file_path_sans_ext() and tools::file_ext(): since R 4.5
+  # both pass their argument through basename(), which translates it to
+  # the native encoding and throws on a non-ASCII name in a C locale --
+  # the failure project_slug() goes out of its way to avoid, arriving
+  # one line later. The name is a browser-supplied string, never a
+  # path, so a regex on the marked string is all that is needed.
+  parts <- split_file_name(name %||% "upload")
+  stem <- project_slug(parts$stem)
   if (is.na(stem)) stem <- "upload"
-  ext <- tools::file_ext(name %||% "")
+  ext <- parts$ext
   target <- os_path(file.path(raw_dir(dir),
                               paste0(stem, "__", digest,
                                      if (nzchar(ext)) paste0(".", ext) else "")))
@@ -587,6 +594,23 @@ store_raw_upload <- function(path, name, fingerprint,
     error = function(e) skip(paste0("Could not archive the raw file: ",
                                     conditionMessage(e)))
   )
+}
+
+#' A file name without and with its extension
+#'
+#' The rule is tools::file_ext()'s -- only a purely alphanumeric
+#' extension counts, and a name that is nothing but an extension has
+#' none -- applied to the string itself rather than to `basename()` of
+#' it, so a UTF-8-marked name survives a process whose locale is C.
+#'
+#' @param name A file name, possibly marked UTF-8.
+#' @return `list(stem, ext)`; `ext` is `""` when there is none.
+#' @keywords internal
+#' @noRd
+split_file_name <- function(name) {
+  m <- regmatches(name, regexec("^(.*[^.].*)[.]([[:alnum:]]+)$", name))[[1L]]
+  if (length(m) == 3L) list(stem = m[[2L]], ext = m[[3L]])
+  else list(stem = name, ext = "")
 }
 
 #' Snapshot a project to disk whenever it changes

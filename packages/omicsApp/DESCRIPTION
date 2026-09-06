@@ -36,6 +36,7 @@ Suggests:
     later,
     withr,
     jsonlite,
+    imputeLCMD,
     shinytest2,
     chromote,
     callr,
