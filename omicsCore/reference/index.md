@@ -1,0 +1,320 @@
+# Package index
+
+## Data I/O
+
+Smart input parser and import report
+
+- [`read_omics()`](https://puweilin.github.io/omicsApp/omicsCore/reference/read_omics.md)
+  : Read an omics workbook and report classifier findings
+
+- [`omics_input()`](https://puweilin.github.io/omicsApp/omicsCore/reference/omics_input.md)
+  : Single-omics input container
+
+- [`is_omics_input()`](https://puweilin.github.io/omicsApp/omicsCore/reference/is_omics_input.md)
+  :
+
+  Test whether an object is an `omics_input`
+
+- [`new_omics_input()`](https://puweilin.github.io/omicsApp/omicsCore/reference/new_omics_input.md)
+  :
+
+  Low-level `omics_input` constructor
+
+- [`new_import_report()`](https://puweilin.github.io/omicsApp/omicsCore/reference/new_import_report.md)
+  :
+
+  Construct an `ImportReport`
+
+- [`is_import_report()`](https://puweilin.github.io/omicsApp/omicsCore/reference/is_import_report.md)
+  :
+
+  Test whether an object is an `ImportReport`
+
+- [`import_report_sheets()`](https://puweilin.github.io/omicsApp/omicsCore/reference/import_report_sheets.md)
+  :
+
+  Access the sheets table from an `ImportReport`
+
+- [`import_report_warnings()`](https://puweilin.github.io/omicsApp/omicsCore/reference/import_report_warnings.md)
+  :
+
+  Access the warnings vector from an `ImportReport`
+
+- [`validate_omics_input()`](https://puweilin.github.io/omicsApp/omicsCore/reference/validate_omics_input.md)
+  :
+
+  Validate an `omics_input`
+
+## Project container
+
+Multi-omics project class, and linking samples across layers
+
+- [`omics_project()`](https://puweilin.github.io/omicsApp/omicsCore/reference/omics_project.md)
+  : Multi-omics project container
+
+- [`is_omics_project()`](https://puweilin.github.io/omicsApp/omicsCore/reference/is_omics_project.md)
+  :
+
+  Test whether an object is an `omics_project`
+
+- [`add_experiment()`](https://puweilin.github.io/omicsApp/omicsCore/reference/add_experiment.md)
+  : Add an experiment to a project
+
+- [`remove_experiment()`](https://puweilin.github.io/omicsApp/omicsCore/reference/remove_experiment.md)
+  : Remove an experiment from a project
+
+- [`experiment_tags()`](https://puweilin.github.io/omicsApp/omicsCore/reference/experiment_tags.md)
+  : List experiment tags in a project
+
+- [`load_project()`](https://puweilin.github.io/omicsApp/omicsCore/reference/load_project.md)
+  : Load an omics_project from disk
+
+- [`save_project()`](https://puweilin.github.io/omicsApp/omicsCore/reference/save_project.md)
+  : Save an omics_project to disk
+
+- [`suggest_sample_link()`](https://puweilin.github.io/omicsApp/omicsCore/reference/suggest_sample_link.md)
+  : Suggest a sample link from the ids
+
+- [`derive_sample_link()`](https://puweilin.github.io/omicsApp/omicsCore/reference/derive_sample_link.md)
+  : Build a sample link from donor columns
+
+- [`sample_pairing_preview()`](https://puweilin.github.io/omicsApp/omicsCore/reference/sample_pairing_preview.md)
+  : The pairing two layers would be integrated on
+
+## Vocabularies
+
+Assay types, differential backends and imputation methods, as the
+package names them
+
+- [`SUPPORTED_ASSAY_TYPES`](https://puweilin.github.io/omicsApp/omicsCore/reference/SUPPORTED_ASSAY_TYPES.md)
+  : Assay types recognised per omics modality
+- [`LOG_SCALE_ASSAY_TYPES`](https://puweilin.github.io/omicsApp/omicsCore/reference/LOG_SCALE_ASSAY_TYPES.md)
+  : Assay types that already sit on a log-like scale
+- [`infer_assay_type()`](https://puweilin.github.io/omicsApp/omicsCore/reference/infer_assay_type.md)
+  : Guess an assay type from the values
+- [`SUPPORTED_DIFF_METHODS`](https://puweilin.github.io/omicsApp/omicsCore/reference/SUPPORTED_DIFF_METHODS.md)
+  : Differential backends this package implements
+- [`applicable_diff_methods()`](https://puweilin.github.io/omicsApp/omicsCore/reference/applicable_diff_methods.md)
+  : Differential methods that are valid for an input
+- [`IMPUTE_METHOD_ASSUMPTION`](https://puweilin.github.io/omicsApp/omicsCore/reference/IMPUTE_METHOD_ASSUMPTION.md)
+  [`IMPUTE_METHODS`](https://puweilin.github.io/omicsApp/omicsCore/reference/IMPUTE_METHOD_ASSUMPTION.md)
+  : Imputation methods, grouped by what they assume
+
+## Preprocessing
+
+Filter, impute, normalize, and subset
+
+- [`normalize_omics()`](https://puweilin.github.io/omicsApp/omicsCore/reference/normalize_omics.md)
+  :
+
+  Normalize a proteomics `omics_input`
+
+- [`impute_matrix()`](https://puweilin.github.io/omicsApp/omicsCore/reference/impute_matrix.md)
+  : Impute missing values in an expression matrix
+
+- [`resolve_impute_method()`](https://puweilin.github.io/omicsApp/omicsCore/reference/resolve_impute_method.md)
+  : Which imputation a layer gets when the caller does not say
+
+- [`winsorize_counts()`](https://puweilin.github.io/omicsApp/omicsCore/reference/winsorize_counts.md)
+  : Winsorize per-gene outliers in a count matrix
+
+- [`drop_meta_na()`](https://puweilin.github.io/omicsApp/omicsCore/reference/drop_meta_na.md)
+  : Drop samples with missing metadata
+
+- [`select_complete_cases()`](https://puweilin.github.io/omicsApp/omicsCore/reference/select_complete_cases.md)
+  : Select features passing a missingness threshold
+
+- [`subset_omics()`](https://puweilin.github.io/omicsApp/omicsCore/reference/subset_omics.md)
+  :
+
+  Subset an `omics_input`
+
+- [`subset_omics_features()`](https://puweilin.github.io/omicsApp/omicsCore/reference/subset_omics_features.md)
+  :
+
+  Subset an `omics_input` by feature IDs
+
+- [`subset_omics_samples()`](https://puweilin.github.io/omicsApp/omicsCore/reference/subset_omics_samples.md)
+  :
+
+  Subset an `omics_input` by sample IDs
+
+- [`summarize_omics()`](https://puweilin.github.io/omicsApp/omicsCore/reference/summarize_omics.md)
+  : Summarize an omics_input or omics_project
+
+## Quality control
+
+Missingness and outlier detection
+
+- [`qc_missingness()`](https://puweilin.github.io/omicsApp/omicsCore/reference/qc_missingness.md)
+  : Per-sample / per-feature missingness summary
+- [`qc_outliers()`](https://puweilin.github.io/omicsApp/omicsCore/reference/qc_outliers.md)
+  : Detect sample-level outliers
+- [`qc_depth()`](https://puweilin.github.io/omicsApp/omicsCore/reference/qc_depth.md)
+  : Per-sample depth and detection
+- [`qc_depth_outliers()`](https://puweilin.github.io/omicsApp/omicsCore/reference/qc_depth_outliers.md)
+  : Samples whose depth is far from the rest
+
+## Analysis pipelines
+
+Run QC, differential, enrichment, and integration
+
+- [`run_qc()`](https://puweilin.github.io/omicsApp/omicsCore/reference/run_qc.md)
+  : Run the standard quality-control pipeline
+- [`run_diff()`](https://puweilin.github.io/omicsApp/omicsCore/reference/run_diff.md)
+  : Run a differential-expression analysis
+- [`run_diff_continuous()`](https://puweilin.github.io/omicsApp/omicsCore/reference/run_diff_continuous.md)
+  : Continuous-variable differential analysis
+- [`run_enrichment()`](https://puweilin.github.io/omicsApp/omicsCore/reference/run_enrichment.md)
+  : Run pathway enrichment from a differential bundle
+- [`run_integration()`](https://puweilin.github.io/omicsApp/omicsCore/reference/run_integration.md)
+  : Run a cross-omics integration analysis
+- [`run_gsva()`](https://puweilin.github.io/omicsApp/omicsCore/reference/run_gsva.md)
+  : Run Gene Set Variation Analysis
+
+## Results
+
+Work with analysis bundles and filter results
+
+- [`is_analysis_bundle()`](https://puweilin.github.io/omicsApp/omicsCore/reference/is_analysis_bundle.md)
+  : Test whether an object is an analysis bundle
+- [`new_analysis_bundle()`](https://puweilin.github.io/omicsApp/omicsCore/reference/new_analysis_bundle.md)
+  : Create an analysis bundle
+- [`filter_diff_results()`](https://puweilin.github.io/omicsApp/omicsCore/reference/filter_diff_results.md)
+  : Filter standardized differential results
+- [`filter_enrich_results()`](https://puweilin.github.io/omicsApp/omicsCore/reference/filter_enrich_results.md)
+  : Filter standardized enrichment results
+- [`make_ranked_features()`](https://puweilin.github.io/omicsApp/omicsCore/reference/make_ranked_features.md)
+  : Build a named ranked feature vector for preranked GSEA
+
+## Gene sets
+
+MSigDB gene sets, the on-disk cache, and gene symbols
+
+- [`list_gene_sets()`](https://puweilin.github.io/omicsApp/omicsCore/reference/list_gene_sets.md)
+  : List the gene sets available in a pathway database
+- [`geneset_cache_status()`](https://puweilin.github.io/omicsApp/omicsCore/reference/geneset_cache_status.md)
+  : Report the state of the on-disk gene-set cache
+- [`refresh_geneset_cache()`](https://puweilin.github.io/omicsApp/omicsCore/reference/refresh_geneset_cache.md)
+  : Refresh the on-disk gene-set cache
+- [`map_ensembl_symbols()`](https://puweilin.github.io/omicsApp/omicsCore/reference/map_ensembl_symbols.md)
+  : Map Ensembl gene ids to HGNC symbols
+- [`hgnc_map_provenance()`](https://puweilin.github.io/omicsApp/omicsCore/reference/hgnc_map_provenance.md)
+  : Where the symbol table came from
+
+## Visualization
+
+QC, differential, enrichment, and integration plots
+
+- [`plot_qc()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_qc.md)
+  : QC visualizations
+- [`plot_pca()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_pca.md)
+  : PCA scores plot for an omics_input
+- [`plot_heatmap()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_heatmap.md)
+  : Top-features expression heatmap
+- [`plot_volcano()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_volcano.md)
+  : Volcano plot for a diff bundle
+- [`plot_ma()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_ma.md)
+  : MA plot for a diff bundle
+- [`plot_feature_expression()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_feature_expression.md)
+  : Per-feature expression box / violin
+- [`plot_enrichment()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_enrichment.md)
+  : Enrichment summary plot
+- [`plot_gsea()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_gsea.md)
+  : GSEA running-score plot
+- [`plot_gsva_heatmap()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_gsva_heatmap.md)
+  : GSVA heatmap
+- [`plot_integration()`](https://puweilin.github.io/omicsApp/omicsCore/reference/plot_integration.md)
+  : Integration summary plot
+- [`theme_omicsCore()`](https://puweilin.github.io/omicsApp/omicsCore/reference/theme_omicsCore.md)
+  : Project-standard ggplot2 theme
+- [`omics_colors`](https://puweilin.github.io/omicsApp/omicsCore/reference/omics_colors.md)
+  : Plot colour palette
+
+## Export
+
+Save results and render reports
+
+- [`export_report()`](https://puweilin.github.io/omicsApp/omicsCore/reference/export_report.md)
+  : Render an HTML report for an omics_project
+- [`export_bundle()`](https://puweilin.github.io/omicsApp/omicsCore/reference/export_bundle.md)
+  : Export an analysis_bundle to disk
+- [`export_script()`](https://puweilin.github.io/omicsApp/omicsCore/reference/export_script.md)
+  : Export a project's analysis history as a runnable R script
+- [`install_optional()`](https://puweilin.github.io/omicsApp/omicsCore/reference/install_optional.md)
+  : Install optional dependency groups
+- [`check_install()`](https://puweilin.github.io/omicsApp/omicsCore/reference/check_install.md)
+  : Report which optional dependency groups are installed
+
+## Internal
+
+Low-level helpers, backend engines, S3 methods, and constants
+
+- [`check_assay_scale()`](https://puweilin.github.io/omicsApp/omicsCore/reference/check_assay_scale.md)
+  : Check that the assay values look like the declared scale
+
+- [`check_install()`](https://puweilin.github.io/omicsApp/omicsCore/reference/check_install.md)
+  : Report which optional dependency groups are installed
+
+- [`validate_omics_input()`](https://puweilin.github.io/omicsApp/omicsCore/reference/validate_omics_input.md)
+  :
+
+  Validate an `omics_input`
+
+- [`print(`*`<ImportReport>`*`)`](https://puweilin.github.io/omicsApp/omicsCore/reference/print.ImportReport.md)
+  :
+
+  Print method for `ImportReport`
+
+- [`print(`*`<analysis_bundle>`*`)`](https://puweilin.github.io/omicsApp/omicsCore/reference/print.analysis_bundle.md)
+  :
+
+  Print method for `analysis_bundle`
+
+- [`print(`*`<omics_input>`*`)`](https://puweilin.github.io/omicsApp/omicsCore/reference/print.omics_input.md)
+  :
+
+  Print method for `omics_input`
+
+- [`print(`*`<omics_project>`*`)`](https://puweilin.github.io/omicsApp/omicsCore/reference/print.omics_project.md)
+  :
+
+  Print method for `omics_project`
+
+- [`classify_sheet_role()`](https://puweilin.github.io/omicsApp/omicsCore/reference/classify_sheet_role.md)
+  : Classify a sheet/data.frame's role in an omics import
+
+- [`detect_id_columns()`](https://puweilin.github.io/omicsApp/omicsCore/reference/detect_id_columns.md)
+  : Detect biological ID columns in a data.frame
+
+- [`detect_orientation()`](https://puweilin.github.io/omicsApp/omicsCore/reference/detect_orientation.md)
+  : Detect the orientation of a candidate expression matrix
+
+- [`add_import_warning()`](https://puweilin.github.io/omicsApp/omicsCore/reference/add_import_warning.md)
+  :
+
+  Append a warning to an `ImportReport`
+
+- [`merge_artifact_registries()`](https://puweilin.github.io/omicsApp/omicsCore/reference/merge_artifact_registries.md)
+  : Merge artifact registries
+
+- [`register_artifact()`](https://puweilin.github.io/omicsApp/omicsCore/reference/register_artifact.md)
+  : Register an analysis artifact
+
+- [`resolve_install_group()`](https://puweilin.github.io/omicsApp/omicsCore/reference/resolve_install_group.md)
+  : Resolve a Suggests group into its package list
+
+- [`omicsCore`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-package.md)
+  [`omicsCore-package`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-package.md)
+  : omicsCore: Multi-Omics Analysis Engine
+
+- [`SUPPORTED_OMICS_TYPES`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  [`DEPRECATED_ASSAY_TYPE_ALIASES`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  [`MAX_PLAUSIBLE_LOG_SCALE_VALUE`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  [`SCALE_CHECKED_ASSAY_TYPES`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  [`SUPPORTED_DIFF_ANALYSIS_TYPES`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  [`SUPPORTED_PREFERENCE`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  [`SUPPORTED_ENRICH_PREFERENCE`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  [`DEFAULT_CACHE_MAX_AGE_HOURS`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  [`CANONICAL_DATABASES`](https://puweilin.github.io/omicsApp/omicsCore/reference/omicsCore-constants.md)
+  : Package constants
