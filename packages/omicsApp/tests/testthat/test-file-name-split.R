@@ -23,24 +23,20 @@ test_that("split_file_name() keeps a UTF-8 name whole and marked", {
   expect_identical(Encoding(parts$stem), "UTF-8")
 })
 
-test_that("archiving a UTF-8 name in a C locale does not go through basename()", {
+test_that("the split survives a child process whose locale is C", {
   skip_on_cran()
   skip_if_not_installed("callr")
-  skip_if_not_installed("withr")
-  # The failure this guards against needs a C locale on the child and
-  # R >= 4.5 to reproduce; on older R the assertion still holds.
+  # The function travels as source text, so the child needs no library:
+  # under R CMD check the package is installed, under devtools::test()
+  # it is loaded from source, and neither is what is being tested here.
   got <- callr::r(
-    function(name) {
-      src <- Sys.getenv("OMICSAPP_SRC")
-      if (nzchar(src)) pkgload::load_all(src, quiet = TRUE) else library(omicsApp)
-      p <- asNamespace("omicsApp")$split_file_name(name)
+    function(src, name) {
+      split <- eval(parse(text = src))
+      p <- split(name)
       list(stem = charToRaw(p$stem), ext = p$ext, locale = Sys.getlocale("LC_CTYPE"))
     },
-    args = list("蛋白组数据.xlsx"),
-    env = c(callr::rcmd_safe_env(), LANG = "C", LC_ALL = "C", LC_CTYPE = "C",
-            OMICSAPP_SRC = if (nzchar(system.file("DESCRIPTION", package = "omicsApp")) &&
-                                dir.exists(file.path(dirname(system.file("DESCRIPTION", package = "omicsApp")), "R")))
-              dirname(system.file("DESCRIPTION", package = "omicsApp")) else ""),
+    args = list(deparse(omicsApp:::split_file_name), "蛋白组数据.xlsx"),
+    env = c(callr::rcmd_safe_env(), LANG = "C", LC_ALL = "C", LC_CTYPE = "C"),
     timeout = 120
   )
   expect_identical(got$locale, "C")
