@@ -81,8 +81,7 @@ run_edger_group <- function(
     design_terms <- c(design_terms, covariates)
   }
 
-  design_formula <- stats::as.formula(paste("~", paste(design_terms, collapse = " + ")))
-  design_mat <- stats::model.matrix(design_formula, data = target_meta)
+  design_mat <- build_design(target_meta, design_terms, primary = group_col)
 
   y <- edgeR::DGEList(counts = count_sub)
   txi_info <- get_tximport_info(input)
@@ -105,12 +104,14 @@ run_edger_group <- function(
   y <- edgeR::estimateDisp(y, design = design_mat)
   fit <- edgeR::glmQLFit(y, design = design_mat)
 
-  group_coef <- grep(group_col, colnames(design_mat), value = TRUE)
-  group_coef <- group_coef[grepl(case_group, group_coef, fixed = TRUE)]
-  if (length(group_coef) == 0L) {
+  # The coefficient is addressed by its generated name. Searching for it with
+  # `grep(group_col, ...)` treated the column name as a regex and the group
+  # label as a substring, so a covariate whose name contained the group's
+  # could be picked instead.
+  group_coef <- design_coef_name(design_mat, attr(design_mat, "primary_id"), case_group)
+  if (!group_coef %in% colnames(design_mat)) {
     stop("Could not locate group coefficient in design matrix for: ", case_group)
   }
-  group_coef <- group_coef[[1L]]
 
   qlf <- edgeR::glmQLFTest(fit, coef = group_coef)
   tt <- edgeR::topTags(qlf, n = Inf, sort.by = "none")

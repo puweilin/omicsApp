@@ -48,9 +48,15 @@ run_lm_group <- function(
   keep_samples <- rownames(target_meta)
   expr_sub <- expr_mat[, keep_samples, drop = FALSE]
 
-  rhs <- if (is.null(covariates)) group_col else paste(c(group_col, covariates), collapse = " + ")
-  formula_obj <- stats::as.formula(paste("y ~", rhs))
-  coef_name <- paste0(group_col, case_group)
+  # Terms and levels renamed once; the loop below models them through `~ .`.
+  # Besides keeping the uploader's strings away from the parser, this fixes a
+  # standing breakage: `data.frame()` runs `make.names()` over its columns, so
+  # a legitimate column called `年龄 (岁)` became `年龄..岁.` while the pasted
+  # formula still asked for the original, and the fit failed for every feature.
+  sf <- safe_frame(target_meta, c(group_col, covariates))
+  group_id <- sf$ids[[1L]]
+  formula_obj <- stats::as.formula("y ~ .")
+  coef_name <- design_coef_name(sf, group_id, case_group)
 
   feature_ids <- rownames(expr_sub)
   n_features <- length(feature_ids)
@@ -62,10 +68,7 @@ run_lm_group <- function(
   base_mean <- numeric(n_features)
 
   for (i in seq_len(n_features)) {
-    model_df <- data.frame(
-      y = as.numeric(expr_sub[i, ]),
-      target_meta[, c(group_col, covariates), drop = FALSE]
-    )
+    model_df <- data.frame(y = as.numeric(expr_sub[i, ]), sf$df)
     fit <- tryCatch(stats::lm(formula_obj, data = model_df), error = function(e) NULL)
     base_mean[i] <- mean(model_df$y, na.rm = TRUE)
 
@@ -165,8 +168,11 @@ run_lm_continuous <- function(
     }
   }
 
-  rhs <- if (is.null(covariates)) continuous_col else paste(c(continuous_col, covariates), collapse = " + ")
-  formula_obj <- stats::as.formula(paste("y ~", rhs))
+  # As in run_lm_group(): generated names, `~ .`, no parsing of uploaded
+  # strings. `cont` is the continuous term, `adj` the covariates.
+  sf <- safe_frame(meta_df, covariates)
+  formula_obj <- stats::as.formula("y ~ .")
+  cont_coef <- "cont"
   adjustment_terms <- if (!is.null(covariates)) covariates else character(0)
 
   feature_ids <- rownames(expr_mat)
@@ -181,20 +187,17 @@ run_lm_continuous <- function(
 
   for (i in seq_len(n_features)) {
     y <- as.numeric(expr_mat[i, ])
-    model_df <- data.frame(
-      y = y,
-      meta_df[, c(continuous_col, covariates), drop = FALSE]
-    )
+    model_df <- data.frame(y = y, cont = cont_vals, sf$df)
     fit <- tryCatch(stats::lm(formula_obj, data = model_df), error = function(e) NULL)
     base_mean[i] <- mean(y, na.rm = TRUE)
 
     if (!is.null(fit)) {
       s <- summary(fit)
       coefs <- s$coefficients
-      if (continuous_col %in% rownames(coefs)) {
-        beta[i] <- coefs[continuous_col, "Estimate"]
-        t_stat[i] <- coefs[continuous_col, "t value"]
-        p_value[i] <- coefs[continuous_col, "Pr(>|t|)"]
+      if (cont_coef %in% rownames(coefs)) {
+        beta[i] <- coefs[cont_coef, "Estimate"]
+        t_stat[i] <- coefs[cont_coef, "t value"]
+        p_value[i] <- coefs[cont_coef, "Pr(>|t|)"]
       } else {
         beta[i] <- NA_real_
         t_stat[i] <- NA_real_
@@ -215,14 +218,10 @@ run_lm_continuous <- function(
       )
     } else {
       tryCatch({
-        y_resid <- stats::residuals(stats::lm(
-          stats::as.formula(paste("y ~", paste(adjustment_terms, collapse = " + "))),
-          data = model_df
-        ))
-        cont_resid <- stats::residuals(stats::lm(
-          stats::as.formula(paste(continuous_col, "~", paste(adjustment_terms, collapse = " + "))),
-          data = model_df
-        ))
+        y_resid <- stats::residuals(
+          stats::lm(y ~ ., data = data.frame(y = y, sf$df)))
+        cont_resid <- stats::residuals(
+          stats::lm(cont ~ ., data = data.frame(cont = cont_vals, sf$df)))
         suppressWarnings(stats::cor.test(y_resid, cont_resid, method = "spearman", exact = FALSE)$estimate)
       }, error = function(e) NA_real_)
     }

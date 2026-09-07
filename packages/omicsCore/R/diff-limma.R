@@ -63,16 +63,14 @@ run_limma_group <- function(
   keep_samples <- rownames(target_meta)
   expr_sub <- expr_mat[, keep_samples, drop = FALSE]
 
-  formula_str <- paste0("~ 0 + ", group_col)
   if (!is.null(covariates)) {
     missing_cov <- setdiff(covariates, colnames(target_meta))
     if (length(missing_cov) > 0L) {
       stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
     }
-    formula_str <- paste0(formula_str, " + ", paste(covariates, collapse = " + "))
   }
-  design <- stats::model.matrix(stats::as.formula(formula_str), data = target_meta)
-  colnames(design) <- gsub(paste0("^", group_col), "", colnames(design))
+  design <- build_design(target_meta, c(group_col, covariates),
+                         primary = group_col, intercept = FALSE)
 
   if (!is.null(paired_col)) {
     if (any(is.na(target_meta[[paired_col]]))) {
@@ -85,9 +83,12 @@ run_limma_group <- function(
     fit <- limma::lmFit(expr_sub, design)
   }
 
-  contrast_str <- paste0(make.names(case_group), " - ", make.names(control_group))
-  contrast_matrix <- limma::makeContrasts(contrasts = contrast_str, levels = design)
-  fit2 <- limma::eBayes(limma::contrasts.fit(fit, contrast_matrix))
+  # A numeric contrast rather than `makeContrasts(contrasts = "<string>")`:
+  # that argument is parsed, and `make.names()` on a group label is a guess at
+  # which coefficient was meant. A group legitimately named after a covariate
+  # -- or after an internal identifier -- resolved to the wrong column.
+  fit2 <- limma::eBayes(limma::contrasts.fit(
+    fit, design_contrast(design, control_group, case_group)))
 
   raw_df <- limma::topTable(fit2, number = Inf, sort.by = "none")
   raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
@@ -198,25 +199,28 @@ run_limma_continuous <- function(
 
   adjustment_terms <- unique(c(if (!is.null(paired_col)) paired_col, covariates))
 
+  # The adjustment columns are renamed once, here. Everything below models
+  # them through `~ .`, which expands via symbols; the covariate names the
+  # user uploaded are never handed to the parser.
+  adj <- safe_frame(meta_df, adjustment_terms)$df
+
+  # The spline basis as plain columns, so the adjusted model is still
+  # `~ .` rather than a formula with `splines::ns(...)` pasted into it.
+  spline_basis <- if (method == "spline") {
+    b <- as.data.frame(splines::ns(cont_vals, df = df))
+    names(b) <- paste0("s", seq_along(b))
+    b
+  } else {
+    NULL
+  }
+
   adj_r2 <- apply(expr_mat, 1L, function(y) {
-    model_df <- data.frame(y = y, cont = cont_vals, meta_df[, adjustment_terms, drop = FALSE])
-    if (method == "spline") {
-      f <- if (length(adjustment_terms) > 0L) {
-        stats::as.formula(paste(
-          "y ~ splines::ns(cont, df =", df, ") +",
-          paste(adjustment_terms, collapse = " + ")
-        ))
-      } else {
-        stats::as.formula(paste("y ~ splines::ns(cont, df =", df, ")"))
-      }
+    model_df <- if (method == "spline") {
+      data.frame(y = y, spline_basis, adj)
     } else {
-      f <- if (length(adjustment_terms) > 0L) {
-        stats::as.formula(paste("y ~ cont +", paste(adjustment_terms, collapse = " + ")))
-      } else {
-        stats::as.formula("y ~ cont")
-      }
+      data.frame(y = y, cont = cont_vals, adj)
     }
-    summary(stats::lm(f, data = model_df))$adj.r.squared
+    summary(stats::lm(y ~ ., data = model_df))$adj.r.squared
   })
 
   rho <- apply(expr_mat, 1L, function(y) {
@@ -225,15 +229,9 @@ run_limma_continuous <- function(
         stats::cor.test(y, cont_vals, method = "spearman", exact = FALSE)$estimate
       ))
     }
-    model_df <- data.frame(y = y, cont = cont_vals, meta_df[, adjustment_terms, drop = FALSE])
-    y_resid <- stats::residuals(stats::lm(
-      stats::as.formula(paste("y ~", paste(adjustment_terms, collapse = " + "))),
-      data = model_df
-    ))
-    cont_resid <- stats::residuals(stats::lm(
-      stats::as.formula(paste("cont ~", paste(adjustment_terms, collapse = " + "))),
-      data = model_df
-    ))
+    y_resid <- stats::residuals(stats::lm(y ~ ., data = data.frame(y = y, adj)))
+    cont_resid <- stats::residuals(
+      stats::lm(cont ~ ., data = data.frame(cont = cont_vals, adj)))
     suppressWarnings(stats::cor.test(y_resid, cont_resid, method = "spearman", exact = FALSE)$estimate)
   })
 
@@ -305,15 +303,14 @@ run_limma_anova <- function(
   keep_samples <- rownames(target_meta)
   expr_sub <- expr_mat[, keep_samples, drop = FALSE]
 
-  formula_str <- paste0("~ 0 + ", group_col)
   if (!is.null(covariates)) {
     missing_cov <- setdiff(covariates, colnames(target_meta))
     if (length(missing_cov) > 0L) {
       stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
     }
-    formula_str <- paste0(formula_str, " + ", paste(covariates, collapse = " + "))
   }
-  design <- stats::model.matrix(stats::as.formula(formula_str), data = target_meta)
+  design <- build_design(target_meta, c(group_col, covariates),
+                         primary = group_col, intercept = FALSE)
 
   if (!is.null(paired_col)) {
     if (any(is.na(target_meta[[paired_col]]))) {

@@ -171,12 +171,21 @@ run_deseq2_group <- function(
     design_terms <- c(design_terms, covariates)
   }
 
-  design_formula <- stats::as.formula(paste("~", paste(design_terms, collapse = " + ")))
-  dds <- build_deseq_dataset(input, count_sub, target_meta, design_formula)
-  dds[[group_col]] <- stats::relevel(dds[[group_col]], ref = control_group)
+  # DESeq2 takes a formula, so the columns are renamed instead: the model is
+  # the same one, but `~ t001 + t002` carries nothing the uploader wrote.
+  # `results(contrast = c(variable, level, level))` looks its arguments up
+  # rather than parsing them, so the renamed levels go in there too.
+  sf <- safe_frame(target_meta, design_terms)
+  group_id <- sf$ids[[match(group_col, design_terms)]]
+  design_formula <- stats::as.formula(paste("~", paste(sf$ids, collapse = " + ")))
+  dds <- build_deseq_dataset(input, count_sub, sf$df, design_formula)
+  dds[[group_id]] <- stats::relevel(dds[[group_id]],
+                                    ref = safe_level(sf, group_id, control_group))
   dds <- deseq_with_dispersion_fallback(dds)
 
-  res <- DESeq2::results(dds, contrast = c(group_col, case_group, control_group))
+  res <- DESeq2::results(dds, contrast = c(group_id,
+                                           safe_level(sf, group_id, case_group),
+                                           safe_level(sf, group_id, control_group)))
   raw_df <- as.data.frame(res) |>
     tibble::rownames_to_column("feature_id")
 
@@ -257,12 +266,15 @@ run_deseq2_continuous <- function(
     design_terms <- c(design_terms, covariates)
   }
 
-  design_formula <- stats::as.formula(paste("~", paste(design_terms, collapse = " + ")))
-  dds <- build_deseq_dataset(input, count_mat, meta_df, design_formula)
+  # Renamed columns, as in the group case above.
+  sf <- safe_frame(meta_df, design_terms)
+  cont_id <- sf$ids[[match(continuous_col, design_terms)]]
+  design_formula <- stats::as.formula(paste("~", paste(sf$ids, collapse = " + ")))
+  dds <- build_deseq_dataset(input, count_mat, sf$df, design_formula)
   dds <- deseq_with_dispersion_fallback(dds)
 
   coef_names <- DESeq2::resultsNames(dds)
-  if (!continuous_col %in% coef_names) {
+  if (!cont_id %in% coef_names) {
     stop(
       "Failed to resolve DESeq2 coefficient for `continuous_col = '",
       continuous_col, "'`. Available coefficients: ",
@@ -270,7 +282,7 @@ run_deseq2_continuous <- function(
     )
   }
 
-  res <- DESeq2::results(dds, name = continuous_col)
+  res <- DESeq2::results(dds, name = cont_id)
   raw_df <- as.data.frame(res) |>
     tibble::rownames_to_column("feature_id")
 
