@@ -115,7 +115,19 @@ test_that("add_experiment adds a new experiment", {
   inp <- make_proj_input()
   p2 <- add_experiment(p, "proteomics", inp)
   expect_equal(experiment_tags(p2), "proteomics")
-  expect_equal(p2$experiments$proteomics, inp)
+  stored <- p2$experiments$proteomics
+  # Stamped with its content version on the way in, so effective_input()
+  # can answer without re-hashing the matrix on every read. Everything
+  # else arrives unchanged.
+  expect_true(nzchar(stored$version))
+  stored$version <- NULL
+  expect_equal(stored, inp)
+})
+
+test_that("a layer carries the version of what it actually holds", {
+  p <- add_experiment(omics_project("test"), "prot", make_proj_input())
+  expect_identical(p$experiments$prot$version,
+                   input_version(p$experiments$prot))
 })
 
 test_that("add_experiment errors on duplicate tag", {

@@ -67,6 +67,18 @@ omics_project <- function(
     }
   }
 
+  # A project's identity is its own, not its data's. Two projects built from
+  # the same file are two projects -- different contrasts, different
+  # conclusions -- and deciding "same project?" by comparing data handed one
+  # project's results to the other.
+  if (is.null(metadata$project_id)) {
+    metadata$project_id <- new_project_id()
+  }
+
+  # Version each layer once, here, rather than on every read. Hashing a
+  # 63k x 258 matrix is cheap once and not cheap from inside a reactive.
+  experiments <- lapply(experiments, stamp_version)
+
   structure(
     list(
       name = name,
@@ -74,6 +86,12 @@ omics_project <- function(
       sample_link = sample_link,
       feature_link = feature_link,
       metadata = metadata,
+      # Per-layer preprocessing and the analyses that reference it. Empty
+      # until QC is applied and analyses are registered; a project saved
+      # before they existed loads with them absent, which reads the same.
+      preprocessing = list(),
+      analyses = list(),
+      retired = list(),
       created_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
       schema_version = "1"
     ),
@@ -117,7 +135,7 @@ add_experiment <- function(project, name, input) {
   }
   validate_omics_input(input)
 
-  project$experiments[[name]] <- input
+  project$experiments[[name]] <- stamp_version(input)
   project
 }
 
