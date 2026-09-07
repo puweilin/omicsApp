@@ -1,0 +1,4 @@
+LARGE_VALID_DUMP_EXIT=1
+PREVIOUS_BACKUP_PRESERVED=True
+STDERR=2026-09-07T21:38:55+0800 backup-keycloak: FAILED: the dump does not look like pg_dump output; the previous /tmp/omicsapp-review-20260907.SsorGW/backup-probe/store/keycloak-1.sql.gz is untouched
+

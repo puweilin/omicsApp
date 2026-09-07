@@ -40,6 +40,7 @@ enrich_view_ui <- function(id) {
 #' @noRd
 enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                                current_project = shiny::reactiveVal(NULL),
+                               activation = shiny::reactiveVal(0L),
                                diff_thresholds = shiny::reactive(list(
                                  p_cutoff = 0.05, p_preference = "adjusted",
                                  effect_cutoff = NULL)),
@@ -53,6 +54,17 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     enrich_error  <- shiny::reactiveVal(NULL)
     is_demo       <- shiny::reactiveVal(TRUE)
 
+    # Whether there is a user project at all, which is not the same
+    # question as whether this view has computed anything. They were one
+    # flag, so a real project with no upstream analysis -- or a failed
+    # run -- fell back to the built-in example and displayed invented
+    # pathways as though they were the project's own.
+    #
+    # Demo data is for the demo. A real project that has not run shows an
+    # empty state; a real project whose run failed shows the error.
+    demo_mode <- shiny::reactive(is.null(current_project()))
+
+
     # The layer the upstream diff was computed on has been replaced, so
     # this enrichment is no longer about anything in the project. Back
     # to the module's own start-up state.
@@ -61,6 +73,19 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       enrich_error(NULL)
       is_demo(TRUE)
     }, ignoreInit = TRUE)
+
+    # Restored from the project when one is opened, for the reason the
+    # Differential view documents: a valid saved result should be on
+    # screen, not re-run from defaults.
+    shiny::observeEvent(activation(), {
+      proj <- current_project()
+      if (is.null(proj)) return()
+      saved <- proj$bundles$enrich
+      if (is.null(saved) || is.null(saved$provenance_binding)) return()
+      if (!omicsCore::result_inputs_current(saved$provenance_binding, proj)) return()
+      is_demo(FALSE)
+      enrich_bundle(saved)
+    }, priority = -20L, ignoreInit = TRUE)
 
     # One number per view, bumped when a run starts and checked when it
     # comes back. Pressing Run again while the previous run is still out
@@ -89,8 +114,20 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
         enrich_bundle(NULL)
         return(invisible())
       }
+      launch <- capture_launch(
+        current_project(), "enrich",
+        tags = bundle$input_info$layer_tag %||% character(0),
+        upstream = bundle$provenance_binding$analysis_id %||% character(0),
+        params = list(type = type, database = db_arg, direction = dir_,
+                      thresholds = thr),
+        activation = activation())
       run_async(
-        admissible = newest_request_only(this_request, request_seq),
+        admissible = launch_admissible(
+          launch,
+          function() list(project = current_project(),
+                          activation = activation(),
+                          request_seq = request_seq()),
+          this_request),
         on_discard = discard_notice(),
         # Detached for the same reason as the Differential view: a
         # closure defined here carries this module's whole scope to the
@@ -148,11 +185,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           # result's layer and its upstream is that result. Carrying both
           # is what lets a change of data retire the pair together rather
           # than leaving pathways attached to a differential that is gone.
-          result <- bind_result(
-            result, current_project(), "enrich",
-            tags = bundle$input_info$layer_tag,
-            versions = bundle$input_info$input_version,
-            upstream = bundle$provenance_binding$analysis_id)
+          result <- stamp_from_launch(result, launch)
           enrich_error(NULL)
           is_demo(FALSE)
           enrich_bundle(result)
@@ -180,7 +213,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     # an async flush doesn't crash the reactive graph (downstream
     # renderers also `req()` on `nrow(df) > 0`).
     table_data <- shiny::reactive({
-      if (isTRUE(is_demo())) return(example_enrich_table())
+      if (isTRUE(demo_mode())) return(example_enrich_table())
       b <- enrich_bundle()
       shiny::req(b)
       b$results$enrich_result_df
@@ -342,7 +375,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     # and a demo that no longer resembles the product is worse than no
     # demo.
     plot_bundle <- shiny::reactive({
-      if (isTRUE(is_demo())) example_enrich_bundle() else enrich_bundle()
+      if (isTRUE(demo_mode())) example_enrich_bundle() else enrich_bundle()
     })
 
     # The threshold the panel is read at. numericInput reports NA while

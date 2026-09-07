@@ -41,7 +41,8 @@ diff_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
-                             invalidate = shiny::reactiveVal(0L)) {
+                             invalidate = shiny::reactiveVal(0L),
+                             activation = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Active experiment: whichever layer the user picked, else
@@ -261,6 +262,44 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       diff_error(NULL)
     }, ignoreInit = TRUE)
 
+    # A project arrives carrying results it was saved with. Clearing the
+    # views on activation is right -- what they held belongs to the last
+    # project -- but stopping there left the page empty in front of a
+    # project whose differential is on disk and valid, so the user's only
+    # move was to re-run it and hope the settings matched.
+    #
+    # Only results the project itself vouches for: a binding that names
+    # this project and inputs that are still current. Anything else is
+    # what retire_invalid() has already moved to history.
+    shiny::observeEvent(activation(), {
+      proj <- current_project()
+      if (is.null(proj)) return()
+      saved <- proj$bundles$diff
+      if (is.null(saved) || is.null(saved$provenance_binding)) return()
+      if (!omicsCore::result_inputs_current(saved$provenance_binding, proj)) return()
+      diff_error(NULL)
+      diff_bundle(saved)
+      # And the controls, so the panel describes the result it is showing
+      # rather than the defaults. A page that shows one contrast above
+      # settings for another invites re-running the wrong thing.
+      p <- saved$params %||% list()
+      if (!is.null(p$method)) {
+        shiny::updateSelectInput(session, "method", selected = p$method)
+      }
+      if (!is.null(p$group_col)) {
+        shiny::updateSelectInput(session, "group_col", selected = p$group_col)
+      }
+      if (!is.null(p$control_group)) {
+        shiny::updateSelectInput(session, "control", selected = p$control_group)
+      }
+      if (!is.null(p$case_group)) {
+        shiny::updateSelectInput(session, "case", selected = p$case_group)
+      }
+      if (!is.null(p$covariates)) {
+        shiny::updateSelectizeInput(session, "covariates", selected = p$covariates)
+      }
+    }, priority = -20L, ignoreInit = TRUE)
+
     # One number per view, bumped when a run starts and checked when it
     # comes back. Pressing Run again while the previous run is still out
     # used to mean whichever finished last won -- and the loser was often
@@ -297,8 +336,25 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         diff_error("Pick a group column with distinct Control and Case levels.")
         return(invisible())
       }
+      # Captured before the run starts, and never re-read afterwards: the
+      # first version of this took the versions from here and the project
+      # identity from arrival, which produced a record that looked
+      # internally consistent while describing a computation from another
+      # project.
+      launch <- capture_launch(current_project(), "diff", tags = a$tag,
+                               params = list(method = method,
+                                             group_col = group_col,
+                                             control_group = control,
+                                             case_group = case,
+                                             covariates = covariates),
+                               activation = activation())
       run_async(
-        admissible = newest_request_only(this_request, request_seq),
+        admissible = launch_admissible(
+          launch,
+          function() list(project = current_project(),
+                          activation = activation(),
+                          request_seq = request_seq()),
+          this_request),
         on_discard = discard_notice(),
         # Detached, so the worker receives the input and the six
         # parameters rather than this module's whole scope. Defined
@@ -326,13 +382,11 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           covariates = if (length(covariates)) covariates else NULL
         ),
         on_success = function(bundle) {
-          # Which layer, and which version of it, as resolved when the run
-          # was launched. Taken from `a` rather than re-read on arrival: the
-          # project can change while a task runs, and describing the result
-          # by the data that is there when it lands is how a stale result
-          # looks current.
-          bundle <- bind_result(bundle, current_project(), "diff",
-                                tags = a$tag, versions = a$version)
+          # From the launch record. Nothing here is read from the live
+          # application: if the project has moved on, the gate above has
+          # already refused, and describing the result by whatever it
+          # landed in is how a stale result comes to look current.
+          bundle <- stamp_from_launch(bundle, launch)
           diff_error(NULL)
           diff_bundle(bundle)
         },

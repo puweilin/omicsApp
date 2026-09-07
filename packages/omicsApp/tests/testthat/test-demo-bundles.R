@@ -90,3 +90,90 @@ test_that("the demo still shows them, since that is what a demo is for", {
     expect_false(is.null(ap_df()))
   })
 })
+
+# --- demo data is for the demo -------------------------------------------
+
+# `is_demo` answered two questions at once: "is there a user project" and
+# "has this view computed anything". So a real project with no upstream
+# analysis, or one whose run had failed, fell back to the built-in example
+# and displayed invented pathways as though they were its own. Fixing only
+# the success branch left every other path showing them.
+db_project <- function() {
+  set.seed(6); p <- 20; n <- 8
+  mk <- function(seed, omics) {
+    set.seed(seed)
+    e <- matrix(rnorm(p * n, 10, 1), p,
+                dimnames = list(paste0("SYM", seq_len(p)), paste0("s", seq_len(n))))
+    md <- data.frame(group = rep(c("A", "B"), each = 4), row.names = colnames(e))
+    fd <- data.frame(feature_id = rownames(e), feature_symbol = rownames(e),
+                     row.names = rownames(e), stringsAsFactors = FALSE)
+    omicsCore::omics_input(e, md, fd, omics_type = omics,
+                           assay_type = if (omics == "rnaseq") "logcpm"
+                                        else "normalized_intensity")
+  }
+  omicsCore::omics_project("real", list(prot = mk(1, "proteomics"),
+                                        rna = mk(2, "rnaseq")))
+}
+
+test_that("a real project with nothing computed shows no example enrichment", {
+  proj <- shiny::reactiveVal(db_project())
+  shiny::testServer(enrich_view_server,
+                    args = list(current_project = proj,
+                                diff_bundle = shiny::reactiveVal(NULL)), {
+    session$flushReact()
+    # There is nothing to enrich, so the view has no result -- but that is
+    # not the same as being the demo.
+    expect_false(isTRUE(demo_mode()))
+    # req() stops the reactive rather than returning, which is the empty
+    # state -- what matters is that it is not the fixture.
+    expect_null(enrich_bundle())
+  })
+})
+
+test_that("a real project whose run failed shows no example enrichment", {
+  proj <- shiny::reactiveVal(db_project())
+  db <- shiny::reactiveVal(omicsApp:::example_diff_bundle())
+  testthat::local_mocked_bindings(
+    run_enrichment = function(...) stop("no gene sets available"),
+    .package = "omicsCore")
+  shiny::testServer(enrich_view_server,
+                    args = list(current_project = proj, diff_bundle = db), {
+    session$setInputs(type = "ora", database = "hallmark", rerun = 1)
+    session$flushReact()
+    expect_false(is.null(enrich_error()))
+    expect_false(isTRUE(demo_mode()))
+    # The failure is what is shown, not a table of fixtures.
+    expect_null(enrich_bundle())
+  })
+})
+
+test_that("a real project with no second layer shows no example integration", {
+  single <- omicsCore::omics_project(
+    "one layer", list(prot = db_project()$experiments$prot))
+  proj <- shiny::reactiveVal(single)
+  shiny::testServer(integration_view_server,
+                    args = list(current_project = proj,
+                                diff_bundle = shiny::reactiveVal(NULL)), {
+    session$flushReact()
+    expect_false(isTRUE(demo_mode()))
+    expect_null(ap_df())
+    expect_null(conc_df())
+  })
+})
+
+test_that("the demo, which has no project, still shows them", {
+  shiny::testServer(enrich_view_server, {
+    session$flushReact()
+    expect_true(isTRUE(demo_mode()))
+    expect_false(is.null(table_data()))
+  })
+  shiny::testServer(integration_view_server, {
+    session$flushReact()
+    expect_false(is.null(conc_df()))
+  })
+  shiny::testServer(integration_view_server, {
+    session$flushReact()
+    expect_true(isTRUE(demo_mode()))
+    expect_false(is.null(ap_df()))
+  })
+})

@@ -119,14 +119,13 @@ coerce_continuous_col <- function(x, col_name) {
 #' whatever the scale. None of those label the effect as something the input
 #' cannot support, so none of them are narrowed here.
 #'
-#' Where magnitude can tell the two scales apart -- the intensity family, per
-#' [SCALE_CHECKED_ASSAY_TYPES] -- the values get the last word over the label.
-#' A project saved before the vocabulary existed carries `"intensity"`, which
-#' the import view stamped on every proteomics upload whether or not it had
-#' been transformed, so that label asserts nothing and refusing on it alone
-#' would make old log2 projects unanalysable. TPM and FPKM are excluded from
-#' that rescue for the reason counts are: a gene at 5 TPM is ordinary, so a
-#' small maximum is not evidence of a log scale.
+#' A label is believed. The one exception is a superseded spelling that
+#' asserts nothing: `"intensity"` was stamped on every proteomics upload
+#' before the vocabulary existed, whether or not the values had been
+#' transformed, so for those the values are the only evidence there is.
+#' Everywhere else magnitude is not consulted -- being small is not evidence
+#' of having been transformed, and treating it as such let an explicit
+#' `raw_intensity` matrix through and back out labelled log2FC.
 #'
 #' @param input A validated `omics_input`.
 #' @param method The backend actually chosen, i.e. after `"auto"` resolves.
@@ -148,7 +147,18 @@ assert_limma_scale <- function(input, method) {
   }
   if (canonical %in% LOG_SCALE_ASSAY_TYPES) return(invisible(TRUE))
 
-  if (canonical %in% SCALE_CHECKED_ASSAY_TYPES) {
+  # The magnitude rescue applies only to a label that asserts nothing.
+  # "intensity" was stamped on every proteomics upload before the
+  # vocabulary existed, whether or not the values had been transformed, so
+  # refusing on it alone would make old log2 projects unanalysable and the
+  # values are the only evidence available.
+  #
+  # An explicit `raw_intensity` is different: somebody said these are
+  # linear. Letting a small maximum override that was a bypass, not a
+  # rescue -- a raw intensity matrix topping out at 50 sailed through and
+  # came back labelled log2FC. Being small is not evidence of having been
+  # transformed.
+  if (!identical(canonical, at) && canonical %in% SCALE_CHECKED_ASSAY_TYPES) {
     max_value <- suppressWarnings(max(input$expr_mat, na.rm = TRUE))
     if (!is.finite(max_value) || max_value <= MAX_PLAUSIBLE_LOG_SCALE_VALUE) {
       return(invisible(TRUE))

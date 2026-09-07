@@ -24,7 +24,8 @@ run_integration_concordance <- function(
   by = "feature_symbol",
   p_preference = c("adjusted", "raw"),
   p_cutoff = 0.05,
-  p_adjust_method = "BH"
+  p_adjust_method = "BH",
+  combine_p = FALSE
 ) {
   experiments <- resolve_experiment_pair(project, experiments)
   p_preference <- match.arg(p_preference)
@@ -74,20 +75,44 @@ run_integration_concordance <- function(
   # rough magnitude signal.
   effect <- joined$effect_a - joined$effect_b
 
-  # Combined p via Fisher's method, only when both inputs are present.
   pa <- joined$p_a
   pb <- joined$p_b
-  combined_p <- rep(NA_real_, nrow(joined))
-  ok <- !is.na(pa) & !is.na(pb) & pa > 0 & pb > 0
-  if (any(ok)) {
-    chisq <- -2 * (log(pa[ok]) + log(pb[ok]))
-    combined_p[ok] <- stats::pchisq(chisq, df = 4L, lower.tail = FALSE)
-  }
-  combined_adj <- stats::p.adjust(combined_p, method = p_adjust_method)
 
-  is_sig <- !is.na(pa) & !is.na(pb) &
-            pa < p_cutoff & pb < p_cutoff &
-            !is.na(direction) & direction == "concordant"
+  # Fisher's method combines p-values that are independent and uniform
+  # under the null. Neither holds here as it is being used: `p_preference`
+  # defaults to the adjusted p, which is not a p-value in that sense, and
+  # two omics layers measured on the same subjects are not independent.
+  # Adjusting the combination afterwards does not repair either.
+  #
+  # So the combination is computed but not reported as significance, and
+  # nothing downstream reads it as one, until the statistical basis is
+  # settled. `combine_p` is the switch for that decision, not a preference:
+  # turning it on is asserting the assumptions hold for the data at hand.
+  #
+  # What is reported instead is the thing that needs no such assumption:
+  # each layer's own p, and whether the feature is significant in both and
+  # moving the same way. That is a description of agreement rather than a
+  # test of a joint hypothesis, and it is what the quadrant plot already
+  # showed.
+  combined_p <- rep(NA_real_, nrow(joined))
+  combined_adj <- rep(NA_real_, nrow(joined))
+  if (isTRUE(combine_p)) {
+    ok <- !is.na(pa) & !is.na(pb) & pa > 0 & pb > 0
+    if (any(ok)) {
+      chisq <- -2 * (log(pa[ok]) + log(pb[ok]))
+      combined_p[ok] <- stats::pchisq(chisq, df = 4L, lower.tail = FALSE)
+    }
+    combined_adj <- stats::p.adjust(combined_p, method = p_adjust_method)
+  }
+
+  # Significant in both layers, in the same direction. Named for what it
+  # is: `is_significant` alone read as a verdict on the pair, and it was a
+  # different judgement from the combined p sitting beside it -- two
+  # columns, two criteria, one name to confuse them under.
+  concordant_sig <- !is.na(pa) & !is.na(pb) &
+                    pa < p_cutoff & pb < p_cutoff &
+                    !is.na(direction) & direction == "concordant"
+  is_sig <- concordant_sig
 
   out <- data.frame(
     feature_id = joined$key,
@@ -117,14 +142,30 @@ run_integration_concordance <- function(
     effect_type_b = side_effect_type(diff_bundles[[tag_b]]),
     analysis_id_a = side_analysis_id(diff_bundles[[tag_a]]),
     analysis_id_b = side_analysis_id(diff_bundles[[tag_b]]),
-    statistic = -2 * (log(pmax(pa, .Machine$double.xmin)) +
-                      log(pmax(pb, .Machine$double.xmin))),
-    statistic_type = "fisher_chisq",
+    # The Fisher statistic is part of the combination, so it goes with it.
+    # Reporting the chi-square while withholding the p it produces would be
+    # withholding the label rather than the claim.
+    statistic = if (isTRUE(combine_p)) {
+      -2 * (log(pmax(pa, .Machine$double.xmin)) +
+            log(pmax(pb, .Machine$double.xmin)))
+    } else {
+      rep(NA_real_, nrow(joined))
+    },
+    statistic_type = if (isTRUE(combine_p)) "fisher_chisq" else NA_character_,
     p_value = combined_p,
     adj_p_value = combined_adj,
     direction = direction,
     quadrant = quadrant,
     is_significant = is_sig,
+    # The same judgement under a name that says which one it is. Kept
+    # alongside rather than instead of, so a reader of an older result and
+    # a reader of a new one are looking at the same column.
+    is_concordant_significant = concordant_sig,
+    is_combined_significant = if (isTRUE(combine_p)) {
+      !is.na(combined_adj) & combined_adj < p_cutoff
+    } else {
+      rep(NA, nrow(joined))
+    },
     source_label = paste0("integration_concordance_", tag_a, "_", tag_b),
     stringsAsFactors = FALSE
   )

@@ -133,7 +133,8 @@ import_view_server <- function(id,
         # Fingerprint the upload so Confirm can tell a genuinely new
         # dataset from the same file picked twice.
         out$input$source_fingerprint <-
-          input_fingerprint(f$datapath, omics_type, assay_type)
+          input_fingerprint(f$datapath, omics_type, assay_type,
+                            sheet_roles = role_overrides())
       }
       parsed(out)
       # New upload (or radio change) always resets the confirmed state
@@ -190,7 +191,8 @@ import_view_server <- function(id,
       f <- input$file
       if (!is.null(f)) {
         cand$input$source_fingerprint <- input_fingerprint(
-          f$datapath, cand$input$omics_type, input$assay_type)
+          f$datapath, cand$input$omics_type, input$assay_type,
+          sheet_roles = role_overrides())
       }
       parsed(cand)
       confirmed_input(NULL)
@@ -557,7 +559,8 @@ import_view_server <- function(id,
       if (is.null(f)) return(cand)
       cand$source_fingerprint <- input_fingerprint(
         f$datapath, cand$omics_type, cand$assay_type,
-        normalize = pending_normalize_method())
+        normalize = pending_normalize_method(),
+        sheet_roles = role_overrides())
       cand
     }
 
@@ -659,11 +662,26 @@ import_view_server <- function(id,
 # `normalize` is in here for the same reason -- re-importing the same file
 # with normalization turned off produces different numbers, and that has to
 # read as new data rather than as "nothing changed".
-input_fingerprint <- function(path, omics_type, assay_type, normalize = NULL) {
+input_fingerprint <- function(path, omics_type, assay_type, normalize = NULL,
+                              sheet_roles = NULL) {
   digest <- unname(tools::md5sum(path))
   if (is.na(digest)) return(NULL)
+  # Sheet roles are part of what makes this "the same data". Two sheets of
+  # one workbook are two different matrices, and without the roles here the
+  # replace check saw the same file, said "nothing to re-import", and threw
+  # away a candidate whose every value had changed.
+  #
+  # Sorted, because the assignment is a set: the same roles arriving in a
+  # different order is the same parse.
+  roles <- if (length(sheet_roles) == 0L) {
+    ""
+  } else {
+    r <- sheet_roles[order(names(sheet_roles))]
+    paste(names(r), unname(r), sep = "=", collapse = ",")
+  }
   paste(digest, omics_type %||% "", assay_type %||% "",
-        if (is.null(normalize)) "" else as.character(normalize), sep = ":")
+        if (is.null(normalize)) "" else as.character(normalize),
+        roles, sep = ":")
 }
 
 # Both sides must carry a fingerprint for a match to mean anything. An

@@ -185,3 +185,119 @@ test_that("a layer with nothing recorded stops instead of guessing", {
   expect_match(paste(attr(res, "notes") %||% "", collapse = " "),
                "predates provenance|", fixed = FALSE)
 })
+
+# --- an integration, replayed --------------------------------------------
+
+# Concordance takes two differentials and the second is computed inside
+# the integration view, displayed by nothing. It used to exist only in the
+# worker's scope, so the integration named an upstream the project did not
+# hold, the exported script emitted one differential, and running it
+# stopped on "`diff_bundles` is required". A NOTE about the gap does not
+# make a script executable.
+rt_two_layers <- function(dir) {
+  raw <- file.path(dir, "raw")
+  dir.create(raw, showWarnings = FALSE, recursive = TRUE)
+  syms <- paste0("SYM", 1:40)
+  mk <- function(file, seed, shift) {
+    set.seed(seed)
+    n <- 8; ids <- paste0("s", seq_len(n))
+    m <- matrix(rlnorm(40 * n, 12, 0.5), nrow = 40, dimnames = list(syms, ids))
+    m[1:8, 5:8] <- m[1:8, 5:8] * shift
+    openxlsx::write.xlsx(list(
+      matrix = data.frame(feature_id = syms, m, check.names = FALSE),
+      samples = data.frame(sample_id = ids,
+                           group = rep(c("A", "B"), each = 4),
+                           stringsAsFactors = FALSE)), file)
+    file
+  }
+  p1 <- mk(file.path(raw, "prot.xlsx"), 21, 4)
+  p2 <- mk(file.path(raw, "rna.xlsx"), 22, 2)
+
+  layer <- function(path) {
+    inp <- suppressWarnings(read_omics(path, omics_type = "proteomics",
+                                       assay_type = "raw_intensity")$input)
+    inp$source_path <- path
+    suppressMessages(normalize_omics(inp, method = "log2"))
+  }
+  a <- layer(p1); b <- layer(p2)
+  proj <- omics_project("two layer", list(prot = a, rna = b))
+
+  run <- function(tag) {
+    run_diff(effective_input(proj, tag)$input, method = "limma",
+             analysis_type = "group", group_col = "group",
+             control_group = "A", case_group = "B")
+  }
+  d_a <- run("prot"); d_b <- run("rna")
+
+  # As the application now files them: both differentials in the registry,
+  # the integration naming both as upstream.
+  bind <- function(b, tag, id) {
+    b$input_info$layer_tag <- tag
+    b$input_info$input_version <- effective_input(proj, tag)$version
+    b$provenance_binding <- new_provenance_binding(
+      analysis_id = id, project_id = proj$metadata$project_id,
+      inputs = stats::setNames(list(effective_input(proj, tag)$version), tag),
+      params_signature = params_signature(b$params))
+    b
+  }
+  d_a <- bind(d_a, "prot", "ana-a")
+  d_b <- bind(d_b, "rna", "ana-b")
+
+  integ <- run_integration(project = proj, method = "concordance",
+                           experiments = c("prot", "rna"),
+                           diff_bundles = list(prot = d_a, rna = d_b))
+  integ$provenance_binding <- new_provenance_binding(
+    analysis_id = "ana-int", project_id = proj$metadata$project_id,
+    inputs = list(prot = effective_input(proj, "prot")$version,
+                  rna = effective_input(proj, "rna")$version),
+    upstream_ids = c("ana-a", "ana-b"),
+    params_signature = params_signature(integ$params))
+
+  proj <- register_analysis(proj, d_a)
+  proj <- register_analysis(proj, d_b)
+  proj <- register_analysis(proj, integ)
+  proj$bundles <- list(diff = d_a, integration = integ)
+  list(project = proj, integration = integ, dir = dir)
+}
+
+test_that("a two-layer integration replays to the same numbers", {
+  skip_unless_replayable()
+  dir <- withr::local_tempdir()
+  p <- rt_two_layers(dir)
+
+  out <- withr::local_tempdir()
+  dir.create(file.path(out, "raw"), recursive = TRUE, showWarnings = FALSE)
+  file.copy(list.files(file.path(dir, "raw"), full.names = TRUE),
+            file.path(out, "raw"))
+  script <- file.path(out, "replay.R")
+  export_script(p$project, script)
+  txt <- paste(readLines(script), collapse = "\n")
+  # Both layers, and the bundles the method needs.
+  expect_match(txt, "diff_bundles")
+  expect_equal(length(gregexpr("run_diff\\(", txt)[[1L]]), 3L)
+
+  env <- new.env(parent = globalenv())
+  withr::with_dir(out, suppressWarnings(suppressMessages(
+    sys.source(script, envir = env))))
+  replayed <- env$integration
+  expect_false(is.null(replayed))
+
+  a <- replayed$results$integration_df
+  b <- p$integration$results$integration_df
+  i <- match(b$feature_id, a$feature_id)
+  expect_false(anyNA(i))
+  for (col in c("effect", "effect_a", "effect_b", "p_value", "adj_p_value")) {
+    expect_equal(a[[col]][i], b[[col]], tolerance = 1e-8, info = col)
+  }
+})
+
+test_that("an integration whose upstreams are not registered says so", {
+  skip_unless_replayable()
+  dir <- withr::local_tempdir()
+  p <- rt_two_layers(dir)
+  p$project$analyses <- list()          # a project from before they were filed
+  script <- withr::local_tempfile(fileext = ".R")
+  res <- export_script(p$project, script)
+  txt <- paste(readLines(script), collapse = "\n")
+  expect_match(paste(res, collapse = "\n"), "not registered")
+})

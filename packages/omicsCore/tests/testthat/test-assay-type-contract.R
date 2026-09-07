@@ -328,11 +328,20 @@ test_that("magnitude overrides the label where magnitude is informative", {
   expect_error(suppressWarnings(grp(legacy_linear, "limma")), "log2 fold change")
 })
 
-test_that("a raw_intensity layer that is actually on a log scale is allowed", {
+test_that("an explicit raw_intensity label is believed, whatever the values", {
   skip_if_not_installed("limma")
-  mislabelled <- scale_fixture("normalized_intensity", linear = FALSE)
-  mislabelled$assay_type <- "raw_intensity"
-  expect_s3_class(grp(mislabelled, "limma"), "analysis_bundle")
+  # This test used to assert the opposite, and the opposite was a bypass:
+  # `raw_intensity` is somebody asserting the values are linear, and a
+  # small maximum is not evidence against that. A raw intensity matrix
+  # topping out at 50 went straight through and came back as log2FC.
+  small <- scale_fixture("normalized_intensity", linear = FALSE)
+  small$assay_type <- "raw_intensity"
+  expect_error(grp(small, "limma"), "log2 fold change")
+  expect_error(grp(small, "auto"), "log2 fold change")
+
+  # Relabelling it as what it is, is the fix -- and it works.
+  small$assay_type <- "normalized_intensity"
+  expect_s3_class(grp(small, "limma"), "analysis_bundle")
 })
 
 test_that("TPM and FPKM are refused on the label, since magnitude cannot help", {

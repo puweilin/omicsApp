@@ -1,0 +1,64 @@
+{
+  "commit": "2b64bed0e7d849c13e20c1307c594206698c0295",
+  "baseline": "f756751c24c12b01cf99fca399a6a5a17eeea4f4",
+  "date": "2026-09-07",
+  "snapshot": "/tmp/omicsapp-review-20260907.SsorGW",
+  "business_source_modified_by_review": false,
+  "core_main": {
+    "test_assertion_failures_reported": 0,
+    "warnings": 1,
+    "skips": 6,
+    "runner_exit": 1,
+    "runner_exit_reason": "After testthat DONE, reviewer CSV export failed on list result column; raw test log retained. No full assertion total claimed."
+  },
+  "app_main": {
+    "test_assertion_failures_reported": 0,
+    "warnings": 5,
+    "skips": 0,
+    "runner_exit": 1,
+    "runner_exit_reason": "After testthat DONE, reviewer CSV export failed on list result column; raw test log retained. No full assertion total claimed."
+  },
+  "optional": {
+    "passed": 52,
+    "failed": 0,
+    "error": 0,
+    "skipped": 0,
+    "warning": 0,
+    "runner_exit": 0
+  },
+  "package_checks": {
+    "omicsCore": {
+      "errors": 0,
+      "warnings": 0,
+      "notes": 0
+    },
+    "omicsApp": {
+      "errors": 0,
+      "warnings": 0,
+      "notes": 0
+    },
+    "args": [
+      "--no-manual",
+      "--no-tests",
+      "--no-vignettes"
+    ]
+  },
+  "probes_runner_exit": 0,
+  "docker": "Daemon unavailable: /Users/puweilin/.docker/run/docker.sock missing; image build/run and target server not tested",
+  "verdict": "Do not accept batch 2-5 as complete. Isolated infrastructure rehearsal can proceed; resolve demonstrated business correctness and state defects before deployment acceptance.",
+  "evidence_sha256": {
+    "core-test.log": "c3c54668f57711fe447a1a47c04fc8a918046161c977111b408791866cc065af",
+    "backup_probe.py": "c07b4f4feb01be81eb597775715a1566a913019f56d5c48a5adce8409d71e58f",
+    "integration-replay-generated.R": "041c73e0d39d8d547a66b69830191390194305eba20f3893ea00929763c485db",
+    "review-probes.log": "c8d21d106455955f07dca29213db815df2eab7891b8df67ecb959c393d35a2e8",
+    "optional-results.csv": "5c7576e2ffd30c9e99eb04e21d037dd9c4e460ca40f48a47ceafa3d4470be836",
+    "omicsApp-00check.log": "83c22149084a6e6b0adaf4f8076d2bffb6637f35475d00e9389ea4c151f34a2e",
+    "package-check.log": "4c62660fa604eb08862a07f2220bdeeeb187361414874ab961e2b72a8be33993",
+    "install-core.log": "987fbfa722cebf1919f431c128560b5f2b58a97890228c56e39ce44ba39a08ca",
+    "backup-probe.log": "3e7289586e16dc636059dae5e816a254956ffb322e76adb762e05a9f768b47d8",
+    "optional-test.log": "1c86feb0135bcb716dbe270eb81fe4ca9994699a447b93f76952147f6d916626",
+    "review_probes.R": "53b0dd2a5a4ec03bfe9c7ad67c7a93233e8de0c3da873d5113017fa3bceadeee",
+    "app-test.log": "787489b295918d4d38ae68a335f8dc6872d0c2f053f4461d124501cd1fbbae33",
+    "omicsCore-00check.log": "db7799b5b769c1db2c71485276b7087b476812b8fac33cb4e51997d18243ab9b"
+  }
+}

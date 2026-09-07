@@ -188,3 +188,77 @@ test_that("read_omics rejects a malformed or unknown role", {
     "named character vector"
   )
 })
+
+# --- changing which sheet is the matrix ----------------------------------
+
+# The replace check asks "is this the same file?" by fingerprint, and the
+# fingerprint did not include the sheet assignment. So picking a different
+# sheet as the expression matrix -- a whole different set of numbers --
+# read as "that is the file already loaded, nothing to re-import", and the
+# candidate the user was looking at was discarded on Confirm.
+two_matrix_workbook <- function(env = parent.frame()) {
+  skip_if_not_installed("openxlsx")
+  path <- tempfile(fileext = ".xlsx")
+  withr::defer(unlink(path), envir = env)
+  set.seed(4)
+  ids <- paste0("s", 1:6)
+  fids <- paste0("P", 1:10)
+  a <- matrix(rnorm(60, 20, 1), 10, dimnames = list(fids, ids))
+  openxlsx::write.xlsx(list(
+    matrix_a = data.frame(feature_id = fids, a, check.names = FALSE),
+    # Every value differs by exactly 5, so a matrix that came from the
+    # wrong sheet is unmistakable.
+    matrix_b = data.frame(feature_id = fids, a + 5, check.names = FALSE),
+    samples  = data.frame(sample_id = ids,
+                          group = rep(c("A", "B"), each = 3),
+                          stringsAsFactors = FALSE)
+  ), path)
+  path
+}
+
+test_that("changing the matrix sheet is a different import", {
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("readxl")
+  skip_if_not_installed("withr")
+  xlsx <- two_matrix_workbook()
+
+  shiny::testServer(import_view_server, {
+    session$setInputs(
+      omics_type = "proteomics",
+      file = list(datapath = xlsx, name = "two.xlsx",
+                  size = file.info(xlsx)$size))
+    session$setInputs(confirm = 1)
+    first <- session$returned()
+    skip_if(is.null(first), "workbook did not parse in this environment")
+    fp_first <- first$source_fingerprint
+
+    # Same file, different sheet as the matrix.
+    # Roles are named by IMPORT_REPORT_ROLES, not by sheet name: the two
+    # candidate matrices swap, so the second sheet becomes the data.
+    role_overrides(c(matrix_a = "unknown", matrix_b = "matrix"))
+    do_parse()
+    session$flushReact()
+    cand <- parsed()$input
+    skip_if(is.null(cand), "role override did not parse")
+    # The candidate really is different data.
+    expect_false(isTRUE(all.equal(cand$expr_mat, first$expr_mat)))
+    # And the fingerprint says so, which is what the replace check reads.
+    expect_false(identical(cand$source_fingerprint, fp_first))
+  })
+})
+
+test_that("the same roles in a different order are the same parse", {
+  # The assignment is a set, so an order-sensitive fingerprint would make
+  # a re-render look like new data and prompt to replace the layer.
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("withr")
+  xlsx <- two_matrix_workbook()
+  a <- input_fingerprint(xlsx, "proteomics", "normalized_intensity",
+                         sheet_roles = c(x = "matrix", y = "samples"))
+  b <- input_fingerprint(xlsx, "proteomics", "normalized_intensity",
+                         sheet_roles = c(y = "samples", x = "matrix"))
+  expect_identical(a, b)
+  c_ <- input_fingerprint(xlsx, "proteomics", "normalized_intensity",
+                          sheet_roles = c(x = "samples", y = "matrix"))
+  expect_false(identical(a, c_))
+})

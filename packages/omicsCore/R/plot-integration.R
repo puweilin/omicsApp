@@ -162,6 +162,14 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
 }
 
 plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_cutoff) {
+  # Without a combined p there is nothing to put on this axis, and the
+  # honest answer is to say so. Plotting the weaker of the two layers'
+  # p-values instead would be inventing a joint statistic in the drawing
+  # code, which is where the effect-pair plot went wrong before.
+  if (all(is.na(df$p_value))) {
+    return(plot_integration_unavailable(paste0(
+      "This result does not carry a combined p-value: combining across layers assumes the two tests are independent, which two omics measured on the same subjects are not. Each layer's own p-values are in the effect-pair and quadrant views.")))
+  }
   df$.neglog10p <- -log10(pmax(df$p_value, .Machine$double.xmin))
   df$.quad <- ifelse(is.na(df$quadrant), "n/a", df$quadrant)
   label_ids <- pick_label_ids(df, top_n, label_features, p_col = "p_value")

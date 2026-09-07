@@ -54,7 +54,8 @@ integration_view_ui <- function(id) {
 integration_view_server <- function(id,
                                     current_project = shiny::reactiveVal(NULL),
                                     diff_bundle = shiny::reactiveVal(NULL),
-                                    invalidate = shiny::reactiveVal(0L)) {
+                                    invalidate = shiny::reactiveVal(0L),
+                                    activation = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Decide whether we can run real concordance integration. We
@@ -116,8 +117,22 @@ integration_view_server <- function(id,
     })
 
     integration_bundle <- shiny::reactiveVal(NULL)
+    # The second layer's differential. Displayed by nothing, depended on by
+    # the integration, so it has to reach the project all the same.
+    secondary_bundle   <- shiny::reactiveVal(NULL)
     integration_error  <- shiny::reactiveVal(NULL)
     is_demo            <- shiny::reactiveVal(TRUE)
+
+    # Whether there is a user project at all, which is not the same
+    # question as whether this view has computed anything. They were one
+    # flag, so a real project with no upstream analysis -- or a failed
+    # run -- fell back to the built-in example and displayed invented
+    # pathways as though they were the project's own.
+    #
+    # Demo data is for the demo. A real project that has not run shows an
+    # empty state; a real project whose run failed shows the error.
+    demo_mode <- shiny::reactive(is.null(current_project()))
+
 
     # ---- sample pairing ------------------------------------------------
     # Shown whether or not the current method needs it. Concordance
@@ -219,6 +234,19 @@ integration_view_server <- function(id,
       is_demo(TRUE)
     }, ignoreInit = TRUE)
 
+    # Restored from the project when one is opened, for the reason the
+    # Differential view documents: a valid saved result should be on
+    # screen, not re-run from defaults.
+    shiny::observeEvent(activation(), {
+      proj <- current_project()
+      if (is.null(proj)) return()
+      saved <- proj$bundles$integration
+      if (is.null(saved) || is.null(saved$provenance_binding)) return()
+      if (!omicsCore::result_inputs_current(saved$provenance_binding, proj)) return()
+      is_demo(FALSE)
+      integration_bundle(saved)
+    }, priority = -20L, ignoreInit = TRUE)
+
     # Set only by the user, and only for the model it was set against, so
     # accepting an unadjusted second layer once does not silently persist
     # into the next contrast.
@@ -238,6 +266,7 @@ integration_view_server <- function(id,
       if (!isTRUE(info$ok)) {
         is_demo(TRUE)
         integration_bundle(NULL)
+        secondary_bundle(NULL)
         integration_error(NULL)
         return(invisible())
       }
@@ -264,8 +293,35 @@ integration_view_server <- function(id,
       } else {
         "auto"
       }
+      launch <- capture_launch(
+        proj, "integration",
+        tags = c(info$primary_tag, info$secondary_tag),
+        upstream = primary$provenance_binding$analysis_id %||% character(0),
+        params = list(method = "concordance", group_col = info$group_col,
+                      control = info$control, case = info$case,
+                      covariates = info$covariates,
+                      paired_col = info$paired_col,
+                      unadjusted_secondary = info$missing_cols),
+        activation = activation())
+      # The second layer's differential is stamped here, before the run, so
+      # the worker can hand it back already identified. It is a real
+      # analysis -- the integration depends on it -- and leaving it in the
+      # worker's scope meant the integration named an upstream nothing
+      # could find, and the exported script had no `diff_bundles` to pass.
+      sec_launch <- capture_launch(
+        proj, "diff", tags = info$secondary_tag,
+        params = list(method = sec_method, group_col = info$group_col,
+                      control_group = info$control, case_group = info$case,
+                      covariates = if (length(info$missing_cols)) NULL else info$covariates,
+                      paired_col = if (length(info$missing_cols)) NULL else info$paired_col),
+        activation = activation())
       run_async(
-        admissible = newest_request_only(this_request, request_seq),
+        admissible = launch_admissible(
+          launch,
+          function() list(project = current_project(),
+                          activation = activation(),
+                          request_seq = request_seq()),
+          this_request),
         on_discard = discard_notice(),
         # Detached for the same reason as the other two, and it matters
         # most here: this one carries a project with every layer in it.
@@ -287,29 +343,35 @@ integration_view_server <- function(id,
               list(primary, sec_diff),
               c(info$primary_tag, info$secondary_tag)
             )
-            omicsCore::run_integration(
+            integ <- omicsCore::run_integration(
               project      = proj,
               method       = "concordance",
               experiments  = c(info$primary_tag, info$secondary_tag),
               diff_bundles = diff_bundles
             )
+            # One commit unit: the integration and the analysis it depends
+            # on come back together, or neither does.
+            list(integration = integ, secondary = sec_diff)
           },
           info = info, sec_method = sec_method, primary = primary, proj = proj
         ),
-        on_success = function(result) {
-          # Both layers, named. A binding that recorded only the primary
-          # would leave a concordance looking current after the second
-          # layer had been replaced underneath it.
-          # Both layers, named. A binding recording only the primary would
-          # leave a concordance looking current after the second layer had
-          # been replaced underneath it.
-          result <- bind_result(
-            result, current_project(), "integration",
-            tags = c(info$primary_tag, info$secondary_tag),
-            versions = c(
-              omicsCore::effective_input(current_project(), info$primary_tag)$version,
-              omicsCore::effective_input(current_project(), info$secondary_tag)$version),
-            upstream = primary$provenance_binding$analysis_id %||% character(0))
+        on_success = function(out) {
+          # Stamped here rather than in the worker: the worker computes,
+          # the callback records. Calling an injected function inside a
+          # detached closure also hides it from every static check.
+          sec <- stamp_from_launch(out$secondary, sec_launch)
+          result <- out$integration
+          # Both layers, named, from the launch record. Re-reading the
+          # versions here would let an old computation be described by
+          # whatever the project holds now.
+          result <- stamp_from_launch(result, launch)
+          # And the upstream is the pair, now that the second layer is a
+          # result the project will hold rather than a local in a worker.
+          both <- c(launch$upstream,
+                    sec$provenance_binding$analysis_id %||% character(0))
+          result$provenance_binding$upstream_ids <- both
+          result$input_info$upstream_ids <- both
+
           result$params$secondary_covariates <-
             if (length(info$missing_cols)) NULL else info$covariates
           result$params$secondary_paired_col <-
@@ -319,8 +381,14 @@ integration_view_server <- function(id,
           # two layers were modelled differently.
           result$params$unadjusted_secondary <-
             if (length(info$missing_cols)) info$missing_cols else NULL
+
           integration_error(NULL)
           is_demo(FALSE)
+          # The pair, so app_server can register both in one project
+          # update. An integration whose second differential is not in the
+          # project names an upstream nothing can find, and is judged
+          # invalid the moment it arrives.
+          secondary_bundle(sec)
           integration_bundle(result)
         },
         on_error = function(msg) {
@@ -347,9 +415,14 @@ integration_view_server <- function(id,
     # the transient NULL window between an async run's start and
     # completion in live mode.
     conc_df <- shiny::reactive({
-      if (isTRUE(is_demo())) return(example_integration_tables()$concordance_df)
+      # The demo shows the fixture; a real project shows its own result or
+      # nothing. Never the fixture -- an example beside real results reads
+      # as part of them.
+      if (isTRUE(demo_mode())) {
+        return(example_integration_tables()$concordance_df)
+      }
       b <- integration_bundle()
-      shiny::req(b)
+      if (is.null(b)) return(NULL)
       b$results$integration_df
     })
 
@@ -489,7 +562,7 @@ integration_view_server <- function(id,
 
     # As with the other views, demo and live share one dispatcher.
     plot_bundle <- shiny::reactive({
-      if (isTRUE(is_demo())) example_integration_bundle()
+      if (isTRUE(demo_mode())) example_integration_bundle()
       else integration_bundle()
     })
 
@@ -512,7 +585,7 @@ integration_view_server <- function(id,
     # "demo fixture" caption that survives neither a screenshot nor a
     # scroll. On a real project they are empty and say why.
     ap_df <- shiny::reactive({
-      if (!isTRUE(is_demo())) return(NULL)
+      if (!isTRUE(demo_mode())) return(NULL)
       example_integration_tables()$active_pathways_df
     })
 
@@ -587,7 +660,10 @@ integration_view_server <- function(id,
     }, server = TRUE)
 
     # Expose the integration bundle for slice 3F.
-    shiny::reactive(integration_bundle())
+    # Both, because the second differential is part of what this view
+    # produced even though no panel shows it.
+    list(bundle = shiny::reactive(integration_bundle()),
+         secondary = shiny::reactive(secondary_bundle()))
   })
 }
 

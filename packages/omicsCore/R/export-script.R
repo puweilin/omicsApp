@@ -390,17 +390,58 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
                             unname(input_vars)), collapse = ", ")),
       ")"
     )
-    call <- render_call("run_integration", "project",
-                        bundles$integration$params %||% list(),
-                        script_arg_names(run_integration),
-                        assign_to = "integration")
-    lines <- c(lines, call$lines)
-    notes <- c(notes, call$notes)
-    if (!"diff_bundles" %in% names(bundles$integration$params %||% list())) {
+    # The differentials the integration was computed from, by the ids it
+    # recorded, looked up in the project's own registry.
+    #
+    # Concordance takes two of them and the second is computed inside the
+    # integration view -- displayed by nothing, so it used to exist only in
+    # the worker. The emitted script then called run_integration() with no
+    # `diff_bundles` at all and stopped on "`diff_bundles` is required",
+    # which a NOTE about the gap did not make executable.
+    integ_params <- bundles$integration$params %||% list()
+    upstream <- bundles$integration$provenance_binding$upstream_ids %||% character(0)
+    registry <- project$analyses %||% list()
+    upstream <- upstream[upstream %in% names(registry)]
+
+    if (length(upstream) > 0L) {
+      db_vars <- character(0)
+      for (k in seq_along(upstream)) {
+        ub <- registry[[upstream[[k]]]]
+        tag <- (ub$input_info$layer_tag %||% NA_character_)[[1L]]
+        var <- sprintf("diff_%d", k)
+        ucall <- render_call("run_diff", input_vars[[tag]] %||% "input",
+                             ub$params %||% list(),
+                             script_arg_names(run_diff), assign_to = var)
+        lines <- c(lines, ucall$lines)
+        notes <- c(notes, ucall$notes)
+        db_vars[[tag %||% var]] <- var
+      }
+      integ_params$diff_bundles <- NULL
+      call <- render_call("run_integration", "project", integ_params,
+                          script_arg_names(run_integration),
+                          assign_to = "integration")
+      # Spliced in rather than rendered as a value: the bundles are
+      # variables the script has just built, and render_value() would emit
+      # a literal that reconstructs nothing.
+      last <- length(call$lines)
+      call$lines[last] <- sub(
+        "\\)$",
+        sprintf(",\n  diff_bundles = list(%s)\n)",
+                paste(sprintf("%s = %s", vapply(names(db_vars), render_name, ""),
+                              unname(db_vars)), collapse = ", ")),
+        call$lines[last])
+      lines <- c(lines, call$lines)
+      notes <- c(notes, call$notes)
+    } else {
+      call <- render_call("run_integration", "project", integ_params,
+                          script_arg_names(run_integration),
+                          assign_to = "integration")
+      lines <- c(lines, call$lines)
+      notes <- c(notes, call$notes)
       notes <- c(notes, paste(
-        "run_integration() was given differential bundles that are not",
-        "recorded in params; add `diff_bundles = list(diff)` if the",
-        "method needs them."))
+        "the integration's differential results are not registered in this",
+        "project, so the call below has no `diff_bundles` and will stop.",
+        "Re-run the integration and export again."))
     }
   }
 

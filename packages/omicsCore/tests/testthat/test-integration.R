@@ -353,3 +353,57 @@ test_that("the two sides record which p and which effect kind they are", {
   raw <- ipe_setup(p_preference = "raw")
   expect_equal(unique(raw$ib$results$integration_df$p_type), "raw")
 })
+
+# --- the combined p is a claim, not a default ----------------------------
+
+# Fisher's method wants p-values that are independent and uniform under the
+# null. The default input here is the *adjusted* p, which is not one, and
+# two omics layers measured on the same subjects are not independent.
+# Adjusting the combination afterwards repairs neither. So it is computed
+# only when asked for, and what is reported by default is the thing that
+# needs no such assumption: each layer's own p, and agreement in direction.
+test_that("no combined p is reported unless it is asked for", {
+  skip_if_not_installed("limma")
+  s <- ipe_setup()
+  df <- s$ib$results$integration_df
+  expect_true(all(is.na(df$p_value)))
+  expect_true(all(is.na(df$adj_p_value)))
+  # And the statistic goes with it: publishing the chi-square while
+  # withholding the p it produces withholds the label, not the claim.
+  expect_true(all(is.na(df$statistic)))
+  expect_true(all(is.na(df$statistic_type)))
+  expect_true(all(is.na(df$is_combined_significant)))
+})
+
+test_that("agreement between the layers is still reported", {
+  skip_if_not_installed("limma")
+  s <- ipe_setup()
+  df <- s$ib$results$integration_df
+  # Each layer's own p, the direction, the quadrant, and significance in
+  # both -- none of which needs an independence assumption.
+  expect_false(all(is.na(df$p_a)))
+  expect_false(all(is.na(df$p_b)))
+  expect_false(all(is.na(df$quadrant)))
+  expect_equal(df$is_concordant_significant, df$is_significant)
+})
+
+test_that("asking for it produces it, and says so in the parameters", {
+  skip_if_not_installed("limma")
+  s <- ipe_setup()
+  with_combined <- run_integration(
+    project = s$project, method = "concordance", experiments = c("a", "b"),
+    diff_bundles = list(a = s$da, b = s$db), combine_p = TRUE)
+  df <- with_combined$results$integration_df
+  expect_false(all(is.na(df$p_value)))
+  expect_equal(df$statistic_type[[1L]], "fisher_chisq")
+  expect_true(isTRUE(with_combined$params$combine_p))
+})
+
+test_that("the dual volcano says why it has no axis rather than inventing one", {
+  skip_if_not_installed("limma")
+  s <- ipe_setup()
+  p <- plot_integration(s$ib, view = "dual_volcano")
+  expect_s3_class(p, "ggplot")
+  expect_match(paste(unlist(p$layers[[1]]$aes_params), collapse = " "),
+               "independent|combined p")
+})

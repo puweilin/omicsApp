@@ -59,7 +59,8 @@ qc_view_ui <- function(id) {
 #' @noRd
 qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                            invalidate = shiny::reactiveVal(0L),
-                           requested_layer = shiny::reactiveVal(NULL)) {
+                           requested_layer = shiny::reactiveVal(NULL),
+                           activation = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Active experiment selection. A tag asked for from elsewhere (the
@@ -133,11 +134,23 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # The layer this result was computed on has been replaced, so the
     # result is no longer about anything in the project. NULL is the
     # module's own start-up state, so this only rewinds it.
+    # A generation bump means the layer this view was describing has been
+    # replaced. Applying QC bumps it too -- that is how the downstream
+    # views are told to let go -- so the result of the apply must survive
+    # the signal the apply itself raised. Without this the module cleared
+    # `applied()` in the same flush, and the observer that files results
+    # into the project found nothing: the cleaned data arrived, the QC
+    # bundle and its diagnostics did not.
+    just_applied <- shiny::reactiveVal(FALSE)
     shiny::observeEvent(invalidate(), {
       last_bundle(NULL)
       last_error(NULL)
       preview(NULL)
-      applied(NULL)
+      if (isTRUE(just_applied())) {
+        just_applied(FALSE)
+      } else {
+        applied(NULL)
+      }
     }, ignoreInit = TRUE)
 
     # Imputation is offered for proteomics and withheld everywhere else.
@@ -221,13 +234,28 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # preview's signature and the record kept on apply cannot disagree about
     # what was asked for.
     collect_qc_params <- function() {
-      list(
-        missing_threshold = input$missing_threshold %||% 0.5,
-        outlier_method    = input$outlier_method %||% "iqr",
-        # Read rather than trusted from the control: it is hidden when the
-        # layer is not proteomics, and Shiny keeps an input's last value.
-        impute_method     = if (!impute_applies()) "none" else input$impute_method
-      )
+      # The applied settings are the base; the three visible controls
+      # override their own fields and nothing else.
+      #
+      # Built the other way round -- three controls, full stop -- re-applying
+      # a restored project silently reset every parameter the interface does
+      # not show. A layer saved with outlier_sd_threshold = 7 came back at
+      # the default 3, and sample_missing_threshold vanished entirely, which
+      # is the opposite of the decision that these keep their saved values
+      # precisely because there is no control to set them with.
+      base <- applied_pp()$params %||% list()
+      base[["missing_threshold"]] <- input$missing_threshold %||%
+        base[["missing_threshold"]] %||% 0.5
+      base[["outlier_method"]] <- input$outlier_method %||%
+        base[["outlier_method"]] %||% "iqr"
+      # Read rather than trusted from the control: it is hidden when the
+      # layer is not proteomics, and Shiny keeps an input's last value.
+      base[["impute_method"]] <- if (!impute_applies()) {
+        "none"
+      } else {
+        input$impute_method %||% base[["impute_method"]]
+      }
+      base
     }
 
     # What this preview is about: which project, which layer, which version
@@ -240,38 +268,27 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     shiny::observe({
       a <- active()
-      thr   <- input$missing_threshold %||% 0.5
-      out_m <- input$outlier_method   %||% "iqr"
-      # Read here rather than trusted from the input: the control is
-      # hidden when the layer is not proteomics, but Shiny keeps an
-      # input's last value, so switching from a proteomics layer with
-      # `knn` selected to a counts layer would otherwise impute counts
-      # with a control the user can no longer see.
-      # NULL lets run_qc() resolve it per modality, which is where that
-      # decision belongs -- and means the control and a plain
-      # run_qc(input) agree instead of quietly differing.
-      imp <- if (!impute_applies()) "none" else input$impute_method
+      # One list, used for the run and for the signature. Computing them
+      # separately is how the preview came to be signed with the merged
+      # parameters while being run with only the three visible ones --
+      # every unexposed setting reset to its default on the next apply.
+      params <- collect_qc_params()
 
       # The demo runs through run_qc() like a real project rather than
-      # returning a fixed bundle. Both controls above are enabled, and
-      # a control that is enabled and does nothing reads as a broken
-      # app; the demo input is 50 x 12, so a re-run is milliseconds.
+      # returning a fixed bundle. The controls are enabled, and a control
+      # that is enabled and does nothing reads as a broken app; the demo
+      # input is 50 x 12, so a re-run is milliseconds.
       qc_input <- if (a$is_demo) example_qc_input() else a$input
 
       bundle <- tryCatch(
-        omicsCore::run_qc(
-          qc_input,
-          missing_threshold = thr,
-          outlier_method    = out_m,
-          impute_method     = imp
-        ),
+        do.call(omicsCore::run_qc, c(list(input = qc_input), params)),
         error = function(e) e)
 
       # A failed preview keeps the previous plots on screen -- useful -- but
       # must not leave the previous *bundle* looking like the answer to the
       # current settings. It did, and the apply button then stamped the
       # current layer's identity onto a result computed from another one.
-      sig <- if (a$is_demo) NULL else preview_signature(a, collect_qc_params())
+      sig <- if (a$is_demo) NULL else preview_signature(a, params)
       if (inherits(bundle, "error")) {
         last_error(conditionMessage(bundle))
         preview(list(bundle = NULL, sig = sig, ok = FALSE,
@@ -520,6 +537,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # applying it is what makes the effective version differ.
       b <- bind_result(b, current_project(), "qc", tags = a$tag,
                        versions = a$base_version, stage = "baseline")
+      just_applied(TRUE)
       applied(list(tag = a$tag, bundle = b, params = b$params,
                    base_version = a$base_version,
                    at = Sys.time()))
@@ -556,7 +574,12 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # settings the analyses were not using.
     #
     # It runs on arrival only, so the user's edits afterwards are their own.
-    shiny::observeEvent(list(current_project(), active()$tag), {
+    # Keyed on the activation batch and the layer, not on the project
+    # object. Every analysis write-back updates the project, so an observer
+    # watching that fired on unrelated events -- finishing a differential,
+    # or renaming the project -- and pushed the applied settings back over
+    # whatever the user was in the middle of typing.
+    shiny::observeEvent(list(activation(), active()$tag), {
       pp <- applied_pp()
       params <- pp$params
       if (is.null(params)) return()

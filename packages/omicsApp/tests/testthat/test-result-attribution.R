@@ -218,3 +218,67 @@ test_that("restoring the autosave is an activation too", {
     expect_gt(activation(), before)
   })
 })
+
+# --- opening a project puts its results back on screen --------------------
+
+# Clearing the views on activation is right -- what they held belongs to
+# the last project. Stopping there left the page empty in front of a
+# project whose differential was on disk and valid, so the only move was to
+# re-run it and hope the settings matched. Re-running is not restoring.
+test_that("opening a project shows the differential it was saved with", {
+  skip_if_not_installed("qs2")
+  p <- ra_project()
+  saved <- ra_result(p, params = list(method = "limma", group_col = "group",
+                                      control_group = "A", case_group = "B",
+                                      comparison = "B_vs_A"))
+  p <- omicsCore::register_analysis(p, saved)
+  p$bundles <- list(diff = saved)
+
+  proj <- shiny::reactiveVal(NULL)
+  act <- shiny::reactiveVal(0L)
+  shiny::testServer(diff_view_server,
+                    args = list(current_project = proj, activation = act), {
+    session$flushReact()
+    # The project arrives, as Open does it.
+    proj(p)
+    act(1L)
+    session$flushReact()
+    got <- session$getReturned()$bundle()
+    expect_false(is.null(got), info = "the saved result was not restored")
+    expect_equal(got$params$comparison, "B_vs_A")
+  })
+})
+
+test_that("a saved result the data has moved past is not restored", {
+  # The restore is not "show whatever is in the file": a result whose
+  # inputs no longer match is exactly what retirement is for.
+  skip_if_not_installed("qs2")
+  p <- ra_project()
+  saved <- ra_result(p)
+  p$bundles <- list(diff = saved)
+  p <- omicsCore::set_preprocessing(p, "prot", ra_input(seed = 77),
+                                    params = list(missing_threshold = 0.1))
+
+  proj <- shiny::reactiveVal(NULL)
+  act <- shiny::reactiveVal(0L)
+  shiny::testServer(diff_view_server,
+                    args = list(current_project = proj, activation = act), {
+    proj(p); act(1L)
+    session$flushReact()
+    expect_null(session$getReturned()$bundle())
+  })
+})
+
+test_that("an unattributed saved result is not restored either", {
+  p <- ra_project()
+  p$bundles <- list(diff = omicsCore::new_analysis_bundle(
+    "run_diff", results = list(diff_result_df = data.frame(x = 1))))
+  proj <- shiny::reactiveVal(NULL)
+  act <- shiny::reactiveVal(0L)
+  shiny::testServer(diff_view_server,
+                    args = list(current_project = proj, activation = act), {
+    proj(p); act(1L)
+    session$flushReact()
+    expect_null(session$getReturned()$bundle())
+  })
+})

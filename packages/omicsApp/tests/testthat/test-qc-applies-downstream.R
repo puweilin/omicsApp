@@ -266,3 +266,138 @@ test_that("the integration's second layer uses the applied version too", {
                  nrow(b$bundle$results$cleaned_input$expr_mat))
   })
 })
+
+# --- parameters the interface does not show ------------------------------
+
+# The decision was that QC parameters without a control keep their saved
+# values. The preview built its argument list from the three visible
+# controls alone, so re-applying a restored project reset every other one
+# to the default -- a layer saved with outlier_sd_threshold = 7 came back
+# at 3, and sample_missing_threshold vanished. The cleaned matrix restoring
+# correctly says nothing about this: the loss happens on the next apply.
+test_that("re-applying keeps the parameters that have no control", {
+  p <- qcd_project()
+  saved_params <- list(missing_threshold = 0.4, outlier_method = "iqr",
+                       impute_method = "min",
+                       outlier_sd_threshold = 7,
+                       sample_missing_threshold = 0.9)
+  b <- do.call(omicsCore::run_qc, c(list(input = p$experiments$prot),
+                                    saved_params))
+  p <- omicsCore::set_preprocessing(p, "prot", b$results$cleaned_input,
+                                    saved_params)
+
+  again <- apply_qc(p, "prot")
+  expect_equal(again$params$outlier_sd_threshold, 7)
+  expect_equal(again$params$sample_missing_threshold, 0.9)
+  # And the visible ones still come from the controls.
+  expect_equal(again$params$missing_threshold, 0.4)
+})
+
+test_that("a visible control still overrides what was saved", {
+  p <- qcd_project()
+  saved <- list(missing_threshold = 0.4, outlier_method = "iqr",
+                impute_method = "min", outlier_sd_threshold = 7)
+  b <- do.call(omicsCore::run_qc, c(list(input = p$experiments$prot), saved))
+  p <- omicsCore::set_preprocessing(p, "prot", b$results$cleaned_input, saved)
+
+  changed <- apply_qc(p, "prot", missing_threshold = 0.8)
+  expect_equal(changed$params$missing_threshold, 0.8)
+  # Overriding one does not reset the others.
+  expect_equal(changed$params$outlier_sd_threshold, 7)
+})
+
+test_that("an unrelated project update does not overwrite the draft", {
+  # The restore observer watched the project object, and every analysis
+  # write-back updates it -- so finishing a differential, or renaming the
+  # project, pushed the applied settings back over what the user was in
+  # the middle of choosing.
+  p <- qcd_project()
+  saved <- list(missing_threshold = 0.4, outlier_method = "iqr",
+                impute_method = "min")
+  b <- do.call(omicsCore::run_qc, c(list(input = p$experiments$prot), saved))
+  p <- omicsCore::set_preprocessing(p, "prot", b$results$cleaned_input, saved)
+
+  proj <- shiny::reactiveVal(p)
+  act <- shiny::reactiveVal(1L)
+  shiny::testServer(qc_view_server,
+                    args = list(current_project = proj, activation = act), {
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    # The user is part way through a different choice.
+    session$setInputs(missing_threshold = 0.05)
+    session$flushReact()
+    expect_equal(collect_qc_params()$missing_threshold, 0.05)
+
+    # Something else finishes and updates the project.
+    renamed <- p
+    renamed$name <- "renamed mid-edit"
+    proj(renamed)
+    session$flushReact()
+    expect_equal(collect_qc_params()$missing_threshold, 0.05)
+  })
+})
+
+test_that("applying does not clear the result it just produced", {
+  # Applying bumps the generation, which is how the downstream views are
+  # told to let go -- and the QC view watched the same signal, so it
+  # cleared its own output in the same flush and the observer that files
+  # results into the project found nothing.
+  skip_if_not_installed("qs2")
+  store <- withr::local_tempdir()
+  withr::local_envvar(OMICSAPP_DATA_DIR = store)
+  p <- qcd_project()
+  proj <- shiny::reactiveVal(p)
+  act <- shiny::reactiveVal(1L)
+  gen <- shiny::reactiveVal(0L)
+
+  shiny::testServer(qc_view_server,
+                    args = list(current_project = proj, invalidate = gen,
+                                activation = act), {
+    session$setInputs(layer = "prot", missing_threshold = 0.1)
+    session$flushReact()
+    session$setInputs(apply_to_downstream = 1)
+    session$flushReact()
+    expect_false(is.null(session$getReturned()()))
+
+    # What app_server does next.
+    gen(1L)
+    session$flushReact()
+    expect_false(is.null(session$getReturned()()),
+                 info = "the apply cleared its own output")
+
+    # A genuine layer replacement still clears it.
+    gen(2L)
+    session$flushReact()
+    expect_null(session$getReturned()())
+  })
+})
+
+test_that("the QC bundle reaches the project, not just the cleaned data", {
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("readxl")
+  skip_if_not_installed("withr")
+  store <- file.path(withr::local_tempdir(), "store")
+  dir.create(store, recursive = TRUE)
+  withr::local_envvar(OMICSAPP_DATA_DIR = store)
+  xlsx <- tempfile(fileext = ".xlsx")
+  withr::defer(unlink(xlsx))
+  write_tiny_omics_xlsx(xlsx, n_features = 40L, n_samples = 8L, seed = 2)
+  shiny::testServer(app_server, {
+    suppressWarnings(session$setInputs(
+      `import-omics_type` = "proteomics",
+      `import-file` = list(datapath = xlsx, name = basename(xlsx),
+                           size = file.info(xlsx)$size)))
+    session$setInputs(`import-confirm` = 1)
+    session$flushReact()
+    session$setInputs(`qc-missing_threshold` = 0.3,
+                      `qc-apply_to_downstream` = 1)
+    session$flushReact()
+    proj <- current_project()
+    expect_false(is.null(proj$preprocessing[[names(proj$experiments)[[1]]]]),
+                 info = "cleaned data did not reach the project")
+    # The diagnostics and the QC parameters are a result too, and a report
+    # that cannot show them is describing an analysis it did not keep.
+    expect_true("qc" %in% names(proj$bundles),
+                info = "the QC bundle did not reach the project")
+  })
+})

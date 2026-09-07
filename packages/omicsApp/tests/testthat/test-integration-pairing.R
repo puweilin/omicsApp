@@ -140,7 +140,7 @@ test_that("a second layer that cannot carry the model stops rather than differin
     session$setInputs(rerun = 1)
     session$flushReact()
     # Nothing was produced, and the reason names the column.
-    expect_null(session$getReturned()())
+    expect_null(session$getReturned()$bundle())
     expect_match(integration_error(), "age")
     expect_match(integration_error(), "two different models")
   })
@@ -154,11 +154,11 @@ test_that("running unadjusted is a choice, and it stays on the result", {
     session$flushReact()
     session$setInputs(rerun = 1)
     session$flushReact()
-    expect_null(session$getReturned()())
+    expect_null(session$getReturned()$bundle())
 
     session$setInputs(accept_unadjusted = 1)
     session$flushReact()
-    b <- session$getReturned()()
+    b <- session$getReturned()$bundle()
     skip_if(is.null(b), "integration did not run in this environment")
     # Announced once is not enough: a reader of the report or the exported
     # script has to see that the two layers were modelled differently.

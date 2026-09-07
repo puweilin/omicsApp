@@ -146,7 +146,21 @@ test_that("every run_async() call site in the package goes through detached_call
     lines[grepl("^\\s*#", lines)] <- ""   # comments and roxygen mention it too
     calls <- grep("run_async(", lines, fixed = TRUE)
     for (i in calls) {
-      window <- paste(lines[i:min(i + 12L, length(lines))], collapse = "\n")
+      # To the end of the call, by paren balance, not a fixed number of
+      # lines. A window kept having to be widened as arguments were added
+      # -- an admission gate, a discard handler -- and each widening was a
+      # test loosened to keep passing rather than a check of the thing it
+      # was written for.
+      depth <- 0L
+      j <- i
+      repeat {
+        depth <- depth +
+          lengths(regmatches(lines[j], gregexpr("(", lines[j], fixed = TRUE))) -
+          lengths(regmatches(lines[j], gregexpr(")", lines[j], fixed = TRUE)))
+        if (depth <= 0L || j >= length(lines)) break
+        j <- j + 1L
+      }
+      window <- paste(lines[i:j], collapse = "\n")
       expect_true(grepl("detached_call(", window, fixed = TRUE),
                   info = sprintf("%s:%d", basename(f), i))
     }

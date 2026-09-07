@@ -46,8 +46,9 @@ supported:
 paired samples from two experiments. Useful for RNA / protein layers
 that share donors.
 \item \code{"concordance"} -- per-feature agreement between two differential
-analyses, classified into the four sign quadrants and combined via
-Fisher's method.
+analyses, classified into the four sign quadrants. Each layer's own
+effect and p-value are reported, along with whether the feature is
+significant in both and moving the same way.
 \item \code{"active_pathways"} -- pathway-level combined-p enrichment via the
 \code{ActivePathways} package, fed by the p-values of two differential
 analyses.
@@ -72,6 +73,16 @@ follows the schema documented in \code{\link[=check_integration_result_schema]{c
 \item \code{p_preference} -- \code{"adjusted"} (default) or \code{"raw"}.
 \item \code{p_cutoff} -- significance cutoff (default \code{0.05}).
 \item \code{p_adjust_method} -- defaults to \code{"BH"}.
+\item \code{combine_p} -- whether to combine the two layers' p-values by Fisher's
+method. \code{FALSE} by default, and deliberately so: Fisher's method
+assumes the inputs are independent and uniform under the null. With
+\code{p_preference = "adjusted"} they are not p-values in that sense, and
+two omics layers measured on the same subjects are not independent --
+adjusting the combination afterwards repairs neither. Setting this to
+\code{TRUE} asserts those assumptions hold for the data in hand. When it is
+\code{FALSE}, \code{p_value}, \code{adj_p_value}, \code{statistic} and
+\code{is_combined_significant} are \code{NA}, and agreement is described by each
+layer's own p-values and \code{is_concordant_significant}.
 }
 }
 

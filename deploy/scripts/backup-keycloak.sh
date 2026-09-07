@@ -67,15 +67,29 @@ fi
 
 gzip -t "${tmp}" || fail "the dump did not survive compression"
 
-size="$(gunzip -c "${tmp}" | wc -c | tr -d ' ')"
+# Size and shape in one pass, and the reader has to consume the whole
+# stream. Anything that stops early -- `grep -q`, `head -c` -- sends gunzip
+# SIGPIPE the moment the dump is bigger than a pipe buffer, and `pipefail`
+# then turns every real multi-megabyte backup into a failure while every
+# tiny one passes. That is exactly backwards, and it is the shape the
+# original one-liner had too.
+#
+# A dump smaller than the floor is not a database; one without the header
+# is a Postgres error page, which compresses to something plausible.
+check="$(gunzip -c "${tmp}" | awk '
+  /PostgreSQL database dump/ { seen = 1 }
+  { bytes += length($0) + 1 }
+  END { printf "%d %d", bytes, seen }
+')"
+size="${check%% *}"
+seen_header="${check##* }"
+
 if [ "${size}" -lt "${MIN_BYTES}" ]; then
   fail "dump is ${size} bytes, under the ${MIN_BYTES}-byte floor; the previous ${DEST} is untouched"
 fi
-
-# The dump has to contain the schema, not just be large. A Postgres error
-# page compresses to something plausible too.
-gunzip -c "${tmp}" | grep -q "PostgreSQL database dump" \
-  || fail "the dump does not look like pg_dump output; the previous ${DEST} is untouched"
+if [ "${seen_header}" != "1" ]; then
+  fail "the dump does not look like pg_dump output; the previous ${DEST} is untouched"
+fi
 
 # Only now. Rename is atomic within a filesystem, so a reader either sees
 # last week's backup or this one, never a partial file.

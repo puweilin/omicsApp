@@ -481,3 +481,54 @@ test_that("output that is not a database dump is refused", {
   expect_match(paste(out, collapse = " "), "does not look like pg_dump")
   expect_length(list.files(dest, all.files = TRUE, no.. = TRUE), 0L)
 })
+
+test_that("a large valid dump succeeds, which the small ones could not show", {
+  skip_on_os("windows")
+  skip_if_not_installed("withr")
+  # The check used to stop reading at the header, so gunzip took SIGPIPE on
+  # anything past a pipe buffer and `pipefail` failed every real backup
+  # while passing every tiny one -- exactly backwards, and invisible to a
+  # test whose fixture fits in the buffer.
+  dest <- withr::local_tempdir()
+  bin <- fake_docker('printf "PostgreSQL database dump\\n"; head -c 12000000 /dev/zero | tr "\\0" "x"')
+  out <- run_backup(bin, dest)
+  expect_equal(attr(out, "status") %||% 0L, 0L, info = paste(out, collapse = "\n"))
+  written <- list.files(dest, full.names = TRUE)
+  expect_length(written, 1L)
+  expect_gt(file.info(written)$size, 1000)
+})
+
+test_that("a large dump that is not a dump is still refused", {
+  skip_on_os("windows")
+  skip_if_not_installed("withr")
+  # Large enough to clear the floor and past the buffer, so this also
+  # shows the header check still runs to completion.
+  dest <- withr::local_tempdir()
+  bin <- fake_docker('head -c 12000000 /dev/zero | tr "\\0" "x"')
+  out <- run_backup(bin, dest)
+  expect_gt(attr(out, "status") %||% 0L, 0L)
+  expect_match(paste(out, collapse = " "), "does not look like pg_dump")
+  expect_length(list.files(dest, all.files = TRUE, no.. = TRUE), 0L)
+})
+
+test_that("a compression failure does not overwrite the previous backup", {
+  skip_on_os("windows")
+  skip_if_not_installed("withr")
+  dest <- withr::local_tempdir()
+  ok_bin <- fake_docker('printf "PostgreSQL database dump\\n%.0s" {1..500}')
+  expect_equal(attr(run_backup(ok_bin, dest), "status") %||% 0L, 0L)
+  kept <- list.files(dest, full.names = TRUE)[[1L]]
+  before <- tools::md5sum(kept)
+
+  # gzip itself fails: a full disk on the backup volume looks like this.
+  bin <- withr::local_tempdir()
+  writeLines(c("#!/bin/bash",
+               'printf "PostgreSQL database dump\\n%.0s" {1..500}'),
+             file.path(bin, "docker"))
+  writeLines(c("#!/bin/bash", "exit 1"), file.path(bin, "gzip"))
+  Sys.chmod(file.path(bin, "docker"), "0755")
+  Sys.chmod(file.path(bin, "gzip"), "0755")
+  out <- run_backup(bin, dest)
+  expect_gt(attr(out, "status") %||% 0L, 0L)
+  expect_identical(tools::md5sum(kept), before)
+})

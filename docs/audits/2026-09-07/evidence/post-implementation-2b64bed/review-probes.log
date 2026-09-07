@@ -1,0 +1,55 @@
+
+CASE explicit small raw intensities
+RAW_INTENSITY_ACCEPTED=TRUE
+EFFECT_TYPE=log2FC
+MAX_EFFECT_VS_LOG2_DIFFERENCE=3.65358853183165
+Warning message:
+`assay_type = "raw_intensity"` implies linear values, but the matrix only reaches 17.01, which looks already log-transformed. Transforming again would compress the dynamic range and shrink every fold change. 
+
+CASE actual diff module late callback after switching projects
+VIEW_EMPTY_AFTER_SWITCH=TRUE
+LATE_SUCCESS_ADMITTED=TRUE
+A_RESULT_STAMPED_AS_B=TRUE
+WRONGLY_STAMPED_RESULT_VALID_IN_B=TRUE
+LATE_ERROR_ADMITTED=TRUE
+CURRENT_ERROR=late error from A
+
+CASE hidden QC parameters survive loading and applying
+SAVED_OUTLIER_SD=7
+REAPPLIED_OUTLIER_SD=3
+SAVED_SAMPLE_MISSING=0.9
+REAPPLIED_SAMPLE_MISSING=<NULL>
+
+CASE QC application reaches both preprocessing and report bundle
+PREPROCESSING_PRESENT=TRUE
+QC_BUNDLE_PRESENT=FALSE
+QC_APPLIED_MODULE_PRESENT=FALSE
+
+CASE saved result loads into actual analysis view
+SAVED_PROJECT_DIFF_PRESENT=TRUE
+RESTORED_DIFF_VIEW_PRESENT=FALSE
+
+CASE real project with no result does not display demo
+REAL_ENRICH_IS_DEMO=TRUE
+REAL_ENRICH_DEMO_ROWS=15
+REAL_INTEGRATION_IS_DEMO=TRUE
+REAL_INTEGRATION_AP_ROWS=6
+
+CASE actual integration keeps secondary source and exports executable script
+INTEGRATION_ERROR=<NULL>
+SECONDARY_ANALYSIS_IDS=NA
+INTEGRATION_UPSTREAM_COUNT=1
+INTEGRATION_PARAM_SIGNATURE_MATCH=TRUE
+INTEGRATION_REPLAY_ERROR=`diff_bundles` is required for method = 'concordance'.
+REPLAY_SCRIPT_PATH=integration-replay-generated.R
+
+CASE unrelated project update resets QC draft controls
+DRAFT_IMPUTE_BEFORE_BROWSER_UPDATE=none
+RESTORE_MESSAGES_ON_UNRELATED_CHANGE=1
+RESTORE_SELECTED=min
+
+CASE same workbook with changed sheet roles can be reimported
+ROLE_CHANGE_CANDIDATE_MATRIX_DIFF=5.0000000000001
+ROLE_CHANGE_NEW_INPUT_COMMITTED=FALSE
+ROLE_CHANGE_PROJECT_MATRIX_DIFF=0
+ROLE_CHANGE_FINGERPRINT_STILL_MATCHES=TRUE

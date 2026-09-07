@@ -20,8 +20,9 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #'   paired samples from two experiments. Useful for RNA / protein layers
 #'   that share donors.
 #' * `"concordance"` -- per-feature agreement between two differential
-#'   analyses, classified into the four sign quadrants and combined via
-#'   Fisher's method.
+#'   analyses, classified into the four sign quadrants. Each layer's own
+#'   effect and p-value are reported, along with whether the feature is
+#'   significant in both and moving the same way.
 #' * `"active_pathways"` -- pathway-level combined-p enrichment via the
 #'   `ActivePathways` package, fed by the p-values of two differential
 #'   analyses.
@@ -50,6 +51,16 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #' * `p_preference` -- `"adjusted"` (default) or `"raw"`.
 #' * `p_cutoff` -- significance cutoff (default `0.05`).
 #' * `p_adjust_method` -- defaults to `"BH"`.
+#' * `combine_p` -- whether to combine the two layers' p-values by Fisher's
+#'   method. `FALSE` by default, and deliberately so: Fisher's method
+#'   assumes the inputs are independent and uniform under the null. With
+#'   `p_preference = "adjusted"` they are not p-values in that sense, and
+#'   two omics layers measured on the same subjects are not independent --
+#'   adjusting the combination afterwards repairs neither. Setting this to
+#'   `TRUE` asserts those assumptions hold for the data in hand. When it is
+#'   `FALSE`, `p_value`, `adj_p_value`, `statistic` and
+#'   `is_combined_significant` are `NA`, and agreement is described by each
+#'   layer's own p-values and `is_concordant_significant`.
 #'
 #' @section ActivePathways arguments:
 #' * `database` -- MSigDB shorthand (default `"hallmark"`).
@@ -132,6 +143,12 @@ run_integration <- function(
     p_preference <- dots$p_preference %||% "adjusted"
     p_cutoff <- dots$p_cutoff %||% 0.05
     p_adjust_method <- dots$p_adjust_method %||% "BH"
+    # Off unless asked for. Fisher's method wants independent, uniform
+    # p-values; the default input here is an adjusted p, and two omics on
+    # the same subjects are not independent. Turning this on is asserting
+    # those assumptions hold for the data in hand, which is a decision for
+    # whoever is analysing it -- not a default.
+    combine_p <- isTRUE(dots$combine_p)
 
     backend <- run_integration_concordance(
       project = project,
@@ -140,7 +157,8 @@ run_integration <- function(
       by = by,
       p_preference = p_preference,
       p_cutoff = p_cutoff,
-      p_adjust_method = p_adjust_method
+      p_adjust_method = p_adjust_method,
+      combine_p = combine_p
     )
     integration_df <- backend$std
     integration_raw <- NULL
@@ -148,7 +166,8 @@ run_integration <- function(
     method_params <- list(
       p_preference = p_preference,
       p_cutoff = p_cutoff,
-      p_adjust_method = p_adjust_method
+      p_adjust_method = p_adjust_method,
+      combine_p = combine_p
     )
   } else {
     database <- dots$database %||% "hallmark"

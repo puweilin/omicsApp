@@ -115,7 +115,8 @@ app_server <- function(input, output, session) {
   # list(tag, bundle, params, base_version) or NULL.
   qc_applied <- qc_view_server("qc", current_project = current_project,
                                invalidate = layer_generation,
-                               requested_layer = requested_layer)
+                               requested_layer = requested_layer,
+                               activation = activation)
   # The bundle half, for the report and for `project$bundles`.
   qc_bundle <- shiny::reactive(qc_applied()$bundle)
 
@@ -142,7 +143,8 @@ app_server <- function(input, output, session) {
     layer_generation(shiny::isolate(layer_generation()) + 1L)
   }, priority = 15L)
   diff_view <- diff_view_server("diff", current_project = current_project,
-                                invalidate = layer_generation)
+                                invalidate = layer_generation,
+                                activation = activation)
   diff_bundle <- diff_view$bundle
   # Enrichment reads the same thresholds the hit table is read at.
   # Without this it applied its own -- adjusted p at 0.05, no
@@ -150,13 +152,21 @@ app_server <- function(input, output, session) {
   # ones on screen, silently.
   enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
                                       current_project = current_project,
+                                      activation = activation,
                                       diff_thresholds = diff_view$thresholds,
                                       diff_layer = diff_view$layer,
                                       invalidate = layer_generation)
-  integration_bundle <- integration_view_server("integration",
+  integration_view <- integration_view_server("integration",
                           current_project = current_project,
                           diff_bundle     = diff_bundle,
-                          invalidate      = layer_generation)
+                          invalidate      = layer_generation,
+                          activation      = activation)
+  integration_bundle <- integration_view$bundle
+  # The integration's second-layer differential. It has no panel, so it
+  # reaches the project through the registry rather than through a view
+  # slot -- an integration that names an upstream the project does not
+  # hold is judged invalid as soon as it arrives.
+  integration_secondary <- integration_view$secondary
   report_view_server("report", current_project = current_project)
 
   # ---- which data the views' results belong to -------------------------
@@ -244,6 +254,17 @@ app_server <- function(input, output, session) {
       if (!omicsCore::result_inputs_current(pb, proj)) next
       b[[nm]] <- v
       analyses[[pb$analysis_id]] <- v
+    }
+
+    # Registered but not shown: nothing displays the integration's second
+    # differential, and the integration depends on it.
+    sec <- integration_secondary()
+    if (!is.null(sec)) {
+      spb <- sec$provenance_binding
+      if (!is.null(spb) && identical(spb$project_id, pid) &&
+          omicsCore::result_inputs_current(spb, proj)) {
+        analyses[[spb$analysis_id]] <- sec
+      }
     }
 
     proj$bundles  <- b
