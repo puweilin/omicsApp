@@ -187,3 +187,90 @@ test_that("an upload with a hostile filename is archived safely", {
                      normalizePath(raw_dir()))
   })
 })
+
+# --- the slug is a client-supplied value --------------------------------
+
+# The existing traversal case above uses `../../etc/passwd`, which addresses
+# `passwd.omp` -- a file that does not exist, so "nothing happened" proved
+# nothing about containment. These build a real .omp outside the store and
+# assert it is still there afterwards.
+test_that("a real .omp outside the store can be neither opened nor deleted", {
+  skip_if_not_installed("withr")
+  store   <- withr::local_tempdir()
+  outside <- withr::local_tempdir()
+  victim  <- file.path(outside, "victim.omp")
+  omicsCore::save_project(omicsCore::omics_project("secret"), victim)
+
+  rel <- file.path("..", basename(outside), "victim")
+  open_res <- store_load_project(rel, dir = store)
+  del_res  <- store_delete_project(rel, dir = store)
+
+  expect_false(isTRUE(open_res$ok))
+  expect_null(open_res$project)
+  expect_false(isTRUE(del_res$ok))
+  expect_true(file.exists(victim))
+  # A path-shaped slug gets one fixed answer whether or not the target is
+  # there, so a probe cannot map the filesystem by reading the message.
+  expect_equal(open_res$message, "Unknown project.")
+  expect_equal(del_res$message, "Unknown project.")
+  absent <- store_load_project(file.path("..", "nothing-here", "x"), dir = store)
+  expect_equal(absent$message, "Unknown project.")
+})
+
+test_that("an absolute path outside the store is refused", {
+  skip_if_not_installed("withr")
+  store   <- withr::local_tempdir()
+  outside <- withr::local_tempdir()
+  victim  <- file.path(outside, "victim.omp")
+  omicsCore::save_project(omicsCore::omics_project("secret"), victim)
+
+  abs_slug <- sub("\\.omp$", "", victim)
+  expect_false(isTRUE(store_load_project(abs_slug, dir = store)$ok))
+  expect_false(isTRUE(store_delete_project(abs_slug, dir = store)$ok))
+  expect_true(file.exists(victim))
+})
+
+test_that("a symlink in the store pointing out of it is refused", {
+  skip_if_not_installed("withr")
+  skip_on_os("windows")
+  store   <- withr::local_tempdir()
+  outside <- withr::local_tempdir()
+  victim  <- file.path(outside, "victim.omp")
+  omicsCore::save_project(omicsCore::omics_project("secret"), victim)
+  # Listed by the store, but resolves outside it.
+  link_ok <- file.symlink(victim, file.path(store, "innocent.omp"))
+  skip_if_not(link_ok, "could not create a symlink")
+
+  expect_false(isTRUE(store_load_project("innocent", dir = store)$ok))
+  expect_false(isTRUE(store_delete_project("innocent", dir = store)$ok))
+  expect_true(file.exists(victim))
+})
+
+test_that("a normal project, including a CJK name, still opens and deletes", {
+  skip_if_not_installed("withr")
+  store <- withr::local_tempdir()
+  for (nm in c("my project", "蛋白组项目")) {
+    saved <- store_save_project(omicsCore::omics_project(nm),
+                               slug = project_slug(nm), dir = store)
+    expect_true(isTRUE(saved$ok), info = nm)
+    slug <- project_slug(nm)
+    opened <- store_load_project(slug, dir = store)
+    expect_true(isTRUE(opened$ok), info = nm)
+    expect_equal(opened$project$name, nm)
+    expect_true(isTRUE(store_delete_project(slug, dir = store)$ok), info = nm)
+  }
+})
+
+test_that("a slug that vanishes between listing and use is reported as such", {
+  skip_if_not_installed("withr")
+  store <- withr::local_tempdir()
+  store_save_project(omicsCore::omics_project("gone"), slug = "gone", dir = store)
+  path <- file.path(store, "gone.omp")
+  # resolve_project_path() lists, then normalizes; simulate the file being
+  # removed by another session in between.
+  expect_true(isTRUE(resolve_project_path("gone", store)$ok))
+  unlink(path)
+  res <- resolve_project_path("gone", store)
+  expect_false(isTRUE(res$ok))
+  expect_match(res$message, "no longer exists")
+})

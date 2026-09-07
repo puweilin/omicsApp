@@ -256,6 +256,63 @@ project_path <- function(slug, dir = omicsapp_data_dir()) {
   os_path(file.path(dir, paste0(slug, ".omp")))
 }
 
+#' Resolve a client-supplied slug to a path inside the store
+#'
+#' `project_slug()` sanitises a name on the way in, but the slug that comes
+#' back from the browser is a Shiny input: it is whatever the client sent, not
+#' whatever the picker was rendered with. `project_path()` pastes it onto the
+#' store directory, so `../elsewhere/victim` addressed — and deleted — a file
+#' outside the store.
+#'
+#' The gate is the store's own listing rather than a blocklist of dangerous
+#' shapes: a slug is acceptable only if the store is already offering it. The
+#' `normalizePath()` check behind that catches the case the listing cannot,
+#' a name in the store that is a symlink pointing out of it.
+#'
+#' A slug that cannot address anything outside the store — no separator, no
+#' `..`, not absolute — gets the message it deserves when it is simply gone,
+#' because another session deleting a project while this page was open is the
+#' ordinary reason to land here. Anything shaped like a path gets "Unknown
+#' project." whether or not the target exists, so a probe learns nothing about
+#' the surrounding filesystem.
+#'
+#' @param slug Slug as received from the client.
+#' @param dir Project directory.
+#'
+#' @return `list(ok = TRUE, path =)` or `list(ok = FALSE, message =)`.
+#' @keywords internal
+#' @noRd
+resolve_project_path <- function(slug, dir = omicsapp_data_dir()) {
+  if (!is.character(slug) || length(slug) != 1L || is.na(slug) || !nzchar(slug)) {
+    return(list(ok = FALSE, message = "No project selected."))
+  }
+  plain <- !grepl("[/\\\\]", slug) &&
+           !grepl("(^|[/\\\\])\\.\\.($|[/\\\\])", slug) &&
+           !grepl("^~", slug)
+  if (!slug %in% list_saved_projects(dir)$slug) {
+    return(list(ok = FALSE, message = if (plain) {
+      sprintf("'%s' no longer exists.", slug)
+    } else {
+      "Unknown project."
+    }))
+  }
+  path <- tryCatch(normalizePath(project_path(slug, dir), mustWork = TRUE),
+                   error = function(e) NA_character_)
+  if (is.na(path)) {
+    # Listed a moment ago, gone now. Distinct from "unknown" because the
+    # user did nothing wrong and refreshing the list is the answer.
+    return(list(ok = FALSE,
+                message = sprintf("'%s' is no longer available.", slug)))
+  }
+  root <- tryCatch(normalizePath(dir, mustWork = TRUE),
+                   error = function(e) NA_character_)
+  if (is.na(root) ||
+      !startsWith(path, paste0(root, .Platform$file.sep))) {
+    return(list(ok = FALSE, message = "Unknown project."))
+  }
+  list(ok = TRUE, path = path)
+}
+
 #' Path to the rolling autosave snapshot
 #'
 #' @param dir Project directory.
@@ -360,13 +417,11 @@ store_save_project <- function(project, slug, dir = omicsapp_data_dir(),
 #' @keywords internal
 #' @noRd
 store_delete_project <- function(slug, dir = omicsapp_data_dir()) {
-  if (is.na(slug) || !nzchar(slug)) {
-    return(list(ok = FALSE, message = "No project selected."))
+  resolved <- resolve_project_path(slug, dir)
+  if (!isTRUE(resolved$ok)) {
+    return(list(ok = FALSE, message = resolved$message))
   }
-  path <- project_path(slug, dir)
-  if (!file.exists(path)) {
-    return(list(ok = FALSE, message = sprintf("'%s' no longer exists.", slug)))
-  }
+  path <- resolved$path
 
   # Read before removing: the project is the only record of which
   # uploads belong to it.
@@ -446,11 +501,9 @@ prune_orphan_uploads <- function(digests, dir = omicsapp_data_dir()) {
 #' @noRd
 store_load_project <- function(slug, dir = omicsapp_data_dir()) {
   fail <- function(msg) list(ok = FALSE, project = NULL, message = msg)
-  if (is.na(slug) || !nzchar(slug)) return(fail("No project selected."))
-  path <- project_path(slug, dir)
-  if (!file.exists(path)) {
-    return(fail(sprintf("'%s' no longer exists.", slug)))
-  }
+  resolved <- resolve_project_path(slug, dir)
+  if (!isTRUE(resolved$ok)) return(fail(resolved$message))
+  path <- resolved$path
   tryCatch(
     list(ok = TRUE, project = omicsCore::load_project(path),
          message = sprintf("Opened '%s'.", slug)),
