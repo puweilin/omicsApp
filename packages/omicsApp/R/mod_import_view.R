@@ -1,7 +1,7 @@
 #' Import view module
 #'
 #' Phase 3 slice 3A: real upload + smart-parse. The view accepts a
-#' single Excel / CSV / TSV / RDS file via `shiny::fileInput()`,
+#' single Excel / CSV / TSV file via `shiny::fileInput()`,
 #' hands the path to [omicsCore::read_omics()], renders the resulting
 #' `ImportReport` (per-sheet classifier table + warnings strip), and
 #' exposes an [omicsCore::omics_input()] via the module's return
@@ -95,7 +95,14 @@ import_view_server <- function(id,
             f$datapath,
             omics_type = omics_type,
             assay_type = assay_type,
-            sheet_roles = role_overrides()
+            sheet_roles = role_overrides(),
+            # An upload is not a trusted file. Reading an R object executes
+            # whatever the author put in it, at parse time, before anyone
+            # clicks Confirm -- so this path takes data formats only. There
+            # is no setting that relaxes it: an option that turns arbitrary
+            # code execution back on is the same hole with a longer path to
+            # it.
+            allow_r_objects = FALSE
           ),
           warning = function(w) {
             if (grepl("implies (linear|log-scale) values", conditionMessage(w))) {
@@ -379,7 +386,7 @@ import_view_server <- function(id,
                else if (parse_ok())  "active"
                else                  "pending"
 
-      desc1 <- if (has_file()) input$file$name else "Excel / CSV / TSV / RDS"
+      desc1 <- if (has_file()) input$file$name else "Excel / CSV / TSV"
       desc2 <- if (has_file()) {
         rep <- parsed()$report
         if (parse_ok()) {
@@ -566,13 +573,21 @@ import_view_server <- function(id,
           error = function(e) e
         )
         if (inherits(normalized, "error")) {
-          # Importing raw and telling the user beats importing something the
-          # backends will silently mistreat
+          # Nothing is committed. Importing raw and saying so in a
+          # notification looked like the considerate option, but the layer
+          # that arrived was on the wrong scale and stayed in the project
+          # after the message had gone -- and limma then reported
+          # differences of untransformed intensities as log2 fold changes.
+          #
+          # The file, the roles and the method are all still selected, so
+          # this is a retry rather than a restart.
           shiny::showNotification(
-            paste0("Normalization failed, importing unnormalized: ",
-                   conditionMessage(normalized)),
-            type = "error", duration = 12
+            paste0("Normalization (", method, ") failed, so nothing was ",
+                   "imported: ", conditionMessage(normalized),
+                   " Choose another method and confirm again."),
+            type = "error", duration = NULL
           )
+          return(invisible(NULL))
         } else {
           # normalize_omics() keeps the pre-normalization matrix in raw_mat
           normalized$source_fingerprint <- cand$source_fingerprint
@@ -741,7 +756,10 @@ import_upload_card <- function(ns) {
         ns("file"),
         label = NULL,
         multiple = FALSE,
-        accept = c(".xlsx", ".xls", ".csv", ".tsv", ".txt", ".rds"),
+        # No .rds: the server refuses it either way (see the read_omics()
+        # call above), and offering it in the picker only produces an
+        # upload that is rejected after the file has been sent.
+        accept = c(".xlsx", ".xls", ".csv", ".tsv", ".txt"),
         placeholder = "Drop or browse \u2026"
       ),
       shiny::radioButtons(
