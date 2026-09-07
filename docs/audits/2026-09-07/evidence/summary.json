@@ -1,0 +1,70 @@
+{
+  "commit": "f756751c24c12b01cf99fca399a6a5a17eeea4f4",
+  "date": "2026-09-07",
+  "environment": {
+    "R": "R version 4.4.3 (2025-02-28)",
+    "platform": "aarch64-apple-darwin20",
+    "os": "Darwin",
+    "docker": "CLI installed; daemon unavailable"
+  },
+  "tests": {
+    "core": {
+      "files": 67,
+      "test_blocks": 1035,
+      "passed": 2244,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 6,
+      "warnings": 1,
+      "test_elapsed_seconds": 69.159
+    },
+    "app": {
+      "files": 47,
+      "test_blocks": 362,
+      "passed": 1349,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "warnings": 4,
+      "test_elapsed_seconds": 220.07
+    },
+    "optional": {
+      "files": 2,
+      "test_blocks": 16,
+      "passed": 52,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "warnings": 0,
+      "test_elapsed_seconds": 33.259
+    }
+  },
+  "package_checks": {
+    "omicsCore": {
+      "errors": [],
+      "warnings": [],
+      "notes": []
+    },
+    "omicsApp": {
+      "errors": [],
+      "warnings": [],
+      "notes": []
+    }
+  },
+  "installed_versions": {
+    "shiny": "1.13.0",
+    "future": "1.69.0",
+    "promises": "1.5.0",
+    "ggplot2": "4.0.2",
+    "msigdbr": "25.1.1",
+    "limma": "3.62.2",
+    "DESeq2": "1.46.0",
+    "edgeR": "4.4.2",
+    "GSVA": "2.0.7",
+    "clusterProfiler": "4.14.6",
+    "qs2": "0.1.7",
+    "rmarkdown": "2.30",
+    "shinytest2": "0.5.1",
+    "testthat": "3.3.2"
+  }
+}

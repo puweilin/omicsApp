@@ -1,0 +1,132 @@
+plan_path <- "/Users/puweilin/SciProject/CHISSS/omicsApp/docs/audits/2026-09-07/REMEDIATION-PLAN.md"
+plan <- readLines(plan_path, warn = FALSE)
+suppressPackageStartupMessages(pkgload::load_all("packages/omicsCore", quiet = TRUE))
+`%||%` <- function(x, y) if (is.null(x)) y else x
+emit <- function(key, value) cat(key, "=", paste(value, collapse = " | "), "\n", sep = "")
+err <- function(expr) tryCatch({force(expr); "OK"}, error = function(e) conditionMessage(e))
+
+# Literal candidate helpers copied by line range from the reviewed plan.
+eval(parse(text = plan[103:130]))
+candidate_prune_env <- new.env()
+eval(parse(text = plan[971:985]), envir = candidate_prune_env)
+
+# 1. Default backend calls retain unsupported NULL arguments after T3.2.
+for (method in c("ttest", "lm")) {
+  args <- list(group_col = "group", control_group = "A", case_group = "B",
+               covariates = NULL, paired_col = NULL)
+  cleaned <- candidate_prune_env$prune_backend_args(method, "group", args)
+  backend <- get(paste0("run_", method, "_group"), asNamespace("omicsCore"))
+  emit(paste0("T3_2_", toupper(method), "_DEFAULT"),
+       err(do.call(backend, c(list(input = NULL), cleaned))))
+}
+
+# 2. v1 is also a prefix of v10; a valid group label can collide with v2.
+set.seed(19)
+meta <- data.frame(group = factor(rep(c("A", "B"), each = 15)))
+for (i in seq_len(9)) meta[[paste0("cov", i)]] <- rnorm(30)
+mm <- build_design(meta, names(meta), intercept = FALSE, primary = "group")
+mm <- design_strip_prefix(mm, attr(mm, "primary_id"))
+emit("T1_1_NINE_COVARIATES_COLUMNS", colnames(mm))
+emit("T1_1_NINE_COVARIATES_CONTRAST", err(limma::makeContrasts(B - A, levels = mm)))
+meta2 <- data.frame(group = factor(rep(c("A", "v2"), each = 15)), age = rnorm(30))
+mm2 <- build_design(meta2, names(meta2), intercept = FALSE, primary = "group")
+mm2 <- design_strip_prefix(mm2, attr(mm2, "primary_id"))
+emit("T1_1_GROUP_COVARIATE_COLLISION", colnames(mm2))
+emit("T1_1_DUPLICATE_COLUMN", anyDuplicated(colnames(mm2)) > 0L)
+emit("T1_1_ACTUAL_CONTRAST_WEIGHTS", as.numeric(limma::makeContrasts(v2 - A, levels = mm2)))
+emit("T1_1_EXPECTED_CONTRAST_WEIGHTS", c(-1, 1, 0))
+
+# 3. Execute the proposed restoration selection rule in a real testServer.
+shiny::testServer(function(input, output, session) {
+  applied_params <- shiny::reactiveVal(list(impute_method = "min"))
+  output$ui_impute <- shiny::renderUI({
+    offered <- c("min", "knn", "MinProb")
+    sel <- shiny::isolate(input$impute_method)
+    if (is.null(sel) || !sel %in% offered) {
+      sel <- applied_params()$impute_method %||% "MinProb"
+    }
+    if (!sel %in% offered) sel <- "none"
+    shiny::selectInput("impute_method", "Imputation", choices = offered, selected = sel)
+  })
+}, {
+  session$setInputs(impute_method = "knn")
+  applied_params(list(impute_method = "min"))
+  rendered <- output$ui_impute$html
+  emit("T2_1_RESTORED_MIN_BUT_KNN_SELECTED", grepl('value="knn" selected', rendered, fixed = TRUE))
+})
+
+# 4. QC apply handler takes the last successful preview, then relabels it.
+# Current mod_qc_view preserves last_bundle on preview failure (238-242).
+last_bundle <- list(input_info = list(layer_tag = "A"),
+                    results = list(cleaned_input = list(marker = "from-A")))
+a <- list(tag = "B", input = list(source_fingerprint = "fp-B"))
+eval(parse(text = plan[509:511]))
+b <- last_bundle
+b$input_info$layer_tag <- a$tag
+b$input_info$layer_fingerprint <- layer_fingerprint(a$input)
+emit("T2_1_APPLY_OLD_PREVIEW", c(b$input_info$layer_tag, b$input_info$layer_fingerprint,
+                               b$results$cleaned_input$marker))
+
+# 5. T2's storage contract versus T3.4's exact export reading location.
+raw <- list(expr_mat = matrix(1, 20, 10), source_fingerprint = "raw-A",
+            provenance = list(list(op = "read_omics"), list(op = "normalize_omics")))
+cleaned <- raw
+cleaned$expr_mat <- cleaned$expr_mat[-1, , drop = FALSE]
+cleaned$provenance <- c(raw$provenance, list(list(op = "run_qc")))
+qc <- list(input_info = list(layer_tag = "A", layer_fingerprint = "raw-A"),
+           params = list(impute_method = "min"), results = list(cleaned_input = cleaned))
+project <- list(experiments = list(A = raw, B = raw), bundles = list(qc = qc))
+emit("T3_4_EXPORT_READS_QC_STEP", any(vapply(project$experiments$A$provenance,
+                                         function(s) s$op == "run_qc", logical(1))))
+qc_b <- qc
+qc_b$input_info$layer_tag <- "B"
+project$bundles$qc <- qc_b
+emit("T2_2_A_QC_AFTER_B_APPLIED", identical(project$bundles$qc$input_info$layer_tag, "A"))
+
+# 6. Saved older state of the same project reopens without invalidation.
+seen_project <- "prj_same"
+now <- "prj_same"
+bump <- !is.null(seen_project) && !identical(seen_project, now)
+emit("T2_4_REOPEN_SAME_PROJECT_BUMPS", bump)
+pid <- now
+v <- list(input_info = list(), params = list(comparison = "B_vs_A"))
+reject <- !is.null(v) && !identical(v$input_info$project_id %||% pid, pid)
+emit("T2_4_UNOWNED_BUNDLE_REJECTED", reject)
+
+# 7. Public helper names and available method contracts.
+emit("T1_3_REFERENCED_HELPER_EXISTS", any(vapply(list.files("packages/omicsApp/R", full.names = TRUE),
+     function(f) any(grepl("^store_list_projects <- function", readLines(f, warn = FALSE))), logical(1))))
+emit("T3_4_NORMALIZE_FORMALS", names(formals(omicsCore::normalize_omics)))
+
+# 8. Displayed marker tokens omit matrix content for custom inputs.
+x <- list(expr_mat = matrix(1, 20, 10))
+y <- list(expr_mat = matrix(2, 20, 10))
+emit("T2_FINGERPRINT_DIFFERENT_DATA_EQUAL", identical(layer_fingerprint(x), layer_fingerprint(y)))
+
+# 9. Reproduce default-method regression through the public run_diff entry.
+set.seed(23)
+mat <- matrix(rnorm(300, 20, 1), 30, 10,
+              dimnames = list(paste0("f", 1:30), paste0("s", 1:10)))
+meta <- data.frame(group = rep(c("A", "B"), each = 5), row.names = colnames(mat))
+features <- data.frame(feature_id = rownames(mat), row.names = rownames(mat))
+inp <- omics_input(mat, meta, features, omics_type = "proteomics", assay_type = "normalized_intensity")
+call_diff <- function(method) run_diff(inp, method = method, analysis_type = "group",
+                                      group_col = "group", control_group = "A", case_group = "B")
+for (method in c("ttest", "lm")) emit(paste0("BASELINE_PUBLIC_", method), err(call_diff(method)))
+probe_candidate_dispatch <- function() {
+  testthat::local_mocked_bindings(prune_backend_args = candidate_prune_env$prune_backend_args,
+                                  .package = "omicsCore")
+  for (method in c("ttest", "lm")) emit(paste0("PLAN_PUBLIC_", method), err(call_diff(method)))
+}
+probe_candidate_dispatch()
+
+# 10. Current writeback drops NULL only if a prior view held a bundle.
+# After restoring a disk project, held$diff can be NULL while disk diff exists.
+proj <- list(bundles = list(diff = list(params = list(comparison = "saved-old"))))
+gen <- 1L
+views <- list(diff = NULL)
+held <- new.env(parent = emptyenv())
+held$diff <- list(bundle = NULL, gen = gen)
+app_source <- readLines("packages/omicsApp/R/app_server.R", warn = FALSE)
+eval(parse(text = app_source[180:191]))
+emit("T2_3_SAVED_DIFF_RETAINED_WITH_EMPTY_VIEW", !is.null(b$diff))

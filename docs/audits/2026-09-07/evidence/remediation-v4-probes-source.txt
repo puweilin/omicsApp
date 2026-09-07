@@ -1,0 +1,105 @@
+plan <- readLines("docs/audits/2026-09-07/evidence/remediation-plan-v4-reviewed.md", warn = FALSE)
+suppressPackageStartupMessages(pkgload::load_all("packages/omicsCore", quiet = TRUE))
+emit <- function(key, val) cat(key, "=", paste(val, collapse = " | "), "\n", sep = "")
+err <- function(expr) tryCatch({force(expr); "OK"}, error = function(e) conditionMessage(e))
+cand <- new.env()
+for (rr in list(75:87, 97:100, 121:132, 177:183, 186:190, 211:232, 343:350)) {
+  eval(parse(text = plan[rr]), envir = cand)
+}
+cand$LOG_SCALE_ASSAY_TYPES <- omicsCore::LOG_SCALE_ASSAY_TYPES
+
+set.seed(83)
+m <- matrix(rnorm(300, 20, 1), 30, 10, dimnames = list(paste0("f",1:30), paste0("s",1:10)))
+md <- data.frame(group = rep(c("A", "B"), each=5), age=seq_len(10), row.names=colnames(m))
+fd <- data.frame(feature_id=rownames(m), feature_symbol=paste0("G",1:30), row.names=rownames(m))
+inp <- omics_input(m, md, fd, omics_type="proteomics", assay_type="normalized_intensity")
+inp$version <- cand$input_version(inp)
+other <- inp
+other$feature_df$feature_symbol[1L] <- "CHANGED_GENE"
+other$version <- cand$input_version(other)
+emit("V4_ANNOTATION_CHANGES_VERSION", !identical(inp$version, other$version))
+proj <- list(metadata=list(project_id="p1"), experiments=list(A=inp,B=inp), preprocessing=list(), bundles=list())
+cleaned <- inp
+cleaned$expr_mat <- cleaned$expr_mat[-1,,drop=FALSE]
+cleaned$feature_df <- cleaned$feature_df[-1,,drop=FALSE]
+proj$preprocessing$A <- list(base_input_version=inp$version, input_version=cand$input_version(cleaned), cleaned=cleaned)
+emit("V4_CURRENT_QC_SELECTED", identical(cand$effective_input(proj,"A")$source,"qc_cleaned"))
+proj$experiments$A <- other
+emit("V4_STALE_QC_FLAGGED", cand$effective_input(proj,"A")$stale)
+emit("V4_STALE_QC_RETURNS_NEW_BASELINE", identical(cand$effective_input(proj,"A")$input,other))
+proj$experiments$A <- inp
+proj$preprocessing <- list()
+saved_version_fn <- cand$input_version
+calls <- 0L
+cand$input_version <- function(x) {calls <<- calls+1L; saved_version_fn(x)}
+for (i in 1:3) cand$effective_input(proj,"A")
+emit("V4_THREE_LOOKUPS_HASH_CALLS", calls)
+
+# Persistent source validity is now independent of activation.
+pb <- function(id, inputs=list(A=inp$version), ups=character(0), pid="p1") {
+  list(analysis_id=id, project_id=pid, inputs=inputs, upstream_ids=ups, params_signature="params1")
+}
+bundle <- function(p) list(provenance_binding=p, results=list(diff_object=matrix(1,5,5), diff_result_df=data.frame(x=1)))
+good_pb <- pb("da")
+emit("V4_SAVED_RESULT_SOURCE_VALID", cand$result_inputs_current(good_pb,proj))
+emit("V4_FOREIGN_PROJECT_SOURCE_ACCEPTED", cand$result_inputs_current(pb("foreign",pid="p2"),proj))
+emit("V4_EMPTY_SOURCE_ACCEPTED", cand$result_inputs_current(list(),proj))
+proj$bundles <- list(diff_a=bundle(good_pb), legacy=list(params=list(method="limma")))
+emit("V4_LEGACY_MISSING_BINDING_VALIDATION", err(cand$valid_result_ids(proj)))
+
+# Fixed point works for a complete DAG, independent of storage order.
+proj$bundles <- list(diff_a=bundle(pb("da")), diff_b=bundle(pb("db",list(B=inp$version))),
+                    enrich_b=bundle(pb("eb",list(B=inp$version),"db")),
+                    integration=bundle(pb("ib",list(A=inp$version),c("da","eb"))))
+proj$experiments$B <- other
+keep <- cand$valid_result_ids(proj)
+rev_proj <- proj; rev_proj$bundles <- rev(rev_proj$bundles)
+emit("V4_FIXED_POINT_SURVIVORS",keep)
+emit("V4_ORDER_INDEPENDENT",setequal(keep,cand$valid_result_ids(rev_proj)))
+
+# Integration currently returns only itself; secondary diff is local to worker.
+proj$experiments$B <- inp
+proj$bundles <- list(diff_a=bundle(pb("da")),
+                    integration=bundle(pb("ib",list(A=inp$version,B=inp$version),c("da","db"))))
+emit("V4_UNREGISTERED_SECONDARY_INTEGRATION_VALID", "integration" %in% cand$valid_result_ids(proj))
+proj$bundles$diff_b <- bundle(pb("db",list(B=inp$version)))
+emit("V4_REGISTERED_SECONDARY_INTEGRATION_VALID", "integration" %in% cand$valid_result_ids(proj))
+
+# Callback function versus token fields and input mutations.
+token <- list(session_id="s1",project_id="p1",activation=1L,request_seq=1L,view="diff")
+ctx <- list(session_id="s1",project_id="p1",activation=1L,request_seq=list(diff=1L))
+emit("V4_DECLARED_TOKEN_ACCEPTED_WITHOUT_SIGNATURE",cand$callback_admissible(token,ctx))
+ctx$params_signature <- "params1"
+emit("V4_DECLARED_TOKEN_ACCEPTED_WITH_PRESENT_SIGNATURE",cand$callback_admissible(token,ctx))
+token$params_signature <- "params1"
+emit("V4_COMPLETE_TOKEN_ACCEPTED",cand$callback_admissible(token,ctx))
+ctx$request_seq$diff <- 2L
+emit("V4_OLD_REQUEST_REJECTED",!cand$callback_admissible(token,ctx))
+ctx$request_seq$diff <- 1L
+ctx$project <- proj
+ctx$project$experiments$A <- other
+emit("V4_INPUT_CHANGED_CALLBACK_ACCEPTED",cand$callback_admissible(token,ctx))
+emit("V4_OLD_RESULT_SOURCE_CURRENT",cand$result_inputs_current(good_pb,ctx$project))
+
+# The capacity policy is specified in prose but absent from the shown function.
+history_proj <- proj
+history_proj$bundles <- list()
+history_proj$retired <- list()
+history_proj$experiments$A <- other
+for (i in 1:21) {
+  history_proj$bundles$diff <- bundle(pb(paste0("old",i)))
+  history_proj <- cand$retire_invalid(history_proj)
+}
+emit("V4_SHOWN_RETIRE_FUNCTION_HISTORY_COUNT",length(history_proj$retired))
+emit("V4_SHOWN_RETIRE_FUNCTION_KEEPS_DIFF_OBJECT",any(vapply(history_proj$retired,function(b)!is.null(b$results$diff_object),logical(1))))
+emit("V4_SHOWN_RETIRED_KEYS_UNIQUE",!anyDuplicated(names(history_proj$retired)))
+
+# The guard must run after auto resolution; lm raw_count was already supported.
+raw <- inp; raw$expr_mat <- 2^raw$expr_mat; raw$assay_type <- "raw_intensity"
+emit("V4_RAW_EXPLICIT_LIMMA_GUARD",err(cand$assert_effect_scale_supported(raw,"limma","group")))
+emit("V4_RAW_AUTO_GUARD",err(cand$assert_effect_scale_supported(raw,"auto","group")))
+emit("V4_RAW_AUTO_RESOLVES_TO",get("auto_select_diff_method",asNamespace("omicsCore"))(raw,"group"))
+rna <- inp; rna$expr_mat <- round(2^m/10000); rna$assay_type <- "raw_count"; rna$omics_type <- "rnaseq"
+emit("BASELINE_RNA_RAWCOUNT_LM",err(run_diff(rna,method="lm",group_col="group",control_group="A",case_group="B")))
+emit("V4_RNA_RAWCOUNT_LM_GUARD",err(cand$assert_effect_scale_supported(rna,"lm","group")))
+emit("RNA_NORMALIZE_NEXT_STEP",err(normalize_omics(rna,method="log2")))

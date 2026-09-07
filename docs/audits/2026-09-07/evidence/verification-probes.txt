@@ -1,0 +1,207 @@
+Audit-only local probes. Original execution directory: repository root. All created test files were temporary. These are evidence snapshots, not application source.
+
+
+===== probe_security.R =====
+suppressPackageStartupMessages({pkgload::load_all('packages/omicsCore',quiet=TRUE);pkgload::load_all('packages/omicsApp',quiet=TRUE)})
+d <- tempfile('omics-audit-'); dir.create(d); on.exit <- NULL
+m <- matrix(seq_len(24), 4, dimnames=list(paste0('g',1:4),paste0('s',1:6)))
+i <- omicsCore::omics_input(m,data.frame(group=rep(c('A','B'),each=3),row.names=colnames(m)),data.frame(feature_id=rownames(m)),omics_type='proteomics',assay_type='normalized_intensity')
+p <- omicsCore::omics_project('outside',experiments=list(proteomics=i)); p$bundles <- list()
+dir.create(file.path(d,'store'))
+omicsCore::save_project(p,file.path(d,'outside.omp'))
+r <- omicsApp:::store_load_project('../outside',file.path(d,'store'))
+cat('TRAVERSAL_READ_OUTSIDE_STORE=',r$ok,'\n',sep='')
+r <- omicsApp:::store_delete_project('../outside',file.path(d,'store'))
+cat('TRAVERSAL_DELETE_OUTSIDE_STORE=',r$ok,'; TARGET_EXISTS=',file.exists(file.path(d,'outside.omp')),'\n',sep='')
+e <- new.env(parent=baseenv()); class(e) <- 'omics_input'
+e$omics_type <- 'proteomics'; e$assay_type <- 'normalized_intensity'
+f <- function() {writeLines('only a harmless audit marker',marker); mat}
+environment(f) <- list2env(list(marker=file.path(d,'marker.txt'),mat=m),parent=baseenv())
+makeActiveBinding('expr_mat',f,e)
+saveRDS(e,file.path(d,'input.rds'))
+cat('RDS_MARKER_BEFORE=',file.exists(file.path(d,'marker.txt')),'\n',sep='')
+r <- tryCatch(omicsCore::read_omics(file.path(d,'input.rds'),omics_type='proteomics'),error=function(e)conditionMessage(e))
+cat('RDS_MARKER_AFTER=',file.exists(file.path(d,'marker.txt')),'; RETURN_CLASS=',class(r),'\n',sep='')
+unlink(d,recursive=TRUE)
+
+
+===== probe_formula.R =====
+suppressPackageStartupMessages(pkgload::load_all('packages/omicsCore',quiet=TRUE))
+d <- tempfile('omics-audit-formula-');dir.create(d);marker<-file.path(d,'marker.txt')
+# This is only a local harmless marker; no shell/network is invoked.
+nm<-sprintf('I({base::writeLines("audit marker", %s); factor(c("A","A","A","B","B","B"))})',deparse(marker))
+set.seed(8);m<-matrix(rnorm(120,20,2),20,dimnames=list(paste0('g',1:20),paste0('s',1:6)))
+meta<-data.frame(group=rep(c('A','B'),each=3),row.names=colnames(m));names(meta)<-nm
+i<-omicsCore::omics_input(m,meta,data.frame(feature_id=rownames(m)),omics_type='proteomics',assay_type='normalized_intensity')
+cat('BEFORE_FORMULA_MARKER=',file.exists(marker),'\n',sep='')
+x<-tryCatch(omicsCore::run_diff(i,method='limma',group_col=nm,control_group='A',case_group='B'),error=function(e)conditionMessage(e))
+cat('AFTER_FORMULA_MARKER=',file.exists(marker),'; ANALYSIS_RETURN_CLASS=',class(x),'\n',sep='')
+# Confirm the same column survives an actual Excel import.
+p<-file.path(d,'input.xlsx');openxlsx::write.xlsx(list(Expression=data.frame(feature_id=rownames(m),m,check.names=FALSE),Metadata=data.frame(sample_id=rownames(meta),meta,check.names=FALSE)),p)
+unlink(marker)
+r<-omicsCore::read_omics(p,omics_type='proteomics',assay_type='normalized_intensity')
+cat('EXCEL_PRESERVES_EXPRESSION_COLUMN=',nm %in% names(r$input$meta_df),'\n',sep='')
+x<-tryCatch(omicsCore::run_diff(r$input,method='limma',group_col=nm,control_group='A',case_group='B'),error=function(e)conditionMessage(e))
+cat('EXCEL_FORMULA_MARKER=',file.exists(marker),'\n',sep='')
+unlink(d,recursive=TRUE)
+
+
+===== probe_reactivity.R =====
+suppressPackageStartupMessages({pkgload::load_all('packages/omicsCore',quiet=TRUE);pkgload::load_all('packages/omicsApp',quiet=TRUE)})
+set.seed(2026)
+m <- matrix(rnorm(120,20,2),20,dimnames=list(paste0('g',1:20),paste0('s',1:6)))
+i <- omicsCore::omics_input(m,data.frame(group=rep(c('A','B'),each=3),row.names=colnames(m)),data.frame(feature_id=rownames(m)),omics_type='proteomics',assay_type='normalized_intensity',source_fingerprint='dataset-A')
+p <- omicsCore::omics_project('A',experiments=list(proteomics=i)); p$bundles <- list()
+p2 <- p; p2$name <- 'B'; p2$experiments$proteomics$expr_mat <- m+100; p2$experiments$proteomics$source_fingerprint <- 'dataset-B'
+queue <- list(); cp <- shiny::reactiveVal(p); gen <- shiny::reactiveVal(0L)
+testthat::with_mocked_bindings({
+ shiny::testServer(omicsApp:::diff_view_server,args=list(current_project=cp,invalidate=gen),{
+  session$flushReact();session$setInputs(method='ttest',group_col='group',control='A',case='B',rerun=1)
+  cat('ASYNC_SUBMITTED=',length(queue),'\n',sep='')
+  old_result <- queue[[1]]$func()
+  cp(p2); gen(1L);session$flushReact()
+  cat('AFTER_REPLACE_EMPTY=',is.null(diff_bundle()),'\n',sep='')
+  queue[[1]]$ok(old_result);session$flushReact()
+  cat('OLD_RESULT_REATTACHED=',!is.null(diff_bundle()),'; CURRENT_DATA=',active()$input$source_fingerprint,'\n',sep='')
+ })
+}, run_async=function(func,on_success,on_error,...) {queue[[length(queue)+1L]] <<- list(func=func,ok=on_success,err=on_error)}, .package='omicsApp')
+
+d <- tempfile('omics-audit-store-');dir.create(d);Sys.setenv(OMICSAPP_DATA_DIR=d)
+p$experiments$proteomics$expr_mat[1,1:4] <- NA
+p$experiments$proteomics$expr_mat[2,1] <- NA
+shiny::testServer(omicsApp:::app_server,{
+ session$flushReact();current_project(p);session$setInputs(`qc-missing_threshold`=.5,`qc-impute_method`='min');session$flushReact()
+ q <- qc_bundle();cat('QC_FEATURES_OUT=',q$input_info$n_features_out,'; QC_REMAINING_NA=',sum(is.na(q$results$cleaned_input$expr_mat)),'\n',sep='')
+ session$setInputs(`diff-method`='ttest',`diff-group_col`='group',`diff-control`='A',`diff-case`='B',`diff-rerun`=1)
+ b<-diff_view$bundle();cat('DIFF_FEATURES_IN=',b$input_info$n_features,'; ORIGINAL_REMAINING_NA=',sum(is.na(current_project()$experiments$proteomics$expr_mat)),'\n',sep='')
+})
+unlink(d,recursive=TRUE)
+
+
+===== probe_reproduction.R =====
+suppressPackageStartupMessages({pkgload::load_all('packages/omicsCore',quiet=TRUE);pkgload::load_all('packages/omicsApp',quiet=TRUE)})
+set.seed(2026)
+m <- matrix(2^rnorm(120,20,2),20,dimnames=list(paste0('g',1:20),paste0('s',1:6)))
+i <- omicsCore::omics_input(m,data.frame(group=rep(c('A','B'),each=3),row.names=colnames(m)),data.frame(feature_id=rownames(m)),omics_type='proteomics',assay_type='raw_intensity')
+d <- tempfile('omics-audit-');dir.create(d);dir.create(file.path(d,'raw')); src <- file.path(d,'raw','input.rds');saveRDS(i,src)
+n <- omicsCore::normalize_omics(i,method='log2');n$source_path <- src
+b <- omicsCore::run_diff(n,method='limma',group_col='group',control_group='A',case_group='B')
+p <- omicsCore::omics_project('normalized',experiments=list(proteomics=n));p$bundles<-list(diff=b)
+s <- omicsCore::export_script(p,include_plots=FALSE)
+old <- getwd();setwd(d)
+e <- new.env();eval(parse(text=s),envir=e);setwd(old)
+cat('SCRIPT_HAS_NORMALIZATION=',any(grepl('normalize_omics',s)),'\n',sep='')
+cat('INPUT_MEAN_EXPECTED=',mean(n$expr_mat),'; REPLAY_MEAN=',mean(e$input$expr_mat),'\n',sep='')
+cat('MAX_DIFFERENCE_IN_REPLAYED_EFFECT=',max(abs(e$diff$results$diff_result_df$effect-b$results$diff_result_df$effect)),'\n',sep='')
+writeLines(s,'/tmp/omicsapp-audit-20260907/generated-reproduction.R')
+# The QC object is computed and stored but Differential still selects experiments.
+p$experiments$proteomics$expr_mat[1,1:4] <- NA;p$experiments$proteomics$expr_mat[2,1] <- NA
+p$bundles <- list(qc=omicsCore::run_qc(p$experiments$proteomics,impute_method='min',outlier_method='none'))
+shiny::testServer(omicsApp:::diff_view_server,args=list(current_project=shiny::reactiveVal(p)),{
+ session$setInputs(method='ttest',group_col='group',control='A',case='B',rerun=1)
+ cat('QC_CLEANED_FEATURES=',nrow(p$bundles$qc$results$cleaned_input$expr_mat),'; QC_NA=',sum(is.na(p$bundles$qc$results$cleaned_input$expr_mat)),'; DIFF_INPUT_FEATURES=',diff_bundle()$input_info$n_features,'; DIFF_INPUT_NA=',sum(is.na(active()$input$expr_mat)),'\n',sep='')
+})
+unlink(d,recursive=TRUE)
+
+
+===== probe_state_science.R =====
+suppressPackageStartupMessages({pkgload::load_all('packages/omicsCore',quiet=TRUE);pkgload::load_all('packages/omicsApp',quiet=TRUE)})
+set.seed(5)
+m <- matrix(rnorm(120,20,2),20,dimnames=list(paste0('g',1:20),paste0('s',1:6)))
+i <- omicsCore::omics_input(m,data.frame(group=rep(c('A','B'),each=3),age=c(21,35,27,41,24,37),row.names=colnames(m)),data.frame(feature_id=rownames(m)),omics_type='proteomics',assay_type='normalized_intensity',source_fingerprint='same-upload')
+bA <- omicsCore::run_diff(i,method='ttest',group_col='group',control_group='A',case_group='B')
+bB <- omicsCore::run_diff(i,method='ttest',group_col='group',control_group='B',case_group='A')
+pA <- omicsCore::omics_project('Project A',experiments=list(proteomics=i));pA$bundles<-list()
+pB <- pA;pB$name <- 'Project B';pB$bundles <- list(diff=bB)
+d<-tempfile('omics-audit-');dir.create(d);Sys.setenv(OMICSAPP_DATA_DIR=d)
+shiny::testServer(omicsApp:::app_server,{
+ session$flushReact();current_project(pA);session$flushReact()
+ session$setInputs(`diff-method`='ttest',`diff-group_col`='group',`diff-control`='A',`diff-case`='B',`diff-rerun`=1)
+ cat('PROJECT_B_STORED_CONTRAST=',pB$bundles$diff$params$comparison,'\n',sep='')
+ current_project(pB);session$flushReact()
+ cat('PROJECT_B_AFTER_OPEN_CONTRAST=',current_project()$bundles$diff$params$comparison,'; TITLE=',current_project()$name,'\n',sep='')
+})
+# The integration result loses both input effects, and the plotting fallback sets B to zero.
+p<-omicsCore::omics_project('two',experiments=list(a=i,b=i))
+it<-omicsCore::run_integration(p,method='concordance',diff_bundles=list(a=bA,b=bB))
+pdf<-omicsCore::plot_integration(it,view='effect_pair')$data
+cat('TRUE_B_EFFECT_NONZERO=',sum(bB$results$diff_result_df$effect!=0),'; PLOTTED_B_NONZERO=',sum(pdf$effect_b!=0),'; PLOTTED_A_EQUALS_DIFFERENCE=',all(pdf$effect_a==pdf$effect),'\n',sep='')
+# t-test accepts covariates but removes them without a warning or recorded exclusion.
+warn<-character();bc<-withCallingHandlers(omicsCore::run_diff(i,method='ttest',group_col='group',control_group='A',case_group='B',covariates='age'),warning=function(w){warn<<-c(warn,conditionMessage(w));invokeRestart('muffleWarning')})
+cat('TTEST_COVARIATE_RECORDED=',!is.null(bc$params$covariates),'; RESULT_EQUALS_UNADJUSTED=',identical(bc$results$diff_result_df,bA$results$diff_result_df),'; WARNINGS=',length(warn),'\n',sep='')
+# Loading NULL upstream must clear an enrichment, but observeEvent ignores it.
+db<-shiny::reactiveVal(bA)
+shiny::testServer(omicsApp:::enrich_view_server,args=list(diff_bundle=db),{
+ session$flushReact();enrich_bundle(omicsCore::new_analysis_bundle('run_enrichment'));is_demo(FALSE)
+ db(NULL);session$flushReact()
+ cat('ENRICH_RETAINED_AFTER_DIFF_CLEARED=',!is.null(enrich_bundle()),'\n',sep='')
+})
+unlink(d,recursive=TRUE)
+
+
+===== probe_enrichment.R =====
+suppressPackageStartupMessages({pkgload::load_all('packages/omicsCore',quiet=TRUE);pkgload::load_all('packages/omicsApp',quiet=TRUE)})
+base <- omicsApp:::example_diff_bundle();df <- base$results$diff_result_df[rep(1,1000),];df$feature_id<-df$feature_symbol<-paste0('g',1:1000);df$effect<-1;df$p_value<-df$adj_p_value<-c(rep(1e-8,10),rep(1,990));rownames(df)<-NULL;base$results$diff_result_df<-df
+sets<-c(list(strong=paste0('g',1:30),moderate=paste0('g',c(1:3,101:127))),setNames(rep(list(paste0('g',c(1,201:229))),98),paste0('weak',1:98)))
+terms<-list(term2gene=data.frame(term=rep(names(sets),lengths(sets)),gene=unlist(sets,use.names=FALSE)),term2name=data.frame(term=names(sets),name=names(sets)))
+# Include all universe genes in the ontology without changing selected overlap: additional sets each contain one hit.
+terms$term2gene <- rbind(terms$term2gene,data.frame(term='universe',gene=paste0('g',1:1000)));terms$term2name<-rbind(terms$term2name,data.frame(term='universe',name='universe'))
+testthat::with_mocked_bindings({
+ a<-omicsCore::run_enrichment(base,database='hallmark',p_cutoff=.05)
+ b<-omicsCore::run_enrichment(base,database='hallmark',p_cutoff=.05,output_p_cutoff=1)
+ cat('DEFAULT_STORED_PATHWAYS=',nrow(a$results$enrich_result_df),'; COMPLETE_STORED_PATHWAYS=',nrow(b$results$enrich_result_df),'\n',sep='')
+ cat('RAW_P_005_DEFAULT=',nrow(omicsCore::filter_enrich_results(a$results$enrich_result_df,.05,'raw')),'; RAW_P_005_COMPLETE=',nrow(omicsCore::filter_enrich_results(b$results$enrich_result_df,.05,'raw')),'\n',sep='')
+ cat('OUTPUT_CUTOFF_RECORDED=',!is.null(b$params$output_p_cutoff),'\n',sep='')
+},build_term_tables=function(...) terms,geneset_table_source=function(...)'audit fixture',.package='omicsCore')
+
+
+===== probe_failure_handling.R =====
+suppressPackageStartupMessages({pkgload::load_all('packages/omicsCore',quiet=TRUE);pkgload::load_all('packages/omicsApp',quiet=TRUE)})
+set.seed(7);mat<-matrix(2^rnorm(120,20,2),20,dimnames=list(paste0('g',1:20),paste0('s',1:6)))
+i<-omicsCore::omics_input(mat,data.frame(group=rep(c('A','B'),each=3),row.names=colnames(mat)),data.frame(feature_id=rownames(mat)),omics_type='proteomics',assay_type='raw_intensity')
+testthat::with_mocked_bindings({
+ shiny::testServer(omicsApp:::import_view_server,{
+  parsed(list(input=i,report=omicsCore::new_import_report()))
+  session$setInputs(normalize=TRUE,normalize_method='vsn',confirm=1)
+  c<-confirmed_input();cat('NORMALIZATION_FAILED_BUT_COMMITTED=',!is.null(c),'; ASSAY=',c$assay_type,'\n',sep='')
+  b<-omicsCore::run_diff(c,method='limma',group_col='group',control_group='A',case_group='B')
+  cat('RAW_LIMMA_RETURNED_FEATURES=',nrow(b$results$diff_result_df),'; LABEL=',unique(b$results$diff_result_df$effect_type),'\n',sep='')
+ })
+},normalize_omics=function(...)stop('simulated numerical normalization failure'),.package='omicsCore')
+p<-omicsCore::omics_project('蛋白组项目',experiments=list(proteomics=i));p$bundles<-list()
+d<-tempfile('omics-audit-');dir.create(d)
+e<-tryCatch({omicsCore::export_report(p,file.path(d,'chinese.pdf'),format='pdf');NULL},error=function(e)conditionMessage(e))
+cat('CHINESE_PDF_ERROR=',e %||% 'none','\n',sep='')
+# A file used where the store directory should be makes the autosave unwritable.
+writeLines('not a directory',file.path(d,'unwritable'))
+cat('AUTOSAVE_RETURN_ON_FAILED_STORAGE=',suppressWarnings(omicsApp:::store_autosave(p,file.path(d,'unwritable'))),'\n',sep='')
+unlink(d,recursive=TRUE)
+
+
+===== probe_async_browser.R =====
+a <- shinytest2::AppDriver$new('/tmp/omicsapp-audit-20260907/async-app',load_timeout=120000,timeout=30000)
+on.exit <- NULL
+a$set_inputs(run="click",wait_=FALSE)
+Sys.sleep(.7)
+a$set_inputs(tag='B',wait_=FALSE)
+Sys.sleep(.7)
+cat('WHILE_PENDING_LIVE=',a$get_js("document.getElementById('live').textContent"),'\n',sep='')
+cat('WHILE_PENDING_RESULT=',a$get_js("document.getElementById('result').textContent"),'\n',sep='')
+Sys.sleep(6)
+cat('AFTER_FINISH_LIVE=',a$get_js("document.getElementById('live').textContent"),'\n',sep='')
+cat('AFTER_FINISH_RESULT=',a$get_js("document.getElementById('result').textContent"),'\n',sep='')
+a$stop()
+
+
+===== minimal async test app/app.R =====
+suppressPackageStartupMessages({pkgload::load_all('/Users/puweilin/SciProject/CHISSS/omicsApp/packages/omicsCore',quiet=TRUE);pkgload::load_all('/Users/puweilin/SciProject/CHISSS/omicsApp/packages/omicsApp',quiet=TRUE)})
+future::plan(future::multisession,workers=2)
+shiny::shinyApp(shiny::fluidPage(shiny::actionButton('run','Run'),shiny::textInput('tag','tag','A'),shiny::textOutput('live'),shiny::textOutput('result')),
+function(input,output,session){
+ result <- shiny::reactiveVal('none')
+ output$live <- shiny::renderText(input$tag)
+ output$result <- shiny::renderText(result())
+ shiny::observeEvent(input$run,omicsApp:::run_async(
+  omicsApp:::detached_call(function(){Sys.sleep(5);tag},tag=input$tag),
+  on_success=function(x)result(x),on_error=function(e)result(e)))
+})

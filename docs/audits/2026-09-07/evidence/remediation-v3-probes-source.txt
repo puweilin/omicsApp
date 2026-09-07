@@ -1,0 +1,136 @@
+plan <- readLines("docs/audits/2026-09-07/evidence/remediation-plan-v3-reviewed.md", warn = FALSE)
+suppressPackageStartupMessages(pkgload::load_all("packages/omicsCore", quiet = TRUE))
+emit <- function(key, val) cat(key, "=", paste(val, collapse = " | "), "\n", sep = "")
+outcome <- function(expr) tryCatch({force(expr); "OK"}, error = function(e) conditionMessage(e))
+candidate <- new.env()
+for (rr in list(88:97, 116:125, 137:142, 199:242, 654:664, 570:580)) {
+  eval(parse(text = plan[rr]), envir = candidate)
+}
+candidate$backend_unsupported_args <- function(method, analysis_type) {
+  switch(method, ttest = "covariates", lm = "paired_col", character(0))
+}
+candidate$suggest_alternative_backend <- function(...) "Choose a supported backend."
+# The plan does not define this helper. Supply its literal presence semantics
+# only to test whether the stated invalidation algorithm is transitive.
+candidate$upstream_still_present <- function(id, project) id %in% names(project$bundles)
+
+set.seed(43)
+nf <- 30L; ns <- 20L
+mat <- matrix(rnorm(nf * ns, 20, 1), nf, ns,
+              dimnames = list(paste0("f", 1:nf), paste0("s", 1:ns)))
+meta <- data.frame(group = factor(rep(c("A", "v2"), each = ns / 2)),
+                   age = rnorm(ns), row.names = colnames(mat))
+fd <- data.frame(feature_id = rownames(mat), feature_symbol = paste0("G", 1:nf),
+                 row.names = rownames(mat))
+inp <- omics_input(mat, meta, fd, omics_type = "proteomics", assay_type = "normalized_intensity")
+
+# Positive regression: v3's safe coefficient mapping fixes v2's collision.
+mm <- candidate$build_design(meta, c("group", "age"), primary = "group", intercept = FALSE)
+ct <- candidate$design_contrast(mm, "A", "v2")
+ref_mm <- cbind(A = as.numeric(meta$group == "A"), B = as.numeric(meta$group == "v2"), age = meta$age)
+ref_ct <- matrix(c(-1, 1, 0), 3, 1)
+fit <- limma::eBayes(limma::contrasts.fit(limma::lmFit(mat, mm), ct))
+ref <- limma::eBayes(limma::contrasts.fit(limma::lmFit(mat, ref_mm), ref_ct))
+emit("V3_CONTRAST_WEIGHTS", as.numeric(ct))
+emit("V3_EFFECT_MAXDIFF", max(abs(fit$coefficients - ref$coefficients)))
+emit("V3_P_MAXDIFF", max(abs(fit$p.value - ref$p.value)))
+meta_many <- meta
+for (i in 1:9) meta_many[[paste0("cov", i)]] <- rnorm(ns)
+mm_many <- candidate$build_design(meta_many, names(meta_many), primary = "group", intercept = FALSE)
+emit("V3_MANY_TERMS_CONTRAST", outcome(candidate$design_contrast(mm_many, "A", "v2")))
+marker <- tempfile()
+meta_payload <- meta
+names(meta_payload)[1L] <- sprintf('file.create("%s")', marker)
+mm_payload <- candidate$build_design(meta_payload, names(meta_payload), primary = names(meta_payload)[1L], intercept = FALSE)
+fit_payload <- limma::eBayes(limma::contrasts.fit(limma::lmFit(mat, mm_payload),
+                              candidate$design_contrast(mm_payload, "A", "v2")))
+emit("V3_PAYLOAD_MARKER_CREATED", file.exists(marker))
+emit("V3_PAYLOAD_EFFECT_MAXDIFF", max(abs(fit_payload$coefficients - ref$coefficients)))
+
+# Positive regression: reject + trim now preserves default public calls.
+probe_prune <- function() {
+  testthat::local_mocked_bindings(prune_backend_args = candidate$prune_backend_args, .package = "omicsCore")
+  for (m in c("ttest", "lm")) {
+    emit(paste0("V3_PUBLIC_DEFAULT_", m), outcome(run_diff(inp, method = m, group_col = "group", control_group = "A", case_group = "v2")))
+  }
+  emit("V3_PUBLIC_UNSUPPORTED", outcome(run_diff(inp, method = "ttest", group_col = "group", control_group = "A", case_group = "v2", covariates = "age")))
+}
+probe_prune()
+
+# Exact QC syntax from T3.1: run_qc is a normal R function, not a dots injector.
+params <- list(missing_threshold = 0.3, impute_method = "none", outlier_method = "none")
+emit("V3_QC_BANG_CALL", outcome(omicsCore::run_qc(inp, !!!params)))
+emit("V3_QC_DO_CALL", outcome(do.call(omicsCore::run_qc, c(list(input = inp), params))))
+
+# Hash and source contracts.
+other_annotation <- inp
+other_annotation$feature_df$feature_symbol[1L] <- "DIFFERENT_GENE"
+emit("V3_FEATURE_ANNOTATION_VERSION_EQUAL", identical(candidate$input_version(inp), candidate$input_version(other_annotation)))
+project <- list(metadata = list(project_id = "p1"), experiments = list(A = inp, B = inp), preprocessing = list())
+raw_version <- candidate$input_version(inp)
+qc_input <- inp
+qc_input$expr_mat <- qc_input$expr_mat[-1, , drop = FALSE]
+qc_input$feature_df <- qc_input$feature_df[-1, , drop = FALSE]
+project$preprocessing$A <- list(cleaned = qc_input, input_version = candidate$input_version(qc_input), params = params, provenance = list(list(op = "run_qc")))
+replacement <- inp
+replacement$expr_mat <- replacement$expr_mat + 100
+project$experiments$A <- replacement
+emit("V3_REPLACED_IMPORT_RETURNS_OLD_QC", identical(candidate$effective_input(project, "A")$input, qc_input))
+
+# A request_seq exists in the declared binding but is never checked.
+project$preprocessing <- list()
+project$experiments$A <- inp
+binding <- list(project_id = "p1", activation = 1L, tag = "A", input_version = raw_version,
+                upstream_analysis_ids = character(0), request_seq = 1L)
+project$current_request_seq <- list(diff = 2L)
+emit("V3_OLD_REQUEST_ACCEPTED", candidate$binding_valid(binding, project, 1L))
+emit("V3_SAVED_BINDING_REOPEN_VALID", candidate$binding_valid(binding, project, 2L))
+
+# Changing layer B retires its own diff but not an integration bound to A:
+# presence of the old B diff in the original project is enough for one pass.
+bind_b <- binding; bind_b$tag <- "B"
+bind_integration <- binding; bind_integration$upstream_analysis_ids <- c("diff_a", "diff_b")
+project$bundles <- list(diff_a = list(input_info = list(binding = binding)),
+                        diff_b = list(input_info = list(binding = bind_b)),
+                        integration = list(input_info = list(binding = bind_integration)))
+project$experiments$B <- replacement
+candidate$activation <- 1L
+changed <- candidate$invalidate_dependents(project, "B", candidate$input_version(replacement))
+emit("V3_INVALIDATION_DIFF_B_RETIRED", "diff_b" %in% names(changed$retired))
+emit("V3_INVALIDATION_INTEGRATION_RETAINED", "integration" %in% names(changed$bundles))
+
+# Imported branches recompute content digests on every lookup.
+original_version_fn <- candidate$input_version
+hash_calls <- 0L
+candidate$input_version <- function(input) {hash_calls <<- hash_calls + 1L; original_version_fn(input)}
+for (i in 1:3) candidate$effective_input(project, "A")
+emit("V3_THREE_IMPORTED_LOOKUPS_HASH_CALLS", hash_calls)
+
+# Reapplying QC to cleaned input cannot recover features when thresholds loosen.
+qc_base <- inp
+qc_base$expr_mat[1L, 1:10] <- NA_real_
+strict <- run_qc(qc_base, missing_threshold = 0.3, outlier_method = "none", impute_method = "min")
+loose_from_base <- run_qc(qc_base, missing_threshold = 0.9, outlier_method = "none", impute_method = "min")
+loose_from_effective <- run_qc(strict$results$cleaned_input, missing_threshold = 0.9,
+                              outlier_method = "none", impute_method = "min")
+emit("QC_LOOSEN_FROM_BASE_FEATURES", nrow(loose_from_base$results$cleaned_input$expr_mat))
+emit("QC_LOOSEN_FROM_EFFECTIVE_FEATURES", nrow(loose_from_effective$results$cleaned_input$expr_mat))
+
+# Scale bypass remains available when import normalization is unchecked.
+raw_input <- inp
+raw_input$expr_mat <- 2^raw_input$expr_mat
+raw_input$assay_type <- "raw_intensity"
+raw_diff <- run_diff(raw_input, method = "limma", group_col = "group", control_group = "A", case_group = "v2")
+emit("CURRENT_RAW_LIMMA_EFFECT_TYPE", unique(raw_diff$results$diff_result_df$effect_type))
+emit("CURRENT_RAW_LIMMA_MAX_EFFECT", max(abs(raw_diff$results$diff_result_df$effect)))
+
+# Capture GSEA's effective output cutoff through the real bundle adapter.
+probe_gsea_cutoff <- function() {
+  seen_cutoff <- NULL
+  testthat::local_mocked_bindings(run_gsea_database = function(..., p_cutoff) { seen_cutoff <<- p_cutoff; NULL }, .package = "omicsCore")
+  get("run_gsea_from_bundle", asNamespace("omicsCore"))(raw_diff, database = "hallmark")
+  emit("CURRENT_GSEA_OUTPUT_CUTOFF_DEFAULT", seen_cutoff)
+  get("run_gsea_from_bundle", asNamespace("omicsCore"))(raw_diff, database = "hallmark", output_p_cutoff = 1)
+  emit("GSEA_OUTPUT_CUTOFF_EXPLICIT_COMPLETE", seen_cutoff)
+}
+probe_gsea_cutoff()

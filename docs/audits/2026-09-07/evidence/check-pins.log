@@ -1,0 +1,7 @@
+Snapshot taken from the Dockerfile: 2025-03-01 
+
+2025-03-01  closure 230 packages
+  ggplot2    3.5.1       (image expects < 4)
+  msigdbr    7.5.1       (image expects < 10)
+  every version requirement is satisfiable
+

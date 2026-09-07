@@ -1,0 +1,29 @@
+V4_ANNOTATION_CHANGES_VERSION=TRUE
+V4_CURRENT_QC_SELECTED=TRUE
+V4_STALE_QC_FLAGGED=TRUE
+V4_STALE_QC_RETURNS_NEW_BASELINE=TRUE
+V4_THREE_LOOKUPS_HASH_CALLS=0
+V4_SAVED_RESULT_SOURCE_VALID=TRUE
+V4_FOREIGN_PROJECT_SOURCE_ACCEPTED=TRUE
+V4_EMPTY_SOURCE_ACCEPTED=TRUE
+V4_LEGACY_MISSING_BINDING_VALIDATION=values must be length 1,
+ but FUN(X[[2]]) result is length 0
+V4_FIXED_POINT_SURVIVORS=diff_a
+V4_ORDER_INDEPENDENT=TRUE
+V4_UNREGISTERED_SECONDARY_INTEGRATION_VALID=FALSE
+V4_REGISTERED_SECONDARY_INTEGRATION_VALID=TRUE
+V4_DECLARED_TOKEN_ACCEPTED_WITHOUT_SIGNATURE=TRUE
+V4_DECLARED_TOKEN_ACCEPTED_WITH_PRESENT_SIGNATURE=FALSE
+V4_COMPLETE_TOKEN_ACCEPTED=TRUE
+V4_OLD_REQUEST_REJECTED=TRUE
+V4_INPUT_CHANGED_CALLBACK_ACCEPTED=TRUE
+V4_OLD_RESULT_SOURCE_CURRENT=FALSE
+V4_SHOWN_RETIRE_FUNCTION_HISTORY_COUNT=21
+V4_SHOWN_RETIRE_FUNCTION_KEEPS_DIFF_OBJECT=TRUE
+V4_SHOWN_RETIRED_KEYS_UNIQUE=FALSE
+V4_RAW_EXPLICIT_LIMMA_GUARD=method = 'limma' reports a log2 fold change, but assay_type 'raw_intensity' is on a linear scale. Normalize the layer first (normalize_omics()), or choose a backend whose effect definition matches this scale.
+V4_RAW_AUTO_GUARD=OK
+V4_RAW_AUTO_RESOLVES_TO=limma
+BASELINE_RNA_RAWCOUNT_LM=OK
+V4_RNA_RAWCOUNT_LM_GUARD=method = 'lm' reports a log2 fold change, but assay_type 'raw_count' is on a linear scale. Normalize the layer first (normalize_omics()), or choose a backend whose effect definition matches this scale.
+RNA_NORMALIZE_NEXT_STEP=`normalize_omics()` covers proteomics only; got omics_type = 'rnaseq'. RNA-seq counts are handled by the analysis backends: DESeq2 and edgeR model raw counts directly, and the t-test / lm backends log2-transform `raw_count` themselves.
