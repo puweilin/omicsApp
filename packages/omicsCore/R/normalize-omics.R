@@ -120,6 +120,10 @@ normalize_omics <- function(
   out$raw_mat <- input$raw_mat %||% input$expr_mat
   out$normalized_mat <- normalized
   out$assay_type <- "normalized_intensity"
+  # `offset` is included whichever method ran, because a script that omits
+  # it replays log2(x) where log2(x + 1) was applied.
+  out <- record_step(out, "normalize_omics",
+                     list(method = method, offset = offset))
 
   validate_omics_input(out)
   out

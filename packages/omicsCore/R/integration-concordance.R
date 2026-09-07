@@ -3,6 +3,20 @@
 # and (adjusted) p-value, classifies the (dir_a, dir_b) pair into a
 # quadrant, and computes a combined-p (Fisher's method).
 
+# Where each side came from. Not in `joined`, which holds per-feature
+# columns; these are per-analysis, and they are what lets a reader tell
+# whether the two effects are even the same kind of quantity -- a log2 fold
+# change against a correlation is not a comparison.
+side_effect_type <- function(bundle) {
+  et <- bundle$results$diff_result_df$effect_type
+  if (length(et) == 0L) return(NA_character_)
+  as.character(et[[1L]])
+}
+
+side_analysis_id <- function(bundle) {
+  bundle$provenance_binding$analysis_id %||% NA_character_
+}
+
 run_integration_concordance <- function(
   project,
   experiments,
@@ -87,6 +101,22 @@ run_integration_concordance <- function(
     ),
     effect = effect,
     effect_type = "effect_diff",
+    # Each layer's own effect and p, kept rather than left to be worked
+    # back out of the difference. The plotting helper used to do exactly
+    # that -- with one number and two unknowns, so it set the first axis to
+    # the difference and the second to zero, and labelled them as the two
+    # layers' effects. Every point sat on a line the data never described.
+    effect_a = joined$effect_a,
+    effect_b = joined$effect_b,
+    p_a = pa,
+    p_b = pb,
+    # Which p these are. `p_preference` decides whether the columns above
+    # hold raw or adjusted values, and a reader cannot tell from the name.
+    p_type = p_preference,
+    effect_type_a = side_effect_type(diff_bundles[[tag_a]]),
+    effect_type_b = side_effect_type(diff_bundles[[tag_b]]),
+    analysis_id_a = side_analysis_id(diff_bundles[[tag_a]]),
+    analysis_id_b = side_analysis_id(diff_bundles[[tag_b]]),
     statistic = -2 * (log(pmax(pa, .Machine$double.xmin)) +
                       log(pmax(pb, .Machine$double.xmin))),
     statistic_type = "fisher_chisq",

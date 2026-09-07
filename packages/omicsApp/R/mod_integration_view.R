@@ -90,6 +90,16 @@ integration_view_server <- function(id,
       if (!gc %in% names(sec$meta_df)) return(list(ok = FALSE))
       lv <- unique(as.character(stats::na.omit(sec$meta_df[[gc]])))
       if (!all(c(ctrl, case) %in% lv)) return(list(ok = FALSE))
+      # The primary's model, and whether the second layer can carry it.
+      #
+      # Only the contrast used to be passed on, so a first layer adjusted
+      # for age was compared against a second that was not, and the
+      # concordance read as though the two had been analysed the same way.
+      # Inheriting is the default; the exception has to be chosen, and it
+      # stays visible afterwards.
+      wanted <- unique(c(params$covariates, params$paired_col))
+      wanted <- wanted[!vapply(wanted, is.null, logical(1))]
+      missing_cols <- setdiff(as.character(wanted), names(sec$meta_df))
       list(
         ok            = TRUE,
         primary_tag   = names(exps)[primary_idx[1L]],
@@ -98,7 +108,10 @@ integration_view_server <- function(id,
         secondary_source = sec_eff$source,
         group_col     = gc,
         control       = ctrl,
-        case          = case
+        case          = case,
+        covariates    = params$covariates,
+        paired_col    = params$paired_col,
+        missing_cols  = missing_cols
       )
     })
 
@@ -206,12 +219,30 @@ integration_view_server <- function(id,
       is_demo(TRUE)
     }, ignoreInit = TRUE)
 
+    # Set only by the user, and only for the model it was set against, so
+    # accepting an unadjusted second layer once does not silently persist
+    # into the next contrast.
+    accepted_unadjusted <- shiny::reactiveVal(NULL)
+
     do_run <- function() {
       info <- can_run()
       if (!isTRUE(info$ok)) {
         is_demo(TRUE)
         integration_bundle(NULL)
         integration_error(NULL)
+        return(invisible())
+      }
+      # The second layer has not got what the first was adjusted for. The
+      # honest options are to stop or to compare two different models
+      # knowingly -- not to run the second one unadjusted and describe the
+      # pair as though it matched.
+      if (length(info$missing_cols) > 0L &&
+          !identical(accepted_unadjusted(), info$missing_cols)) {
+        is_demo(TRUE)
+        integration_bundle(NULL)
+        integration_error(sprintf(
+          "The first layer's model adjusts for %s, and '%s' has no such column. Running it unadjusted would compare two different models. Accept below to do that deliberately, or drop the adjustment from the differential.",
+          paste(info$missing_cols, collapse = ", "), info$secondary_tag))
         return(invisible())
       }
       proj <- current_project()
@@ -235,7 +266,11 @@ integration_view_server <- function(id,
               analysis_type = "group",
               group_col     = info$group_col,
               control_group = info$control,
-              case_group    = info$case
+              case_group    = info$case,
+              # The same model as the first layer, unless the user chose
+              # otherwise above.
+              covariates    = if (length(info$missing_cols)) NULL else info$covariates,
+              paired_col    = if (length(info$missing_cols)) NULL else info$paired_col
             )
             diff_bundles <- stats::setNames(
               list(primary, sec_diff),
@@ -264,6 +299,15 @@ integration_view_server <- function(id,
               omicsCore::effective_input(current_project(), info$primary_tag)$version,
               omicsCore::effective_input(current_project(), info$secondary_tag)$version),
             upstream = primary$provenance_binding$analysis_id %||% character(0))
+          result$params$secondary_covariates <-
+            if (length(info$missing_cols)) NULL else info$covariates
+          result$params$secondary_paired_col <-
+            if (length(info$missing_cols)) NULL else info$paired_col
+          # Kept on the result, not just announced once: a reader of the
+          # report or the exported script has to be able to see that the
+          # two layers were modelled differently.
+          result$params$unadjusted_secondary <-
+            if (length(info$missing_cols)) info$missing_cols else NULL
           integration_error(NULL)
           is_demo(FALSE)
           integration_bundle(result)
@@ -322,18 +366,48 @@ integration_view_server <- function(id,
       )
     })
 
+    shiny::observeEvent(input$accept_unadjusted, {
+      accepted_unadjusted(can_run()$missing_cols)
+      do_run()
+    })
+
     output$notices <- shiny::renderUI({
       tagged <- htmltools::tagList()
+      info <- can_run()
+
+      # Stated wherever the result is, not once in a notification. Two
+      # layers modelled differently is a fact about the comparison, and a
+      # reader arriving later has to be able to see it.
+      b <- integration_bundle()
+      if (!is.null(b) && length(b$params$unadjusted_secondary) > 0L) {
+        tagged <- htmltools::tagAppendChild(tagged, notice(
+          title = "The two layers were modelled differently",
+          detail = sprintf(
+            "The first layer adjusts for %s; the second has no such column and was run unadjusted, at your request. The concordance below compares two different models.",
+            paste(b$params$unadjusted_secondary, collapse = ", ")),
+          kind = "warn"))
+      }
+
       err <- integration_error()
       if (!is.null(err)) {
         tagged <- htmltools::tagAppendChild(
           tagged,
-          notice(title  = "run_integration failed",
+          notice(title  = if (length(info$missing_cols) > 0L) {
+                   "The second layer cannot carry the first layer's model"
+                 } else {
+                   "run_integration failed"
+                 },
                  detail = err,
                  kind   = "warn")
         )
+        if (length(info$missing_cols) > 0L) {
+          tagged <- htmltools::tagAppendChild(tagged, htmltools::tags$div(
+            style = "margin-top:6px",
+            shiny::actionButton(session$ns("accept_unadjusted"),
+                                "Run the second layer unadjusted",
+                                class = "btn btn-sm btn-ghost")))
+        }
       }
-      info <- can_run()
       if (!isTRUE(info$ok)) {
         proj <- current_project()
         reason <- if (is.null(proj) || length(proj$experiments) < 2L) {

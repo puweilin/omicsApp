@@ -40,3 +40,29 @@ test_that("filter_enrich_results reads whichever p it is told to", {
   # And the stored table still holds everything, which is the point.
   expect_equal(nrow(df), 200L)
 })
+
+# --- the same requirement on both branches --------------------------------
+
+# ORA's threshold does two jobs -- which features go in, and how much of the
+# pathway table comes back -- and answering both with one number left the
+# stored bundle holding only what the display threshold admitted. GSEA takes
+# no feature threshold, so "do not pre-filter the input" was noticed and
+# "keep the whole output" was not: its table was still cut at the default
+# 0.05 on the way out.
+test_that("both enrichment types record how much of the table they hold", {
+  skip_if_not_installed("clusterProfiler")
+  skip_if_not_installed("msigdbr")
+  skip_if_not_installed("limma")
+  b <- realistic_diff_bundle()
+  for (type in c("ora", "gsea")) {
+    full <- suppressWarnings(run_enrichment(b, type = type, database = "hallmark",
+                                            output_p_cutoff = 1))
+    expect_equal(full$params$output_p_cutoff, 1)
+    bounded <- suppressWarnings(run_enrichment(b, type = type, database = "hallmark"))
+    # Defaulted, not absent: a reader has to be able to tell a bounded
+    # result from one that had nothing more to report.
+    expect_equal(bounded$params$output_p_cutoff, bounded$params$p_cutoff)
+    expect_gte(nrow(full$results$enrich_result_df),
+               nrow(bounded$results$enrich_result_df))
+  }
+})

@@ -340,3 +340,68 @@ test_that("run_diff edger group returns log2FC effect on raw counts", {
   expect_equal(unique(res$method), "edger")
   expect_equal(unique(res$effect_type), "log2FC")
 })
+
+# --- a setting the backend cannot honour ---------------------------------
+
+# Dropping it silently produced a result identical to the unadjusted fit,
+# with no warning and nothing in params to show the covariate had been
+# asked for. Refusing without still dropping the key breaks every ordinary
+# call: run_diff() always builds covariates = NULL and paired_col = NULL,
+# and the backends have no such formals. All four cases below are needed to
+# show both halves are in place.
+pba_input <- function() {
+  set.seed(5); p <- 20; n <- 10
+  e <- matrix(rnorm(p * n, 20, 1), p,
+              dimnames = list(paste0("g", seq_len(p)), paste0("s", seq_len(n))))
+  e[1:5, 6:10] <- e[1:5, 6:10] + 2
+  md <- data.frame(group = rep(c("A", "B"), each = 5),
+                   age = c(30, 35, 40, 45, 50, 31, 36, 41, 46, 51),
+                   subject = rep(paste0("p", 1:5), 2),
+                   row.names = colnames(e), stringsAsFactors = FALSE)
+  fd <- data.frame(feature_id = rownames(e), feature_symbol = rownames(e),
+                   row.names = rownames(e), stringsAsFactors = FALSE)
+  omics_input(e, md, fd, omics_type = "proteomics",
+              assay_type = "normalized_intensity")
+}
+
+pba_run <- function(method, ...) {
+  run_diff(pba_input(), method = method, analysis_type = "group",
+           group_col = "group", control_group = "A", case_group = "B", ...)
+}
+
+test_that("an ordinary call with the setting omitted still runs", {
+  expect_s3_class(pba_run("ttest"), "analysis_bundle")
+  expect_s3_class(pba_run("lm"), "analysis_bundle")
+})
+
+test_that("an explicit NULL is the same as omitting it", {
+  expect_s3_class(pba_run("ttest", covariates = NULL), "analysis_bundle")
+  expect_s3_class(pba_run("lm", paired_col = NULL), "analysis_bundle")
+  # And an empty selection from a multi-select control, which is what the
+  # interface sends when the user clears it.
+  expect_s3_class(pba_run("ttest", covariates = character(0)), "analysis_bundle")
+})
+
+test_that("an actual value is refused, with somewhere to go", {
+  expect_error(pba_run("ttest", covariates = "age"),
+               "does not support covariates")
+  expect_error(pba_run("ttest", covariates = "age"), "limma")
+  expect_error(pba_run("lm", paired_col = "subject"),
+               "does not support paired_col")
+})
+
+test_that("a backend that supports the setting applies it", {
+  skip_if_not_installed("limma")
+  # Not just recorded in params: the numbers have to differ from the
+  # unadjusted fit, or "supported" would mean nothing.
+  adj <- pba_run("limma", covariates = "age")
+  plain <- pba_run("limma")
+  expect_equal(adj$params$covariates, "age")
+  expect_false(isTRUE(all.equal(adj$results$diff_result_df$p_value,
+                                plain$results$diff_result_df$p_value)))
+
+  adj_lm <- pba_run("lm", covariates = "age")
+  expect_equal(adj_lm$params$covariates, "age")
+  expect_false(isTRUE(all.equal(adj_lm$results$diff_result_df$p_value,
+                                pba_run("lm")$results$diff_result_df$p_value)))
+})

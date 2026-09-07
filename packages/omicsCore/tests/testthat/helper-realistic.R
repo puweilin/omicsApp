@@ -117,8 +117,15 @@ realistic_input <- function(omics_type = c("proteomics", "rnaseq"),
     feature_symbol = symbols,
     stringsAsFactors = FALSE
   )
-  omics_input(mat, meta, feat, omics_type = omics_type,
-              assay_type = assay_type)
+  out <- omics_input(mat, meta, feat, omics_type = omics_type,
+                     assay_type = assay_type)
+  # These fixtures stand in for a file the user imported, so they carry the
+  # read step read_omics() would have recorded. Without it export_script()
+  # treats the layer as one whose processing is unknown -- correctly, but
+  # that is a different test.
+  record_step(out, "read_omics",
+              list(path = "raw/fixture.xlsx", type = "excel",
+                   omics_type = omics_type, assay_type = assay_type))
 }
 
 realistic_diff_bundle <- function(method = "limma", ...) {

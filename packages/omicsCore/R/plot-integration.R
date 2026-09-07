@@ -199,7 +199,17 @@ plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_c
 # feature sit in both?" -- concordant features fall on the diagonal, and
 # the off-diagonal quadrants are the ones worth reading.
 plot_integration_effect_pair <- function(df, bundle) {
-  df <- integration_fill_effects(df)
+  # No reconstruction. This used to derive the two axes from the stored
+  # difference, which is one number and two unknowns: it set the first axis
+  # to the difference itself and the second to zero, then labelled them as
+  # the two layers' effects. Nothing about the plot looked wrong.
+  #
+  # A result saved before the two effects were recorded therefore cannot be
+  # drawn, and says so. Re-running the integration produces it.
+  if (!all(c("effect_a", "effect_b") %in% names(df))) {
+    return(plot_integration_unavailable(
+      "This integration was saved before each layer's own effect was recorded, so the two axes cannot be recovered from it. Re-run the integration to plot the effect pair."))
+  }
   df$.quad <- if ("quadrant" %in% names(df)) {
     ifelse(is.na(df$quadrant), "n/a", df$quadrant)
   } else {
@@ -226,20 +236,21 @@ plot_integration_effect_pair <- function(df, bundle) {
     theme_omics_labelled()
 }
 
-# The concordance schema stores `effect = effect_a - effect_b` rather
-# than the two effects themselves. Recover them where the raw columns
-# survived, and leave NA otherwise so the plot drops those points rather
-# than inventing coordinates for them.
-integration_fill_effects <- function(df) {
-  if (all(c("effect_a", "effect_b") %in% names(df))) return(df)
-  df$effect_a <- df$raw_a %||% df$effect %||% NA_real_
-  df$effect_b <- df$raw_b %||% (df$effect_a - (df$effect %||% 0))
-  df
+# A panel that says why there is nothing to draw. An empty plot reads as a
+# failure; a wrong one reads as a result.
+plot_integration_unavailable <- function(message) {
+  ggplot2::ggplot() +
+    ggplot2::annotate("text", x = 0, y = 0, label = strwrap(message, 46),
+                      hjust = 0.5, vjust = 0.5, size = 3.4,
+                      color = omics_colors$ns) +
+    ggplot2::labs(title = "Integration: effect pair") +
+    ggplot2::theme_void() +
+    theme_omics_labelled()
 }
 
 integration_derive_quadrant <- function(df) {
   dir_a <- if ("direction_a" %in% names(df)) df$direction_a
-           else sign(df$effect_a %||% df$effect %||% 0)
+           else sign(df$effect_a %||% 0)
   dir_b <- if ("direction_b" %in% names(df)) df$direction_b
            else sign(df$effect_b %||% 0)
   to_label <- function(s) ifelse(s > 0, "up", ifelse(s < 0, "down", "ns"))

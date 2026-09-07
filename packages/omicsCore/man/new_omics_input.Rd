@@ -14,7 +14,8 @@ new_omics_input(
   normalized_mat = NULL,
   raw_object = NULL,
   source_fingerprint = NULL,
-  source_path = NULL
+  source_path = NULL,
+  provenance = NULL
 )
 }
 \arguments{
@@ -48,7 +49,15 @@ it to tell "the user picked the same file again" from "the data
 changed"; analyses computed on the previous data are only valid for
 the former. \code{NULL} for inputs built directly from matrices.}
 
-\item{source_path}{Optional path to the archived copy of that file.
+\item{source_path}{Optional path to the archived copy of that file.}
+
+\item{provenance}{Optional list of the steps that produced this layer, as
+built by \code{\link[=record_step]{record_step()}} — \code{read_omics()}, then any \code{normalize_omics()}
+and \code{run_qc()} applied to it, each with the arguments they resolved to.
+\code{\link[=export_script]{export_script()}} replays these. Reconstructing them from the finished
+layer instead is not equivalent: a normalized layer knows it is on a log
+scale and not that anything put it there, so the reconstruction dropped
+the transform and replayed the analysis on linear values.
 \code{\link[=export_script]{export_script()}} points its \code{read_omics()} line at it, which is
 what makes an exported script runnable rather than illustrative.}
 }

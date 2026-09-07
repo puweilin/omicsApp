@@ -525,3 +525,40 @@ callback_admissible <- function(token, ctx, pb, project,
   }
   list(ok = TRUE, reason = "", outcome = outcome)
 }
+
+# ---- how a layer came to be -------------------------------------------
+
+#' Append a step to a layer's provenance
+#'
+#' One entry per operation that changed the values, with the arguments as
+#' they resolved rather than as they were typed: `run_qc(impute_method =
+#' NULL)` on proteomics is `MinProb`, and a script that replayed the `NULL`
+#' would be replaying a different analysis on a different modality.
+#'
+#' The list is what `export_script()` writes out. Reconstructing it from the
+#' final state instead is what dropped the normalization: the layer knew it
+#' was on a log scale and not that anything had put it there, so the script
+#' re-read the raw file and told the analysis it was already normalized.
+#'
+#' @param input An `omics_input`.
+#' @param op Name of the function that was applied.
+#' @param args Its resolved arguments.
+#'
+#' @return The input, with the step appended.
+#' @keywords internal
+#' @export
+record_step <- function(input, op, args = list()) {
+  step <- list(op = op, args = args)
+  input$provenance <- c(input$provenance %||% list(), list(step))
+  input
+}
+
+#' The steps recorded on a layer
+#'
+#' @param input An `omics_input`.
+#' @return A list of `list(op, args)`, empty when nothing was recorded.
+#' @keywords internal
+#' @export
+provenance_steps <- function(input) {
+  input$provenance %||% list()
+}

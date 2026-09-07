@@ -23,10 +23,18 @@ fi_input <- function(fingerprint = NULL, source_path = NULL, n = 6L) {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", seq_len(n)),
                      feature_symbol = paste0("SYM", seq_len(n)))
-  omicsCore::omics_input(mat, meta, feat, omics_type = "proteomics",
-                         assay_type = "normalized_intensity",
-                         source_fingerprint = fingerprint,
-                         source_path = source_path)
+  out <- omicsCore::omics_input(mat, meta, feat, omics_type = "proteomics",
+                                assay_type = "normalized_intensity",
+                                source_fingerprint = fingerprint,
+                                source_path = source_path)
+  # The read step read_omics() would have recorded. Two different gaps
+  # exist and the script treats them differently: a layer with no recorded
+  # processing refuses to replay, while one that was read from a file the
+  # app did not keep still replays -- with the path left to fill in.
+  omicsCore::record_step(out, "read_omics",
+                         list(path = source_path, type = "excel",
+                              omics_type = "proteomics",
+                              assay_type = "normalized_intensity"))
 }
 
 fi_project <- function(input, bundles = list()) {

@@ -65,7 +65,9 @@ read_omics <- function(
   if (type == "auto") {
     type <- detect_file_type(path)
   }
-  switch(type,
+  # Recorded on the way out, once, for whichever reader ran: the arguments
+  # a script would need to reproduce this read.
+  out <- switch(type,
     excel = read_omics_excel(path, omics_type = omics_type,
                              assay_type = assay_type,
                              sheet_roles = sheet_roles, ...),
@@ -94,6 +96,15 @@ read_omics <- function(
     },
     stop("Unsupported type: ", type)
   )
+  if (!is.null(out$input)) {
+    out$input <- record_step(out$input, "read_omics", list(
+      path = path, type = type,
+      omics_type = out$input$omics_type,
+      assay_type = out$input$assay_type,
+      sheet_roles = sheet_roles
+    ))
+  }
+  out
 }
 
 # Roles the caller may assign, checked before any file is opened so a typo

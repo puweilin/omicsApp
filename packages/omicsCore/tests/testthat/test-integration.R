@@ -250,3 +250,106 @@ test_that("plot_integration rejects view/method mismatches", {
   expect_error(plot_integration(b, view = "quadrant"), "concordance")
   expect_error(plot_integration(b, view = "dotplot"), "active_pathways")
 })
+
+# --- each layer's own effect ---------------------------------------------
+
+# The concordance table used to hold only `effect = effect_a - effect_b`.
+# The plotting helper then recovered the two axes from it -- one number,
+# two unknowns -- by setting the first to the difference and the second to
+# zero, and labelling them as the two layers' effects. The plot looked
+# ordinary and every point was wrong.
+#
+# Matching by the join key rather than by row position matters here: the
+# default key is feature_symbol, the two layers carry different feature_ids
+# and need not be in the same order, so an index taken from one layer says
+# nothing about the other.
+ipe_input <- function(seed, symbols, shift) {
+  set.seed(seed)
+  n <- length(symbols); s <- 8
+  e <- matrix(rnorm(n * s, 10, 1), nrow = n,
+              dimnames = list(paste0("f", seed, "_", seq_len(n)),
+                              paste0("s", seq_len(s))))
+  e[, 5:8] <- e[, 5:8] + shift
+  md <- data.frame(group = rep(c("A", "B"), each = 4), row.names = colnames(e))
+  fd <- data.frame(feature_id = rownames(e), feature_symbol = symbols,
+                   row.names = rownames(e), stringsAsFactors = FALSE)
+  omics_input(e, md, fd, omics_type = "proteomics",
+              assay_type = "normalized_intensity")
+}
+
+ipe_setup <- function(p_preference = "adjusted") {
+  syms <- paste0("SYM", 1:12)
+  a <- ipe_input(1, syms, shift = 2)
+  # Reversed, so a row index from one layer lands on the wrong feature of
+  # the other if anything matches by position.
+  b <- ipe_input(2, rev(syms), shift = -1)
+  da <- run_diff(a, method = "limma", analysis_type = "group",
+                 group_col = "group", control_group = "A", case_group = "B")
+  db <- run_diff(b, method = "limma", analysis_type = "group",
+                 group_col = "group", control_group = "A", case_group = "B")
+  proj <- omics_project("pair", list(a = a, b = b))
+  ib <- run_integration(project = proj, method = "concordance",
+                        experiments = c("a", "b"),
+                        diff_bundles = list(a = da, b = db),
+                        p_preference = p_preference)
+  list(da = da, db = db, ib = ib, project = proj)
+}
+
+test_that("concordance keeps each layer's own effect and p", {
+  skip_if_not_installed("limma")
+  s <- ipe_setup()
+  df <- s$ib$results$integration_df
+  expect_true(all(c("effect_a", "effect_b", "p_a", "p_b") %in% names(df)))
+
+  ra <- s$da$results$diff_result_df
+  rb <- s$db$results$diff_result_df
+  ia <- match(df$feature_symbol, ra$feature_symbol)
+  ib_ <- match(df$feature_symbol, rb$feature_symbol)
+  expect_false(anyNA(ia)); expect_false(anyNA(ib_))
+
+  expect_equal(df$effect_a, ra$effect[ia], tolerance = 1e-12)
+  expect_equal(df$effect_b, rb$effect[ib_], tolerance = 1e-12)
+  # And the stored difference is still what it claims to be.
+  expect_equal(df$effect, df$effect_a - df$effect_b, tolerance = 1e-12)
+  # Not the shape the reconstruction produced.
+  expect_gt(sum(df$effect_b != 0), 0L)
+  expect_false(isTRUE(all.equal(df$effect_a, df$effect)))
+})
+
+test_that("the effect-pair plot draws those columns", {
+  skip_if_not_installed("limma")
+  s <- ipe_setup()
+  p <- plot_integration(s$ib, view = "effect_pair")
+  expect_s3_class(p, "ggplot")
+  df <- s$ib$results$integration_df
+  expect_equal(p$data$effect_a, df$effect_a, tolerance = 1e-12)
+  expect_equal(p$data$effect_b, df$effect_b, tolerance = 1e-12)
+})
+
+test_that("a result saved without them says so instead of drawing zeros", {
+  skip_if_not_installed("limma")
+  s <- ipe_setup()
+  old <- s$ib
+  old$results$integration_df$effect_a <- NULL
+  old$results$integration_df$effect_b <- NULL
+  p <- plot_integration(old, view = "effect_pair")
+  expect_s3_class(p, "ggplot")
+  # Nothing plotted from invented coordinates.
+  expect_null(p$data$effect_b)
+  expect_match(paste(unlist(p$layers[[1]]$aes_params), collapse = " "),
+               "cannot be recovered|Re-run")
+})
+
+test_that("the two sides record which p and which effect kind they are", {
+  skip_if_not_installed("limma")
+  s <- ipe_setup()
+  df <- s$ib$results$integration_df
+  # `p_preference` decides whether p_a/p_b are raw or adjusted, and the
+  # column names cannot say which.
+  expect_equal(unique(df$p_type), "adjusted")
+  expect_equal(unique(df$effect_type_a), "log2FC")
+  expect_equal(unique(df$effect_type_b), "log2FC")
+
+  raw <- ipe_setup(p_preference = "raw")
+  expect_equal(unique(raw$ib$results$integration_df$p_type), "raw")
+})

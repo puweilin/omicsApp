@@ -59,7 +59,14 @@ subset_omics_samples <- function(omics_input, sample_ids) {
     normalized_mat = normalized_mat,
     meta_df = meta_df,
     feature_df = omics_input$feature_df,
-    raw_object = omics_input$raw_object
+    raw_object = omics_input$raw_object,
+    # Carried, not rebuilt away. Subsetting is how run_qc() produces its
+    # cleaned layer, and losing these here meant the cleaned layer no
+    # longer knew which file it came from or what had been done to it --
+    # so the exported script pointed at a placeholder path.
+    source_fingerprint = omics_input$source_fingerprint,
+    source_path = omics_input$source_path,
+    provenance = omics_input$provenance
   )
 }
 
@@ -100,7 +107,10 @@ subset_omics_features <- function(omics_input, feature_ids) {
     normalized_mat = normalized_mat,
     meta_df = omics_input$meta_df,
     feature_df = feature_df,
-    raw_object = omics_input$raw_object
+    raw_object = omics_input$raw_object,
+    source_fingerprint = omics_input$source_fingerprint,
+    source_path = omics_input$source_path,
+    provenance = omics_input$provenance
   )
 }
 

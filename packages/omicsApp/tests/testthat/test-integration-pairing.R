@@ -84,3 +84,85 @@ test_that("one layer is not a pairing problem, it is a missing layer", {
     expect_match(note_text(output$pairing_note), "second layer")
   })
 })
+
+# --- the second layer's model ---------------------------------------------
+
+# Only the contrast used to be carried over, so a first layer adjusted for
+# age was compared against a second that was not, and the concordance read
+# as though both had been analysed the same way. Fixing prune_backend_args()
+# does not touch this: the second differential is launched here, and it was
+# never asked to inherit anything.
+sm_layer <- function(seed, omics = "proteomics", with_age = TRUE) {
+  set.seed(seed); p <- 20; n <- 10
+  e <- matrix(rnorm(p * n, 10, 1), p,
+              dimnames = list(paste0("SYM", seq_len(p)), paste0("s", seq_len(n))))
+  e[1:5, 6:10] <- e[1:5, 6:10] + 2
+  md <- data.frame(group = rep(c("A", "B"), each = 5),
+                   row.names = colnames(e), stringsAsFactors = FALSE)
+  if (with_age) md$age <- c(30, 35, 40, 45, 50, 31, 36, 41, 46, 51)
+  fd <- data.frame(feature_id = rownames(e), feature_symbol = rownames(e),
+                   row.names = rownames(e), stringsAsFactors = FALSE)
+  omicsCore::omics_input(e, md, fd, omics_type = omics,
+                         assay_type = if (omics == "rnaseq") "logcpm"
+                                      else "normalized_intensity")
+}
+
+sm_setup <- function(secondary_has_age = TRUE) {
+  a <- sm_layer(1)
+  b <- sm_layer(2, "rnaseq", with_age = secondary_has_age)
+  proj <- omicsCore::omics_project("pair", list(prot = a, rna = b))
+  primary <- omicsCore::run_diff(a, method = "limma", analysis_type = "group",
+                                 group_col = "group", control_group = "A",
+                                 case_group = "B", covariates = "age")
+  list(proj = shiny::reactiveVal(proj), db = shiny::reactiveVal(primary))
+}
+
+test_that("the second layer inherits the first layer's covariates", {
+  skip_if_not_installed("limma")
+  s <- sm_setup(secondary_has_age = TRUE)
+  shiny::testServer(integration_view_server,
+                    args = list(current_project = s$proj, diff_bundle = s$db), {
+    session$flushReact()
+    info <- can_run()
+    expect_true(isTRUE(info$ok))
+    expect_equal(info$covariates, "age")
+    expect_length(info$missing_cols, 0L)
+  })
+})
+
+test_that("a second layer that cannot carry the model stops rather than differing", {
+  skip_if_not_installed("limma")
+  s <- sm_setup(secondary_has_age = FALSE)
+  shiny::testServer(integration_view_server,
+                    args = list(current_project = s$proj, diff_bundle = s$db), {
+    session$flushReact()
+    expect_equal(can_run()$missing_cols, "age")
+    session$setInputs(rerun = 1)
+    session$flushReact()
+    # Nothing was produced, and the reason names the column.
+    expect_null(session$getReturned()())
+    expect_match(integration_error(), "age")
+    expect_match(integration_error(), "two different models")
+  })
+})
+
+test_that("running unadjusted is a choice, and it stays on the result", {
+  skip_if_not_installed("limma")
+  s <- sm_setup(secondary_has_age = FALSE)
+  shiny::testServer(integration_view_server,
+                    args = list(current_project = s$proj, diff_bundle = s$db), {
+    session$flushReact()
+    session$setInputs(rerun = 1)
+    session$flushReact()
+    expect_null(session$getReturned()())
+
+    session$setInputs(accept_unadjusted = 1)
+    session$flushReact()
+    b <- session$getReturned()()
+    skip_if(is.null(b), "integration did not run in this environment")
+    # Announced once is not enough: a reader of the report or the exported
+    # script has to see that the two layers were modelled differently.
+    expect_equal(b$params$unadjusted_secondary, "age")
+    expect_null(b$params$secondary_covariates)
+  })
+})

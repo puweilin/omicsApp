@@ -208,8 +208,30 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     })
 
+    # Which backend will actually run, so the controls can describe it. The
+    # dropdown may say "auto", and auto resolves to something specific.
+    resolved_method <- shiny::reactive({
+      a <- active()
+      m <- input$method %||% "auto"
+      if (!identical(m, "auto") || is.null(a$input)) return(m)
+      # applicable_diff_methods() puts auto first; the one after it is what
+      # auto would pick for this layer.
+      setdiff(omicsCore::applicable_diff_methods(a$input), "auto")[[1L]] %||% m
+    })
+
     output$ui_covariates <- shiny::renderUI({
       a <- active()
+      # A control that is enabled and ignored is worse than one that is
+      # absent: a t-test silently dropped whatever was selected here and
+      # returned the unadjusted fit. run_diff() now refuses that outright,
+      # so offering the control would only produce an error the user could
+      # not have predicted from the interface.
+      if (identical(resolved_method(), "ttest")) {
+        return(htmltools::tags$div(
+          class = "muted", style = "font-size:12px",
+          "A t-test fits no covariates. Switch to limma or lm to adjust for one."
+        ))
+      }
       meta <- a$input$meta_df
       gc <- input$group_col %||% ""
       cands <- setdiff(names(meta), c(gc, "sample_id"))
@@ -254,6 +276,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       control    <- input$control   %||% d$control
       case       <- input$case      %||% d$case
       covariates <- input$covariates
+      # Shiny keeps an input's value when its control stops being rendered,
+      # so switching to a t-test after selecting a covariate still sends
+      # one. The control is hidden above; this is what makes it not apply.
+      if (identical(method, "ttest") ||
+          (identical(method, "auto") && identical(resolved_method(), "ttest"))) {
+        covariates <- NULL
+      }
       if (is.null(group_col) || is.null(control) || is.null(case) ||
           identical(control, case)) {
         diff_error("Pick a group column with distinct Control and Case levels.")

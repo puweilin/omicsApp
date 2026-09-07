@@ -38,6 +38,13 @@ fixture_project <- function(source_path = NULL) {
   feat <- data.frame(feature_id = paste0("g", 1:6))
   inp <- omics_input(mat, meta, feat, omics_type = "proteomics",
                      assay_type = "normalized_intensity", source_path = source_path)
+  # Stands in for read_omics(), which is what records this. Without it the
+  # layer is one whose processing is unknown, and the script now stops
+  # rather than emitting an import that may not be what happened.
+  inp <- record_step(inp, "read_omics",
+                     list(path = source_path %||% "unknown.xlsx", type = "excel",
+                          omics_type = "proteomics",
+                          assay_type = "normalized_intensity"))
   proj <- omics_project("fixture", experiments = list(proteomics = inp))
   proj$bundles <- list()
   proj
@@ -274,4 +281,28 @@ test_that("an exported script reproduces the analysis it describes", {
   expect_equal(reproduced$p_value, expected$p_value, tolerance = 1e-12)
   expect_equal(reproduced$adj_p_value, expected$adj_p_value,
                tolerance = 1e-12)
+})
+
+
+# --- a layer whose processing was never recorded ---------------------------
+
+test_that("an unrecorded layer stops the script instead of guessing", {
+  # Emitting the import alone reads as a complete script and produces
+  # different numbers whenever a step is missing -- a dropped normalization
+  # changes every effect. So it refuses, in the script itself, where
+  # somebody running it will see it.
+  proj <- fixture_project("raw/x.xlsx")
+  proj$experiments$proteomics$provenance <- NULL
+  lines <- export_script(proj)
+  txt <- paste(lines, collapse = "\n")
+  expect_match(txt, "no recorded processing", fixed = TRUE)
+  expect_match(txt, "stop(", fixed = TRUE)
+  expect_no_error(parse(text = txt))
+})
+
+test_that("a layer tag is never pasted into the refusal as source", {
+  proj <- fixture_project("raw/x.xlsx")
+  names(proj$experiments) <- 'he said "hi"'
+  proj$experiments[[1]]$provenance <- NULL
+  expect_no_error(parse(text = paste(export_script(proj), collapse = "\n")))
 })

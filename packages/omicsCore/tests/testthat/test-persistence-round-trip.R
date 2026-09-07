@@ -11,8 +11,15 @@ rt_input <- function(assay_type = "normalized_intensity", ...) {
                      row.names = paste0("s", 1:4))
   feat <- data.frame(feature_id = paste0("g", 1:6),
                      feature_symbol = paste0("SYM", 1:6))
-  omics_input(mat, meta, feat, omics_type = "proteomics",
-              assay_type = assay_type, ...)
+  out <- omics_input(mat, meta, feat, omics_type = "proteomics",
+                     assay_type = assay_type, ...)
+  # As read_omics() would have recorded it: these fixtures stand in for an
+  # imported file, and a layer with nothing recorded is a different case
+  # (covered in test-export-script.R).
+  record_step(out, "read_omics",
+              list(path = out$source_path %||% "raw/fixture.xlsx",
+                   type = "excel", omics_type = "proteomics",
+                   assay_type = assay_type))
 }
 
 save_and_load <- function(project) {

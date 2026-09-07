@@ -160,3 +160,53 @@ test_that("ORA mode still reports the selection", {
   expect_true(grepl("120 of 3000 features", html, fixed = TRUE))
   expect_false(grepl("ranked", html, fixed = TRUE))
 })
+
+# --- what the run actually asks for ---------------------------------------
+
+# The threshold tests above hand the module a synthetic result table, which
+# is the right way to test the display rules and the wrong way to find out
+# what the run requested. The stored bundle was being cut at the display
+# threshold during computation, so switching the table to raw p had nothing
+# left to switch to -- and no test that injected its own table could see it.
+#
+# So this one inspects the call. Running MSigDB enrichment for real belongs
+# in omicsCore, where test-output-p-cutoff.R does it; what the view owes is
+# the right arguments.
+test_that("both enrichment types are asked for the whole pathway table", {
+  asked <- list()
+  testthat::local_mocked_bindings(
+    run_enrichment = function(diff_bundle, type, ...) {
+      dots <- list(...)
+      asked[[type]] <<- dots
+      omicsCore::new_analysis_bundle(
+        "run_enrichment",
+        params = c(list(type = type), dots),
+        results = list(enrich_result_df = data.frame(
+          database = "hallmark", result_type = type, comparison = "c",
+          pathway_id = "P1", pathway_name = "P1", direction = "up",
+          n_genes = 3L, gene_ratio = 0.1, p_value = 0.01,
+          adj_p_value = 0.2, enrichment_score = 1, genes = "A/B/C",
+          source_label = "x", stringsAsFactors = FALSE)))
+    },
+    .package = "omicsCore"
+  )
+
+  db <- shiny::reactiveVal(split_bundle())
+  shiny::testServer(enrich_view_server, args = list(diff_bundle = db), {
+    for (type in c("ora", "gsea")) {
+      session$setInputs(type = type, database = "hallmark", rerun = 1)
+      session$flushReact()
+    }
+  })
+
+  # ORA needs both numbers, and they are different questions: which
+  # features go in, and how much of the table comes back.
+  expect_equal(asked$ora$output_p_cutoff, 1)
+  expect_false(is.null(asked$ora$p_cutoff))
+
+  # GSEA reads the whole ranked list, so it takes no feature threshold --
+  # but it needs the output bound just as much, and that was the half
+  # that got missed.
+  expect_equal(asked$gsea$output_p_cutoff, 1)
+  expect_null(asked$gsea$p_cutoff)
+})

@@ -499,16 +499,46 @@ validate_diff_args <- function(analysis_type, method, args) {
   invisible(TRUE)
 }
 
-# Strip args the backend's signature doesn't accept. This keeps the public
-# entry point uniform (callers can always pass `covariates`/`paired_col`)
-# while keeping each backend's `...` honest.
-prune_backend_args <- function(method, analysis_type, args) {
-  drop <- character(0)
-  if (method == "ttest") {
-    drop <- c(drop, "covariates")
+# Settings a backend has no way to honour, by method and analysis type. The
+# public entry point is uniform -- every caller may pass `covariates` and
+# `paired_col` -- so the two things that follow both have to happen.
+backend_unsupported_args <- function(method, analysis_type) {
+  switch(method,
+    ttest = "covariates",
+    lm    = "paired_col",
+    character(0)
+  )
+}
+
+# Suggest something the user can actually do, rather than only refusing.
+suggest_alternative_backend <- function(method, hit) {
+  if (identical(method, "ttest") && "covariates" %in% hit) {
+    return("Use method = 'limma' or 'lm', which fit covariates.")
   }
-  if (method == "lm") {
-    drop <- c(drop, "paired_col")
+  if (identical(method, "lm") && "paired_col" %in% hit) {
+    return("Use method = 'limma', which handles a pairing via duplicateCorrelation.")
+  }
+  "Remove the setting, or choose a backend that supports it."
+}
+
+# Refuse a setting the backend cannot honour, then drop the keys its
+# signature does not have.
+#
+# Both, not one. Dropping alone -- what this used to do -- meant a user could
+# select covariates in the interface, watch a t-test run, and get a result
+# with no trace of the adjustment anywhere: identical to the unadjusted fit,
+# no warning, and `params$covariates` empty. Refusing alone breaks every
+# ordinary call, because run_diff() always builds `covariates = NULL` and
+# `paired_col = NULL` and the backends have no such formals.
+prune_backend_args <- function(method, analysis_type, args) {
+  drop <- backend_unsupported_args(method, analysis_type)
+  supplied <- names(args)[!vapply(args, is.null, logical(1))]
+  hit <- intersect(drop, supplied)
+  if (length(hit) > 0L) {
+    stop(sprintf(
+      "method = '%s' with analysis_type = '%s' does not support %s. %s",
+      method, analysis_type, paste(hit, collapse = ", "),
+      suggest_alternative_backend(method, hit)), call. = FALSE)
   }
   args[setdiff(names(args), drop)]
 }

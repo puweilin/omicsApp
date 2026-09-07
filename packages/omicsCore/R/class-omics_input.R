@@ -31,6 +31,13 @@
 #'   changed"; analyses computed on the previous data are only valid for
 #'   the former. `NULL` for inputs built directly from matrices.
 #' @param source_path Optional path to the archived copy of that file.
+#' @param provenance Optional list of the steps that produced this layer, as
+#'   built by [record_step()] — `read_omics()`, then any `normalize_omics()`
+#'   and `run_qc()` applied to it, each with the arguments they resolved to.
+#'   [export_script()] replays these. Reconstructing them from the finished
+#'   layer instead is not equivalent: a normalized layer knows it is on a log
+#'   scale and not that anything put it there, so the reconstruction dropped
+#'   the transform and replayed the analysis on linear values.
 #'   [export_script()] points its `read_omics()` line at it, which is
 #'   what makes an exported script runnable rather than illustrative.
 #'
@@ -57,7 +64,8 @@ omics_input <- function(
   normalized_mat = NULL,
   raw_object = NULL,
   source_fingerprint = NULL,
-  source_path = NULL
+  source_path = NULL,
+  provenance = NULL
 ) {
   assay_type <- canonical_assay_type(assay_type)
 
@@ -71,7 +79,8 @@ omics_input <- function(
     normalized_mat = normalized_mat,
     raw_object = raw_object,
     source_fingerprint = source_fingerprint,
-    source_path = source_path
+    source_path = source_path,
+    provenance = provenance
   )
   validate_omics_input(x)
   # Once, at construction -- see check_assay_scale() for why not in validate
@@ -99,7 +108,8 @@ new_omics_input <- function(
   normalized_mat = NULL,
   raw_object = NULL,
   source_fingerprint = NULL,
-  source_path = NULL
+  source_path = NULL,
+  provenance = NULL
 ) {
   if (!is.matrix(expr_mat) && !is.data.frame(expr_mat)) {
     stop("`expr_mat` must be a matrix or data.frame.")
@@ -124,7 +134,13 @@ new_omics_input <- function(
       feature_df = feature_df,
       raw_object = raw_object,
       source_fingerprint = source_fingerprint,
-      source_path = source_path
+      source_path = source_path,
+      # How this layer came to be: read_omics, then any normalize_omics and
+      # run_qc applied to it, each with the arguments they resolved to.
+      # export_script() replays these rather than reconstructing them from
+      # the final state -- reconstruction is what silently dropped the
+      # normalization step and replayed the analysis on linear intensities.
+      provenance = provenance
     ),
     class = "omics_input"
   )

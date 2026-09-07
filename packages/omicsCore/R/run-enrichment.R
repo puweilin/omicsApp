@@ -157,6 +157,11 @@ run_enrichment <- function(
       organism = organism,
       direction = direction,
       p_cutoff = p_cutoff,
+      # How much of the pathway table this bundle holds. Without it a
+      # reader -- the report, the export, a later threshold control --
+      # cannot tell a result that was bounded on the way out from one that
+      # simply had nothing more to report, and the two look identical.
+      output_p_cutoff = output_p_cutoff %||% p_cutoff,
       p_preference = p_preference,
       effect_cutoff = effect_cutoff,
       p_adjust_method = p_adjust_method,

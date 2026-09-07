@@ -73,6 +73,97 @@ render_value <- function(x) {
 #' @return A list with `lines` and `notes`.
 #' @keywords internal
 #' @noRd
+# Emit one layer as the sequence of calls that produced it.
+#
+# Replayed from what was recorded, not reconstructed from the final state.
+# Reconstruction is why the script used to be wrong rather than incomplete:
+# a normalized layer knows it is on a log scale and not that anything put it
+# there, so the emitted `read_omics(assay_type = "normalized_intensity")`
+# re-read the raw file and told the analysis it had already been
+# transformed. Everything downstream then ran on linear intensities.
+#
+# Each step has its own shape. read_omics() returns the input beside its
+# import report; run_qc() returns a bundle whose cleaned layer is the input.
+# Chaining them as if they all returned the same thing produced a script
+# that read correctly and failed on the first analysis.
+render_layer_steps <- function(eff, tag, var) {
+  steps <- provenance_steps(eff$input)
+  if (length(steps) == 0L) {
+    # Nothing was recorded, so what happened between the file and this
+    # layer is unknown. Emitting the import alone would look like a
+    # complete script and produce different numbers -- a known missing
+    # normalization changes every effect -- so this stops instead.
+    return(list(
+      lines = c(
+        sprintf("# Layer %s was imported before its processing was recorded.",
+                comment_text(tag)),
+        "# What happened between the file and this layer is not known, so it",
+        "# cannot be replayed. Re-import the layer to record it.",
+        # render_value(), not sprintf(): a layer tag comes from the uploaded
+        # data, and pasting it into a string literal breaks the script the
+        # moment it contains a quote.
+        sprintf('stop("This script cannot be replayed: layer ", %s, " has no recorded processing. Re-import it and export again.")',
+                render_value(tag))),
+      notes = sprintf(
+        "layer '%s' predates provenance recording; the script stops rather than replaying an import that may differ.",
+        tag)))
+  }
+
+  lines <- character(0)
+  notes <- character(0)
+  for (i in seq_along(steps)) {
+    step <- steps[[i]]
+    args <- step$args
+    if (identical(step$op, "read_omics")) {
+      src <- args$path %||% NA_character_
+      archived <- eff$input$source_path %||% NA_character_
+      if (!is.na(archived)) {
+        src <- file.path("raw", basename(archived))
+      } else if (!is.na(src)) {
+        notes <- c(notes, sprintf(
+          "the file behind '%s' was not archived; the path below is where it was read from, which may not exist here.",
+          tag))
+      } else {
+        notes <- c(notes, sprintf(
+          "the file behind '%s' was not archived; fill in the path below.", tag))
+        src <- sprintf("<path-to-%s-file>", tag)
+      }
+      call <- render_call(
+        "read_omics", render_value(src),
+        params = args[setdiff(names(args), "path")],
+        arg_names = script_arg_names(read_omics),
+        assign_to = var)
+      call$lines[length(call$lines)] <- paste0(call$lines[length(call$lines)], "$input")
+      lines <- c(lines,
+                 "# read_omics() returns the parsed input and its import report.",
+                 call$lines)
+    } else if (identical(step$op, "normalize_omics")) {
+      call <- render_call("normalize_omics", var, params = args,
+                          arg_names = script_arg_names(normalize_omics),
+                          assign_to = var)
+      lines <- c(lines, call$lines)
+    } else if (identical(step$op, "run_qc")) {
+      call <- render_call("run_qc", var, params = args,
+                          arg_names = c(script_arg_names(run_qc),
+                                        setdiff(names(args), script_arg_names(run_qc))),
+                          assign_to = var)
+      # run_qc() returns a bundle; the layer the analyses used is inside it.
+      call$lines[length(call$lines)] <-
+        paste0(call$lines[length(call$lines)], "$results$cleaned_input")
+      lines <- c(lines,
+                 "# run_qc() returns a bundle; the cleaned layer is what the",
+                 "# analyses below were run on.",
+                 call$lines)
+    } else {
+      notes <- c(notes, sprintf("step '%s' on layer '%s' has no script form.",
+                                step$op, tag))
+      next
+    }
+    notes <- c(notes, call$notes)
+  }
+  list(lines = lines, notes = notes)
+}
+
 render_call <- function(fn_name, first, params, arg_names, assign_to = NULL) {
   notes <- character(0)
   keep <- list()
@@ -221,34 +312,14 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     lines <- c(lines, section("Input"))
     input_vars <- script_input_vars(names(experiments))
     for (tag in names(experiments)) {
-      exp <- experiments[[tag]]
-      var <- input_vars[[tag]]
-      src <- exp$source_path %||% NA_character_
-      if (is.na(src)) {
-        notes <- c(notes, sprintf(
-          "the file behind '%s' was not archived; fill in the path below.",
-          tag))
-        src <- sprintf("<path-to-%s-file>", tag)
-      } else {
-        src <- file.path("raw", basename(src))
-      }
-      call <- render_call(
-        "read_omics", render_value(src),
-        params = list(omics_type = exp$omics_type,
-                      assay_type = exp$assay_type),
-        arg_names = script_arg_names(read_omics),
-        assign_to = var
-      )
-      # `read_omics()` hands back the parsed input alongside its import
-      # report, so the analysis functions want the `$input` element.
-      # Emitting the bare call produced a script that read correctly and
-      # then failed on the first `run_*()`.
-      last <- length(call$lines)
-      call$lines[last] <- paste0(call$lines[last], "$input")
-      lines <- c(lines,
-                 "# read_omics() returns the parsed input and its import report.",
-                 call$lines)
-      notes <- c(notes, call$notes)
+      # The layer as the analyses saw it, so a QC step the user applied is
+      # in the provenance being replayed. Reading `experiments[[tag]]` here
+      # would emit the import and stop, which is how the script came to
+      # rebuild an unnormalized layer and label it normalized.
+      eff <- effective_input(project, tag)
+      rendered <- render_layer_steps(eff, tag, input_vars[[tag]])
+      lines <- c(lines, rendered$lines)
+      notes <- c(notes, rendered$notes)
     }
   }
 

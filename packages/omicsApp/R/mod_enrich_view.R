@@ -103,16 +103,29 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                 type          = type,
                 database      = db_arg,
                 direction     = dir_,
+                # Which features go in.
                 p_cutoff      = thr$p_cutoff,
                 p_preference  = thr$p_preference,
-                effect_cutoff = thr$effect_cutoff
+                effect_cutoff = thr$effect_cutoff,
+                # How much of the pathway table comes back. A separate
+                # question, and answering both with one number meant the
+                # stored result held only what the display threshold
+                # admitted -- so switching the table to raw p had nothing
+                # left to switch to.
+                output_p_cutoff = 1
               )
             } else {
               omicsCore::run_enrichment(
                 diff_bundle = bundle,
                 type        = type,
                 database    = db_arg,
-                direction   = dir_
+                direction   = dir_,
+                # GSEA reads the whole ranked list, so it takes no feature
+                # threshold -- but its pathway table was still being cut at
+                # the default 0.05 on the way out. Not pre-filtering the
+                # input and keeping the full output are two requirements,
+                # and only the first had been noticed.
+                output_p_cutoff = 1
               )
             }
           },

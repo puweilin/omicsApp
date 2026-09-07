@@ -143,6 +143,23 @@ run_qc <- function(
     cleaned$expr_mat <- impute_matrix(cleaned$expr_mat, method = impute_method, ...)
   }
 
+  # The arguments as they resolved, not as they were typed: impute_method
+  # and outlier_method are NULL by default and are chosen per modality
+  # above, so a script replaying the NULLs on a different layer would run a
+  # different analysis. `dots` are the extra arguments impute_matrix() takes
+  # -- MinProb's q, knn's k, man's shift and scale -- which changed the
+  # values and were recorded nowhere, so the same params gave a different
+  # answer on replay.
+  resolved_args <- c(
+    list(missing_threshold = missing_threshold,
+         sample_missing_threshold = sample_missing_threshold,
+         impute_method = impute_method,
+         outlier_method = outlier_method,
+         outlier_sd_threshold = outlier_sd_threshold),
+    list(...)
+  )
+  cleaned <- record_step(cleaned, "run_qc", resolved_args)
+
   bundle <- new_analysis_bundle(
     analysis_name = "run_qc",
     input_info = list(
@@ -153,13 +170,10 @@ run_qc <- function(
       n_samples_out = ncol(cleaned$expr_mat),
       n_features_out = nrow(cleaned$expr_mat)
     ),
-    params = list(
-      missing_threshold = missing_threshold,
-      sample_missing_threshold = sample_missing_threshold,
-      impute_method = impute_method,
-      outlier_method = outlier_method,
-      outlier_sd_threshold = outlier_sd_threshold
-    ),
+    # Derived from the step above rather than written out again, so the
+    # bundle's parameters and the layer's provenance cannot disagree about
+    # what was run.
+    params = resolved_args,
     results = list(
       qc_summary = list(
         missingness = missingness,
