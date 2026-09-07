@@ -251,6 +251,19 @@ integration_view_server <- function(id,
           info = info, sec_method = sec_method, primary = primary, proj = proj
         ),
         on_success = function(result) {
+          # Both layers, named. A binding that recorded only the primary
+          # would leave a concordance looking current after the second
+          # layer had been replaced underneath it.
+          # Both layers, named. A binding recording only the primary would
+          # leave a concordance looking current after the second layer had
+          # been replaced underneath it.
+          result <- bind_result(
+            result, current_project(), "integration",
+            tags = c(info$primary_tag, info$secondary_tag),
+            versions = c(
+              omicsCore::effective_input(current_project(), info$primary_tag)$version,
+              omicsCore::effective_input(current_project(), info$secondary_tag)$version),
+            upstream = primary$provenance_binding$analysis_id %||% character(0))
           integration_error(NULL)
           is_demo(FALSE)
           integration_bundle(result)

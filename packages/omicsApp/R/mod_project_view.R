@@ -35,7 +35,8 @@ project_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
-                                on_view_layer = function(tag) NULL) {
+                                on_view_layer = function(tag) NULL,
+                                on_activate = function() NULL) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Render against the live project when present, otherwise the
@@ -329,7 +330,13 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       res <- store_load_project(input$saved_pick %||% NA_character_)
       shiny::showNotification(res$message,
                               type = if (isTRUE(res$ok)) "message" else "error")
-      if (isTRUE(res$ok)) current_project(res$project)
+      if (isTRUE(res$ok)) {
+        # Before the assignment: the views have to let go in the same flush
+        # that hands them the new project, or the write-back observer puts
+        # what they hold into the project that has just been opened.
+        on_activate()
+        current_project(res$project)
+      }
     })
 
     shiny::observeEvent(input$delete_project, {
@@ -345,6 +352,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         shiny::showNotification("No readable autosave found.", type = "error")
         return()
       }
+      on_activate()
       current_project(proj)
       shiny::showNotification("Restored the last autosaved session.",
                               type = "message")

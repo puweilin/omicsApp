@@ -36,12 +36,29 @@ fi_project <- function(input, bundles = list()) {
   proj
 }
 
+# A result that says which data it came from. Reading a project now migrates
+# any that cannot, so a bare placeholder would be filed as history and the
+# assertions below would pass for the wrong reason.
+fi_bundle <- function(proj, tag = "proteomics") {
+  b <- omicsCore::new_analysis_bundle("run_diff",
+                                  results = list(diff_result_df = data.frame(x = 1)))
+  b$provenance_binding <- omicsCore::new_provenance_binding(
+    analysis_id = "ana-fixture",
+    project_id = proj$metadata$project_id,
+    inputs = stats::setNames(
+      list(omicsCore::effective_input(proj, tag)$version), tag),
+    params_signature = omicsCore::params_signature(list())
+  )
+  b
+}
+
 # ---- autosave and the layer-replacement guard -------------------------
 
 test_that("the autosave reflects a replacement rather than the state before it", {
   skip_if_not_installed("qs2")
   fi_store({
-    before <- fi_project(fi_input("fp-A"), bundles = list(diff = "OLD"))
+    before <- fi_project(fi_input("fp-A"))
+    before$bundles <- list(diff = fi_bundle(before))
     after  <- fi_project(fi_input("fp-B"))
     shiny::testServer(
       function(input, output, session) {
@@ -162,4 +179,23 @@ test_that("a demo project exports a script that says it has no data file", {
   # Honest about the gap rather than emitting a path that does not exist.
   expect_true(any(grepl("was not archived", lines, fixed = TRUE)))
   expect_true(any(grepl("<path-to-", lines, fixed = TRUE)))
+})
+
+test_that("a result that cannot say where it came from is read as history", {
+  skip_if_not_installed("qs2")
+  fi_store({
+    # What a .omp written before results recorded their inputs looks like.
+    # It must neither be adopted into the current project -- that is making
+    # it valid by assertion -- nor vanish without trace.
+    proj <- fi_project(fi_input("fp-A"))
+    proj$bundles <- list(diff = omicsCore::new_analysis_bundle(
+      "run_diff", results = list(diff_result_df = data.frame(x = 1))))
+    expect_true(isTRUE(store_autosave(proj)))
+
+    back <- store_read_autosave()
+    expect_length(back$bundles, 0L)
+    expect_length(back$retired, 1L)
+    expect_match(back$retired[[1]]$retired_because, "before results recorded")
+    expect_identical(back$retired[[1]]$view_slot, "diff")
+  })
 })

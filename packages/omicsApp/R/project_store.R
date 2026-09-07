@@ -505,7 +505,13 @@ store_load_project <- function(slug, dir = omicsapp_data_dir()) {
   if (!isTRUE(resolved$ok)) return(fail(resolved$message))
   path <- resolved$path
   tryCatch(
-    list(ok = TRUE, project = omicsCore::load_project(path),
+    list(ok = TRUE,
+         # Migrated here, before any validity question is asked of it: a
+         # file saved before results recorded which data they came from
+         # must neither be adopted into the current project nor silently
+         # emptied. migrate_legacy_project() moves those results to
+         # history with a reason.
+         project = omicsCore::migrate_legacy_project(omicsCore::load_project(path)),
          message = sprintf("Opened '%s'.", slug)),
     error = function(e) fail(paste0("Open failed: ", conditionMessage(e)))
   )
@@ -550,7 +556,8 @@ store_autosave <- function(project, dir = omicsapp_data_dir()) {
 store_read_autosave <- function(dir = omicsapp_data_dir()) {
   path <- autosave_path(dir)
   if (!file.exists(path)) return(NULL)
-  tryCatch(omicsCore::load_project(path), error = function(e) NULL)
+  tryCatch(omicsCore::migrate_legacy_project(omicsCore::load_project(path)),
+           error = function(e) NULL)
 }
 
 #' Modification time of the autosave snapshot

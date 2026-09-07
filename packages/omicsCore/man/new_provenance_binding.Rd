@@ -9,7 +9,8 @@ new_provenance_binding(
   project_id,
   inputs,
   upstream_ids = character(0),
-  params_signature = NA_character_
+  params_signature = NA_character_,
+  input_stage = c("effective", "baseline")
 )
 }
 \arguments{
@@ -23,6 +24,12 @@ every layer they read; one entry per analysis is not assumed.}
 \item{upstream_ids}{Analysis ids this result was derived from.}
 
 \item{params_signature}{Signature of the resolved parameters.}
+
+\item{input_stage}{Which resolver the recorded versions refer to.
+\code{"effective"} for analyses, which read whatever preprocessing is applied;
+\code{"baseline"} for QC, which reads the import. Without the distinction,
+applying QC would retire the QC result that produced the preprocessing,
+because the effective version had just stopped matching the one QC ran on.}
 }
 \value{
 A list describing what the result was computed from.

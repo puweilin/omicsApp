@@ -39,6 +39,7 @@ enrich_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
+                               current_project = shiny::reactiveVal(NULL),
                                diff_thresholds = shiny::reactive(list(
                                  p_cutoff = 0.05, p_preference = "adjusted",
                                  effect_cutoff = NULL)),
@@ -119,6 +120,15 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           thr = thr
         ),
         on_success = function(result) {
+          # Enrichment runs on a differential, so its layer is that
+          # result's layer and its upstream is that result. Carrying both
+          # is what lets a change of data retire the pair together rather
+          # than leaving pathways attached to a differential that is gone.
+          result <- bind_result(
+            result, current_project(), "enrich",
+            tags = bundle$input_info$layer_tag,
+            versions = bundle$input_info$input_version,
+            upstream = bundle$provenance_binding$analysis_id)
           enrich_error(NULL)
           is_demo(FALSE)
           enrich_bundle(result)

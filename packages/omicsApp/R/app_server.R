@@ -58,6 +58,25 @@ app_server <- function(input, output, session) {
   # belonged to the data that just arrived.
   layer_generation <- shiny::reactiveVal(0L)
 
+  # How many times a project has been made current in this session: opened,
+  # restored, or first imported. Separate from project_id, which is the
+  # project's own and travels with the file.
+  #
+  # Comparing project_id alone cannot see the case that matters most --
+  # opening an *earlier save of the same project*. Nothing about the identity
+  # or the data has changed, so the views kept the results they held and the
+  # write-back put them into the file that had just been opened, over the
+  # results it was opened for.
+  #
+  # It stays out of anything saved to disk. Written into a result's record it
+  # would make that result invalid the next time the file was opened, which
+  # is the opposite of what any of this is for.
+  activation <- shiny::reactiveVal(0L)
+  bump_activation <- function() {
+    activation(shiny::isolate(activation()) + 1L)
+    layer_generation(shiny::isolate(layer_generation()) + 1L)
+  }
+
   # ---- header: project picker ----------------------------------------
   output$project_picker <- shiny::renderUI({
     proj <- current_project()
@@ -88,7 +107,8 @@ app_server <- function(input, output, session) {
                       on_view_layer = function(tag) {
                         requested_layer(tag)
                         set_view("qc")
-                      })
+                      },
+                      on_activate = bump_activation)
   imported_input <- import_view_server("import",
                         current_project = current_project)
   # The QC view returns what the user applied, not what it previewed:
@@ -129,6 +149,7 @@ app_server <- function(input, output, session) {
   # fold-change bound -- and enriched a different set of genes from the
   # ones on screen, silently.
   enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
+                                      current_project = current_project,
                                       diff_thresholds = diff_view$thresholds,
                                       diff_layer = diff_view$layer,
                                       invalidate = layer_generation)
@@ -193,31 +214,49 @@ app_server <- function(input, output, session) {
   # this never sees a result computed on a layer that has just been
   # replaced. That ordering used to rest on which reactiveVal the
   # import observer happened to assign first.
-  held <- new.env(parent = emptyenv())
   shiny::observe({
     proj <- current_project()
     if (is.null(proj)) return()
-    gen <- layer_generation()
+    layer_generation()
     views <- list(
       qc          = qc_bundle(),
       diff        = diff_bundle(),
       enrich      = enrich_bundle(),
       integration = integration_bundle()
     )
+    pid <- proj$metadata$project_id
     b <- proj$bundles %||% list()
+    analyses <- proj$analyses %||% list()
+
     for (nm in names(views)) {
       v <- views[[nm]]
-      prev <- held[[nm]]
-      if (!is.null(v)) {
-        b[[nm]] <- v
-      } else if (!is.null(prev) && !is.null(prev$bundle) &&
-                 identical(prev$gen, gen)) {
-        b[[nm]] <- NULL
-      }
-      held[[nm]] <- list(bundle = v, gen = gen)
+      if (is.null(v)) next
+      pb <- v$provenance_binding
+      # A result that cannot say which data it came from is not written into
+      # the project. Being present used to be enough, and `%||% pid` then
+      # filled the gap with whichever project happened to be open -- not a
+      # fallback but the mislabelling this exists to prevent.
+      if (is.null(pb) || !identical(pb$project_id, pid)) next
+      # Nor is one whose data has already moved on. The view will be told to
+      # let go by the generation bump; until then it must not be filed, or
+      # the retirement below would remove it and the next flush would put it
+      # straight back.
+      if (!omicsCore::result_inputs_current(pb, proj)) next
+      b[[nm]] <- v
+      analyses[[pb$analysis_id]] <- v
     }
-    if (identical(proj$bundles, b)) return()
-    proj$bundles <- b
+
+    proj$bundles  <- b
+    proj$analyses <- analyses
+    # Removal is decided from the project's own record of what each result
+    # was computed on, not from whether a view happens to be holding
+    # something. The previous rule required a view to have held a non-empty
+    # bundle before it would drop the project's, so a project restored from
+    # disk with a saved differential and an empty view kept that
+    # differential through every change of data -- and the report, the
+    # export and the autosave all went on reading it.
+    proj <- omicsCore::retire_invalid(proj)
+    if (identical(proj, shiny::isolate(current_project()))) return()
     current_project(proj)
   }, priority = -10L)
 

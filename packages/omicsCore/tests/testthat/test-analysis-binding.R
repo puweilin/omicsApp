@@ -333,3 +333,13 @@ test_that("a layer's version is cached rather than recomputed per query", {
   for (i in 1:3) effective_input(p, "prot")
   expect_equal(calls, 0L)
 })
+
+test_that("an analysis with no parameters still has a signature", {
+  # order(NULL) is an error rather than an empty ordering, and an analysis
+  # with nothing to configure is ordinary.
+  expect_true(nzchar(params_signature(list())))
+  expect_true(nzchar(params_signature(NULL)))
+  expect_identical(params_signature(list()), params_signature(NULL))
+  expect_identical(params_signature(list(b = 2, a = 1)),
+                   params_signature(list(a = 1, b = 2)))
+})

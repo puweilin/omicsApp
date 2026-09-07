@@ -515,6 +515,11 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       b <- p$bundle
       b$input_info$layer_tag <- a$tag
       b$input_info$base_input_version <- a$base_version
+      # QC reads the import, so its record refers to the baseline. Recorded
+      # against the effective input it would be retired by its own result:
+      # applying it is what makes the effective version differ.
+      b <- bind_result(b, current_project(), "qc", tags = a$tag,
+                       versions = a$base_version, stage = "baseline")
       applied(list(tag = a$tag, bundle = b, params = b$params,
                    base_version = a$base_version,
                    at = Sys.time()))

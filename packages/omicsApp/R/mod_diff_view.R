@@ -80,7 +80,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # means, and every consumer goes through it.
       eff <- omicsCore::effective_input(proj, tag)
       list(input = eff$input, tag = tag, source = eff$source,
-           stale = eff$stale, is_demo = is_demo)
+           version = eff$version, stale = eff$stale, is_demo = is_demo)
     })
 
     output$ui_layer <- shiny::renderUI({
@@ -286,6 +286,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           covariates = if (length(covariates)) covariates else NULL
         ),
         on_success = function(bundle) {
+          # Which layer, and which version of it, as resolved when the run
+          # was launched. Taken from `a` rather than re-read on arrival: the
+          # project can change while a task runs, and describing the result
+          # by the data that is there when it lands is how a stale result
+          # looks current.
+          bundle <- bind_result(bundle, current_project(), "diff",
+                                tags = a$tag, versions = a$version)
           diff_error(NULL)
           diff_bundle(bundle)
         },

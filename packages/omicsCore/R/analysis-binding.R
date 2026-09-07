@@ -78,7 +78,14 @@ input_version <- function(input) {
 #' @export
 params_signature <- function(params) {
   if (is.null(params)) params <- list()
-  params <- params[order(names(params))]
+  # Sorted so that the same settings hash the same however they were
+  # assembled -- but only when there is something to sort by. An analysis
+  # with no parameters is ordinary (QC on defaults, an integration with a
+  # fixed method), and `order(NULL)` is an error, not an empty ordering.
+  nms <- names(params)
+  if (length(params) > 0L && !is.null(nms)) {
+    params <- params[order(nms)]
+  }
   rlang::hash(params)
 }
 
@@ -92,16 +99,23 @@ params_signature <- function(params) {
 #'   every layer they read; one entry per analysis is not assumed.
 #' @param upstream_ids Analysis ids this result was derived from.
 #' @param params_signature Signature of the resolved parameters.
+#' @param input_stage Which resolver the recorded versions refer to.
+#'   `"effective"` for analyses, which read whatever preprocessing is applied;
+#'   `"baseline"` for QC, which reads the import. Without the distinction,
+#'   applying QC would retire the QC result that produced the preprocessing,
+#'   because the effective version had just stopped matching the one QC ran on.
 #'
 #' @return A list describing what the result was computed from.
 #' @keywords internal
 #' @export
 new_provenance_binding <- function(analysis_id, project_id, inputs,
                                    upstream_ids = character(0),
-                                   params_signature = NA_character_) {
+                                   params_signature = NA_character_,
+                                   input_stage = c("effective", "baseline")) {
+  input_stage <- match.arg(input_stage)
   list(analysis_id = analysis_id, project_id = project_id,
        inputs = inputs, upstream_ids = as.character(upstream_ids),
-       params_signature = params_signature)
+       params_signature = params_signature, input_stage = input_stage)
 }
 
 #' Check that a binding is well formed before believing what it says
@@ -139,6 +153,10 @@ validate_provenance_binding <- function(pb) {
     return(bad("binding depends on itself"))
   }
   if (!chr1(pb$params_signature)) return(bad("params_signature is missing"))
+  stage <- pb$input_stage %||% "effective"
+  if (!stage %in% c("effective", "baseline")) {
+    return(bad("input_stage names no known resolver"))
+  }
   list(ok = TRUE, reason = "")
 }
 
@@ -158,8 +176,13 @@ result_inputs_current <- function(pb, project) {
   if (!identical(pb$project_id, project$metadata$project_id)) return(FALSE)
   tags <- names(pb$inputs)
   if (!all(tags %in% names(project$experiments))) return(FALSE)
+  resolve <- if (identical(pb$input_stage %||% "effective", "baseline")) {
+    baseline_input
+  } else {
+    effective_input
+  }
   all(vapply(tags, function(tg) {
-    identical(pb$inputs[[tg]], effective_input(project, tg)$version)
+    identical(pb$inputs[[tg]], resolve(project, tg)$version)
   }, logical(1)))
 }
 
@@ -268,6 +291,58 @@ retire_invalid <- function(project, max_history = 20L,
     n <- length(project$retired)
     project$retired <- project$retired[seq.int(n - max_history + 1L, n)]
   }
+  project
+}
+
+#' Bring a project saved before the contract existed into it
+#'
+#' Such a project carries results in `bundles` with nothing saying which data
+#' they were computed on. There are three things one could do with them and
+#' only one is honest.
+#'
+#' Adopting them -- writing the current project and input versions into their
+#' binding -- makes them valid by assertion. That is the failure the whole
+#' contract exists to prevent, arrived at during the migration instead of
+#' during the analysis. Deleting them silently loses work the user can see on
+#' screen. So they are moved to history with a reason, where the project view
+#' can show them and the report and export will not treat them as current.
+#'
+#' Called on load, before any validity question is asked, so the general
+#' algorithm never has to reason about a half-specified record.
+#'
+#' @param project An `omics_project`, freshly loaded.
+#' @return The project, with unattributed results moved to history.
+#' @keywords internal
+#' @export
+migrate_legacy_project <- function(project) {
+  if (is.null(project$metadata$project_id)) {
+    project$metadata$project_id <- new_project_id()
+    project$metadata$schema_note <-
+      "Opened from a file saved before results recorded which data they came from."
+  }
+  # Layers written before versions were stamped.
+  project$experiments <- lapply(project$experiments, function(e) {
+    if (is.null(e$version)) stamp_version(e) else e
+  })
+
+  bundles <- project$bundles %||% list()
+  if (length(bundles) == 0L) return(project)
+  unbound <- vapply(bundles, function(b) is.null(b$provenance_binding),
+                    logical(1))
+  if (!any(unbound)) return(project)
+
+  history <- lapply(bundles[unbound], compress_for_history,
+                    reason = "saved before results recorded which data they came from")
+  # Keyed by generated id, not by the view slot they came from: history is
+  # indexed by analysis and two migrations would otherwise both write "diff".
+  # The slot survives on the record so the view can still be named.
+  for (i in seq_along(history)) {
+    history[[i]]$view_slot <- names(history)[[i]]
+  }
+  names(history) <- vapply(history, function(h) new_analysis_id(), character(1))
+
+  project$retired <- c(project$retired %||% list(), history)
+  project$bundles <- bundles[!unbound]
   project
 }
 
