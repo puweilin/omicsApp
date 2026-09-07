@@ -50,9 +50,13 @@ launch <- function(port = NULL,
     stop("Could not find Shiny app directory inside the installed omicsApp package.")
   }
 
-  # Pass project path via options (read by inst/app/app.R)
+  # Read by the Project view when the session starts with nothing loaded.
+  # Restored on exit like every other option this function sets: leaving it
+  # behind means the next launch() in the same R session silently opens the
+  # previous call's project.
   if (!is.null(project)) {
-    options(omicsApp.project = normalizePath(project, mustWork = TRUE))
+    old_project <- options(omicsApp.project = normalizePath(project, mustWork = TRUE))
+    on.exit(options(old_project), add = TRUE)
   }
 
   if (!is.numeric(max_upload_mb) || length(max_upload_mb) != 1L ||

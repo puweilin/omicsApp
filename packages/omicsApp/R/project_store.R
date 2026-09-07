@@ -530,7 +530,8 @@ store_load_project <- function(slug, dir = omicsapp_data_dir()) {
 #' @keywords internal
 #' @noRd
 store_autosave <- function(project, dir = omicsapp_data_dir()) {
-  if (!omicsCore::is_omics_project(project)) return(FALSE)
+  fail <- function(msg) list(ok = FALSE, time = NULL, message = msg)
+  if (!omicsCore::is_omics_project(project)) return(fail("Nothing to save."))
   # The snapshot replaces itself in place, so it does not grow the
   # store; enforcing quota here would only strand a user's recovery
   # copy at exactly the moment they most need it.
@@ -540,10 +541,44 @@ store_autosave <- function(project, dir = omicsapp_data_dir()) {
         dir.create(dir, recursive = TRUE, showWarnings = FALSE)
       }
       omicsCore::save_project(project, autosave_path(dir), overwrite = TRUE)
-      TRUE
+      list(ok = TRUE, time = Sys.time(), message = "")
     },
-    error = function(e) FALSE
+    error = function(e) {
+      # To stderr, so it survives into `docker logs` -- the container is
+      # recycled and the browser is gone, and this is the only trace left
+      # of why somebody's afternoon was not recoverable.
+      message("[omicsApp] autosave failed: ", conditionMessage(e))
+      fail(conditionMessage(e))
+    }
   )
+}
+
+#' Can the store be written to at all?
+#'
+#' Checked once at startup rather than discovered at the first save. A
+#' read-only mount or an absent directory is a deployment fault, and the
+#' user should be told before they spend an afternoon on work that was
+#' never going to persist.
+#'
+#' @param dir Project directory.
+#'
+#' @return `list(ok = , message = )`.
+#' @keywords internal
+#' @noRd
+store_writable <- function(dir = omicsapp_data_dir()) {
+  ok <- tryCatch({
+    if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+    probe <- file.path(dir, paste0(".write-probe-", basename(tempfile(""))))
+    on.exit(unlink(probe), add = TRUE)
+    writeLines("x", probe)
+    file.exists(probe)
+  }, error = function(e) FALSE, warning = function(w) FALSE)
+  if (isTRUE(ok)) {
+    return(list(ok = TRUE, message = ""))
+  }
+  list(ok = FALSE, message = sprintf(
+    "Cannot write to the project store (%s). Analyses will run, but nothing will be saved and nothing will be recoverable after a restart.",
+    dir))
 }
 
 #' Read the autosave snapshot, if one exists
@@ -709,7 +744,8 @@ split_file_name <- function(name) {
 #' @return Invisibly, the observer handle.
 #' @keywords internal
 #' @noRd
-wire_autosave <- function(current_project, writer = store_autosave) {
+wire_autosave <- function(current_project, writer = store_autosave,
+                          status = NULL) {
   # Reads `current_project` without writing it, so this cannot
   # re-trigger itself.
   invisible(shiny::observe({
@@ -720,6 +756,14 @@ wire_autosave <- function(current_project, writer = store_autosave) {
     # so one unlucky write would silently switch autosaving off for the
     # rest of the session -- the failure mode this whole path exists to
     # prevent, arrived at by a different road.
-    tryCatch(writer(proj), error = function(e) NULL)
+    res <- tryCatch(writer(proj), error = function(e) {
+      list(ok = FALSE, time = NULL, message = conditionMessage(e))
+    })
+    # Not swallowing failure is the point. Autosave still must not
+    # interrupt the analysis -- a full disk should not end someone's
+    # session -- but a user who cannot tell "your work is on disk" from
+    # "your work is in this browser tab" cannot be promised that a
+    # recycled container costs them a page reload.
+    if (!is.null(status)) status(res)
   }))
 }

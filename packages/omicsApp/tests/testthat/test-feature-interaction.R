@@ -94,7 +94,7 @@ test_that("a restored autosave still knows which file it came from", {
   skip_if_not_installed("qs2")
   fi_store({
     proj <- fi_project(fi_input("fp-A", source_path = "raw/cheek__ab12.xlsx"))
-    expect_true(store_autosave(proj))
+    expect_true(store_autosave(proj)$ok)
     back <- store_read_autosave()
     # Both are needed after a restore: the fingerprint to recognise a
     # re-upload of the same file, the path to export a runnable script.
@@ -110,7 +110,7 @@ test_that("an explicit save and the autosave do not tread on each other", {
     named <- fi_project(fi_input("fp-named"))
     rolling <- fi_project(fi_input("fp-rolling"))
     expect_true(store_save_project(named, slug = "my-work")$ok)
-    expect_true(store_autosave(rolling))
+    expect_true(store_autosave(rolling)$ok)
     expect_identical(
       store_load_project("my-work")$project$experiments$proteomics$source_fingerprint,
       "fp-named")
@@ -198,7 +198,7 @@ test_that("a result that cannot say where it came from is read as history", {
     proj <- fi_project(fi_input("fp-A"))
     proj$bundles <- list(diff = omicsCore::new_analysis_bundle(
       "run_diff", results = list(diff_result_df = data.frame(x = 1))))
-    expect_true(isTRUE(store_autosave(proj)))
+    expect_true(store_autosave(proj)$ok)
 
     back <- store_read_autosave()
     expect_length(back$bundles, 0L)

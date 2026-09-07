@@ -91,3 +91,72 @@ test_that("run_async preserves closure over local variables", {
   )
   expect_equal(captured, "hello world")
 })
+
+# --- a result that arrives after the user has moved on --------------------
+
+# Both outcomes go through the gate. Guarding only success leaves the
+# failure path able to overwrite state the success path is no longer
+# allowed to touch: an error about a run the user has already replaced
+# reads as a fault in what is on screen now.
+test_that("a stale result is discarded, and said so", {
+  wrote <- NULL
+  discarded <- NULL
+  run_async(
+    func = function() "late result",
+    on_success = function(x) wrote <<- x,
+    on_error = function(m) wrote <<- m,
+    admissible = function(outcome) list(ok = FALSE, reason = "a newer run was started"),
+    on_discard = function(reason) discarded <<- reason
+  )
+  expect_null(wrote)
+  expect_match(discarded, "newer run")
+})
+
+test_that("a stale failure is discarded too", {
+  wrote <- NULL
+  discarded <- NULL
+  run_async(
+    func = function() stop("the engine fell over"),
+    on_success = function(x) wrote <<- x,
+    on_error = function(m) wrote <<- m,
+    admissible = function(outcome) list(ok = FALSE, reason = "stale"),
+    on_discard = function(reason) discarded <<- reason
+  )
+  expect_null(wrote)
+  expect_equal(discarded, "stale")
+})
+
+test_that("the gate sees which outcome it is deciding about", {
+  seen <- character(0)
+  run_async(function() 1, function(x) NULL, function(m) NULL,
+            admissible = function(outcome) {
+              seen <<- c(seen, outcome); list(ok = TRUE, reason = "")
+            })
+  run_async(function() stop("x"), function(x) NULL, function(m) NULL,
+            admissible = function(outcome) {
+              seen <<- c(seen, outcome); list(ok = TRUE, reason = "")
+            })
+  expect_equal(seen, c("success", "error"))
+})
+
+test_that("a gate that throws refuses rather than letting the result through", {
+  wrote <- NULL
+  run_async(function() "x", function(x) wrote <<- x, function(m) wrote <<- m,
+            admissible = function(outcome) stop("cannot tell"),
+            on_discard = function(reason) NULL)
+  expect_null(wrote)
+})
+
+test_that("newest_request_only admits the current request and no other", {
+  expect_true(newest_request_only(3L, function() 3L)("success")$ok)
+  expect_false(newest_request_only(2L, function() 3L)("success")$ok)
+  expect_match(newest_request_only(2L, function() 3L)("error")$reason, "newer run")
+  # A counter that cannot be read is not evidence of staleness.
+  expect_true(newest_request_only(2L, function() stop("gone"))("success")$ok)
+})
+
+test_that("by default everything is admitted, so existing callers are unchanged", {
+  got <- NULL
+  run_async(function() "ok", function(x) got <<- x, function(m) got <<- m)
+  expect_equal(got, "ok")
+})

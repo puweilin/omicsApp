@@ -14,6 +14,7 @@ payload_sizes <- function(code) {
   sizes <- list()
   testthat::local_mocked_bindings(
     run_async = function(func, on_success, on_error, message = "Running...",
+                         admissible = NULL, on_discard = NULL,
                          .future = NULL) {
       # Without source references: under load_all a function carries
       # its whole file's parse data (300 KB here), which an installed

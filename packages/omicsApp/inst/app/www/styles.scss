@@ -127,6 +127,26 @@ $status-info:  #3B82F6;
   letter-spacing: .04em; margin-right: 6px;
 }
 
+// Whether the work is on disk. Sits beside the project name because
+// that is where someone looks to answer "what am I working on", and
+// "is it saved" is the other half of the same question.
+.autosave-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: 10px; padding: 6px 10px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+}
+.autosave-status.is-idle  { color: var(--fg-3); }
+.autosave-status.is-ok    { color: var(--fg-2); }
+// Loud, and it stays. A failed save is not a transient condition: it
+// means everything since the last good one exists only in this tab.
+.autosave-status.is-error {
+  color: var(--danger, #b31b21);
+  border: 1px solid currentColor;
+  font-weight: 500;
+}
+.autosave-status .label-sm { color: var(--fg-3); }
+
 // =============================================================
 // Buttons (supplements Bootstrap's .btn)
 // =============================================================

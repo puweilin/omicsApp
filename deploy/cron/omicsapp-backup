@@ -24,10 +24,16 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 # Postgres' files while it is running gives you something that may need
 # crash recovery to open; pg_dump gives you something that restores.
 #
-# Named by day of week, so seven days rotate themselves with no cleanup
-# job to forget. A restore that only ever overwrote one file would
-# propagate a corruption on the first night nobody noticed.
-20 2 * * *  root  docker exec keycloak-db pg_dump -U keycloak keycloak | gzip > /backup/omicsapp/keycloak-$(date +\%u).sql.gz
+# Through a script, not inline. Cron runs this under /bin/sh, where a
+# pipeline's status is the last command's -- and gzip succeeds at
+# compressing nothing. Worse, `>` truncates the target before the pipeline
+# runs, so a night when pg_dump could not start did not merely fail to back
+# up: it destroyed the backup from a week ago and left a 20-byte file that
+# `gzip -t` calls valid.
+#
+# backup-keycloak.sh writes to a temporary file, checks that what it wrote
+# is a database, and only then takes the place of the previous one.
+20 2 * * *  root  /usr/local/sbin/backup-keycloak.sh
 
 # The users' work.
 30 2 * * *  root  rsync -a --delete /srv/omicsapp/users/ /backup/omicsapp/users/

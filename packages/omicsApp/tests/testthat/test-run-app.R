@@ -75,3 +75,72 @@ test_that("launch validates its numeric arguments", {
   expect_error(omicsApp::launch(launch.browser = FALSE, max_upload_mb = NA),
                "positive")
 })
+
+# --- launch(project = ) ---------------------------------------------------
+
+# The argument was accepted and did nothing: run_app() wrote the path into
+# an option, and nothing in the package read it. `app_server()` started from
+# NULL and then restored the autosave, so a caller who named a file got
+# somebody else's last session -- and no indication that their argument had
+# been ignored.
+test_that("a project named at launch is the one that opens", {
+  skip_if_not_installed("qs2")
+  skip_if_not_installed("withr")
+  store <- withr::local_tempdir()
+  withr::local_envvar(OMICSAPP_DATA_DIR = store)
+
+  # An autosave exists, so this also shows which of the two wins.
+  store_autosave(omicsCore::omics_project("the autosave"))
+  named <- withr::local_tempfile(fileext = ".omp")
+  omicsCore::save_project(omicsCore::omics_project("the named one"), named)
+  withr::local_options(omicsApp.project = named)
+
+  shiny::testServer(app_server, {
+    session$flushReact()
+    expect_equal(current_project()$name, "the named one")
+    # Opening it counts as an activation, like Open and Restore do.
+    expect_gt(activation(), 0L)
+  })
+})
+
+test_that("without the option the autosave is still restored", {
+  skip_if_not_installed("qs2")
+  skip_if_not_installed("withr")
+  store <- withr::local_tempdir()
+  withr::local_envvar(OMICSAPP_DATA_DIR = store)
+  store_autosave(omicsCore::omics_project("the autosave"))
+  withr::local_options(omicsApp.project = NULL)
+
+  shiny::testServer(app_server, {
+    session$flushReact()
+    expect_equal(current_project()$name, "the autosave")
+  })
+})
+
+test_that("a named project that cannot be opened is reported, not skipped", {
+  skip_if_not_installed("qs2")
+  skip_if_not_installed("withr")
+  store <- withr::local_tempdir()
+  withr::local_envvar(OMICSAPP_DATA_DIR = store)
+  store_autosave(omicsCore::omics_project("the autosave"))
+  withr::local_options(omicsApp.project = file.path(store, "absent.omp"))
+
+  shiny::testServer(app_server, {
+    session$flushReact()
+    # Falling through to the autosave without a word would look like the
+    # argument had worked.
+    expect_false(identical(current_project()$name, "absent"))
+  })
+})
+
+test_that("launch() does not leave the option set for the next call", {
+  skip_if_not_installed("withr")
+  f <- withr::local_tempfile(fileext = ".omp")
+  omicsCore::save_project(omicsCore::omics_project("x"), f)
+  before <- getOption("omicsApp.project")
+  # runApp() is what launch() ends on; stub it so the body runs and exits.
+  testthat::local_mocked_bindings(runApp = function(...) invisible(NULL),
+                                  .package = "shiny")
+  launch(project = f, launch.browser = FALSE, workers = 0L)
+  expect_identical(getOption("omicsApp.project"), before)
+})

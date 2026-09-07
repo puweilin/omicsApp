@@ -111,5 +111,12 @@ app_header <- function() {
   # Export / Run / Settings buttons here, but they had no server
   # bindings — the Re-run button on each analysis view and the
   # downloads in the Report view cover those affordances already.
-  shiny::uiOutput("project_picker")
+  htmltools::tagList(
+    shiny::uiOutput("project_picker"),
+    # Whether the work is on disk. Without it the user cannot tell a
+    # session whose analyses are persisted from one whose are only in this
+    # browser tab -- and the deployment reaps containers, so the
+    # difference is the difference between a page reload and an afternoon.
+    shiny::uiOutput("autosave_status")
+  )
 }

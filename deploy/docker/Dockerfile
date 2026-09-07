@@ -136,12 +136,30 @@ RUN R -q -e 'pkgs <- c("GSVA","enrichplot","clusterProfiler"); \
       if (length(missing)) stop("Bioconductor 3c failed: ", \
                                 paste(missing, collapse = ", "))'
 
-# ---- 4. PDF reports (optional) ----------------------------------------
-# Adds ~1.5 GB. Comment out if HTML reports are enough; the Report view
-# gates the PDF button on rmarkdown being able to find a LaTeX engine.
+# ---- 4. PDF reports ----------------------------------------------------
+# Adds ~2 GB. The Report view gates the PDF button on a working engine, so
+# removing this degrades the button rather than breaking it.
+#
+# XeLaTeX, not pdfLaTeX. A project called "\u86cb\u767d\u7ec4\u9879\u76ee" is an
+# ordinary thing for this application's users to type, and pdfLaTeX stops
+# on it with "Unicode character not set up for use with LaTeX" -- so the
+# PDF button failed for exactly the projects it was built for.
+#
+# texlive-xetex brings the engine, fonts-noto-cjk the glyphs, and
+# texlive-lang-chinese the font-selection machinery (xeCJK). All three are
+# needed: an engine that can read the character still prints a blank box
+# without a font that can draw it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         texlive-latex-base texlive-fonts-recommended texlive-latex-extra \
+        texlive-xetex texlive-lang-chinese \
+        fonts-noto-cjk fonts-noto-cjk-extra \
     && rm -rf /var/lib/apt/lists/*
+
+# Proved at build time, not at the user's first download. A missing font
+# package produces a PDF full of empty boxes rather than an error, so the
+# check renders CJK text and fails the build if it does not come out.
+COPY deploy/docker/check_cjk_pdf.R /tmp/check_cjk_pdf.R
+RUN Rscript /tmp/check_cjk_pdf.R && rm /tmp/check_cjk_pdf.R
 
 # ---- 5. gene-set cache -------------------------------------------------
 # The single most expensive runtime operation in the app is the first

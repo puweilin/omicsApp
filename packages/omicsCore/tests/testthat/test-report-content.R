@@ -47,14 +47,14 @@ test_that("the report carries each analysis and the head of its result table", {
   head_rows <- utils::head(diff$results$diff_result_df, 10L)
   expect_match(html, head_rows$feature_id[[1L]], fixed = TRUE)
   expect_match(html, head_rows$feature_symbol[[1L]], fixed = TRUE)
-  expect_false(grepl("No analysis_bundle objects", html, fixed = TRUE))
+  expect_false(grepl("No analyses are attached", html, fixed = TRUE))
 })
 
 test_that("a project with no analyses says so rather than rendering nothing", {
   skip_if_no_report()
   p <- omics_project("Empty", experiments = list(proteomics = realistic_input(n_per_group = 3L)))
   html <- report_html(p)
-  expect_match(html, "No analysis_bundle objects", fixed = TRUE)
+  expect_match(html, "No analyses are attached", fixed = TRUE)
 })
 
 test_that("a restored project reports the same as the live one", {
@@ -69,8 +69,13 @@ test_that("a restored project reports the same as the live one", {
   save_project(p, f)
   live <- report_html(p)
   restored <- report_html(load_project(f))
-  # Everything but the timestamp and session info
+  # Everything but the timestamp, session info and the figures. PNG output
+  # is not byte-reproducible, so comparing the embedded images would test
+  # the graphics device rather than whether the project survived the round
+  # trip -- which is the question.
   strip <- function(html) sub("Session info.*$", "", html)
   strip_dates <- function(html) gsub("[0-9]{4}-[0-9]{2}-[0-9]{2}[^<]*", "", html)
-  expect_identical(strip_dates(strip(live)), strip_dates(strip(restored)))
+  strip_images <- function(html) gsub('data:image/[^"]*', "", html)
+  clean <- function(html) strip_images(strip_dates(strip(html)))
+  expect_identical(clean(live), clean(restored))
 })

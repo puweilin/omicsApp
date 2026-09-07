@@ -35,9 +35,68 @@ esc_df <- function(df) {
   names(df) <- esc(names(df))
   df
 }
+
+# A parameter as a reader can check it. "12 entries" told them a number
+# and nothing about the analysis; what they need is which contrast, which
+# covariates, which thresholds -- the things that would have to match for
+# somebody else to get the same numbers.
+fmt_value <- function(x) {
+  if (is.null(x) || length(x) == 0L) return("_not set_")
+  if (is.data.frame(x)) return(sprintf("_%d x %d table_", nrow(x), ncol(x)))
+  if (is.list(x)) return(paste(names(x) %||% seq_along(x), collapse = ", "))
+  if (length(x) > 8L) {
+    return(paste0(paste(esc(utils::head(x, 8L)), collapse = ", "),
+                  sprintf(" _(and %d more)_", length(x) - 8L)))
+  }
+  paste(esc(format(x)), collapse = ", ")
+}
+
+params_table <- function(p) {
+  if (length(p) == 0L) return(NULL)
+  data.frame(
+    Parameter = esc(names(p)),
+    Value = vapply(p, fmt_value, character(1), USE.NAMES = FALSE),
+    stringsAsFactors = FALSE
+  )
+}
+
+# Full tables, not the first ten rows. A report whose numbers cannot be
+# checked against anything is a summary of an analysis, not a record of
+# one -- and a reader who has to go back to the application to see row 11
+# has been given a screenshot with extra steps.
+#
+# Bounded all the same, because a differential result is tens of thousands
+# of rows and a self-contained HTML file holding all of them helps nobody.
+# The bound is stated wherever it bites.
+MAX_ROWS <- 2000L
+
+full_table <- function(df, caption = NULL) {
+  n <- nrow(df)
+  shown <- utils::head(df, MAX_ROWS)
+  print(knitr::kable(esc_df(shown), caption = caption))
+  if (n > MAX_ROWS) {
+    cat(sprintf("\n_Showing the first %s of %s rows. The complete table is in the exported bundle._\n\n",
+                format(MAX_ROWS, big.mark = ","), format(n, big.mark = ",")))
+  }
+}
+
 project <- params$project
 project_name <- params$project_name
 bundles <- if (is.null(project$bundles)) list() else project$bundles
+
+# Plots come from the same functions the application draws with, so the
+# report shows what the analyst saw rather than a second rendering that
+# could disagree with it.
+try_plot <- function(expr, what) {
+  p <- tryCatch(expr, error = function(e) e)
+  if (inherits(p, "error")) {
+    cat(sprintf("\n_%s could not be drawn: %s_\n\n", esc(what),
+                esc(conditionMessage(p))))
+    return(invisible(FALSE))
+  }
+  print(p)
+  invisible(TRUE)
+}
 ```
 
 # `r esc(project_name)`
@@ -52,11 +111,16 @@ bundles <- if (is.null(project$bundles)) list() else project$bundles
 exp_tags <- omicsCore::experiment_tags(project)
 if (length(exp_tags) > 0L) {
   rows <- lapply(exp_tags, function(t) {
-    x <- project$experiments[[t]]
+    eff <- omicsCore::effective_input(project, t)
+    x <- eff$input
     data.frame(
       tag = t,
       omics_type = x$omics_type %||% NA_character_,
       assay_type = x$assay_type %||% NA_character_,
+      # As the analyses saw it. Reporting the imported shape while the
+      # analyses ran on a QC-cleaned layer describes a dataset nothing
+      # was computed on.
+      data_used = if (identical(eff$source, "qc_cleaned")) "QC-cleaned" else "raw import",
       n_features = nrow(x$expr_mat),
       n_samples = ncol(x$expr_mat),
       stringsAsFactors = FALSE
@@ -66,26 +130,128 @@ if (length(exp_tags) > 0L) {
 }
 ```
 
-## Bundles
+## How each layer was prepared
+
+```{r provenance, results = "asis"}
+# What actually happened to the data, step by step. Without it a reader
+# cannot tell a log2-normalized layer from one that arrived that way, and
+# those are different analyses.
+any_steps <- FALSE
+for (t in exp_tags) {
+  steps <- omicsCore::provenance_steps(omicsCore::effective_input(project, t)$input)
+  cat("\n### ", esc(t), "\n\n", sep = "")
+  if (length(steps) == 0L) {
+    cat("_This layer was imported before its processing was recorded, so what happened between the file and these values is not known._\n\n")
+    next
+  }
+  any_steps <- TRUE
+  for (i in seq_along(steps)) {
+    st <- steps[[i]]
+    cat(sprintf("%d. **%s**\n\n", i, esc(st$op)))
+    tbl <- params_table(st$args)
+    if (!is.null(tbl)) print(knitr::kable(tbl))
+    cat("\n")
+  }
+}
+```
+
+## Analyses
 
 ```{r bundles-section, results = "asis"}
 if (length(bundles) == 0L) {
-  cat("_No analysis_bundle objects attached to this project._\n")
+  cat("_No analyses are attached to this project._\n")
 } else {
   for (nm in names(bundles)) {
     b <- bundles[[nm]]
     cat("\n### ", esc(nm), " (", esc(b$analysis_name), ")\n\n", sep = "")
-    cat("- Params:", length(b$params), "entries\n")
-    cat("- Result keys: ", paste(esc(names(b$results)), collapse = ", "), "\n\n")
+
+    # The model, stated. This is the part a reader needs in order to
+    # judge the numbers below, and it was the part reduced to a count.
+    tbl <- params_table(b$params)
+    if (!is.null(tbl)) {
+      cat("\n**Settings**\n\n")
+      print(knitr::kable(tbl))
+      cat("\n")
+    }
+
+    pb <- b$provenance_binding
+    if (!is.null(pb)) {
+      cat("\n**Computed from**\n\n")
+      cat(sprintf("- Layers: %s\n",
+                  paste(esc(names(pb$inputs)), collapse = ", ")))
+      if (length(pb$upstream_ids) > 0L) {
+        cat(sprintf("- Derived from: %s\n",
+                    paste(esc(pb$upstream_ids), collapse = ", ")))
+      }
+      cat("\n")
+    }
+
+    # An integration whose two layers were modelled differently says so
+    # here, not only in the notification the analyst saw once.
+    if (length(b$params$unadjusted_secondary) > 0L) {
+      cat(sprintf("\n> **The two layers were modelled differently.** The first adjusts for %s; the second has no such column and was run unadjusted.\n\n",
+                  paste(esc(b$params$unadjusted_secondary), collapse = ", ")))
+    }
+
     for (rk in names(b$results)) {
       obj <- b$results[[rk]]
       if (is.data.frame(obj) && nrow(obj) > 0L) {
-        cat("\n**", esc(rk), "** (top 10 rows)\n\n", sep = "")
-        print(knitr::kable(esc_df(utils::head(obj, 10L))))
+        cat("\n**", esc(rk), "**\n\n", sep = "")
+        full_table(obj)
       }
     }
+
+    cat("\n**Figures**\n\n")
+    if (identical(b$analysis_name, "run_diff")) {
+      try_plot(omicsCore::plot_volcano(b), "Volcano plot")
+      try_plot(omicsCore::plot_ma(b), "MA plot")
+    } else if (identical(b$analysis_name, "run_enrichment")) {
+      try_plot(omicsCore::plot_enrichment(b), "Enrichment plot")
+    } else if (identical(b$analysis_name, "run_integration")) {
+      try_plot(omicsCore::plot_integration(b, view = "effect_pair"), "Effect pair")
+      try_plot(omicsCore::plot_integration(b, view = "quadrant"), "Quadrant counts")
+    } else if (identical(b$analysis_name, "run_qc")) {
+      try_plot(omicsCore::plot_qc(b, view = "missingness"), "Missingness")
+      try_plot(omicsCore::plot_qc(b, view = "pca"), "PCA")
+    } else {
+      cat("_No standard figure for this analysis type._\n\n")
+    }
+    cat("\n")
   }
 }
+```
+
+## Superseded results
+
+```{r retired, results = "asis"}
+# Kept visible rather than deleted, and clearly marked. A result the data
+# has moved past is part of what happened; presenting it as current is
+# what the retirement machinery exists to prevent.
+retired <- project$retired %||% list()
+if (length(retired) == 0L) {
+  cat("_None._\n")
+} else {
+  rows <- lapply(retired, function(h) data.frame(
+    analysis = h$analysis_name %||% NA_character_,
+    view = h$view_slot %||% NA_character_,
+    retired_at = h$retired_at %||% NA_character_,
+    reason = h$retired_because %||% NA_character_,
+    stringsAsFactors = FALSE))
+  knitr::kable(esc_df(do.call(rbind, rows)))
+  cat("\n_These are no longer about this project's current data and were not used above._\n")
+}
+```
+
+## Reproducing this
+
+```{r versions, results = "asis"}
+cat(sprintf("- omicsCore %s\n", as.character(utils::packageVersion("omicsCore"))))
+cat(sprintf("- %s\n", R.version.string))
+gs <- unique(unlist(lapply(bundles, function(b) b$params$geneset_sources)))
+if (length(gs) > 0L) {
+  cat(sprintf("- Gene sets: %s\n", paste(esc(gs), collapse = ", ")))
+}
+cat("\nUse `omicsCore::export_script()` on this project for a runnable script that reproduces the numbers above.\n")
 ```
 
 ## Session info

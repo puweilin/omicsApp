@@ -358,21 +358,50 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                               type = "message")
     })
 
-    # Restore on arrival rather than on a click. The autosave is the
-    # user's own last state, and asking them to ask for it every login
-    # meant landing on the built-in demo each morning -- a page that is
-    # useful once and then noise.
+    # What the session opens with. Two sources, in a fixed order.
+    #
+    # `launch(project = ...)` is the caller naming a file. It wins,
+    # because it was asked for -- and until now it did nothing at all:
+    # run_app() wrote the path into an option that nothing read, so the
+    # argument was accepted and silently ignored.
+    #
+    # The autosave is the user's own last state. Restored on arrival
+    # rather than on a click, because asking them to ask for it every
+    # login meant landing on the built-in demo each morning.
     #
     # Deliberately narrow: only when nothing is loaded, and only once
-    # per session, so it cannot overwrite an import that happened first
-    # or fire again after the user clears the project.
-    #
-    # The button stays, because it is now the way back to the autosave
-    # after the project has been changed in-session.
+    # per session, so neither can overwrite an import that happened
+    # first or fire again after the user clears the project. The Restore
+    # button stays, as the way back after changing the project in-session.
     shiny::observe({
       if (!is.null(current_project())) return()
+
+      startup <- getOption("omicsApp.project", NULL)
+      if (!is.null(startup) && nzchar(startup)) {
+        proj <- tryCatch(
+          omicsCore::migrate_legacy_project(omicsCore::load_project(startup)),
+          error = function(e) e)
+        if (inherits(proj, "error")) {
+          # Named explicitly by the caller, so failing to open it is worth
+          # saying rather than quietly falling through to the autosave --
+          # which would look like it had worked.
+          shiny::showNotification(
+            sprintf("Could not open the project passed to launch(): %s",
+                    conditionMessage(proj)),
+            type = "error", duration = NULL)
+        } else {
+          on_activate()
+          current_project(proj)
+          shiny::showNotification(
+            sprintf("Opened '%s'.", proj$name %||% basename(startup)),
+            type = "message")
+          return()
+        }
+      }
+
       proj <- tryCatch(store_read_autosave(), error = function(e) NULL)
       if (is.null(proj)) return()
+      on_activate()
       current_project(proj)
       shiny::showNotification("Restored your last session.", type = "message")
     }) |> shiny::bindEvent(TRUE, once = TRUE, ignoreInit = FALSE)

@@ -104,13 +104,13 @@ test_that("retirement reaches the autosave, not just the page", {
   p <- ra_project()
   p <- omicsCore::register_analysis(p, ra_result(p))
   p$bundles <- list(diff = p$analyses[[1]])
-  expect_true(isTRUE(store_autosave(p, dir = dir)))
+  expect_true(store_autosave(p, dir = dir)$ok)
   expect_length(store_read_autosave(dir)$bundles, 1L)
 
   p <- omicsCore::set_preprocessing(p, "prot", ra_input(1, n = 5),
                                     params = list(missing_threshold = 0.1))
   p <- omicsCore::retire_invalid(p)
-  expect_true(isTRUE(store_autosave(p, dir = dir)))
+  expect_true(store_autosave(p, dir = dir)$ok)
 
   # A recovery copy holding results computed on data the project no longer
   # has is the stale-result bug, persisted.

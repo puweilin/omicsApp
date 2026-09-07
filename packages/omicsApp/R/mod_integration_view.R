@@ -224,7 +224,16 @@ integration_view_server <- function(id,
     # into the next contrast.
     accepted_unadjusted <- shiny::reactiveVal(NULL)
 
+    # One number per view, bumped when a run starts and checked when it
+    # comes back. Pressing Run again while the previous run is still out
+    # used to mean whichever finished last won -- and the loser was often
+    # the newer one, because the settings that made it slower were the
+    # settings the user had just chosen.
+    request_seq <- shiny::reactiveVal(0L)
+
     do_run <- function() {
+      request_seq(shiny::isolate(request_seq()) + 1L)
+      this_request <- shiny::isolate(request_seq())
       info <- can_run()
       if (!isTRUE(info$ok)) {
         is_demo(TRUE)
@@ -256,6 +265,8 @@ integration_view_server <- function(id,
         "auto"
       }
       run_async(
+        admissible = newest_request_only(this_request, request_seq),
+        on_discard = discard_notice(),
         # Detached for the same reason as the other two, and it matters
         # most here: this one carries a project with every layer in it.
         detached_call(
@@ -494,17 +505,32 @@ integration_view_server <- function(id,
       omicsCore::plot_integration(b, view = "effect_pair")
     })
 
-    # ActivePathways panels stay on the synthetic fixture in
-    # slice 3E (concordance result doesn't carry per-pathway p
-    # tables, and active_pathways needs its own Bioconductor
-    # Suggests). Display them from `example_integration_tables`
-    # when no live AP run is available.
+    # ActivePathways is not wired up: concordance carries no per-pathway p
+    # tables and the backend needs its own Bioconductor Suggests. These
+    # panels used to show the synthetic fixture regardless, so a real
+    # project displayed invented pathways beside its own results -- with a
+    # "demo fixture" caption that survives neither a screenshot nor a
+    # scroll. On a real project they are empty and say why.
     ap_df <- shiny::reactive({
+      if (!isTRUE(is_demo())) return(NULL)
       example_integration_tables()$active_pathways_df
+    })
+
+    output$ap_empty <- shiny::renderUI({
+      if (!is.null(ap_df())) return(NULL)
+      notice(
+        title = "Cross-omics pathway integration has not been run",
+        detail = paste0(
+          "This panel shows ActivePathways results, which this project does ",
+          "not have: the concordance above compares features, not pathways. ",
+          "The panel is empty rather than showing an example, because an ",
+          "example next to real results reads as part of them."),
+        kind = "info")
     })
 
     output$shared <- shiny::renderPlot({
       ap <- ap_df()
+      shiny::req(ap)
       long <- data.frame(
         pathway_name = rep(ap$pathway_name, times = 2L),
         omics        = rep(c("A", "B"), each = nrow(ap)),
@@ -537,6 +563,7 @@ integration_view_server <- function(id,
 
     output$ap_table <- DT::renderDT({
       ap <- ap_df()
+      shiny::req(ap)
       out <- data.frame(
         Pathway          = ap$pathway_name,
         `p (A)`          = signif(ap$p_a, 3),
@@ -623,6 +650,9 @@ integration_shared_card <- function(ns) {
                            "rows = pathway \u00B7 cols = omics \u00B7 demo fixture")
     ),
     bslib::card_body(
+      # Above the plot, because on a real project there is no plot and the
+      # explanation is the whole content.
+      shiny::uiOutput(ns("ap_empty")),
       shiny::plotOutput(ns("shared"), height = "340px")
     )
   )

@@ -378,3 +378,106 @@ test_that("render.sh refuses an address with a scheme, port or path, and the pla
   }
   expect_length(list.files(out, recursive = TRUE), 0L)
 })
+
+# --- the backup that could destroy the previous one ----------------------
+
+# The crontab used to hold the whole thing:
+#
+#   docker exec keycloak-db pg_dump ... | gzip > /backup/.../keycloak-$(date +%u).sql.gz
+#
+# Two failures in one line. Cron's /bin/sh has no pipefail, so the status
+# is gzip's, and gzip succeeds at compressing nothing. And `>` truncates
+# the target before the pipeline runs, so a night when pg_dump could not
+# start destroyed the backup from a week ago and left a 20-byte file that
+# `gzip -t` calls valid.
+
+backup_script <- function() {
+  path <- file.path(deploy_root(), "scripts", "backup-keycloak.sh")
+  skip_if_not(file.exists(path), "backup script not present")
+  path
+}
+
+# A stand-in `docker` on PATH, so the script can be exercised without one.
+fake_docker <- function(behaviour, env = parent.frame()) {
+  bin <- withr::local_tempdir(.local_envir = env)
+  writeLines(c("#!/bin/bash", behaviour), file.path(bin, "docker"))
+  Sys.chmod(file.path(bin, "docker"), "0755")
+  bin
+}
+
+run_backup <- function(bin, dest_dir) {
+  withr::with_envvar(
+    c(PATH = paste(bin, Sys.getenv("PATH"), sep = .Platform$path.sep),
+      BACKUP_DIR = dest_dir),
+    suppressWarnings(system2("bash", shQuote(backup_script()),
+                             stdout = TRUE, stderr = TRUE)))
+}
+
+test_that("the crontab no longer pipes into the rotation target", {
+  cron <- readLines(file.path(deploy_root(), "cron", "omicsapp-backup"))
+  active <- grep("^[^#]", cron, value = TRUE)
+  expect_false(any(grepl("pg_dump.*\\|.*gzip.*>", active)),
+               info = "the pipeline is back in the crontab, where /bin/sh has no pipefail")
+  expect_true(any(grepl("backup-keycloak.sh", active)))
+})
+
+test_that("a good dump is written and verified", {
+  skip_on_os("windows")
+  skip_if_not_installed("withr")
+  bin <- fake_docker('printf "PostgreSQL database dump\\n%.0s" {1..500}')
+  dest <- withr::local_tempdir()
+  out <- run_backup(bin, dest)
+  expect_equal(attr(out, "status") %||% 0L, 0L, info = paste(out, collapse = "\n"))
+  written <- list.files(dest, pattern = "^keycloak-.*\\.sql\\.gz$", full.names = TRUE)
+  expect_length(written, 1L)
+  expect_gt(file.info(written)$size, 0)
+  # And nothing is left beside it.
+  expect_length(list.files(dest), 1L)
+})
+
+test_that("a failed dump leaves the previous backup byte-for-byte intact", {
+  skip_on_os("windows")
+  skip_if_not_installed("withr")
+  dest <- withr::local_tempdir()
+
+  ok_bin <- fake_docker('printf "PostgreSQL database dump\\n%.0s" {1..500}')
+  expect_equal(attr(run_backup(ok_bin, dest), "status") %||% 0L, 0L)
+  written <- list.files(dest, full.names = TRUE)[[1L]]
+  before <- tools::md5sum(written)
+
+  # pg_dump cannot start. The old line would have truncated the target
+  # first and then reported success.
+  bad_bin <- fake_docker('echo "could not connect to server" >&2; exit 1')
+  out <- run_backup(bad_bin, dest)
+  expect_gt(attr(out, "status") %||% 0L, 0L)
+  expect_match(paste(out, collapse = " "), "previous")
+
+  expect_true(file.exists(written))
+  expect_identical(tools::md5sum(written), before)
+  expect_length(list.files(dest, all.files = TRUE, no.. = TRUE), 1L)
+})
+
+test_that("an empty but valid gzip is refused", {
+  skip_on_os("windows")
+  skip_if_not_installed("withr")
+  # Exactly what the old pipeline produced on a bad night: 20 bytes that
+  # `gzip -t` accepts. Size alone is a coarse screen, so the script also
+  # checks that what it wrote looks like pg_dump output.
+  dest <- withr::local_tempdir()
+  bin <- fake_docker('exit 0')       # succeeds, prints nothing
+  out <- run_backup(bin, dest)
+  expect_gt(attr(out, "status") %||% 0L, 0L)
+  expect_length(list.files(dest, all.files = TRUE, no.. = TRUE), 0L)
+})
+
+test_that("output that is not a database dump is refused", {
+  skip_on_os("windows")
+  skip_if_not_installed("withr")
+  dest <- withr::local_tempdir()
+  # Large enough to pass a size floor, and not a backup.
+  bin <- fake_docker('printf "FATAL: password authentication failed\\n%.0s" {1..500}')
+  out <- run_backup(bin, dest)
+  expect_gt(attr(out, "status") %||% 0L, 0L)
+  expect_match(paste(out, collapse = " "), "does not look like pg_dump")
+  expect_length(list.files(dest, all.files = TRUE, no.. = TRUE), 0L)
+})

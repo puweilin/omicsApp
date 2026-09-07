@@ -155,7 +155,7 @@ test_that("autosave survives the store directory vanishing mid-session", {
   skip_if_not_installed("qs2")
   adv_store({
     unlink(omicsapp_data_dir(), recursive = TRUE)
-    expect_true(store_autosave(adv_project()))
+    expect_true(store_autosave(adv_project())$ok)
     expect_true(omicsCore::is_omics_project(store_read_autosave()))
   })
 })

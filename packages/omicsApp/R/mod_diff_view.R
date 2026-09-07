@@ -261,7 +261,16 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       diff_error(NULL)
     }, ignoreInit = TRUE)
 
+    # One number per view, bumped when a run starts and checked when it
+    # comes back. Pressing Run again while the previous run is still out
+    # used to mean whichever finished last won -- and the loser was often
+    # the newer one, because the settings that made it slower were the
+    # settings the user had just chosen.
+    request_seq <- shiny::reactiveVal(0L)
+
     do_run <- function() {
+      request_seq(shiny::isolate(request_seq()) + 1L)
+      this_request <- shiny::isolate(request_seq())
       a <- active()
       if (is.null(a$input)) {
         diff_error("This project has no experiments to analyse.")
@@ -289,6 +298,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         return(invisible())
       }
       run_async(
+        admissible = newest_request_only(this_request, request_seq),
+        on_discard = discard_notice(),
         # Detached, so the worker receives the input and the six
         # parameters rather than this module's whole scope. Defined
         # inline it carried the previous bundle, the project and the

@@ -312,7 +312,40 @@ app_server <- function(input, output, session) {
   # above, so an observer firing on the same flush as a finished bundle
   # would read the project from before that bundle was folded in, and
   # persist a snapshot missing the very result that triggered it.
-  wire_autosave(current_project)
+  autosave_status <- shiny::reactiveVal(NULL)
+  wire_autosave(current_project, status = autosave_status)
+
+  # Checked once, at startup, rather than discovered at the first save.
+  # A read-only mount is a deployment fault, and finding out about it
+  # after an afternoon's work is the worst moment.
+  store_health <- store_writable()
+
+  output$autosave_status <- shiny::renderUI({
+    if (!isTRUE(store_health$ok)) {
+      return(htmltools::tags$div(
+        class = "autosave-status is-error",
+        bsicons::bs_icon("exclamation-triangle-fill"),
+        htmltools::tags$span("Not saving \u2014 the project store is not writable"),
+        htmltools::tags$span(class = "label-sm", store_health$message)))
+    }
+    st <- autosave_status()
+    if (is.null(st)) {
+      return(htmltools::tags$div(class = "autosave-status is-idle",
+                                 htmltools::tags$span("No analyses to save yet")))
+    }
+    if (isTRUE(st$ok)) {
+      htmltools::tags$div(
+        class = "autosave-status is-ok",
+        bsicons::bs_icon("cloud-check"),
+        htmltools::tags$span(sprintf("Saved %s", format(st$time, "%H:%M:%S"))))
+    } else {
+      htmltools::tags$div(
+        class = "autosave-status is-error",
+        bsicons::bs_icon("exclamation-triangle-fill"),
+        htmltools::tags$span("Not saved"),
+        htmltools::tags$span(class = "label-sm", st$message))
+    }
+  })
 }
 
 # ---- internal helpers ------------------------------------------------

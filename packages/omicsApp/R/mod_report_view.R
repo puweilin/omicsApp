@@ -30,6 +30,12 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     have_rmd <- has_pkg("rmarkdown")
+    # HTML needs rmarkdown; PDF needs an engine and a font, which are
+    # system packages rmarkdown knows nothing about. Gating both on
+    # `has_pkg("rmarkdown")` offered a PDF button that failed at download
+    # time -- and on the projects most likely to be named in Chinese,
+    # which is most of them here.
+    pdf_status <- omicsCore::pdf_toolchain_status()
     ns <- session$ns
 
     # ---- header -------------------------------------------------------
@@ -48,11 +54,12 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       # message is indistinguishable from a broken one, and that is what
       # it looked like.
       ready <- have_rmd && !is.null(proj)
-      dl <- function(id, label, primary) {
+      dl <- function(id, label, primary, extra_ok = TRUE, extra_why = NULL) {
+        enabled <- ready && isTRUE(extra_ok)
         btn <- shiny::downloadButton(
           ns(id), label,
-          class = paste("btn", if (ready && primary) "btn-primary" else "btn-ghost"))
-        if (ready) return(btn)
+          class = paste("btn", if (enabled && primary) "btn-primary" else "btn-ghost"))
+        if (enabled) return(btn)
         # `disabled` on the anchor, plus the pointer-events guard,
         # because a download link is an <a> and browsers do not honour
         # the attribute on its own.
@@ -60,6 +67,7 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
           btn, disabled = NA,
           style = "pointer-events:none;opacity:0.55",
           title = if (!have_rmd) "rmarkdown is not installed"
+                  else if (!isTRUE(extra_ok)) extra_why
                   else "Import a project first")
       }
       view_header(
@@ -67,7 +75,8 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         subtitle = subtitle,
         actions  = htmltools::tagList(
           dl("download_html", "Generate HTML", TRUE),
-          dl("download_pdf", "Generate PDF", FALSE)
+          dl("download_pdf", "Generate PDF", FALSE,
+             extra_ok = isTRUE(pdf_status$ok), extra_why = pdf_status$message)
         )
       )
     })
@@ -85,6 +94,18 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
               "`install.packages(\"rmarkdown\")`. ",
               "The Generate buttons below are disabled until it is available."
             ),
+            kind   = "warn"
+          )
+        )
+      }
+      if (have_rmd && !isTRUE(pdf_status$ok)) {
+        tagged <- htmltools::tagAppendChild(
+          tagged,
+          notice(
+            title  = "PDF export is unavailable on this server",
+            detail = paste0(
+              pdf_status$message,
+              " HTML reports are unaffected."),
             kind   = "warn"
           )
         )

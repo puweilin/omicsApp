@@ -222,7 +222,7 @@ test_that("list_saved_projects hides the autosave snapshot", {
   skip_if_not_installed("qs2")
   with_temp_store({
     store_save_project(tiny_project(), slug = "visible")
-    expect_true(store_autosave(tiny_project()))
+    expect_true(store_autosave(tiny_project())$ok)
     listed <- list_saved_projects()
     expect_equal(listed$slug, "visible")
     expect_false(paste0(AUTOSAVE_SLUG, ".omp") %in% basename(listed$path))
@@ -237,7 +237,7 @@ test_that("autosave round-trips and reports its timestamp", {
     expect_null(store_read_autosave())
     expect_null(autosave_mtime())
 
-    expect_true(store_autosave(tiny_project("recovered")))
+    expect_true(store_autosave(tiny_project("recovered"))$ok)
     restored <- store_read_autosave()
     expect_true(omicsCore::is_omics_project(restored))
     expect_equal(restored$name, "recovered")
@@ -247,8 +247,8 @@ test_that("autosave round-trips and reports its timestamp", {
 
 test_that("autosave ignores non-projects and never throws", {
   with_temp_store({
-    expect_false(store_autosave(NULL))
-    expect_false(store_autosave(list(a = 1)))
+    expect_false(store_autosave(NULL)$ok)
+    expect_false(store_autosave(list(a = 1))$ok)
   })
 })
 
@@ -259,7 +259,7 @@ test_that("autosave still writes when the store is over quota", {
     expect_true(quota_exceeded())
     # The snapshot replaces itself, so it must not be gated by quota —
     # otherwise recovery dies exactly when the user needs it.
-    expect_true(store_autosave(tiny_project()))
+    expect_true(store_autosave(tiny_project())$ok)
   }, quota_gb = 1e-9)
 })
 
@@ -421,4 +421,111 @@ test_that("a NULL project is never autosaved", {
       expect_equal(calls, 0L)
     }
   )
+})
+
+# --- saying whether the work is on disk ----------------------------------
+
+# store_autosave() returned a bare FALSE and wire_autosave() discarded it,
+# so a full disk, a read-only mount or a vanished directory all looked
+# exactly like a successful save. The deployment reaps containers on
+# logout and on a lifecycle timer, so a user who cannot tell "persisted"
+# from "in this browser tab" cannot be promised that a reaped session
+# costs them a page reload.
+test_that("a successful autosave says when", {
+  with_temp_store({
+    res <- store_autosave(tiny_project())
+    expect_true(res$ok)
+    expect_s3_class(res$time, "POSIXct")
+    expect_identical(res$message, "")
+  })
+})
+
+test_that("a failed autosave says why, and does not throw", {
+  skip_on_os("windows")
+  dir <- withr::local_tempdir()
+  ro <- file.path(dir, "readonly")
+  dir.create(ro)
+  Sys.chmod(ro, "0500")
+  withr::defer(Sys.chmod(ro, "0700"))
+
+  res <- suppressMessages(store_autosave(tiny_project(),
+                                         dir = file.path(ro, "sub")))
+  expect_false(res$ok)
+  expect_true(nzchar(res$message))
+  expect_null(res$time)
+})
+
+test_that("the failure reaches stderr, where a recycled container leaves it", {
+  skip_on_os("windows")
+  dir <- withr::local_tempdir()
+  ro <- file.path(dir, "readonly")
+  dir.create(ro); Sys.chmod(ro, "0500")
+  withr::defer(Sys.chmod(ro, "0700"))
+  expect_message(store_autosave(tiny_project(), dir = file.path(ro, "sub")),
+                 "autosave failed")
+})
+
+test_that("wire_autosave reports each outcome without breaking the observer", {
+  seen <- NULL
+  outcomes <- list(list(ok = TRUE, time = Sys.time(), message = ""),
+                   list(ok = FALSE, time = NULL, message = "disk full"))
+  i <- 0L
+  shiny::testServer(
+    function(input, output, session) {
+      cp <- shiny::reactiveVal(NULL)
+      wire_autosave(cp,
+                    writer = function(p) { i <<- i + 1L; outcomes[[min(i, 2L)]] },
+                    status = function(x) seen <<- x)
+      shiny::observeEvent(input$go, cp(tiny_project()))
+      shiny::observeEvent(input$again, cp(tiny_project("second")))
+    },
+    {
+      session$setInputs(go = 1)
+      expect_true(seen$ok)
+      session$setInputs(again = 1)
+      # The failure is reported, and the session is still running -- an
+      # observer that threw would switch autosaving off for good, which is
+      # the failure this path exists to prevent, by another road.
+      expect_false(seen$ok)
+      expect_match(seen$message, "disk full")
+      session$setInputs(go = 2)
+      expect_false(is.null(seen))
+    }
+  )
+})
+
+test_that("a writer that throws is still reported rather than lost", {
+  seen <- NULL
+  shiny::testServer(
+    function(input, output, session) {
+      cp <- shiny::reactiveVal(NULL)
+      wire_autosave(cp, writer = function(p) stop("mount went away"),
+                    status = function(x) seen <<- x)
+      shiny::observeEvent(input$go, cp(tiny_project()))
+    },
+    {
+      session$setInputs(go = 1)
+      expect_false(seen$ok)
+      expect_match(seen$message, "mount went away")
+    }
+  )
+})
+
+test_that("an unwritable store is detected at startup, not at the first save", {
+  skip_on_os("windows")
+  dir <- withr::local_tempdir()
+  ro <- file.path(dir, "readonly")
+  dir.create(ro); Sys.chmod(ro, "0500")
+  withr::defer(Sys.chmod(ro, "0700"))
+
+  expect_true(store_writable(withr::local_tempdir())$ok)
+  bad <- store_writable(file.path(ro, "sub"))
+  expect_false(bad$ok)
+  expect_match(bad$message, "not writable|Cannot write")
+})
+
+test_that("the startup probe leaves nothing behind", {
+  d <- withr::local_tempdir()
+  expect_true(store_writable(d)$ok)
+  expect_length(list.files(d, all.files = TRUE, no.. = TRUE), 0L)
 })
