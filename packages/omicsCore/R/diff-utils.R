@@ -104,3 +104,65 @@ coerce_continuous_col <- function(x, col_name) {
   }
   parsed
 }
+
+#' Refuse limma input that is not on the scale limma reports
+#'
+#' limma fits a normal linear model to the values as given and labels the
+#' group effect `log2FC`. Hand it linear intensities and it does not complain:
+#' the difference of two means comes back as a fold change, six orders of
+#' magnitude wide, and the volcano plot, the effect threshold and everything
+#' downstream reads it as one.
+#'
+#' Scoped to limma on purpose. DESeq2 and edgeR model counts on the count
+#' scale and their `log2FC` is earned; `lm` transforms `raw_count` itself and
+#' reports `beta`; `ttest` reports `mean_diff`, which is what it computes
+#' whatever the scale. None of those label the effect as something the input
+#' cannot support, so none of them are narrowed here.
+#'
+#' Where magnitude can tell the two scales apart -- the intensity family, per
+#' [SCALE_CHECKED_ASSAY_TYPES] -- the values get the last word over the label.
+#' A project saved before the vocabulary existed carries `"intensity"`, which
+#' the import view stamped on every proteomics upload whether or not it had
+#' been transformed, so that label asserts nothing and refusing on it alone
+#' would make old log2 projects unanalysable. TPM and FPKM are excluded from
+#' that rescue for the reason counts are: a gene at 5 TPM is ordinary, so a
+#' small maximum is not evidence of a log scale.
+#'
+#' @param input A validated `omics_input`.
+#' @param method The backend actually chosen, i.e. after `"auto"` resolves.
+#'
+#' @return Invisibly `TRUE`; stops otherwise.
+#' @keywords internal
+#' @noRd
+assert_limma_scale <- function(input, method) {
+  if (!identical(method, "limma")) return(invisible(TRUE))
+  at <- input$assay_type %||% NA_character_
+  if (is.na(at) || at %in% LOG_SCALE_ASSAY_TYPES) return(invisible(TRUE))
+
+  # Not canonical_assay_type(): that warns, and validate_omics_input() has
+  # already said this once by the time a backend is chosen.
+  canonical <- if (at %in% names(DEPRECATED_ASSAY_TYPE_ALIASES)) {
+    unname(DEPRECATED_ASSAY_TYPE_ALIASES[[at]])
+  } else {
+    at
+  }
+  if (canonical %in% LOG_SCALE_ASSAY_TYPES) return(invisible(TRUE))
+
+  if (canonical %in% SCALE_CHECKED_ASSAY_TYPES) {
+    max_value <- suppressWarnings(max(input$expr_mat, na.rm = TRUE))
+    if (!is.finite(max_value) || max_value <= MAX_PLAUSIBLE_LOG_SCALE_VALUE) {
+      return(invisible(TRUE))
+    }
+  }
+
+  fix <- if (identical(input$omics_type, "proteomics")) {
+    "Normalize the layer first with normalize_omics(), which puts proteomics intensities on a log2 scale."
+  } else {
+    # normalize_omics() is proteomics-only, so pointing RNA users at it would
+    # be advice they cannot follow.
+    "Use a log-scale layer (vst or logcpm) for limma, or a backend that models this scale: deseq2 / edger for raw counts, lm for a linear predictor."
+  }
+  stop(sprintf(
+    "limma reports a log2 fold change, but `assay_type = '%s'` is a linear scale, so the values it would report are differences of untransformed measurements. %s",
+    at, fix), call. = FALSE)
+}

@@ -231,3 +231,114 @@ test_that("normalize_omics output survives validation and subsetting", {
   expect_identical(subset$assay_type, "normalized_intensity")
   expect_identical(ncol(subset$expr_mat), 2L)
 })
+
+# --- limma is only offered the scale it reports --------------------------
+
+scale_fixture <- function(assay_type, omics_type = "proteomics", linear = TRUE) {
+  set.seed(7); p <- 20; n <- 10
+  e <- if (linear) {
+    matrix(rlnorm(p * n, 14, 0.4), p)
+  } else {
+    matrix(rnorm(p * n, 20, 1), p)
+  }
+  dimnames(e) <- list(paste0("G", seq_len(p)), paste0("S", seq_len(n)))
+  md <- data.frame(group = rep(c("A", "B"), each = 5), row.names = colnames(e))
+  fd <- data.frame(feature_id = rownames(e), feature_symbol = rownames(e),
+                   row.names = rownames(e), stringsAsFactors = FALSE)
+  suppressWarnings(omics_input(e, md, fd, omics_type = omics_type,
+                               assay_type = assay_type))
+}
+
+grp <- function(inp, method) {
+  run_diff(inp, method = method, analysis_type = "group", group_col = "group",
+           control_group = "A", case_group = "B")
+}
+
+test_that("limma refuses linear input rather than calling the result log2FC", {
+  skip_if_not_installed("limma")
+  expect_error(grp(scale_fixture("raw_intensity"), "limma"), "log2 fold change")
+  expect_error(grp(scale_fixture("tpm", "rnaseq"), "limma"), "log2 fold change")
+  expect_error(grp(scale_fixture("fpkm", "rnaseq"), "limma"), "log2 fold change")
+})
+
+test_that("the check runs after auto resolves, not before", {
+  skip_if_not_installed("limma")
+  # Proteomics raw intensity auto-selects limma, so a check placed before
+  # resolution would have passed the default the import view sends.
+  expect_error(grp(scale_fixture("raw_intensity"), "auto"), "log2 fold change")
+})
+
+test_that("the refusal names a step the user can take", {
+  skip_if_not_installed("limma")
+  expect_error(grp(scale_fixture("raw_intensity"), "limma"), "normalize_omics")
+  # normalize_omics() is proteomics-only, so RNA must not be sent there.
+  msg <- tryCatch(grp(scale_fixture("tpm", "rnaseq"), "limma"),
+                  error = function(e) conditionMessage(e))
+  expect_false(grepl("normalize_omics", msg))
+  expect_match(msg, "vst or logcpm")
+})
+
+test_that("backends whose effect label is honest are not narrowed", {
+  raw <- scale_fixture("raw_intensity")
+  expect_equal(unique(grp(raw, "ttest")$results[[1]]$effect_type), "mean_diff")
+  expect_equal(unique(grp(raw, "lm")$results[[1]]$effect_type), "beta")
+})
+
+test_that("lm keeps transforming raw counts itself", {
+  # lm log2(x+1)s raw_count internally and reports beta. Rejecting all
+  # linear input to lm would have removed a path that was already correct.
+  set.seed(3); p <- 20; n <- 10
+  cts <- matrix(rpois(p * n, 300), p,
+                dimnames = list(paste0("G", seq_len(p)), paste0("S", seq_len(n))))
+  md <- data.frame(group = rep(c("A", "B"), each = 5), age = rnorm(n, 50, 8),
+                   row.names = colnames(cts))
+  fd <- data.frame(feature_id = rownames(cts), feature_symbol = rownames(cts),
+                   row.names = rownames(cts), stringsAsFactors = FALSE)
+  rc <- omics_input(cts, md, fd, omics_type = "rnaseq", assay_type = "raw_count")
+  expect_equal(unique(grp(rc, "lm")$results[[1]]$effect_type), "beta")
+  cont <- run_diff(rc, method = "lm", analysis_type = "continuous",
+                   continuous_col = "age")
+  expect_equal(unique(cont$results[[1]]$effect_type), "correlation")
+})
+
+test_that("limma accepts every log-scale assay type", {
+  skip_if_not_installed("limma")
+  for (at in c("normalized_intensity", "imputed_intensity", "filtered_intensity")) {
+    expect_s3_class(grp(scale_fixture(at, linear = FALSE), "limma"), "analysis_bundle")
+  }
+  for (at in c("vst", "logcpm")) {
+    expect_s3_class(grp(scale_fixture(at, "rnaseq", linear = FALSE), "limma"),
+                    "analysis_bundle")
+  }
+})
+
+test_that("magnitude overrides the label where magnitude is informative", {
+  skip_if_not_installed("limma")
+  # A project saved before the vocabulary existed carries "intensity", which
+  # was stamped on every proteomics upload whether or not it was already
+  # log2. Refusing on that label alone would make old log2 projects
+  # unanalysable, so the values decide.
+  legacy_log <- scale_fixture("normalized_intensity", linear = FALSE)
+  legacy_log$assay_type <- "intensity"
+  # The superseded-label warning is validate_omics_input() doing its job.
+  expect_s3_class(suppressWarnings(grp(legacy_log, "limma")), "analysis_bundle")
+
+  legacy_linear <- scale_fixture("normalized_intensity", linear = TRUE)
+  legacy_linear$assay_type <- "intensity"
+  expect_error(suppressWarnings(grp(legacy_linear, "limma")), "log2 fold change")
+})
+
+test_that("a raw_intensity layer that is actually on a log scale is allowed", {
+  skip_if_not_installed("limma")
+  mislabelled <- scale_fixture("normalized_intensity", linear = FALSE)
+  mislabelled$assay_type <- "raw_intensity"
+  expect_s3_class(grp(mislabelled, "limma"), "analysis_bundle")
+})
+
+test_that("TPM and FPKM are refused on the label, since magnitude cannot help", {
+  skip_if_not_installed("limma")
+  # A gene at 5 TPM is ordinary, so a small maximum is not evidence of a log
+  # scale the way it is for intensities.
+  small_tpm <- scale_fixture("tpm", "rnaseq", linear = FALSE)
+  expect_error(grp(small_tpm, "limma"), "log2 fold change")
+})

@@ -71,6 +71,10 @@ test_that("choosing a different scale rewrites the label and drops confirmation"
 
   shiny::testServer(import_view_server, {
     session$setInputs(omics_type = "proteomics", file = tiny_upload(xlsx))
+    # This test is about relabelling, not about normalizing. vsn needs more
+    # than the fixture's five features, and a failed normalization now stops
+    # the commit rather than importing raw behind a notification.
+    session$setInputs(normalize = FALSE)
     session$setInputs(confirm = 1)
     expect_s3_class(session$returned(), "omics_input")
 
@@ -216,4 +220,71 @@ test_that("the normalization choice is part of the upload's identity", {
   # Same settings, same identity
   expect_identical(
     fp_on, input_fingerprint(xlsx, "proteomics", "raw_intensity", "vsn"))
+})
+
+# --- the four ways raw intensities used to reach limma -------------------
+
+# A04 was reported as "normalization failed but the layer was committed".
+# That is one of four routes to the same place; a fix that only closes the
+# failure branch leaves the other three, and the checkbox is the one users
+# actually take.
+test_that("a failed normalization commits nothing and stays retryable", {
+  skip_unless_xlsx()
+  xlsx <- tempfile(fileext = ".xlsx")
+  on.exit(unlink(xlsx), add = TRUE)
+  write_tiny_omics_xlsx(xlsx, scale = "linear")
+  shiny::testServer(import_view_server, {
+    session$setInputs(
+      omics_type = "proteomics",
+      file = tiny_upload(xlsx)
+    )
+    expect_true(parse_ok())
+    session$setInputs(normalize = TRUE, normalize_method = "vsn")
+    testthat::local_mocked_bindings(
+      normalize_omics = function(...) stop("vsn: fitting failed"),
+      .package = "omicsCore"
+    )
+    session$setInputs(confirm = 1)
+    expect_null(session$returned())        # nothing committed
+
+    # The upload survives, so confirming again after switching method works.
+    testthat::local_mocked_bindings(
+      normalize_omics = function(input, method = "vsn", ...) {
+        input$expr_mat <- log2(input$expr_mat + 1)
+        input$assay_type <- "normalized_intensity"
+        input
+      },
+      .package = "omicsCore"
+    )
+    session$setInputs(normalize_method = "log2", confirm = 2)
+    out <- session$returned()
+    expect_s3_class(out, "omics_input")
+    expect_equal(out$assay_type, "normalized_intensity")
+  })
+})
+
+test_that("unticking Normalize on import still cannot reach limma", {
+  skip_unless_xlsx()
+  xlsx <- tempfile(fileext = ".xlsx")
+  on.exit(unlink(xlsx), add = TRUE)
+  write_tiny_omics_xlsx(xlsx, scale = "linear")
+  shiny::testServer(import_view_server, {
+    session$setInputs(
+      omics_type = "proteomics",
+      file = tiny_upload(xlsx)
+    )
+    # The checkbox is a legitimate choice: the layer imports, and QC on it is
+    # fine. What must not happen is limma reporting log2 fold changes from it.
+    session$setInputs(normalize = FALSE, confirm = 1)
+    out <- session$returned()
+    skip_if(is.null(out) || !identical(out$assay_type, "raw_intensity"),
+            "fixture did not import as raw intensity")
+    expect_error(
+      omicsCore::run_diff(out, method = "auto", analysis_type = "group",
+                          group_col = names(out$meta_df)[1],
+                          control_group = unique(out$meta_df[[1]])[1],
+                          case_group = unique(out$meta_df[[1]])[2]),
+      "log2 fold change"
+    )
+  })
 })

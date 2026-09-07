@@ -213,6 +213,10 @@ run_diff <- function(
   if (method == "auto") {
     method <- auto_select_diff_method(input, analysis_type)
   }
+  # After `auto` resolves, not before: proteomics raw intensities resolve to
+  # limma, so a check placed above would have waved through the default the
+  # import view actually sends.
+  assert_limma_scale(input, method)
 
   backend_args <- switch(
     analysis_type,
@@ -395,8 +399,13 @@ validate_diff_design <- function(input, analysis_type, args) {
     }
     # Confounded with what is being tested: adding the covariate to the
     # design adds no rank, so the engine would silently drop one of them.
-    with_cov <- stats::model.matrix(
-      stats::as.formula(paste0("~ .primary + `", cov, "`")), data = design_df)
+    #
+    # Built through `~ .` on a two-column frame rather than by pasting the
+    # covariate's name into a formula. Backquoting it was not enough -- a
+    # column name containing a backquote closes the quote and the rest is
+    # parsed as code.
+    pair_df <- data.frame(.primary = primary, x = sub[[cov]])
+    with_cov <- stats::model.matrix(~ ., data = pair_df)
     if (qr(with_cov)$rank < ncol(with_cov)) {
       what <- if (analysis_type == "group") args$group_col else args$continuous_col
       stop(sprintf(
