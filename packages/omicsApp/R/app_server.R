@@ -91,9 +91,36 @@ app_server <- function(input, output, session) {
                       })
   imported_input <- import_view_server("import",
                         current_project = current_project)
-  qc_bundle <- qc_view_server("qc", current_project = current_project,
-                              invalidate = layer_generation,
-                              requested_layer = requested_layer)
+  # The QC view returns what the user applied, not what it previewed:
+  # list(tag, bundle, params, base_version) or NULL.
+  qc_applied <- qc_view_server("qc", current_project = current_project,
+                               invalidate = layer_generation,
+                               requested_layer = requested_layer)
+  # The bundle half, for the report and for `project$bundles`.
+  qc_bundle <- shiny::reactive(qc_applied()$bundle)
+
+  # Applying QC changes what every downstream analysis means, so it is
+  # written into the project rather than kept beside it: set_preprocessing()
+  # records the cleaned layer against the import version it came from, and
+  # effective_input() is then the single answer to "which data is this
+  # layer". Results computed on the previous version are retired here, in
+  # the project itself -- clearing the views alone left a restored project's
+  # saved differential in place, where the report and the export still read
+  # it.
+  shiny::observeEvent(qc_applied(), {
+    x <- qc_applied()
+    proj <- current_project()
+    if (is.null(x) || is.null(proj)) return()
+    proj <- omicsCore::set_preprocessing(
+      proj, x$tag,
+      cleaned = x$bundle$results$cleaned_input,
+      params = x$params,
+      base_input_version = x$base_version
+    )
+    proj <- omicsCore::retire_invalid(proj, reason = "QC applied")
+    current_project(proj)
+    layer_generation(shiny::isolate(layer_generation()) + 1L)
+  }, priority = 15L)
   diff_view <- diff_view_server("diff", current_project = current_project,
                                 invalidate = layer_generation)
   diff_bundle <- diff_view$bundle

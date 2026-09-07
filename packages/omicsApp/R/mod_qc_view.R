@@ -84,15 +84,20 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # than fighting it.
       want <- input$layer
       if (is.null(want) || !want %in% names(exps)) want <- requested_layer()
-      if (!is.null(want) && length(want) == 1L && want %in% names(exps)) {
-        return(list(input = exps[[want]], tag = want, is_demo = FALSE))
+      tag <- if (!is.null(want) && length(want) == 1L && want %in% names(exps)) {
+        want
+      } else {
+        names(exps)[qc_default_layer_idx(exps)]
       }
-      idx <- qc_default_layer_idx(exps)
-      list(
-        input   = exps[[idx]],
-        tag     = names(exps)[idx],
-        is_demo = FALSE
-      )
+      # baseline_input(), not effective_input(): QC is the one consumer that
+      # must not read its own output. Re-running over already-filtered values
+      # cannot return the features the previous run removed, so loosening the
+      # cutoff would appear to do nothing, and switching the imputation method
+      # would impute cells that are no longer missing. Each apply replaces the
+      # layer's preprocessing rather than stacking onto it.
+      base <- omicsCore::baseline_input(proj, tag)
+      list(input = base$input, tag = tag, base_version = base$version,
+           is_demo = FALSE)
     })
 
     output$ui_layer <- shiny::renderUI({
@@ -120,6 +125,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # plots stay visible.
     last_bundle <- shiny::reactiveVal(NULL)
     last_error  <- shiny::reactiveVal(NULL)
+    # The preview, with the identity it was computed under. `applied` is what
+    # leaves this module; nothing downstream sees `last_bundle`.
+    preview     <- shiny::reactiveVal(NULL)
+    applied     <- shiny::reactiveVal(NULL)
 
     # The layer this result was computed on has been replaced, so the
     # result is no longer about anything in the project. NULL is the
@@ -127,6 +136,8 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     shiny::observeEvent(invalidate(), {
       last_bundle(NULL)
       last_error(NULL)
+      preview(NULL)
+      applied(NULL)
     }, ignoreInit = TRUE)
 
     # Imputation is offered for proteomics and withheld everywhere else.
@@ -206,6 +217,27 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                          choices = choices, selected = sel)
     })
 
+    # The settings as run_qc() would resolve them, in one place, so the
+    # preview's signature and the record kept on apply cannot disagree about
+    # what was asked for.
+    collect_qc_params <- function() {
+      list(
+        missing_threshold = input$missing_threshold %||% 0.5,
+        outlier_method    = input$outlier_method %||% "iqr",
+        # Read rather than trusted from the control: it is hidden when the
+        # layer is not proteomics, and Shiny keeps an input's last value.
+        impute_method     = if (!impute_applies()) "none" else input$impute_method
+      )
+    }
+
+    # What this preview is about: which project, which layer, which version
+    # of it, and which settings. Captured when the preview runs, so applying
+    # can only confirm it -- never mint a fresh identity for a stale result.
+    preview_signature <- function(a, params) {
+      list(project_id = current_project()$metadata$project_id,
+           tag = a$tag, base_version = a$base_version, params = params)
+    }
+
     shiny::observe({
       a <- active()
       thr   <- input$missing_threshold %||% 0.5
@@ -235,11 +267,19 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         ),
         error = function(e) e)
 
+      # A failed preview keeps the previous plots on screen -- useful -- but
+      # must not leave the previous *bundle* looking like the answer to the
+      # current settings. It did, and the apply button then stamped the
+      # current layer's identity onto a result computed from another one.
+      sig <- if (a$is_demo) NULL else preview_signature(a, collect_qc_params())
       if (inherits(bundle, "error")) {
         last_error(conditionMessage(bundle))
+        preview(list(bundle = NULL, sig = sig, ok = FALSE,
+                     error = conditionMessage(bundle)))
       } else {
         last_error(NULL)
         last_bundle(bundle)
+        preview(list(bundle = bundle, sig = sig, ok = TRUE, error = NULL))
       }
     })
 
@@ -429,8 +469,108 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     })
 
-    # Expose the QC bundle for slice 3F (report).
-    shiny::reactive(last_bundle())
+    # ---- apply ---------------------------------------------------------
+
+    # The preprocessing already applied to the layer on screen, if any.
+    applied_pp <- shiny::reactive({
+      proj <- current_project()
+      a <- active()
+      if (is.null(proj) || isTRUE(a$is_demo)) return(NULL)
+      pp <- proj$preprocessing[[a$tag]]
+      # Preprocessing left behind by a layer replacement describes data the
+      # project no longer holds; effective_input() already refuses to serve
+      # it, and the controls must not offer it back either.
+      if (is.null(pp) || !identical(pp$base_input_version, a$base_version)) {
+        return(NULL)
+      }
+      pp
+    })
+
+    shiny::observeEvent(input$apply_to_downstream, {
+      p <- preview()
+      a <- active()
+      if (isTRUE(a$is_demo)) {
+        shiny::showNotification(
+          "This is the built-in demo. Import a project to apply QC.",
+          type = "message")
+        return()
+      }
+      if (is.null(p) || !isTRUE(p$ok)) {
+        shiny::showNotification(
+          paste0("These settings did not run, so there is nothing to apply",
+                 if (!is.null(p$error)) paste0(": ", p$error) else "."),
+          type = "error", duration = NULL)
+        return()
+      }
+      # The preview is only the answer to the settings that produced it. A
+      # signature check here, rather than re-deriving the identity from the
+      # current controls, is what stops a result computed before a layer
+      # switch from being applied to the layer after it.
+      if (!identical(p$sig, preview_signature(a, collect_qc_params()))) {
+        shiny::showNotification(
+          "The settings changed after this preview ran. Wait for it to finish, then apply.",
+          type = "warning", duration = NULL)
+        return()
+      }
+      b <- p$bundle
+      b$input_info$layer_tag <- a$tag
+      b$input_info$base_input_version <- a$base_version
+      applied(list(tag = a$tag, bundle = b, params = b$params,
+                   base_version = a$base_version,
+                   at = Sys.time()))
+      shiny::showNotification(
+        sprintf("QC applied to '%s': %d \u2192 %d features, %d \u2192 %d samples. Downstream analyses will use this.",
+                a$tag,
+                b$input_info$n_features_in, b$input_info$n_features_out,
+                b$input_info$n_samples_in,  b$input_info$n_samples_out),
+        type = "message", duration = 8)
+    })
+
+    output$applied_status <- shiny::renderUI({
+      a <- active()
+      if (isTRUE(a$is_demo)) return(NULL)
+      pp <- applied_pp()
+      txt <- if (is.null(pp)) {
+        "Not applied \u2014 analyses are using the raw import."
+      } else {
+        sprintf("Applied: %d features, %d samples \u00B7 %s imputation \u00B7 cutoff %s",
+                nrow(pp$cleaned$expr_mat), ncol(pp$cleaned$expr_mat),
+                pp$params$impute_method %||% "none",
+                format(pp$params$missing_threshold %||% NA))
+      }
+      htmltools::tags$div(class = "muted",
+                          style = "font-size:12px;margin-top:6px", txt)
+    })
+
+    # ---- restoring what was applied -------------------------------------
+
+    # On arriving at a layer -- a new project, a restored one, a switch of
+    # tag -- the controls show what is applied to it, not whatever they were
+    # last left on. Without this, opening a project saved with `min` while
+    # `knn` happened to be selected showed `knn`, and the page then described
+    # settings the analyses were not using.
+    #
+    # It runs on arrival only, so the user's edits afterwards are their own.
+    shiny::observeEvent(list(current_project(), active()$tag), {
+      pp <- applied_pp()
+      params <- pp$params
+      if (is.null(params)) return()
+      if (!is.null(params$missing_threshold)) {
+        shiny::updateSliderInput(session, "missing_threshold",
+                                 value = params$missing_threshold)
+      }
+      if (!is.null(params$outlier_method)) {
+        shiny::updateRadioButtons(session, "outlier_method",
+                                  selected = params$outlier_method)
+      }
+      if (!is.null(params$impute_method) && impute_applies()) {
+        shiny::updateSelectInput(session, "impute_method",
+                                 selected = params$impute_method)
+      }
+    }, priority = 25L, ignoreNULL = FALSE)
+
+    # What leaves the module is the applied preprocessing, never the preview.
+    shiny::reactive(applied())
   })
 }
 
@@ -473,7 +613,22 @@ qc_controls_card <- function(ns) {
       ),
       # Proteomics only, and rendered from the server because the choices
       # depend on the layer and on which optional packages are installed.
-      shiny::uiOutput(ns("ui_impute"))
+      shiny::uiOutput(ns("ui_impute")),
+      # Everything above is a preview. Until this is pressed the panels
+      # describe what these settings would do, and the analyses keep using
+      # whatever was applied last -- which for a fresh layer is the import.
+      #
+      # The separation exists because the preview runs on every control
+      # change, from the moment the view is constructed, whether or not the
+      # user has opened it. Feeding that straight to the analyses would mean
+      # the default cutoff silently filtered every project.
+      htmltools::tags$div(
+        class = "qc-apply",
+        shiny::actionButton(ns("apply_to_downstream"),
+                            "Apply to downstream analyses",
+                            class = "btn btn-primary"),
+        shiny::uiOutput(ns("applied_status"))
+      )
     )
   )
 }

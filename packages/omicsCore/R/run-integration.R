@@ -185,24 +185,21 @@ run_integration <- function(
 
   check_integration_result_schema(integration_df)
 
+  # Described from the layers as the analyses actually saw them. Reading
+  # project$experiments here reported the imported shape while the
+  # differentials underneath had run on the QC-cleaned one, so a bundle
+  # could claim more features than any of its inputs contained.
+  eff_a <- effective_input(project, tag_a)
+  eff_b <- effective_input(project, tag_b)
+
   input_info <- list(
     experiments = experiments,
-    omics_type = c(
-      project$experiments[[tag_a]]$omics_type,
-      project$experiments[[tag_b]]$omics_type
-    ),
-    assay_type = c(
-      project$experiments[[tag_a]]$assay_type,
-      project$experiments[[tag_b]]$assay_type
-    ),
-    n_features = c(
-      nrow(project$experiments[[tag_a]]$expr_mat),
-      nrow(project$experiments[[tag_b]]$expr_mat)
-    ),
-    n_samples = c(
-      ncol(project$experiments[[tag_a]]$expr_mat),
-      ncol(project$experiments[[tag_b]]$expr_mat)
-    )
+    omics_type = c(eff_a$input$omics_type, eff_b$input$omics_type),
+    assay_type = c(eff_a$input$assay_type, eff_b$input$assay_type),
+    input_version = c(eff_a$version, eff_b$version),
+    input_source = c(eff_a$source, eff_b$source),
+    n_features = c(nrow(eff_a$input$expr_mat), nrow(eff_b$input$expr_mat)),
+    n_samples = c(ncol(eff_a$input$expr_mat), ncol(eff_b$input$expr_mat))
   )
 
   params <- c(

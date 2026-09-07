@@ -79,15 +79,23 @@ integration_view_server <- function(id,
       if (is.null(gc) || is.null(ctrl) || is.null(case)) {
         return(list(ok = FALSE))
       }
-      sec <- exps[[secondary_idx]]
+      secondary_tag <- names(exps)[secondary_idx]
+      # The second layer's differential is computed here rather than taken
+      # from the Differential view, so it has to resolve its input the same
+      # way that view does. Reading proj$experiments directly is how a
+      # concordance ended up comparing a QC-cleaned first layer against an
+      # uncleaned second one.
+      sec_eff <- omicsCore::effective_input(proj, secondary_tag)
+      sec <- sec_eff$input
       if (!gc %in% names(sec$meta_df)) return(list(ok = FALSE))
       lv <- unique(as.character(stats::na.omit(sec$meta_df[[gc]])))
       if (!all(c(ctrl, case) %in% lv)) return(list(ok = FALSE))
       list(
         ok            = TRUE,
         primary_tag   = names(exps)[primary_idx[1L]],
-        secondary_tag = names(exps)[secondary_idx],
+        secondary_tag = secondary_tag,
         secondary     = sec,
+        secondary_source = sec_eff$source,
         group_col     = gc,
         control       = ctrl,
         case          = case

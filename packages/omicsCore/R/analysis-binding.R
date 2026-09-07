@@ -32,13 +32,15 @@ new_opaque_id <- function(prefix) {
 }
 
 #' Generate an analysis identifier
+#' @return A single opaque string, unique per call.
 #' @keywords internal
-#' @noRd
+#' @export
 new_analysis_id <- function() new_opaque_id("ana")
 
 #' Generate a project identifier
+#' @return A single opaque string, unique per call.
 #' @keywords internal
-#' @noRd
+#' @export
 new_project_id <- function() new_opaque_id("prj")
 
 #' Content version of an analysis input
@@ -51,7 +53,7 @@ new_project_id <- function() new_opaque_id("prj")
 #' @param input An `omics_input`.
 #' @return A single string.
 #' @keywords internal
-#' @noRd
+#' @export
 input_version <- function(input) {
   rlang::hash(list(
     matrix     = input$expr_mat,
@@ -70,8 +72,10 @@ input_version <- function(input) {
 #' Resolved, not as typed: `run_qc(impute_method = NULL)` and
 #' `run_qc(impute_method = "MinProb")` are the same analysis on proteomics.
 #'
+#' @param params A named list of resolved parameters.
+#' @return A single string.
 #' @keywords internal
-#' @noRd
+#' @export
 params_signature <- function(params) {
   if (is.null(params)) params <- list()
   params <- params[order(names(params))]
@@ -89,8 +93,9 @@ params_signature <- function(params) {
 #' @param upstream_ids Analysis ids this result was derived from.
 #' @param params_signature Signature of the resolved parameters.
 #'
+#' @return A list describing what the result was computed from.
 #' @keywords internal
-#' @noRd
+#' @export
 new_provenance_binding <- function(analysis_id, project_id, inputs,
                                    upstream_ids = character(0),
                                    params_signature = NA_character_) {
@@ -106,8 +111,9 @@ new_provenance_binding <- function(analysis_id, project_id, inputs,
 #' is how an empty record passed for a verified one.
 #'
 #' @return `list(ok = , reason = )`.
+#' @param pb A provenance binding.
 #' @keywords internal
-#' @noRd
+#' @export
 validate_provenance_binding <- function(pb) {
   bad <- function(reason) list(ok = FALSE, reason = reason)
   if (!is.list(pb)) return(bad("binding is not a list"))
@@ -142,8 +148,11 @@ validate_provenance_binding <- function(pb) {
 #' have identical input versions, so comparing versions alone accepted one
 #' project's results inside the other.
 #'
+#' @param pb A provenance binding.
+#' @param project An `omics_project`.
+#' @return Logical scalar.
 #' @keywords internal
-#' @noRd
+#' @export
 result_inputs_current <- function(pb, project) {
   if (!isTRUE(validate_provenance_binding(pb)$ok)) return(FALSE)
   if (!identical(pb$project_id, project$metadata$project_id)) return(FALSE)
@@ -163,8 +172,12 @@ result_inputs_current <- function(pb, project) {
 #' analysis that nothing displayed -- the second layer's differential inside
 #' an integration -- could not be found by the result that depended on it.
 #'
+#' @param project An `omics_project`.
+#' @param bundle An `analysis_bundle`.
+#' @param id Identifier to file it under; defaults to the bundle's own.
+#' @return The project, with the analysis registered.
 #' @keywords internal
-#' @noRd
+#' @export
 register_analysis <- function(project, bundle, id = NULL) {
   id <- id %||% bundle$provenance_binding$analysis_id %||% new_analysis_id()
   if (is.null(project$analyses)) project$analyses <- list()
@@ -179,8 +192,10 @@ register_analysis <- function(project, bundle, id = NULL) {
 #' whichever dependant happened to be visited before its upstream was
 #' removed, so the answer depended on list order.
 #'
+#' @param project An `omics_project`.
+#' @return Character vector of analysis ids.
 #' @keywords internal
-#' @noRd
+#' @export
 valid_result_ids <- function(project) {
   analyses <- project$analyses %||% list()
   ids <- names(analyses)
@@ -225,8 +240,12 @@ compress_for_history <- function(bundle, reason) {
 #' and applying it to the dependency graph would delete the upstream node a
 #' still-valid result points at.
 #'
+#' @param project An `omics_project`.
+#' @param max_history How many retired results to keep.
+#' @param reason Recorded against each retired result.
+#' @return The project, with invalid results moved to history.
 #' @keywords internal
-#' @noRd
+#' @export
 retire_invalid <- function(project, max_history = 20L,
                            reason = "inputs changed") {
   analyses <- project$analyses %||% list()
@@ -260,6 +279,8 @@ retire_invalid <- function(project, max_history = 20L,
 #' is read from reactive expressions, and hashing a 63k x 258 matrix on every
 #' read is not a cache.
 #'
+#' @param input An `omics_input`.
+#' @return The input, carrying its content version.
 #' @keywords internal
 #' @noRd
 stamp_version <- function(input) {
@@ -277,8 +298,14 @@ stamp_version <- function(input) {
 #' which import it was built from, so a replaced layer cannot silently keep
 #' handing out preprocessing derived from the layer before it.
 #'
+#' @param project An `omics_project`.
+#' @param tag Experiment layer tag.
+#' @param cleaned The preprocessed `omics_input`.
+#' @param params The resolved parameters that produced it.
+#' @param base_input_version Version of the layer it was built from.
+#' @return The project, carrying that layer's applied preprocessing.
 #' @keywords internal
-#' @noRd
+#' @export
 set_preprocessing <- function(project, tag, cleaned, params,
                               base_input_version = NULL) {
   raw <- project$experiments[[tag]]
@@ -298,8 +325,11 @@ set_preprocessing <- function(project, tag, cleaned, params,
 }
 
 #' Drop a layer's preprocessing
+#' @param project An `omics_project`.
+#' @param tag Experiment layer tag.
+#' @return The project, with that layer's preprocessing removed.
 #' @keywords internal
-#' @noRd
+#' @export
 clear_preprocessing <- function(project, tag) {
   project$preprocessing[[tag]] <- NULL
   project
@@ -312,8 +342,11 @@ clear_preprocessing <- function(project, tag) {
 #' removed, so loosening a threshold would appear to do nothing, and changing
 #' the imputation method would impute values that are no longer missing.
 #'
+#' @param project An `omics_project`.
+#' @param tag Experiment layer tag.
+#' @return `list(input, version, provenance)` for the imported layer.
 #' @keywords internal
-#' @noRd
+#' @export
 baseline_input <- function(project, tag) {
   raw <- project$experiments[[tag]]
   if (is.null(raw)) stop("No such experiment layer: ", tag, call. = FALSE)
@@ -331,8 +364,10 @@ baseline_input <- function(project, tag) {
 #'   preprocessing that was left behind by a layer replacement -- the caller
 #'   gets the baseline and can say so, rather than being handed cleaned data
 #'   derived from an import that is no longer here.
+#' @param project An `omics_project`.
+#' @param tag Experiment layer tag.
 #' @keywords internal
-#' @noRd
+#' @export
 effective_input <- function(project, tag) {
   base <- baseline_input(project, tag)
   pp <- project$preprocessing[[tag]]
@@ -353,8 +388,12 @@ effective_input <- function(project, tag) {
 #' into a saved result would make that result invalid the next time the file
 #' is opened.
 #'
+#' @param session_id,project_id,activation,request_seq,view Session state at
+#'   the moment the task was launched.
+#' @param params_signature Signature of the parameters it was launched with.
+#' @return A list carrying the session state a callback is checked against.
 #' @keywords internal
-#' @noRd
+#' @export
 new_session_token <- function(session_id, project_id, activation, request_seq,
                               view, params_signature) {
   list(session_id = session_id, project_id = project_id,
@@ -381,7 +420,7 @@ new_session_token <- function(session_id, project_id, activation, request_seq,
 #'
 #' @return `list(ok = , reason = )`.
 #' @keywords internal
-#' @noRd
+#' @export
 callback_admissible <- function(token, ctx, pb, project,
                                 outcome = c("success", "error")) {
   outcome <- match.arg(outcome)

@@ -72,7 +72,15 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       } else {
         default_layer_tag(exps)
       }
-      list(input = exps[[tag]], tag = tag, is_demo = is_demo)
+      # Not exps[[tag]]. QC's filtering and imputation produced a cleaned
+      # layer that this view never read, so a user who removed high-missing
+      # features and imputed the rest watched the differential run on the
+      # raw import anyway -- with the QC panel showing the cleaned numbers.
+      # effective_input() is the one place that answers which data a layer
+      # means, and every consumer goes through it.
+      eff <- omicsCore::effective_input(proj, tag)
+      list(input = eff$input, tag = tag, source = eff$source,
+           stale = eff$stale, is_demo = is_demo)
     })
 
     output$ui_layer <- shiny::renderUI({
@@ -358,10 +366,24 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     output$header <- shiny::renderUI({
       a <- active()
       b <- diff_bundle()
+      # Which version of the layer, not just which layer. "QC-cleaned" and
+      # "raw import" are different data, and the whole point of routing this
+      # view through effective_input() is lost if the page does not say
+      # which one it got.
       source_note <- htmltools::tags$span(
         class = "muted",
-        if (a$is_demo) "demo project (built-in)"
-        else sprintf("layer = %s", a$tag)
+        if (a$is_demo) {
+          "demo project (built-in)"
+        } else if (identical(a$source, "qc_cleaned")) {
+          sprintf("layer = %s \u00B7 QC-cleaned", a$tag)
+        } else if (isTRUE(a$stale)) {
+          # Preprocessing exists but was built on a layer that has since
+          # been replaced, so the baseline is what is running.
+          sprintf("layer = %s \u00B7 raw import (QC applies to a replaced layer)",
+                  a$tag)
+        } else {
+          sprintf("layer = %s \u00B7 raw import (QC not applied)", a$tag)
+        }
       )
 
       # Before the first result there is nothing to summarise. Three em
