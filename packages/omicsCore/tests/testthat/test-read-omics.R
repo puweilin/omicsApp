@@ -436,3 +436,48 @@ test_that("names are left intact when stripping would collide", {
   res <- select_measurement_columns(mat_named(c("A_count", "A_counts")))
   expect_identical(colnames(res$mat), c("A_count", "A_counts"))
 })
+
+# --- R objects are not data ---------------------------------------------
+
+# `readRDS()` reconstructs whatever the file describes. An environment with
+# an active binding runs its function the moment a field is read, and the
+# reader reads `obj$expr_mat` right after `inherits(obj, "omics_input")` --
+# so the class check is downstream of the code, not a gate in front of it.
+evil_rds <- function(marker, env = parent.frame()) {
+  path <- tempfile(fileext = ".rds")
+  withr::defer(unlink(path), envir = env)
+  e <- new.env()
+  makeActiveBinding("expr_mat", function() { file.create(marker); matrix(1) }, e)
+  e$meta_df <- data.frame()
+  e$feature_df <- data.frame()
+  class(e) <- "omics_input"
+  saveRDS(e, path)
+  path
+}
+
+test_that("allow_r_objects = FALSE refuses .rds before the object is loaded", {
+  skip_if_not_installed("withr")
+  marker <- withr::local_tempfile()
+  path <- evil_rds(marker)
+
+  expect_error(read_omics(path, allow_r_objects = FALSE), "RDS input is disabled")
+  expect_false(file.exists(marker))
+})
+
+test_that("the refusal points at a format the user can actually produce", {
+  skip_if_not_installed("withr")
+  path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(data.frame(a = 1), path)
+  expect_error(read_omics(path, allow_r_objects = FALSE), "CSV, TSV or Excel")
+})
+
+test_that("local scripting keeps the .rds path", {
+  skip_if_not_installed("withr")
+  path <- withr::local_tempfile(fileext = ".rds")
+  m <- matrix(rnorm(20), nrow = 5,
+              dimnames = list(paste0("g", 1:5), paste0("s", 1:4)))
+  saveRDS(as.data.frame(m), path)
+  out <- read_omics(path, omics_type = "proteomics",
+                    assay_type = "normalized_intensity")
+  expect_s3_class(out$input, "omics_input")
+})

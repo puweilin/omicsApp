@@ -191,3 +191,45 @@ test_that("a hostile project name is stored under a safe slug and shown as text"
     expect_false(grepl("<script>alert(1)</script>", body, fixed = TRUE))
   })
 })
+
+# --- an uploaded R object ------------------------------------------------
+
+# The engine-level refusal is tested in omicsCore. What matters here is that
+# the *upload* path passes allow_r_objects = FALSE, so the refusal happens
+# before the object is loaded rather than after some later validation. An
+# assertion that only checked "the session survived" would have passed
+# against the vulnerable code, which ran the payload and then carried on.
+test_that("an uploaded .rds is refused before its fields are read", {
+  skip_if_not_installed("withr")
+  marker <- withr::local_tempfile()
+  rds <- withr::local_tempfile(fileext = ".rds")
+
+  e <- new.env()
+  makeActiveBinding("expr_mat", function() { file.create(marker); matrix(1) }, e)
+  e$meta_df <- data.frame()
+  e$feature_df <- data.frame()
+  class(e) <- "omics_input"
+  saveRDS(e, rds)
+
+  shiny::testServer(import_view_server, {
+    session$setInputs(
+      omics_type = "proteomics",
+      file = list(datapath = rds, name = "payload.rds",
+                  size = file.info(rds)$size)
+    )
+    expect_false(file.exists(marker))
+    expect_false(isTRUE(parse_ok()))
+    expect_match(paste(parsed()$report$warnings, collapse = " "),
+                 "RDS input is disabled")
+    # Nothing was committed, and the session is still usable.
+    expect_null(session$returned())
+    session$setInputs(confirm = 1)
+    expect_null(session$returned())
+    expect_false(file.exists(marker))
+  })
+})
+
+test_that("the file picker no longer offers .rds", {
+  ui <- import_view_ui("import")
+  expect_false(grepl(".rds", paste(as.character(ui), collapse = " "), fixed = TRUE))
+})

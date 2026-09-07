@@ -10,6 +10,7 @@ read_omics(
   omics_type = NULL,
   assay_type = NULL,
   sheet_roles = NULL,
+  allow_r_objects = TRUE,
   ...
 )
 }
@@ -31,6 +32,15 @@ The classifier is a heuristic, and a confident wrong answer is worse than
 an unconfident one: a metadata sheet read as the matrix produces an
 \code{omics_input} that analyses cleanly and means nothing. This is how a
 caller lets the user correct it without re-implementing the reader.}
+
+\item{allow_r_objects}{Whether \code{.rds} input may be loaded. Loading an R
+object runs code — an environment with an active binding, or a class
+whose method fires on access, executes as soon as a field is read, which
+is before \code{inherits(obj, "omics_input")} can say anything about it. So
+this is a statement about the file's provenance, not about its contents:
+\code{TRUE} (the default) suits a script reading files you produced, and any
+path carrying uploads from other people must pass \code{FALSE}. The Shiny
+import view does, unconditionally.}
 
 \item{...}{Forwarded to the underlying reader (\code{readxl::read_excel},
 \code{utils::read.csv}).}

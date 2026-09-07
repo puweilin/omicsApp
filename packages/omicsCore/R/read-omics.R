@@ -29,6 +29,14 @@
 #'   an unconfident one: a metadata sheet read as the matrix produces an
 #'   `omics_input` that analyses cleanly and means nothing. This is how a
 #'   caller lets the user correct it without re-implementing the reader.
+#' @param allow_r_objects Whether `.rds` input may be loaded. Loading an R
+#'   object runs code — an environment with an active binding, or a class
+#'   whose method fires on access, executes as soon as a field is read, which
+#'   is before `inherits(obj, "omics_input")` can say anything about it. So
+#'   this is a statement about the file's provenance, not about its contents:
+#'   `TRUE` (the default) suits a script reading files you produced, and any
+#'   path carrying uploads from other people must pass `FALSE`. The Shiny
+#'   import view does, unconditionally.
 #' @param ... Forwarded to the underlying reader (`readxl::read_excel`,
 #'   `utils::read.csv`).
 #'
@@ -43,6 +51,7 @@ read_omics <- function(
   omics_type = NULL,
   assay_type = NULL,
   sheet_roles = NULL,
+  allow_r_objects = TRUE,
   ...
 ) {
   type <- match.arg(type)
@@ -63,9 +72,26 @@ read_omics <- function(
     csv = read_omics_csv(path, omics_type = omics_type,
                          assay_type = assay_type,
                          sheet_roles = sheet_roles, ...),
-    rds = read_omics_rds(path, omics_type = omics_type,
-                         assay_type = assay_type,
-                         sheet_roles = sheet_roles, ...),
+    rds = {
+      # Loading an R object is not a parse. `readRDS()` reconstructs whatever
+      # the file describes, including environments with active bindings and
+      # objects whose class dispatches on access or printing, so reading a
+      # field -- or showing the object -- runs the author's code with this
+      # process's privileges. Checking `inherits(obj, "omics_input")` happens
+      # after that, and is therefore not a boundary.
+      #
+      # Local scripting over one's own files is a different trust situation
+      # from a web upload, so the argument exists; the web path passes FALSE
+      # and there is no setting that turns it back on.
+      if (!isTRUE(allow_r_objects)) {
+        stop("RDS input is disabled on this path. Loading an R object runs ",
+             "code before the contents can be validated. Export the data as ",
+             "CSV, TSV or Excel and upload that instead.", call. = FALSE)
+      }
+      read_omics_rds(path, omics_type = omics_type,
+                     assay_type = assay_type,
+                     sheet_roles = sheet_roles, ...)
+    },
     stop("Unsupported type: ", type)
   )
 }
