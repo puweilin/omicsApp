@@ -246,7 +246,24 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     })
 
     output$ui_low_expression <- shiny::renderUI({
-      if (!low_expression_applies()) return(NULL)
+      if (!low_expression_applies()) {
+        # Silence here is the wrong answer. On an RNA-seq layer the filter
+        # is the control a reader is looking for, and its absence is
+        # indistinguishable from the feature not existing -- there is
+        # nothing on the page to check against. Say which layer this is and
+        # why the filter does not apply to it.
+        a <- active()
+        inp <- if (a$is_demo) example_qc_input() else a$input
+        if (!identical(inp$omics_type %||% "", "rnaseq")) return(NULL)
+        return(htmltools::tags$div(
+          class = "muted", style = "font-size:12px",
+          sprintf(paste0("Low-expression filtering is offered on raw counts; ",
+                         "this layer is %s. A count threshold means nothing ",
+                         "on a normalised scale — re-import as raw_count ",
+                         "to filter here."),
+                  inp$assay_type %||% "unlabelled")
+        ))
+      }
       base <- shiny::isolate(applied_pp()$params) %||% list()
       htmltools::tagList(
         htmltools::tags$div(
@@ -373,10 +390,18 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       n_in  <- if (is.null(bundle)) NA_integer_ else bundle$input_info$n_samples_in
       n_feat <- if (is.null(bundle)) NA_integer_ else bundle$input_info$n_features_in
       omics <- if (is.null(bundle)) "\u2014" else omics_display(bundle$input_info$omics_type)
+      # The assay type, said out loud. Two of the controls on this page are
+      # offered or withheld on the strength of it -- imputation on
+      # proteomics, the count filter on raw counts -- and it was the one
+      # thing about the layer the page did not show, so a withheld control
+      # looked like a missing feature with nothing to check.
+      assay <- if (is.null(bundle)) NULL else bundle$input_info$assay_type
       view_header(
         title    = "Quality control",
         subtitle = htmltools::tagList(
           omics,
+          if (!is.null(assay) && nzchar(assay)) htmltools::HTML(" &middot; "),
+          if (!is.null(assay) && nzchar(assay)) assay,
           htmltools::HTML(" &middot; "),
           sprintf("%s features \u00B7 %s samples",
                   format(n_feat, big.mark = ","),

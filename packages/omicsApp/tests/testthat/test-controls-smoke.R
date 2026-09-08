@@ -37,6 +37,14 @@ rendered <- function(x) {
   !is.null(x) && nzchar(paste(as.character(x), collapse = ""))
 }
 
+# testServer hands back a renderUI output as `list(html =, deps =)`, so
+# as.character() on it is a two-element vector and a fixed match against
+# the whole thing reads whichever element came first.
+ui_html <- function(x) {
+  if (is.list(x) && !is.null(x$html)) as.character(x$html) else
+    paste(as.character(x), collapse = "")
+}
+
 # ---- QC ---------------------------------------------------------------
 
 test_that("every QC control changes what QC computes", {
@@ -313,6 +321,48 @@ test_that("intensity layers are never filtered by a count threshold", {
     expect_identical(b$params$min_count, 0)
     # nothing dropped for being "low" on a scale where 10000 is meaningless
     expect_equal(nrow(b$results$cleaned_input$expr_mat), 40L)
+  })
+})
+
+# An RNA-seq layer where the filter does not apply is the case that reads
+# as a bug: the user is on RNA-seq, the control they were told about is
+# not there, and nothing on the page says which of the two conditions
+# failed. Proteomics is different -- nobody expects a count filter there --
+# so that stays silent.
+test_that("an RNA-seq layer that cannot be filtered says so", {
+  logcpm <- sm_input("rnaseq")
+  logcpm$assay_type <- "logcpm"
+  proj <- shiny::reactiveVal(
+    omicsCore::omics_project("smoke", list(prot = sm_input("proteomics"),
+                                           rna = logcpm)))
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "rna")
+    session$flushReact()
+    html <- ui_html(output$ui_low_expression)
+    expect_match(html, "raw counts", fixed = TRUE)
+    expect_match(html, "logcpm", fixed = TRUE)
+    # and it is a note, not a control
+    expect_false(grepl("min_count", html, fixed = TRUE))
+
+    # proteomics says nothing: a count filter was never on offer there
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    expect_null(output$ui_low_expression)
+  })
+})
+
+# The assay type decides whether two of this page's controls appear, and it
+# was the one property of the layer the header did not show.
+test_that("the header names the assay type", {
+  proj <- shiny::reactiveVal(sm_project())
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "rna")
+    session$flushReact()
+    expect_match(ui_html(output$header), "raw_count", fixed = TRUE)
+
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    expect_match(ui_html(output$header), "raw_intensity", fixed = TRUE)
   })
 })
 
