@@ -75,6 +75,31 @@ test_that("run_diff t-test returns a well-formed analysis_bundle", {
   expect_null(b$results$diff_object)
 })
 
+# The fitted model is most of an RNA-seq bundle and nothing here reads it.
+# Measured on 63k features: 131 MB of the bundle's 148 MB, the way future
+# measures -- following the environments DESeq2's closures carry, which
+# object.size() does not see (it reports 39 MB for the same object). The
+# bundle is what run_async() hands to a worker and what autosave writes, so
+# carrying it cost an enrichment run that stopped at 1.85 GiB of globals.
+test_that("run_diff drops the fitted model unless asked for it", {
+  skip_if_not_installed("limma")
+  x <- make_proteo()
+  args <- list(x, method = "limma", analysis_type = "group",
+               group_col = "group", control_group = "ctrl",
+               case_group = "case")
+
+  default <- do.call(run_diff, args)
+  expect_null(default$results$diff_object)
+  # still an element, so anything reading the schema keeps working
+  expect_true("diff_object" %in% names(default$results))
+
+  kept <- do.call(run_diff, c(args, list(keep_model = TRUE)))
+  expect_false(is.null(kept$results$diff_object))
+
+  # and the numbers do not depend on it
+  expect_equal(default$results$diff_result_df, kept$results$diff_result_df)
+})
+
 test_that("run_diff t-test detects the injected signal", {
   x <- make_proteo()
   b <- run_diff(x, method = "ttest", analysis_type = "group",

@@ -15,6 +15,7 @@ run_diff(
   covariates = NULL,
   paired_col = NULL,
   selected_groups = NULL,
+  keep_model = FALSE,
   ...
 )
 }
@@ -40,14 +41,31 @@ based on \code{omics_type} and installed Suggests.}
 
 \item{selected_groups}{Optional subset of groups to retain (anova only).}
 
+\item{keep_model}{Keep the backend's fitted model object in
+\code{results$diff_object}? \code{FALSE} by default, because on RNA-seq it is
+most of the bundle and nothing reads it. A DESeqDataSet for 63k
+features holds 131 MB of the bundle's 148 MB -- and that is measured
+the way \code{future} measures, following the environments DESeq2's
+closures carry, which \code{object.size()} does not: it reports 39 MB for
+the same object.
+
+The cost of keeping it was not the memory. Every analysis is handed
+to a background worker, and \code{future} refuses a payload over
+\code{future.globals.maxSize}; enrichment on a real dataset was measured
+at 1.85 GiB of globals and stopped before it started. The same object
+is written into the project's \code{.omp} on every autosave.
+
+Set \code{TRUE} when you want the model itself -- to pull DESeq2's
+dispersion estimates, say. Nothing in this package needs it.}
+
 \item{...}{Extra arguments forwarded to the backend, e.g. \code{var_equal} for
 t-test or \code{df = 3} for limma spline.}
 }
 \value{
 An \code{\link[=is_analysis_bundle]{analysis_bundle}} with
 \code{results$diff_result_df} (standardized schema), \code{results$diff_raw_df}
-(backend-native), and \code{results$diff_object} (fitted model, may be
-\code{NULL}).
+(backend-native), and \code{results$diff_object} -- the fitted model when
+\code{keep_model = TRUE}, and \code{NULL} otherwise, which is the default.
 }
 \description{
 Single entry point for proteomics and RNA-seq differential analysis.

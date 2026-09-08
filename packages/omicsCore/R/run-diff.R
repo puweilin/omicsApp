@@ -164,13 +164,29 @@ dispatch_diff_backend <- function(input, method, analysis_type, args) {
 #' @param covariates Optional character vector of covariate column names.
 #' @param paired_col Optional pairing/block column.
 #' @param selected_groups Optional subset of groups to retain (anova only).
+#' @param keep_model Keep the backend's fitted model object in
+#'   `results$diff_object`? `FALSE` by default, because on RNA-seq it is
+#'   most of the bundle and nothing reads it. A DESeqDataSet for 63k
+#'   features holds 131 MB of the bundle's 148 MB -- and that is measured
+#'   the way `future` measures, following the environments DESeq2's
+#'   closures carry, which `object.size()` does not: it reports 39 MB for
+#'   the same object.
+#'
+#'   The cost of keeping it was not the memory. Every analysis is handed
+#'   to a background worker, and `future` refuses a payload over
+#'   `future.globals.maxSize`; enrichment on a real dataset was measured
+#'   at 1.85 GiB of globals and stopped before it started. The same object
+#'   is written into the project's `.omp` on every autosave.
+#'
+#'   Set `TRUE` when you want the model itself -- to pull DESeq2's
+#'   dispersion estimates, say. Nothing in this package needs it.
 #' @param ... Extra arguments forwarded to the backend, e.g. `var_equal` for
 #'   t-test or `df = 3` for limma spline.
 #'
 #' @return An [`analysis_bundle`][is_analysis_bundle()] with
 #'   `results$diff_result_df` (standardized schema), `results$diff_raw_df`
-#'   (backend-native), and `results$diff_object` (fitted model, may be
-#'   `NULL`).
+#'   (backend-native), and `results$diff_object` -- the fitted model when
+#'   `keep_model = TRUE`, and `NULL` otherwise, which is the default.
 #' @export
 #' @family diff
 #' @examples
@@ -193,8 +209,10 @@ run_diff <- function(
   covariates = NULL,
   paired_col = NULL,
   selected_groups = NULL,
+  keep_model = FALSE,
   ...
 ) {
+  assert_flag(keep_model, "keep_model")
   validate_omics_input(input)
   analysis_type <- match.arg(analysis_type)
   method <- match.arg(method, choices = SUPPORTED_DIFF_METHODS)
@@ -277,7 +295,10 @@ run_diff <- function(
     results = list(
       diff_result_df = backend_result$results_std,
       diff_raw_df = backend_result$results_raw,
-      diff_object = backend_result$model_object
+      # Dropped unless asked for. See `keep_model` above: on RNA-seq this
+      # one element is most of the bundle, and the bundle is what gets
+      # handed to a background worker and written to disk on every save.
+      diff_object = if (isTRUE(keep_model)) backend_result$model_object
     ),
     warnings = pre$warnings
   )
