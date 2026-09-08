@@ -39,11 +39,7 @@ run_gsea_database <- function(
       maxGSSize = max_size,
       seed = isTRUE(seed)
     ),
-    error = function(e) {
-      warning("GSEA failed for database '", database, "': ", conditionMessage(e),
-              call. = FALSE)
-      NULL
-    }
+    error = function(e) enrich_backend_failure("GSEA", database, e)
   ))
 }
 

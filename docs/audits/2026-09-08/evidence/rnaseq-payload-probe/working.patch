@@ -1,0 +1,537 @@
+diff --git a/packages/omicsApp/R/mod_qc_view.R b/packages/omicsApp/R/mod_qc_view.R
+index c0a867e..f2b1eab 100644
+--- a/packages/omicsApp/R/mod_qc_view.R
++++ b/packages/omicsApp/R/mod_qc_view.R
+@@ -230,6 +230,53 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
+                          choices = choices, selected = sel)
+     })
+ 
++    # The mirror image of imputation: offered on raw counts and withheld
++    # everywhere else.
++    #
++    # `min_count = 10` means ten reads, which is a low value on
++    # `raw_count` and a high one on `tpm` or `logcpm` -- the same number
++    # would filter almost nothing on one layer and almost everything on
++    # another. So the control is not offered where it cannot be read the
++    # same way, and run_qc() resolves those layers to off.
++    low_expression_applies <- shiny::reactive({
++      a <- active()
++      inp <- if (a$is_demo) example_qc_input() else a$input
++      identical(inp$omics_type %||% "", "rnaseq") &&
++        identical(inp$assay_type %||% "", "raw_count")
++    })
++
++    output$ui_low_expression <- shiny::renderUI({
++      if (!low_expression_applies()) return(NULL)
++      base <- shiny::isolate(applied_pp()$params) %||% list()
++      htmltools::tagList(
++        htmltools::tags$div(
++          class = "row-grid r-6-6",
++          shiny::numericInput(
++            session$ns("min_count"),
++            label = "Minimum count",
++            value = base[["min_count"]] %||% 10,
++            min = 0, step = 1),
++          shiny::numericInput(
++            session$ns("min_samples"),
++            label = "…in at least this many samples",
++            value = base[["min_samples"]] %||% 3,
++            min = 0, step = 1)
++        ),
++        # Said out loud because the effect is large and invisible: on a
++        # full human index this drops most of the rows, and someone who
++        # reads "63,241 features" on import and "15,593" here should be
++        # able to find out why without asking.
++        htmltools::tags$div(
++          class = "muted", style = "font-size:12px;margin-top:-8px",
++          "Features detected in too few samples are dropped before ",
++          "testing. Both DESeq2 and edgeR ask for this: an undetected ",
++          "feature cannot support a contrast, and testing it anyway adds ",
++          "to the multiple-testing correction. Set either to 0 to test ",
++          "everything."
++        )
++      )
++    })
++
+     # The settings as run_qc() would resolve them, in one place, so the
+     # preview's signature and the record kept on apply cannot disagree about
+     # what was asked for.
+@@ -255,6 +302,26 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
+       } else {
+         input$impute_method %||% base[["impute_method"]]
+       }
++      # Same reasoning, and the same trap: Shiny keeps a hidden input's
++      # last value, so a count threshold set on an RNA-seq layer would
++      # otherwise follow the user to a proteomics one and filter it on a
++      # scale where 10 is not a low number.
++      if (!low_expression_applies()) {
++        base[["min_count"]] <- 0
++        base[["min_samples"]] <- 0
++      } else {
++        # numericInput yields NA while the box is empty or mid-edit, and
++        # NA reaches assert_number() as a number -- the preview failed
++        # with a validation error on every keystroke that cleared the
++        # field.
++        num <- function(v, fallback) {
++          if (is.null(v) || length(v) != 1L || is.na(v)) fallback else v
++        }
++        base[["min_count"]] <- num(input$min_count,
++                                   base[["min_count"]] %||% 10)
++        base[["min_samples"]] <- num(input$min_samples,
++                                     base[["min_samples"]] %||% 3)
++      }
+       base
+     }
+ 
+@@ -595,6 +662,16 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
+         shiny::updateSelectInput(session, "impute_method",
+                                  selected = params$impute_method)
+       }
++      if (low_expression_applies()) {
++        if (!is.null(params$min_count)) {
++          shiny::updateNumericInput(session, "min_count",
++                                    value = params$min_count)
++        }
++        if (!is.null(params$min_samples)) {
++          shiny::updateNumericInput(session, "min_samples",
++                                    value = params$min_samples)
++        }
++      }
+     }, priority = 25L, ignoreNULL = FALSE)
+ 
+     # What leaves the module is the applied preprocessing, never the preview.
+@@ -642,6 +719,8 @@ qc_controls_card <- function(ns) {
+       # Proteomics only, and rendered from the server because the choices
+       # depend on the layer and on which optional packages are installed.
+       shiny::uiOutput(ns("ui_impute")),
++      # Raw counts only, for the mirror-image reason.
++      shiny::uiOutput(ns("ui_low_expression")),
+       # Everything above is a preview. Until this is pressed the panels
+       # describe what these settings would do, and the analyses keep using
+       # whatever was applied last -- which for a fresh layer is the import.
+diff --git a/packages/omicsApp/tests/testthat/test-controls-smoke.R b/packages/omicsApp/tests/testthat/test-controls-smoke.R
+index a933a0e..0f6204a 100644
+--- a/packages/omicsApp/tests/testthat/test-controls-smoke.R
++++ b/packages/omicsApp/tests/testthat/test-controls-smoke.R
+@@ -252,6 +252,70 @@ test_that("counts are never imputed, even with a method left selected", {
+   })
+ })
+ 
++# The low-expression filter is the mirror of imputation: offered on raw
++# counts, withheld everywhere else. Both halves matter, and the second one
++# is the half that bites -- Shiny keeps a removed input's value, so a count
++# threshold set here would otherwise follow the user to an intensity layer,
++# where 10 is not a low number.
++
++test_that("the low-expression control reaches run_qc and changes the result", {
++  # A mixture rather than sm_input()'s uniform Poisson(300): a threshold
++  # that drops every feature is refused by run_qc() -- rightly -- and the
++  # preview then keeps the previous bundle, so a test built that way
++  # watches nothing change and cannot tell why.
++  quiet <- sm_input("rnaseq")
++  quiet$expr_mat[1:10, ] <- 0
++  proj <- shiny::reactiveVal(
++    omicsCore::omics_project("smoke", list(prot = sm_input("proteomics"),
++                                           rna = quiet)))
++  shiny::testServer(qc_view_server, args = list(current_project = proj), {
++    session$setInputs(layer = "rna")
++    session$flushReact()
++    expect_true(rendered(output$ui_low_expression))
++
++    # Defaults: the ten silent features go, the other thirty stay.
++    b <- last_bundle()
++    expect_identical(b$params$min_count, 10)
++    expect_equal(nrow(b$results$cleaned_input$expr_mat), 30L)
++
++    session$setInputs(min_count = 0, min_samples = 0)
++    session$flushReact()
++    expect_equal(nrow(last_bundle()$results$cleaned_input$expr_mat), 40L)
++  })
++})
++
++test_that("an emptied threshold box does not break the preview", {
++  proj <- shiny::reactiveVal(sm_project())
++  shiny::testServer(qc_view_server, args = list(current_project = proj), {
++    session$setInputs(layer = "rna")
++    session$flushReact()
++    # numericInput reports NA while the field is empty, and NA satisfies
++    # is.numeric() -- so it reached assert_number() and the preview failed
++    # on the keystroke that cleared the box.
++    session$setInputs(min_count = NA_real_, min_samples = NA_real_)
++    session$flushReact()
++    expect_null(last_error())
++    expect_false(is.null(last_bundle()))
++  })
++})
++
++test_that("intensity layers are never filtered by a count threshold", {
++  proj <- shiny::reactiveVal(sm_project())
++  shiny::testServer(qc_view_server, args = list(current_project = proj), {
++    session$setInputs(layer = "rna", min_count = 250, min_samples = 8)
++    session$flushReact()
++    expect_true(rendered(output$ui_low_expression))
++
++    session$setInputs(layer = "prot")
++    session$flushReact()
++    expect_null(output$ui_low_expression)
++    b <- last_bundle()
++    expect_identical(b$params$min_count, 0)
++    # nothing dropped for being "low" on a scale where 10000 is meaningless
++    expect_equal(nrow(b$results$cleaned_input$expr_mat), 40L)
++  })
++})
++
+ test_that("only methods whose packages are installed are offered", {
+   proj <- shiny::reactiveVal(sm_project())
+   shiny::testServer(qc_view_server, args = list(current_project = proj), {
+diff --git a/packages/omicsCore/R/diff-deseq2.R b/packages/omicsCore/R/diff-deseq2.R
+index 801fd24..bc1408a 100644
+--- a/packages/omicsCore/R/diff-deseq2.R
++++ b/packages/omicsCore/R/diff-deseq2.R
+@@ -177,7 +177,7 @@ run_deseq2_group <- function(
+   # rather than parsing them, so the renamed levels go in there too.
+   sf <- safe_frame(target_meta, design_terms)
+   group_id <- sf$ids[[match(group_col, design_terms)]]
+-  design_formula <- stats::as.formula(paste("~", paste(sf$ids, collapse = " + ")))
++  design_formula <- detached_formula(paste("~", paste(sf$ids, collapse = " + ")))
+   dds <- build_deseq_dataset(input, count_sub, sf$df, design_formula)
+   dds[[group_id]] <- stats::relevel(dds[[group_id]],
+                                     ref = safe_level(sf, group_id, control_group))
+@@ -269,7 +269,7 @@ run_deseq2_continuous <- function(
+   # Renamed columns, as in the group case above.
+   sf <- safe_frame(meta_df, design_terms)
+   cont_id <- sf$ids[[match(continuous_col, design_terms)]]
+-  design_formula <- stats::as.formula(paste("~", paste(sf$ids, collapse = " + ")))
++  design_formula <- detached_formula(paste("~", paste(sf$ids, collapse = " + ")))
+   dds <- build_deseq_dataset(input, count_mat, sf$df, design_formula)
+   dds <- deseq_with_dispersion_fallback(dds)
+ 
+diff --git a/packages/omicsCore/R/diff-design.R b/packages/omicsCore/R/diff-design.R
+index 9ce4f6c..e8be386 100644
+--- a/packages/omicsCore/R/diff-design.R
++++ b/packages/omicsCore/R/diff-design.R
+@@ -67,6 +67,33 @@ safe_frame <- function(meta, terms) {
+ #'
+ #' @param meta Sample metadata.
+ #' @param terms Model terms, in order; the first is normally the primary one.
++#' A formula that does not carry the frame it was built in
++#'
++#' `stats::as.formula()` on a string takes `env = parent.frame()`, and a
++#' formula holds its environment for as long as anything holds the formula.
++#' That is fine for a formula consumed and dropped, and a leak for one that
++#' is stored: DESeq2 keeps the design inside the `DESeqDataSet`, so the
++#' object returned by `run_deseq2_group()` referred back to that function's
++#' frame -- which by the time it returned held the subsetted count matrix,
++#' the standardized results, and the `DESeqDataSet` itself. A cycle.
++#'
++#' Measured at 63k features x 12 samples: 39 MB of actual data, 131 MB once
++#' the environment is followed, of which the formula accounted for 98 MB.
++#' `object.size()` does not follow environments and so reported the first
++#' number; `future` does, and refused to send the bundle to a worker.
++#'
++#' The design terms are columns of the data frame passed alongside, so
++#' nothing is ever looked up in the formula's environment. `baseenv()`
++#' rather than `emptyenv()`, because code that calls `environment(f)` on a
++#' formula expects something it can search.
++#'
++#' @param text The formula, as a string.
++#' @keywords internal
++#' @noRd
++detached_formula <- function(text) {
++  stats::as.formula(text, env = baseenv())
++}
++
+ #' @param primary Which of `terms` carries the contrast, if any.
+ #' @param intercept Include an intercept column.
+ #'
+diff --git a/packages/omicsCore/R/qc-rnaseq.R b/packages/omicsCore/R/qc-rnaseq.R
+index 33f0d0e..3cec8f0 100644
+--- a/packages/omicsCore/R/qc-rnaseq.R
++++ b/packages/omicsCore/R/qc-rnaseq.R
+@@ -1,3 +1,42 @@
++#' Which features are too lowly expressed to test
++#'
++#' Keeps a feature when at least `min_samples` samples reach `min_count`,
++#' the filter edgeR and DESeq2 both ask for and spell the same way. It is
++#' deliberately not "total counts across all samples": a gene at 200 in one
++#' sample and zero everywhere else passes that and cannot support a
++#' contrast.
++#'
++#' Two reasons to run it, and the second is the one people forget. A
++#' feature nobody detected carries no information about any contrast, and
++#' fitting a model for it costs exactly what fitting a real one costs -- on
++#' a full human index roughly a fifth of the rows are zero in every sample.
++#' And every one of them still enters the multiple-testing correction, so
++#' testing them makes the real findings harder to detect rather than
++#' easier.
++#'
++#' Returns the features to *drop*, so the caller can union it with whatever
++#' else it is dropping.
++#'
++#' @param count_mat Counts, features x samples.
++#' @param min_count The count a sample must reach to be counted.
++#' @param min_samples How many samples must reach it.
++#'
++#' @return Character vector of feature ids failing the filter.
++#' @keywords internal
++#' @noRd
++low_expression_features <- function(count_mat, min_count, min_samples) {
++  if (!is.numeric(min_count) || !is.numeric(min_samples) ||
++      min_count <= 0 || min_samples <= 0) {
++    return(character(0))
++  }
++  # NA counted as not reaching the threshold. A missing count is not a
++  # detection, and treating it as one is how an all-NA row survives a
++  # filter whose whole purpose is to remove rows with nothing in them.
++  reached <- rowSums(!is.na(count_mat) & count_mat >= min_count)
++  ids <- rownames(count_mat) %||% as.character(seq_len(nrow(count_mat)))
++  ids[reached < min_samples]
++}
++
+ #' Winsorize per-gene outliers in a count matrix
+ #'
+ #' For each gene (row), values exceeding `Q3 + k * IQR` are clipped to that
+diff --git a/packages/omicsCore/R/run-qc.R b/packages/omicsCore/R/run-qc.R
+index c8fec73..47d7522 100644
+--- a/packages/omicsCore/R/run-qc.R
++++ b/packages/omicsCore/R/run-qc.R
+@@ -34,6 +34,21 @@
+ #'   or a vector of those (other than `"none"`) to union their flags.
+ #' @param outlier_sd_threshold Z-score / IQR multiplier passed to
+ #'   [qc_outliers()]. Default `3`.
++#' @param min_count,min_samples Low-expression filter: a feature is kept
++#'   when at least `min_samples` samples reach `min_count`. `NULL` (the
++#'   default) resolves per modality, as `impute_method` and
++#'   `outlier_method` do -- `10` and `3` on a `raw_count` RNA-seq layer,
++#'   and off everywhere else. Off rather than adapted, because `10` means
++#'   ten reads on raw counts and something quite different on `tpm` or
++#'   `logcpm`, where it is a high value rather than a low one.
++#'
++#'   Both DESeq2 and edgeR ask for this filter. A feature detected in
++#'   nobody says nothing about any contrast, costs a model fit to say it,
++#'   and still takes its place in the multiple-testing correction -- so
++#'   testing it makes the real findings harder to reach. On a full human
++#'   index roughly a fifth of rows are zero in every sample.
++#'
++#'   Set both to `0` to test everything.
+ #' @param ... Forwarded to the imputation backend.
+ #'
+ #' @return An `analysis_bundle` with the following fields under `results`:
+@@ -66,11 +81,15 @@ run_qc <- function(
+   impute_method = NULL,
+   outlier_method = NULL,
+   outlier_sd_threshold = 3,
++  min_count = NULL,
++  min_samples = NULL,
+   ...
+ ) {
+   assert_number(missing_threshold, "missing_threshold", lower = 0, upper = 1)
+   assert_number(sample_missing_threshold, "sample_missing_threshold",
+                 lower = 0, upper = 1, allow_null = TRUE)
++  assert_number(min_count, "min_count", lower = 0, allow_null = TRUE)
++  assert_number(min_samples, "min_samples", lower = 0, allow_null = TRUE)
+   assert_subset(outlier_method, "outlier_method",
+                 c("none", "pca", "connectivity", "iqr"), allow_null = TRUE)
+   assert_number(outlier_sd_threshold, "outlier_sd_threshold", lower = 0)
+@@ -96,6 +115,28 @@ run_qc <- function(
+     )
+   }
+ 
++  # Low-expression filtering, resolved per modality like the two above.
++  #
++  # Counts only, and raw counts at that: `min_count = 10` means ten reads
++  # on `raw_count` and something else entirely on `tpm` or `logcpm`, where
++  # ten is a high value rather than a low one. A filter that means
++  # different things on different layers is worse than no filter, so the
++  # others resolve to off and the control offers it only where it applies.
++  #
++  # Ten reads in at least three samples is what DESeq2's vignette reaches
++  # for and roughly what edgeR's filterByExpr() arrives at; three because
++  # it is the smallest group that supports a variance estimate.
++  counts_layer <- identical(input$omics_type %||% "", "rnaseq") &&
++                  identical(input$assay_type %||% "", "raw_count")
++  if (is.null(min_count))   min_count   <- if (counts_layer) 10 else 0
++  if (is.null(min_samples)) min_samples <- if (counts_layer) 3 else 0
++
++  low_expressed <- if (counts_layer) {
++    low_expression_features(input$expr_mat, min_count, min_samples)
++  } else {
++    character(0)
++  }
++
+   # ---- missingness ----
+   missingness <- qc_missingness(
+     input,
+@@ -126,7 +167,7 @@ run_qc <- function(
+     missingness$flagged_samples,
+     outliers$flagged_samples
+   ))
+-  remove_features <- unique(missingness$flagged_features)
++  remove_features <- unique(c(missingness$flagged_features, low_expressed))
+ 
+   # ---- build cleaned input ----
+   keep_samples <- setdiff(colnames(input$expr_mat), remove_samples)
+@@ -155,7 +196,9 @@ run_qc <- function(
+          sample_missing_threshold = sample_missing_threshold,
+          impute_method = impute_method,
+          outlier_method = outlier_method,
+-         outlier_sd_threshold = outlier_sd_threshold),
++         outlier_sd_threshold = outlier_sd_threshold,
++         min_count = min_count,
++         min_samples = min_samples),
+     list(...)
+   )
+   cleaned <- record_step(cleaned, "run_qc", resolved_args)
+diff --git a/packages/omicsCore/man/run_qc.Rd b/packages/omicsCore/man/run_qc.Rd
+index 2c002dc..59751fe 100644
+--- a/packages/omicsCore/man/run_qc.Rd
++++ b/packages/omicsCore/man/run_qc.Rd
+@@ -11,6 +11,8 @@ run_qc(
+   impute_method = NULL,
+   outlier_method = NULL,
+   outlier_sd_threshold = 3,
++  min_count = NULL,
++  min_samples = NULL,
+   ...
+ )
+ }
+@@ -35,6 +37,22 @@ or a vector of those (other than \code{"none"}) to union their flags.}
+ \item{outlier_sd_threshold}{Z-score / IQR multiplier passed to
+ \code{\link[=qc_outliers]{qc_outliers()}}. Default \code{3}.}
+ 
++\item{min_count, min_samples}{Low-expression filter: a feature is kept
++when at least \code{min_samples} samples reach \code{min_count}. \code{NULL} (the
++default) resolves per modality, as \code{impute_method} and
++\code{outlier_method} do -- \code{10} and \code{3} on a \code{raw_count} RNA-seq layer,
++and off everywhere else. Off rather than adapted, because \code{10} means
++ten reads on raw counts and something quite different on \code{tpm} or
++\code{logcpm}, where it is a high value rather than a low one.
++
++Both DESeq2 and edgeR ask for this filter. A feature detected in
++nobody says nothing about any contrast, costs a model fit to say it,
++and still takes its place in the multiple-testing correction -- so
++testing it makes the real findings harder to reach. On a full human
++index roughly a fifth of rows are zero in every sample.
++
++Set both to \code{0} to test everything.}
++
+ \item{...}{Forwarded to the imputation backend.}
+ }
+ \value{
+diff --git a/packages/omicsCore/tests/testthat/test-diff.R b/packages/omicsCore/tests/testthat/test-diff.R
+index 1de819c..affb4b4 100644
+--- a/packages/omicsCore/tests/testthat/test-diff.R
++++ b/packages/omicsCore/tests/testthat/test-diff.R
+@@ -100,6 +100,24 @@ test_that("run_diff drops the fitted model unless asked for it", {
+   expect_equal(default$results$diff_result_df, kept$results$diff_result_df)
+ })
+ 
++# A formula keeps its environment, and `as.formula(<string>)` takes the
++# calling frame. DESeq2 stores the design inside the DESeqDataSet, so the
++# model object referred back to run_deseq2_group()'s frame -- which held the
++# count matrix, the results, and the DESeqDataSet itself. Following that
++# reference turned 39 MB of data into 131 MB, of which the formula was 98 MB.
++#
++# Asserting on the environment rather than on a size: object.size() cannot
++# see the difference at all, and future's measure is not part of its API.
++test_that("the DESeq2 design formula does not carry its calling frame", {
++  skip_if_not_installed("DESeq2")
++  x <- make_rna()
++  b <- run_diff(x, method = "deseq2", analysis_type = "group",
++                group_col = "group", control_group = "ctrl",
++                case_group = "case", keep_model = TRUE)
++  env <- environment(DESeq2::design(b$results$diff_object))
++  expect_identical(env, baseenv())
++})
++
+ test_that("run_diff t-test detects the injected signal", {
+   x <- make_proteo()
+   b <- run_diff(x, method = "ttest", analysis_type = "group",
+diff --git a/packages/omicsCore/tests/testthat/test-qc.R b/packages/omicsCore/tests/testthat/test-qc.R
+index 438776a..52b3aa5 100644
+--- a/packages/omicsCore/tests/testthat/test-qc.R
++++ b/packages/omicsCore/tests/testthat/test-qc.R
+@@ -109,6 +109,83 @@ test_that("winsorize_counts clips per-gene extremes", {
+   expect_lt(res$count_mat[1, 1], 1e6)
+ })
+ 
++# ---- low-expression filter --------------------------------------------
++
++make_counts_input <- function(n_features = 10, n_samples = 6, counts = NULL) {
++  ids <- paste0("g", seq_len(n_features))
++  sids <- paste0("s", seq_len(n_samples))
++  m <- counts %||% matrix(100L, n_features, n_samples,
++                          dimnames = list(ids, sids))
++  dimnames(m) <- list(ids, sids)
++  omics_input(m,
++              data.frame(group = rep(c("a", "b"), length.out = n_samples),
++                         row.names = sids),
++              data.frame(feature_id = ids, row.names = ids),
++              omics_type = "rnaseq", assay_type = "raw_count")
++}
++
++test_that("low_expression_features keeps a feature seen often enough", {
++  m <- rbind(
++    plenty  = c(50L, 50L, 50L, 50L),
++    exactly = c(10L, 10L, 10L,  0L),   # 3 samples reach 10
++    thin    = c(10L, 10L,  0L,  0L),   # only 2 do
++    spike   = c(999L, 0L,  0L,  0L),   # a big total, one sample
++    silent  = c(0L,  0L,  0L,  0L)
++  )
++  colnames(m) <- paste0("s", 1:4)
++  dropped <- low_expression_features(m, min_count = 10, min_samples = 3)
++  expect_setequal(dropped, c("thin", "spike", "silent"))
++
++  # A row of NA is not a row of detections
++  m2 <- rbind(m, allna = rep(NA_integer_, 4))
++  expect_true("allna" %in%
++                low_expression_features(m2, min_count = 10, min_samples = 3))
++
++  # Off when either number is zero
++  expect_length(low_expression_features(m, 0, 3), 0L)
++  expect_length(low_expression_features(m, 10, 0), 0L)
++})
++
++test_that("run_qc filters low-expression features on raw counts by default", {
++  set.seed(4)
++  m <- matrix(100L, 10, 6, dimnames = list(paste0("g", 1:10), paste0("s", 1:6)))
++  m[9:10, ] <- 0L                       # two features nobody detected
++  x <- make_counts_input(counts = m)
++
++  b <- run_qc(x)
++  kept <- rownames(b$results$cleaned_input$expr_mat)
++  expect_false(any(c("g9", "g10") %in% kept))
++  expect_length(kept, 8L)
++
++  # and the numbers used are recorded, not just their effect
++  expect_equal(b$params$min_count, 10)
++  expect_equal(b$params$min_samples, 3)
++
++  # switched off, nothing is dropped for being quiet
++  b0 <- run_qc(x, min_count = 0, min_samples = 0)
++  expect_length(rownames(b0$results$cleaned_input$expr_mat), 10L)
++})
++
++# 10 reads is a low number on raw counts and a high one on TPM or logCPM,
++# where it would drop most of the matrix. The filter is not adapted to those
++# scales -- it is withheld from them, and the control is not offered either.
++test_that("run_qc leaves non-count layers alone", {
++  set.seed(9)
++  # Varying, not constant: a matrix of one repeated value makes the
++  # correlation in qc_outliers() undefined, and the warning has nothing to
++  # do with what is being tested here.
++  m <- matrix(rnorm(60, mean = 1), 10, 6,
++              dimnames = list(paste0("g", 1:10), paste0("s", 1:6)))
++  ids <- rownames(m)
++  x <- omics_input(m,
++                   data.frame(group = rep(c("a", "b"), 3), row.names = colnames(m)),
++                   data.frame(feature_id = ids, row.names = ids),
++                   omics_type = "rnaseq", assay_type = "logcpm")
++  b <- run_qc(x)
++  expect_equal(b$params$min_count, 0)
++  expect_length(rownames(b$results$cleaned_input$expr_mat), 10L)
++})
++
+ test_that("run_qc returns an analysis_bundle with the expected slots", {
+   x <- make_qc_input()
+   b <- run_qc(x, missing_threshold = 0.5,

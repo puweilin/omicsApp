@@ -1,0 +1,173 @@
+
+CHECK_PACKAGE: omicsCore 
+── R CMD build ─────────────────────────────────────────────────────────────────
+* checking for file ‘.../DESCRIPTION’ ... OK
+* preparing ‘omicsCore’:
+* checking DESCRIPTION meta-information ... OK
+* checking for LF line-endings in source and make files and shell scripts
+* checking for empty or unneeded directories
+Omitted ‘LazyData’ from DESCRIPTION
+* building ‘omicsCore_0.0.0.9000.tar.gz’
+
+── R CMD check ─────────────────────────────────────────────────────────────────
+* using log directory ‘/private/tmp/omicsapp-audit-20260908.lQiQsH/audit-results/omicsCore-check/omicsCore.Rcheck’
+* using R version 4.4.3 (2025-02-28)
+* using platform: aarch64-apple-darwin20
+* R was compiled by
+    Apple clang version 14.0.0 (clang-1400.0.29.202)
+    GNU Fortran (GCC) 12.2.0
+* running under: macOS 27.0
+* using session charset: UTF-8
+* using options ‘--no-tests --no-manual --no-vignettes’
+* checking for file ‘omicsCore/DESCRIPTION’ ... OK
+* this is package ‘omicsCore’ version ‘0.0.0.9000’
+* package encoding: UTF-8
+* checking package namespace information ... OK
+* checking package dependencies ... OK
+* checking if this is a source package ... OK
+* checking if there is a namespace ... OK
+* checking for executable files ... OK
+* checking for hidden files and directories ... OK
+* checking for portable file names ... OK
+* checking for sufficient/correct file permissions ... OK
+* checking whether package ‘omicsCore’ can be installed ... OK
+* checking installed package size ... OK
+* checking package directory ... OK
+* checking DESCRIPTION meta-information ... OK
+* checking top-level files ... OK
+* checking for left-over files ... OK
+* checking index information ... OK
+* checking package subdirectories ... OK
+* checking code files for non-ASCII characters ... OK
+* checking R files for syntax errors ... OK
+* checking whether the package can be loaded ... OK
+* checking whether the package can be loaded with stated dependencies ... OK
+* checking whether the package can be unloaded cleanly ... OK
+* checking whether the namespace can be loaded with stated dependencies ... OK
+* checking whether the namespace can be unloaded cleanly ... OK
+* checking dependencies in R code ... OK
+* checking S3 generic/method consistency ... OK
+* checking replacement functions ... OK
+* checking foreign function calls ... OK
+* checking R code for possible problems ... OK
+* checking Rd files ... OK
+* checking Rd metadata ... OK
+* checking Rd cross-references ... OK
+* checking for missing documentation entries ... OK
+* checking for code/documentation mismatches ... OK
+* checking Rd \usage sections ... OK
+* checking Rd contents ... OK
+* checking for unstated dependencies in examples ... OK
+* checking examples ... OK
+* checking for unstated dependencies in ‘tests’ ... OK
+* checking tests ... SKIPPED
+* DONE
+
+Status: OK
+
+── R CMD check results ─────────────────────────────── omicsCore 0.0.0.9000 ────
+Duration: 37.5s
+
+0 errors ✔ | 0 warnings ✔ | 0 notes ✔
+CHECK_COUNTS: omicsCore errors= 0 warnings= 0 notes= 0 
+
+CHECK_PACKAGE: omicsApp 
+── R CMD build ─────────────────────────────────────────────────────────────────
+* checking for file ‘.../DESCRIPTION’ ... OK
+* preparing ‘omicsApp’:
+* checking DESCRIPTION meta-information ... OK
+* checking for LF line-endings in source and make files and shell scripts
+* checking for empty or unneeded directories
+* building ‘omicsApp_0.0.0.9000.tar.gz’
+
+── R CMD check ─────────────────────────────────────────────────────────────────
+* using log directory ‘/private/tmp/omicsapp-audit-20260908.lQiQsH/audit-results/omicsApp-check/omicsApp.Rcheck’
+* using R version 4.4.3 (2025-02-28)
+* using platform: aarch64-apple-darwin20
+* R was compiled by
+    Apple clang version 14.0.0 (clang-1400.0.29.202)
+    GNU Fortran (GCC) 12.2.0
+* running under: macOS 27.0
+* using session charset: UTF-8
+* using options ‘--no-tests --no-manual --no-vignettes’
+* checking for file ‘omicsApp/DESCRIPTION’ ... OK
+* this is package ‘omicsApp’ version ‘0.0.0.9000’
+* package encoding: UTF-8
+* checking package namespace information ... OK
+* checking package dependencies ... OK
+* checking if this is a source package ... OK
+* checking if there is a namespace ... OK
+* checking for executable files ... OK
+* checking for hidden files and directories ... OK
+* checking for portable file names ... OK
+* checking for sufficient/correct file permissions ... OK
+* checking whether package ‘omicsApp’ can be installed ... OK
+* checking installed package size ... OK
+* checking package directory ... OK
+* checking DESCRIPTION meta-information ... OK
+* checking top-level files ... OK
+* checking for left-over files ... OK
+* checking index information ... OK
+* checking package subdirectories ... OK
+* checking code files for non-ASCII characters ... WARNING
+Found the following files with non-ASCII characters:
+  R/mod_qc_view.R
+  R/mod_report_view.R
+Portable packages must use only ASCII characters in their R code and
+NAMESPACE directives, except perhaps in comments.
+Use \uxxxx escapes for other characters.
+Function ‘tools::showNonASCIIfile’ can help in finding non-ASCII
+characters in files.
+* checking R files for syntax errors ... OK
+* checking whether the package can be loaded ... OK
+* checking whether the package can be loaded with stated dependencies ... OK
+* checking whether the package can be unloaded cleanly ... OK
+* checking whether the namespace can be loaded with stated dependencies ... OK
+* checking whether the namespace can be unloaded cleanly ... OK
+* checking dependencies in R code ... OK
+* checking S3 generic/method consistency ... OK
+* checking replacement functions ... OK
+* checking foreign function calls ... OK
+* checking R code for possible problems ... NOTE
+report_view_server : <anonymous> : <anonymous>: no visible binding for
+  global variable ‘bundle’
+Undefined global functions or variables:
+  bundle
+* checking Rd files ... OK
+* checking Rd metadata ... OK
+* checking Rd cross-references ... OK
+* checking for missing documentation entries ... OK
+* checking for code/documentation mismatches ... OK
+* checking Rd \usage sections ... OK
+* checking Rd contents ... OK
+* checking for unstated dependencies in examples ... OK
+* checking examples ... NONE
+* checking for unstated dependencies in ‘tests’ ... OK
+* checking tests ... SKIPPED
+* DONE
+
+Status: 1 WARNING, 1 NOTE
+See
+  ‘/private/tmp/omicsapp-audit-20260908.lQiQsH/audit-results/omicsApp-check/omicsApp.Rcheck/00check.log’
+for details.
+── R CMD check results ──────────────────────────────── omicsApp 0.0.0.9000 ────
+Duration: 27.3s
+
+❯ checking code files for non-ASCII characters ... WARNING
+  Found the following files with non-ASCII characters:
+    R/mod_qc_view.R
+    R/mod_report_view.R
+  Portable packages must use only ASCII characters in their R code and
+  NAMESPACE directives, except perhaps in comments.
+  Use \uxxxx escapes for other characters.
+  Function ‘tools::showNonASCIIfile’ can help in finding non-ASCII
+  characters in files.
+
+❯ checking R code for possible problems ... NOTE
+  report_view_server : <anonymous> : <anonymous>: no visible binding for
+    global variable ‘bundle’
+  Undefined global functions or variables:
+    bundle
+
+0 errors ✔ | 1 warning ✖ | 1 note ✖
+CHECK_COUNTS: omicsApp errors= 0 warnings= 1 notes= 1 

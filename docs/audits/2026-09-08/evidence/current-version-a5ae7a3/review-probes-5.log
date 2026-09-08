@@ -1,0 +1,11 @@
+
+PROBE: same-modality integration uses second layer twice 
+Loading required package: shiny
+TRUE_PRIMARY_LAYER=follicle
+CHOSEN_PRIMARY_LAYER=skin
+SECONDARY_LAYER=follicle
+INTEGRATION_ERROR=
+INTEGRATION_ROWS=30
+MAX_REPORTED_EFFECT_DIFFERENCE=0
+
+FIFTH_PROBES_FINISHED

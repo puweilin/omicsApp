@@ -1,0 +1,19 @@
+TEST_PREFLIGHT_ERROR=nchar(db_species) not equal to 2
+$db_species
+[1] "HS"
+
+$species
+[1] "human"
+
+$collection
+NULL
+
+$subcollection
+NULL
+
+$category
+deprecated()
+
+$subcategory
+deprecated()
+

@@ -1,3 +1,26 @@
+# A backend failure, raised so a caller can tell it from an empty result.
+#
+# ORA and GSEA answer a failure with a warning and NULL rather than an
+# error, deliberately: a single-database run should degrade rather than
+# abort. The cost was that "this database failed" and "this database found
+# nothing" arrive as the same thing -- an empty table -- and
+# run_enrichment_grid() recorded a broken GO BP as `status = "empty"` with
+# no message. Someone reading that concludes GO BP has nothing to say.
+#
+# So the warning carries a class. Callers that do not look still see an
+# ordinary warning and behave as before; callers that need to tell the two
+# apart can.
+enrich_backend_failure <- function(stage, database, e) {
+  warning(structure(
+    class = c("omicsCore_enrich_backend_failure", "warning", "condition"),
+    list(message = sprintf("%s failed for database '%s': %s",
+                           stage, database, conditionMessage(e)),
+         call = NULL,
+         stage = stage,
+         database = database)))
+  NULL
+}
+
 #' Filter standardized enrichment results
 #'
 #' Subsets a standardized enrichment `data.frame` (the schema returned by

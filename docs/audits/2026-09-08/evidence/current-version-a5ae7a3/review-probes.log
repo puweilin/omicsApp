@@ -1,0 +1,37 @@
+
+PROBE: worker project still carries registry, preprocessing and history 
+EXPERIMENT_MATRIX_DIM=0x0
+REGISTRY_MODEL_BYTES=4194304
+PREPROCESSING_MATRIX_DIM=30x8
+RETIRED_COUNT=1
+WORKER_PROJECT_MIB=4.02116
+
+PROBE: report grid default arguments and stale callbacks 
+Loading required package: shiny
+GRID_JOBS=1
+HAS_ADMISSION_GATE=FALSE
+GRID_EXTRA_ARGS=
+LATE_A_RESULT_IN_B_VIEW=TRUE
+RESULT_VALID_IN_B=FALSE
+GRID_SURVIVES_NEW_PROJECT=TRUE
+LATE_ERROR_DISPLAY=late error from Project A
+
+PROBE: grid discards parameter provenance and exported script omits grid 
+ACTUAL_CUTOFF=0.001
+RECORDED_CUTOFF=<missing>
+RECORDED_EFFECT_CUTOFF=<missing>
+SCRIPT_HAS_GRID_CALL=FALSE
+SCRIPT_HAS_OMISSION_NOTE=FALSE
+
+PROBE: backend failure mislabeled empty by grid 
+  type database direction rows seconds status message
+1  ora hallmark      both    0   11.95  empty    <NA>
+GRID_WARNINGS=
+
+PROBE: workbook omits per-layer QC and integrated secondary differential 
+PREPROCESSED_LAYERS=2
+QC_SAMPLE_SHEETS=1
+DIFFERENTIAL_SHEETS=1
+PARAMS_SECOND_LAYER_QC=FALSE
+
+PROBES_FINISHED

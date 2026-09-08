@@ -1,0 +1,38 @@
+
+PROBE: integration restarts after writing its own result 
+Loading required package: shiny
+JOB_LABELS=Running differential analysis...
+INTEGRATION_JOBS_BEFORE_RELEASE_1=1
+INTEGRATION_PRESENT_1=TRUE
+REGISTRY_COUNT_1=3
+INTEGRATION_JOBS_BEFORE_RELEASE_2=2
+INTEGRATION_PRESENT_2=TRUE
+REGISTRY_COUNT_2=3
+INTEGRATION_JOBS_BEFORE_RELEASE_3=2
+INTEGRATION_PRESENT_3=TRUE
+REGISTRY_COUNT_3=3
+INTEGRATION_JOBS_FINAL=2
+
+PROBE: integration adjusted-model metadata changes binding after stamping 
+converting counts to integer mode
+  the design formula contains one or more numeric variables with integer values,
+  specifying a model with increasing fold change for higher values.
+  did you mean for this to be a factor? if so, first convert
+  this variable to a factor using the factor() function
+  the design formula contains one or more numeric variables that have mean or
+  standard deviation larger than 5 (an arbitrary threshold to trigger this message).
+  Including numeric variables with large mean can induce collinearity with the intercept.
+  Users should center and scale numeric variables in the design to improve GLM convergence.
+-- note: fitType='parametric', but the dispersion trend was not well captured by the
+   function: y = a/x + b, and a local regression fit was automatically substituted.
+   specify fitType='local' or 'mean' to avoid this message next time.
+INTEGRATION_ERROR=
+INTEGRATION_COMPUTED=TRUE
+SIGNATURE_EQUALS_ACTUAL_PARAMS=FALSE
+                           analysis_id
+1 ana_68e462c828bd4c2d6763e3b820da5bb6
+                                               problem
+1 params signature does not match the saved parameters
+ADJUSTED_INTEGRATION_RETAINED=FALSE
+
+FOURTH_PROBES_FINISHED

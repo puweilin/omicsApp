@@ -1,0 +1,11 @@
+args <- commandArgs(trailingOnly=TRUE)
+pkg <- args[[1]]
+Sys.setenv(NOT_CRAN='true', OMICSAPP_DATA_DIR=tempfile('audit-store-'))
+options(testthat.progress.max_fails=Inf)
+r <- testthat::test_local(file.path('packages',pkg), reporter='summary', stop_on_failure=FALSE)
+d <- as.data.frame(r)
+saveRDS(r,file.path('audit-results',paste0(pkg,'-tests.rds')))
+write.csv(d[,!vapply(d,is.list,logical(1)),drop=FALSE],file.path('audit-results',paste0(pkg,'-tests.csv')),row.names=FALSE)
+cat('\nAUDIT_TOTALS\n')
+print(colSums(d[,intersect(c('nb','failed','skipped','error','warning','passed'), names(d)),drop=FALSE]))
+cat('\nAUDIT_END\n')

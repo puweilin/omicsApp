@@ -1,0 +1,10 @@
+"file","context","test","nb","failed","skipped","error","warning","user","system","real","passed"
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","the pipeline's counts file imports whole, ids and samples intact",6,0,FALSE,FALSE,0,2.132,0.061,2.196,6
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","the feature filter keeps exactly the genes the legacy run kept",2,0,FALSE,FALSE,0,1.034,0.068,1.104,2
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","winsorize_counts reproduces the legacy clipping, gene by gene",5,0,FALSE,FALSE,0,0.0110000000000001,0.002,0.0129999999999999,5
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","edgeR with age as covariate reproduces the legacy table",8,0,FALSE,FALSE,0,7.566,0.267,7.856,8
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","the count backends survive the real matrix, constant genes and all",3,0,FALSE,FALSE,0,2.262,0.103,2.369,3
+"test-perf-budget.R","perf-budget","a 63k x 258 tab-separated counts file imports within a minute",2,0,FALSE,FALSE,0,4.192,0.192,4.426,2
+"test-perf-budget.R","perf-budget","PCA over 63k genes, a fifth of them constant, takes seconds not minutes",3,0,FALSE,FALSE,0,6.8,0.311,7.129,3
+"test-perf-budget.R","perf-budget","re-masking a 63k-row result at a new threshold is instant",2,0,FALSE,FALSE,0,0.0380000000000003,0.002,0.0389999999999979,2
+"test-perf-budget.R","perf-budget","limma over 20k features and 258 samples fits inside the progress bar",2,0,FALSE,FALSE,0,0.324000000000002,0.026,0.350999999999999,2

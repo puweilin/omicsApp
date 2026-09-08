@@ -1,0 +1,28 @@
+{
+  "captured_at": "2026-09-08T17:20:23.469812+08:00",
+  "source_commit": "a5ae7a310297985969f1f2c81498880d6c042644",
+  "head_at_close": "bba74b5592333be52e580a8da1c7984335ebdb11",
+  "committed_delta": " deploy/scripts/check_demo_integration.R |  91 +++++++++++++\n deploy/scripts/make_demo_study.R        | 224 ++++++++++++++++++++++++++++++++\n deploy/scripts/time_pipeline.R          | 136 +++++++++++++++++++\n x/run_diff_diff_raw_df.tsv              | 161 -----------------------\n x/run_diff_diff_result_df.tsv           | 161 -----------------------\n x/run_diff_params.json                  |  22 ----\n 6 files changed, 451 insertions(+), 344 deletions(-)\n",
+  "working_status": " M packages/omicsCore/NAMESPACE\n M packages/omicsCore/R/plot-diff.R\n M packages/omicsCore/man/SUPPORTED_DIFF_METHODS.Rd\n M packages/omicsCore/man/applicable_diff_methods.Rd\n M packages/omicsCore/man/filter_diff_results.Rd\n M packages/omicsCore/man/make_ranked_features.Rd\n M packages/omicsCore/man/plot_feature_expression.Rd\n M packages/omicsCore/man/plot_heatmap.Rd\n M packages/omicsCore/man/plot_ma.Rd\n M packages/omicsCore/man/plot_pca.Rd\n D packages/omicsCore/man/plot_volcano.Rd\n M packages/omicsCore/man/run_diff.Rd\n M packages/omicsCore/man/run_diff_continuous.Rd\n?? docs/audits/2026-09-08/\n?? packages/omicsCore/man/thin_volcano_points.Rd\n?? packages/omicsCore/tests/testthat/test-plot-thinning.R\n",
+  "runtime": {
+    "platform": "macOS arm64",
+    "R": "4.4.3",
+    "shiny": "1.13.0",
+    "future": "1.69.0",
+    "promises": "1.5.0",
+    "DESeq2": "1.46.0",
+    "limma": "3.62.2",
+    "edgeR": "4.4.2"
+  },
+  "limits": [
+    "No target Docker/server verification: local Docker daemon unavailable.",
+    "Full suites use immutable source commit; working tree plotting delta separately installed and namespace-checked.",
+    "Original suite capture reached DONE and saved RDS before write.csv list-column failure; CSV/totals were recovered from saved testthat results. Original logs retained.",
+    "Probes selectively mock task scheduling or enrichment backend errors. See report for the boundary of each result.",
+    "Real private matrices, generated demo workbooks, installed libraries and serialized test objects not copied into evidence."
+  ],
+  "final_checked_at": "2026-09-08T17:28:44.502635+08:00",
+  "head_at_final_check": "bba74b5592333be52e580a8da1c7984335ebdb11",
+  "working_status_at_final_check": " M packages/omicsCore/NAMESPACE\n M packages/omicsCore/R/plot-diff.R\n M packages/omicsCore/man/SUPPORTED_DIFF_METHODS.Rd\n M packages/omicsCore/man/applicable_diff_methods.Rd\n M packages/omicsCore/man/filter_diff_results.Rd\n M packages/omicsCore/man/make_ranked_features.Rd\n M packages/omicsCore/man/plot_feature_expression.Rd\n M packages/omicsCore/man/plot_heatmap.Rd\n M packages/omicsCore/man/plot_ma.Rd\n M packages/omicsCore/man/plot_pca.Rd\n D packages/omicsCore/man/plot_volcano.Rd\n M packages/omicsCore/man/run_diff.Rd\n M packages/omicsCore/man/run_diff_continuous.Rd\n?? docs/audits/2026-09-08/\n?? packages/omicsCore/man/thin_volcano_points.Rd\n?? packages/omicsCore/tests/testthat/test-plot-thinning.R\n",
+  "live_plot_volcano_export_present_at_final_check": false
+}

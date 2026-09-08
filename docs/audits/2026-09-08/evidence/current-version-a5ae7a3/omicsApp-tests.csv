@@ -1,0 +1,477 @@
+"file","context","test","nb","failed","skipped","error","warning","user","system","real","passed"
+"test-app-hygiene.R","app-hygiene","the demo leaves the caller's random stream where it was",9,0,FALSE,FALSE,0,0.291,0.014,0.306,9
+"test-app-hygiene.R","app-hygiene","the demo plants no seed in a session that had none",3,0,FALSE,FALSE,0,0.00800000000000001,0.002,0.0089999999999999,3
+"test-app-hygiene.R","app-hygiene","the demo is the same data whatever the stream was",2,0,FALSE,FALSE,0,0.00400000000000045,0.001,0.004,2
+"test-app-hygiene.R","app-hygiene","a frame that seeds twice restores to its first state",1,0,FALSE,FALSE,0,0.00099999999999989,0,0.00100000000000033,1
+"test-app-hygiene.R","app-hygiene","package code seeds the stream only through local_seed()",1,0,FALSE,FALSE,0,0.00700000000000012,0.001,0.00800000000000001,1
+"test-app-journey.R","app-journey","upload, run, enrich, download, replace: the wiring holds end to end",16,0,FALSE,FALSE,0,10.557,0.367,16.687,16
+"test-app-server-acceptance.R","app-server-acceptance","upload and confirm: the project appears, and is on disk before anything else happens",9,0,FALSE,FALSE,0,3.066,0.177,3.255,9
+"test-app-server-acceptance.R","app-server-acceptance","re-uploading the same file clears nothing",5,0,FALSE,FALSE,0,2.717,0.0730000000000001,2.794,5
+"test-app-server-acceptance.R","app-server-acceptance","uploading a different file asks, and confirming clears the analyses",9,0,FALSE,FALSE,0,3.047,0.09,3.143,9
+"test-app-server-acceptance.R","app-server-acceptance","the volcano is two-coloured at a stated cut, and the sliders do not touch it",7,0,FALSE,FALSE,0,2.32,0.064,2.4,7
+"test-app-server-acceptance.R","app-server-acceptance","enrichment reads the thresholds the hit table is read at",4,0,FALSE,FALSE,0,16.342,0.292,16.74,4
+"test-app-server-acceptance.R","app-server-acceptance","the report view's analysis code names the calls that were run",5,0,FALSE,FALSE,0,2.101,0.06,2.183,5
+"test-app-server-acceptance.R","app-server-acceptance","Save as puts the project under My projects, and Open brings it back",6,0,FALSE,FALSE,0,4.991,0.117,5.141,6
+"test-app-server-acceptance.R","app-server-acceptance","a new session on the same store restores the last one without being asked",5,0,FALSE,FALSE,0,3.292,0.0739999999999998,3.37,5
+"test-app-server-acceptance.R","app-server-acceptance","the Experiments table's View link lands on QC with that layer selected",3,0,FALSE,FALSE,0,1.929,0.0510000000000002,1.988,3
+"test-app-server-acceptance.R","app-server-acceptance","the sidebar switches views and never lands on a view that does not exist",3,0,FALSE,FALSE,0,1.58499999999999,0.036,1.625,3
+"test-app-smoke.R","app-smoke","omicsApp boots and all 7 views render",26,0,FALSE,FALSE,0,8.369,0.292,11.8,26
+"test-async-helpers.R","async-helpers","run_async synchronous fallback calls on_success",2,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00399999999999068,2
+"test-async-helpers.R","async-helpers","run_async synchronous fallback calls on_error on failure",2,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00200000000000955,2
+"test-async-helpers.R","async-helpers","run_async passes with NULL result",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000011,0.00300000000000011,2
+"test-async-helpers.R","async-helpers","run_async passes with character result",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00100000000000477,1
+"test-async-helpers.R","async-helpers","run_async handles error with custom message",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000011,0.00100000000000477,1
+"test-async-helpers.R","async-helpers","run_async passes list result through",2,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,2
+"test-async-helpers.R","async-helpers","run_async preserves closure over local variables",1,0,FALSE,FALSE,0,0.000999999999997669,0.00099999999999989,0.00100000000000477,1
+"test-async-helpers.R","async-helpers","a stale result is discarded, and said so",2,0,FALSE,FALSE,0,0.00100000000000477,0,0.00199999999999534,2
+"test-async-helpers.R","async-helpers","a stale failure is discarded too",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000011,0.00300000000000011,2
+"test-async-helpers.R","async-helpers","the gate sees which outcome it is deciding about",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000011,0.00199999999999534,1
+"test-async-helpers.R","async-helpers","a gate that throws refuses rather than letting the result through",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00199999999999534,1
+"test-async-helpers.R","async-helpers","newest_request_only admits the current request and no other",4,0,FALSE,FALSE,0,0.00399999999999778,0.00199999999999978,0.00400000000000489,4
+"test-async-helpers.R","async-helpers","by default everything is admitted, so existing callers are unchanged",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00100000000000477,1
+"test-async-payload-sites.R","async-payload-sites","the differential view sends the layer and its arguments, not its scope",3,0,FALSE,FALSE,0,0.178000000000004,0.0189999999999999,0.196999999999989,3
+"test-async-payload-sites.R","async-payload-sites","the enrichment view sends the bundle and its thresholds, not its scope",2,0,FALSE,FALSE,0,0.205999999999996,0.016,0.222999999999999,2
+"test-async-payload-sites.R","async-payload-sites","the integration view sends the project, not its scope",5,0,FALSE,FALSE,0,0.327999999999996,0.0279999999999998,0.361000000000004,5
+"test-async-payload-sites.R","async-payload-sites","a bundle carrying a fitted model does not carry it to the worker",3,0,FALSE,FALSE,0,0.215000000000011,0.0170000000000001,0.236000000000004,3
+"test-async-payload-sites.R","async-payload-sites","the integration payload carries neither the model nor the project's analyses",4,0,FALSE,FALSE,0,0.285999999999987,0.0249999999999999,0.313000000000002,4
+"test-async-payload-sites.R","async-payload-sites","every run_async() call site in the package goes through detached_call()",4,0,FALSE,FALSE,0,0.0130000000000052,0.00199999999999978,0.0159999999999911,4
+"test-async-payload.R","async-payload","a detached call carries only what it is handed",2,0,FALSE,FALSE,0,0.00600000000000023,0.00099999999999989,0.00699999999999079,2
+"test-async-payload.R","async-payload","a value the body needs but was not named is an error, not a capture",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-async-payload.R","async-payload","bundle_for_worker drops the model and keeps everything else",8,0,FALSE,FALSE,0,0.0100000000000051,0.00200000000000022,0.0130000000000052,8
+"test-async-payload.R","async-payload","bundle_for_worker passes anything that is not a bundle through",2,0,FALSE,FALSE,0,0.00100000000000477,0.00099999999999989,0.00200000000000955,2
+"test-async-payload.R","async-payload","project_for_worker keeps the data and drops the analyses",4,0,FALSE,FALSE,0,0.00699999999999079,0.00199999999999978,0.00900000000000034,4
+"test-async-payload.R","async-payload","the reader turns what the writer wrote into a fraction",6,0,FALSE,FALSE,0,0.0109999999999957,0.00200000000000022,0.0130000000000052,6
+"test-async-payload.R","async-payload","a half-written line reads as one step behind, not as a break",1,0,FALSE,FALSE,0,0.00800000000000978,0.00099999999999989,0.00800000000000978,1
+"test-async-payload.R","async-payload","the reader survives a file that is not there or is empty",2,0,FALSE,FALSE,0,0.00100000000000477,0.00099999999999989,0.00300000000000011,2
+"test-async-payload.R","async-payload","progress never reports more than finished",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,1
+"test-async-payload.R","async-payload","the detached function still reaches package code",1,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00199999999999534,1
+"test-async-payload.R","async-payload","a refusal to export globals is reported, not thrown",3,0,FALSE,FALSE,0,0.00500000000000966,0.00099999999999989,0.00499999999999545,3
+"test-async-payload.R","async-payload","progress is closed once, however the run ends",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-async-payload.R","async-payload","a normal run still succeeds and still closes its progress",2,0,FALSE,FALSE,0,0.032999999999987,0.00300000000000011,0.0349999999999966,2
+"test-c-locale.R","c-locale","a project named in Chinese is saved, listed, archived and reopened under LC_ALL=C",18,0,FALSE,FALSE,4,0.0439999999999969,0.0720000000000001,2.703,14
+"test-controls-smoke.R","controls-smoke","every QC control changes what QC computes",11,0,FALSE,FALSE,0,1.88800000000001,0.111,2.014,11
+"test-controls-smoke.R","controls-smoke","the Differential controls reach the analysis",7,0,FALSE,FALSE,0,0.149000000000001,0.00499999999999989,0.155000000000001,7
+"test-controls-smoke.R","controls-smoke","the Enrichment display controls change the table and the plot",2,0,FALSE,FALSE,0,0.287999999999997,0.00999999999999979,0.302999999999997,2
+"test-controls-smoke.R","controls-smoke","the export button is live exactly when it can work",7,0,FALSE,FALSE,0,0.167999999999992,0.00599999999999978,0.174000000000007,7
+"test-controls-smoke.R","controls-smoke","the enrichment grid runs from the Report view and reaches the sheets",5,0,FALSE,FALSE,0,8.145,1.284,9.596,5
+"test-controls-smoke.R","controls-smoke","the grid button is refused without a differential to enrich",2,0,FALSE,FALSE,0,0.0559999999999974,0.0129999999999999,0.0700000000000074,2
+"test-controls-smoke.R","controls-smoke","the workbook comes out with a sheet per analysis",2,0,FALSE,FALSE,0,0.0360000000000014,0.0250000000000004,0.0630000000000024,2
+"test-controls-smoke.R","controls-smoke","the Projects controls act on the project",2,0,FALSE,FALSE,0,0.0879999999999939,0.0179999999999998,0.108000000000004,2
+"test-controls-smoke.R","controls-smoke","Start a new project clears the session, once confirmed",3,0,FALSE,FALSE,0,0.105000000000004,0.02,0.125999999999991,3
+"test-controls-smoke.R","controls-smoke","the new-project button is offered only with a project loaded",2,0,FALSE,FALSE,0,0.0889999999999986,0.0139999999999998,0.102999999999994,2
+"test-controls-smoke.R","controls-smoke","the Integration pairing control writes the pairing",4,0,FALSE,FALSE,0,0.0750000000000028,0.0149999999999997,0.0900000000000034,4
+"test-controls-smoke.R","controls-smoke","the imputation control reaches run_qc and changes the result",4,0,FALSE,FALSE,0,0.712999999999994,0.0440000000000005,0.76700000000001,4
+"test-controls-smoke.R","controls-smoke","counts are never imputed, even with a method left selected",3,0,FALSE,FALSE,0,0.516000000000005,0.0149999999999997,0.536000000000001,3
+"test-controls-smoke.R","controls-smoke","the low-expression control reaches run_qc and changes the result",4,0,FALSE,FALSE,0,0.460999999999999,0.012,0.472000000000008,4
+"test-controls-smoke.R","controls-smoke","an emptied threshold box does not break the preview",2,0,FALSE,FALSE,0,0.277000000000001,0.00700000000000012,0.286000000000001,2
+"test-controls-smoke.R","controls-smoke","intensity layers are never filtered by a count threshold",4,0,FALSE,FALSE,0,0.513000000000005,0.012,0.530000000000001,4
+"test-controls-smoke.R","controls-smoke","an RNA-seq layer that cannot be filtered says so",4,0,FALSE,FALSE,0,0.516000000000005,0.012,0.533000000000001,4
+"test-controls-smoke.R","controls-smoke","the header names the assay type",2,0,FALSE,FALSE,0,0.512,0.012,0.530000000000001,2
+"test-controls-smoke.R","controls-smoke","only methods whose packages are installed are offered",2,0,FALSE,FALSE,0,0.259,0.00600000000000023,0.26700000000001,2
+"test-delete-layer-and-uploads.R","delete-layer-and-uploads","deleting a project takes its archived upload with it",4,0,FALSE,FALSE,0,0.0180000000000007,0.00399999999999956,0.0220000000000056,4
+"test-delete-layer-and-uploads.R","delete-layer-and-uploads","an upload another project still uses is kept",4,0,FALSE,FALSE,0,0.01400000000001,0.00400000000000045,0.0179999999999865,4
+"test-delete-layer-and-uploads.R","delete-layer-and-uploads","a project with no archived upload deletes quietly",2,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00499999999999545,2
+"test-delete-layer-and-uploads.R","delete-layer-and-uploads","a layer can be removed without touching the others",3,0,FALSE,FALSE,0,0.0790000000000077,0.004,0.0830000000000126,3
+"test-delete-layer-and-uploads.R","delete-layer-and-uploads","removing a layer drops the sample links that named it",2,0,FALSE,FALSE,0,0.0999999999999943,0.004,0.105000000000004,2
+"test-delete-layer-and-uploads.R","delete-layer-and-uploads","cancelling leaves the project alone",2,0,FALSE,FALSE,0,0.0480000000000018,0.00099999999999989,0.0499999999999972,2
+"test-demo-bundles.R","demo-bundles","the demo diff fixture plots through the dispatcher",2,0,FALSE,FALSE,0,0.0210000000000008,0.00200000000000022,0.0230000000000103,2
+"test-demo-bundles.R","demo-bundles","the demo enrichment fixture is a bundle that satisfies the schema",3,0,FALSE,FALSE,0,0.0229999999999961,0.00099999999999989,0.0259999999999962,3
+"test-demo-bundles.R","demo-bundles","the demo integration fixture is a bundle that satisfies the schema",4,0,FALSE,FALSE,0,0.0419999999999874,0.00100000000000033,0.0439999999999969,4
+"test-demo-bundles.R","demo-bundles","demo bundles are cached rather than rebuilt",2,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,2
+"test-demo-bundles.R","demo-bundles","the app palette is the one omicsCore draws with",1,0,FALSE,FALSE,0,0.00100000000000477,0.00099999999999989,0.00200000000000955,1
+"test-demo-bundles.R","demo-bundles","a real project shows no example pathways",2,0,FALSE,FALSE,0,0.280999999999992,0.00999999999999979,0.298999999999992,2
+"test-demo-bundles.R","demo-bundles","the demo still shows them, since that is what a demo is for",2,0,FALSE,FALSE,0,0.356000000000009,0.0089999999999999,0.367999999999995,2
+"test-demo-bundles.R","demo-bundles","a real project with nothing computed shows no example enrichment",2,0,FALSE,FALSE,0,0.0430000000000064,0.00300000000000011,0.0460000000000065,2
+"test-demo-bundles.R","demo-bundles","a real project whose run failed shows no example enrichment",3,0,FALSE,FALSE,0,0.0510000000000019,0.00299999999999967,0.0550000000000068,3
+"test-demo-bundles.R","demo-bundles","a real project with no second layer shows no example integration",3,0,FALSE,FALSE,0,0.0950000000000131,0.00500000000000034,0.103000000000009,3
+"test-demo-bundles.R","demo-bundles","the demo, which has no project, still shows them",5,0,FALSE,FALSE,0,0.937999999999988,0.0229999999999997,0.974000000000004,5
+"test-deploy-contract.R","deploy-contract","check_pins.R and the Dockerfile install the same packages",2,0,FALSE,FALSE,0,0.00499999999999545,0.00100000000000033,0.00600000000000023,2
+"test-deploy-contract.R","deploy-contract","every package the image installs is one the packages declare",2,0,FALSE,FALSE,0,0.007000000000005,0,0.00799999999999557,2
+"test-deploy-contract.R","deploy-contract","nginx forwards to the port ShinyProxy listens on",3,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,3
+"test-deploy-contract.R","deploy-contract","ShinyProxy's two servers use different ports, both on localhost",4,0,FALSE,FALSE,0,0.00400000000000489,0.00099999999999989,0.00399999999999068,4
+"test-deploy-contract.R","deploy-contract","the container port is the one launch() is told to use and the one exposed",4,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00400000000000489,4
+"test-deploy-contract.R","deploy-contract","ShinyProxy is configured for a host install behind TLS",7,0,FALSE,FALSE,0,0.00600000000000023,0.00099999999999989,0.00800000000000978,7
+"test-deploy-contract.R","deploy-contract","the servlet session outlives the heartbeat timeout",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00100000000000477,1
+"test-deploy-contract.R","deploy-contract","nginx carries the WebSocket and the forwarded scheme, and no http2",5,0,FALSE,FALSE,0,0.00399999999999068,0.00099999999999989,0.00499999999999545,5
+"test-deploy-contract.R","deploy-contract","nginx accepts uploads at least as large as the app does",2,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000955,2
+"test-deploy-contract.R","deploy-contract","the password policy is the same number everywhere it is written",4,0,FALSE,FALSE,0,0.00400000000000489,0.00099999999999989,0.00500000000000966,4
+"test-deploy-contract.R","deploy-contract","the prewarm script builds every database omicsCore knows, for both organisms",4,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.00699999999999079,4
+"test-deploy-contract.R","deploy-contract","the user store is the same directory in ShinyProxy, add_user.sh and the backup",5,0,FALSE,FALSE,0,0.00499999999999545,0.00199999999999978,0.007000000000005,5
+"test-deploy-contract.R","deploy-contract","the image runs in a UTF-8 locale",2,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,2
+"test-deploy-contract.R","deploy-contract","the CRAN snapshot is a date the check_pins script can read",2,0,FALSE,FALSE,0,0.00200000000000955,0,0.00200000000000955,2
+"test-deploy-contract.R","deploy-contract","no tracked deploy file names a site-specific address",1,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00600000000000023,1
+"test-deploy-contract.R","deploy-contract","each carrier of the address is a template, rendered, ignored and kept from rsync",20,0,FALSE,FALSE,0,0.0150000000000006,0.00599999999999978,0.0210000000000008,20
+"test-deploy-contract.R","deploy-contract","render.sh fills every token and leaves only the client secret to fill",17,0,FALSE,FALSE,0,0.0150000000000006,0.00500000000000034,0.0859999999999985,17
+"test-deploy-contract.R","deploy-contract","a DNS name gets a DNS subjectAltName, because Java matches the entry type",3,0,FALSE,FALSE,0,0.00400000000000489,0.00199999999999978,0.0720000000000027,3
+"test-deploy-contract.R","deploy-contract","render.sh refuses an address with a scheme, port or path, and the placeholder",5,0,FALSE,FALSE,0,0.007000000000005,0.00300000000000011,0.0529999999999973,5
+"test-deploy-contract.R","deploy-contract","the crontab no longer pipes into the rotation target",2,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,2
+"test-deploy-contract.R","deploy-contract","a good dump is written and verified",4,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.554000000000002,4
+"test-deploy-contract.R","deploy-contract","a failed dump leaves the previous backup byte-for-byte intact",6,0,FALSE,FALSE,0,0.00600000000000023,0.00299999999999967,0.38900000000001,6
+"test-deploy-contract.R","deploy-contract","an empty but valid gzip is refused",2,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.0859999999999985,2
+"test-deploy-contract.R","deploy-contract","output that is not a database dump is refused",3,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.290000000000006,3
+"test-deploy-contract.R","deploy-contract","a large valid dump succeeds, which the small ones could not show",3,0,FALSE,FALSE,0,0.00300000000000011,0.00200000000000022,0.909999999999997,3
+"test-deploy-contract.R","deploy-contract","a large dump that is not a dump is still refused",3,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.985000000000014,3
+"test-deploy-contract.R","deploy-contract","a compression failure does not overwrite the previous backup",3,0,FALSE,FALSE,0,0.00400000000000489,0.00199999999999978,0.331999999999994,3
+"test-deploy-contract.R","deploy-contract","a change under deploy/ triggers the package checks",3,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.00900000000000034,3
+"test-deploy-contract.R","deploy-contract","there is a workflow that builds and tests the release image",4,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,4
+"test-deploy-contract.R","deploy-contract","the release workflow proves the CJK toolchain in the image",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000955,1
+"test-deploy-contract.R","deploy-contract","the release workflow produces an SBOM and a vulnerability scan",3,0,FALSE,FALSE,0,0.00200000000000955,0.00099999999999989,0.00200000000000955,3
+"test-deploy-contract.R","deploy-contract","the CJK check script is in the build context",2,0,FALSE,FALSE,0,0.00200000000000955,0.00099999999999989,0.00400000000000489,2
+"test-diff-controls.R","diff-controls","the layer control is what makes DESeq2 reachable",4,0,FALSE,FALSE,0,0.0969999999999942,0.004,0.105000000000004,4
+"test-diff-controls.R","diff-controls","a layer name that is not in the project is ignored",2,0,FALSE,FALSE,0,0.0669999999999931,0.00299999999999967,0.0759999999999934,2
+"test-diff-controls.R","diff-controls","significance follows the chosen p column",2,0,FALSE,FALSE,0,0.0910000000000082,0.004,0.0949999999999989,2
+"test-diff-controls.R","diff-controls","the label follows the column, so no figure says adj.P over raw p",4,0,FALSE,FALSE,0,0.0879999999999939,0.00300000000000011,0.0900000000000034,4
+"test-diff-controls.R","diff-controls","the fold-change cutoff defaults to log2(1.2)",1,0,FALSE,FALSE,0,0.0600000000000023,0.00199999999999978,0.0630000000000024,1
+"test-diff-controls.R","diff-controls","an empty or negative fold-change box falls back, not to nothing",3,0,FALSE,FALSE,0,0.0720000000000027,0.00300000000000011,0.0760000000000076,3
+"test-diff-controls.R","diff-controls","a fold-change the old slider could not express now works",1,0,FALSE,FALSE,0,0.0739999999999981,0.00199999999999978,0.0769999999999982,1
+"test-diff-controls.R","diff-controls","Re-run with no contrast chosen yet does not complain",2,0,FALSE,FALSE,0,0.221000000000004,0.0089999999999999,0.237000000000009,2
+"test-diff-controls.R","diff-controls","the first run uses the same contrast the controls will show",2,0,FALSE,FALSE,0,0.191000000000003,0.00600000000000023,0.198000000000008,2
+"test-diff-controls.R","diff-controls","a run on the rnaseq layer uses an engine that layer supports",2,0,FALSE,FALSE,0,0.781999999999996,0.0269999999999997,0.828000000000003,2
+"test-diff-controls.R","diff-controls","a project with no experiments says so rather than blaming the contrast",1,0,FALSE,FALSE,0,0.0570000000000022,0.00200000000000022,0.0600000000000023,1
+"test-diff-controls.R","diff-controls","changing layer clears the result rather than re-running",3,0,FALSE,FALSE,0,0.397000000000006,0.0129999999999999,0.411000000000001,3
+"test-diff-controls.R","diff-controls","keeping the old result would have been worse than clearing",2,0,FALSE,FALSE,0,0.858999999999995,0.024,0.88900000000001,2
+"test-diff-controls.R","diff-controls","Re-run after a layer change uses the new layer's engine",2,0,FALSE,FALSE,0,0.796000000000006,0.0169999999999995,0.820999999999998,2
+"test-diff-controls.R","diff-controls","a column of sample identifiers is not offered as a contrast",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00400000000000489,2
+"test-diff-controls.R","diff-controls","every offered column has at least two samples per level",1,0,FALSE,FALSE,0,0.00600000000000023,0,0.00600000000000023,1
+"test-diff-controls.R","diff-controls","a named column wins over one that merely has fewer levels",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-diff-controls.R","diff-controls","a finished result survives the controls re-rendering",5,0,FALSE,FALSE,0,0.203999999999994,0.00699999999999967,0.209000000000003,5
+"test-diff-controls.R","diff-controls","opening the view does not start an analysis",2,0,FALSE,FALSE,0,0.112000000000009,0.00300000000000011,0.116,2
+"test-diff-controls.R","diff-controls","Re-run is what starts it",2,0,FALSE,FALSE,0,0.191000000000003,0.00600000000000023,0.197000000000003,2
+"test-engines.R","engines","every engine omicsCore can dispatch to loads in this process",6,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.00800000000000978,6
+"test-enrich-display-threshold.R","enrich-display-threshold","the display threshold selects on the column it names",2,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,2
+"test-enrich-display-threshold.R","enrich-display-threshold","the table is sorted and labelled by the column in use",2,0,FALSE,FALSE,0,0.341999999999999,0.00900000000000034,0.350999999999999,2
+"test-enrich-display-threshold.R","enrich-display-threshold","an empty or nonsensical cutoff falls back rather than emptying",4,0,FALSE,FALSE,0,0.587000000000003,0.0140000000000002,0.606000000000009,4
+"test-enrich-display-threshold.R","enrich-display-threshold","adjusted is the default, so nothing is loosened by accident",2,0,FALSE,FALSE,0,0.0139999999999958,0.00100000000000033,0.01400000000001,2
+"test-enrich-thresholds.R","enrich-thresholds","the p column follows the Differential view",2,0,FALSE,FALSE,0,0.0250000000000057,0.00199999999999978,0.027000000000001,2
+"test-enrich-thresholds.R","enrich-thresholds","the fold-change bound is applied too",2,0,FALSE,FALSE,0,0.0259999999999962,0.00200000000000067,0.0280000000000058,2
+"test-enrich-thresholds.R","enrich-thresholds","the panel states how many features went in",4,0,FALSE,FALSE,0,0.191000000000003,0.00499999999999989,0.194999999999993,4
+"test-enrich-thresholds.R","enrich-thresholds","an empty selection says so, and says where to change it",3,0,FALSE,FALSE,0,0.161000000000001,0.00399999999999956,0.165999999999997,3
+"test-enrich-thresholds.R","enrich-thresholds","features carrying no gene symbol are called out",1,0,FALSE,FALSE,0,0.187999999999988,0.00399999999999956,0.193999999999988,1
+"test-enrich-thresholds.R","enrich-thresholds","nothing is claimed before a differential has been run",2,0,FALSE,FALSE,0,0.164000000000001,0.00499999999999989,0.170000000000002,2
+"test-enrich-thresholds.R","enrich-thresholds","the ranked list keeps features no threshold would have kept",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00400000000000489,3
+"test-enrich-thresholds.R","enrich-thresholds","a feature with no effect cannot be ranked and is dropped",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,1
+"test-enrich-thresholds.R","enrich-thresholds","GSEA mode reports the ranking, not a selection",5,0,FALSE,FALSE,0,0.189999999999998,0.00599999999999934,0.198000000000008,5
+"test-enrich-thresholds.R","enrich-thresholds","ORA mode still reports the selection",3,0,FALSE,FALSE,0,0.171000000000006,0.00500000000000078,0.178000000000011,3
+"test-enrich-thresholds.R","enrich-thresholds","both enrichment types are asked for the whole pathway table",4,0,FALSE,FALSE,0,0.179000000000002,0.00400000000000045,0.183999999999997,4
+"test-example-data-edge.R","example-data-edge","example_input proteomics creates valid omics_input",6,0,FALSE,FALSE,0,0.00699999999999079,0.00200000000000067,0.00800000000000978,6
+"test-example-data-edge.R","example-data-edge","example_input rnaseq creates valid omics_input",4,0,FALSE,FALSE,0,0.00400000000000489,0.000999999999999446,0.00500000000000966,4
+"test-example-data-edge.R","example-data-edge","example_input has all metadata columns",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,1
+"test-example-data-edge.R","example-data-edge","example_input proteomics has expression values",2,0,FALSE,FALSE,0,0.00199999999999534,0.000999999999999446,0.00300000000000011,2
+"test-example-data-edge.R","example-data-edge","example_input is deterministic with seed",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-example-data-edge.R","example-data-edge","example_input validates omics_type",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-example-data-edge.R","example-data-edge","example_diff_bundle returns an analysis_bundle",5,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00600000000000023,5
+"test-example-data-edge.R","example-data-edge","example_diff_bundle has some significant features",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00100000000000477,1
+"test-example-data-edge.R","example-data-edge","example_diff_bundle is deterministic",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00200000000000955,1
+"test-example-data-edge.R","example-data-edge","example_enrich_table returns a data.frame",2,0,FALSE,FALSE,0,0.00200000000000955,0,0.00300000000000011,2
+"test-example-data-edge.R","example-data-edge","example_enrich_table has required columns",3,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00500000000000966,3
+"test-example-data-edge.R","example-data-edge","example_enrich_table is deterministic",1,0,FALSE,FALSE,0,0.0290000000000106,0.00100000000000033,0.0300000000000011,1
+"test-example-data-edge.R","example-data-edge","example_integration_tables returns expected named list",3,0,FALSE,FALSE,0,0.00399999999999068,0.000999999999999446,0.00500000000000966,3
+"test-example-data-edge.R","example-data-edge","example_integration_tables concordance_df has paired features",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00499999999999545,3
+"test-example-data-edge.R","example-data-edge","example_integration_tables active_pathways_df has pathways",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00499999999999545,3
+"test-example-data-edge.R","example-data-edge","example_integration_tables is deterministic",2,0,FALSE,FALSE,0,0.00400000000000489,0.000999999999999446,0.00400000000000489,2
+"test-example-data.R","example-data","example_input('proteomics') returns a valid omics_input",7,0,FALSE,FALSE,0,0.007000000000005,0.00200000000000067,0.00799999999999557,7
+"test-example-data.R","example-data","example_input('rnaseq') returns a valid omics_input",5,0,FALSE,FALSE,0,0.007000000000005,0.00199999999999978,0.00900000000000034,5
+"test-example-data.R","example-data","example_input() builds are deterministic",2,0,FALSE,FALSE,0,0.00400000000000489,0.000999999999999446,0.00499999999999545,2
+"test-example-data.R","example-data","example_diff_bundle() returns a populated analysis_bundle",6,0,FALSE,FALSE,0,0.00600000000000023,0.00200000000000067,0.00799999999999557,6
+"test-example-data.R","example-data","example_diff_bundle() top-10 |effect| features are the seeded ones",2,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00400000000000489,2
+"test-example-data.R","example-data","example_project() carries both proteomics and rnaseq experiments",4,0,FALSE,FALSE,0,0.00500000000000966,0.00199999999999978,0.007000000000005,4
+"test-example-data.R","example-data","example_qc_bundle() returns a populated QC analysis_bundle",4,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999068,4
+"test-example-data.R","example-data","example_qc_bundle() is deterministic",1,0,FALSE,FALSE,0,0.00200000000000955,0.00100000000000033,0.00199999999999534,1
+"test-example-data.R","example-data","example_enrich_table() matches the enrich_result_df schema",9,0,FALSE,FALSE,0,0.00799999999999557,0.00199999999999978,0.00900000000000034,9
+"test-example-data.R","example-data","example_enrich_table() is deterministic",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00199999999999534,1
+"test-example-data.R","example-data","example_integration_tables() returns the expected list",12,0,FALSE,FALSE,0,0.0100000000000051,0.00300000000000011,0.0120000000000005,12
+"test-example-data.R","example-data","example_integration_tables() is deterministic",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-feature-interaction.R","feature-interaction","the autosave reflects a replacement rather than the state before it",3,0,FALSE,FALSE,0,0.0139999999999958,0.00199999999999978,0.0170000000000101,3
+"test-feature-interaction.R","feature-interaction","a restored autosave still knows which file it came from",3,0,FALSE,FALSE,0,0.00400000000000489,0.00200000000000067,0.00500000000000966,3
+"test-feature-interaction.R","feature-interaction","an explicit save and the autosave do not tread on each other",5,0,FALSE,FALSE,0,0.0099999999999909,0.00399999999999956,0.0130000000000052,5
+"test-feature-interaction.R","feature-interaction","re-picking the same file leaves the analyses in place",2,0,FALSE,FALSE,0,0.0720000000000027,0.00199999999999978,0.0759999999999934,2
+"test-feature-interaction.R","feature-interaction","the confirm gate reads the layer matching the incoming omics type",2,0,FALSE,FALSE,0,0.0769999999999982,0.00200000000000067,0.0799999999999983,2
+"test-feature-interaction.R","feature-interaction","a project assembled by the app exports a script that names its file",4,0,FALSE,FALSE,0,0.00499999999999545,0.00299999999999923,0.00699999999999079,4
+"test-feature-interaction.R","feature-interaction","a demo project exports a script that says it has no data file",2,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,2
+"test-feature-interaction.R","feature-interaction","a result that cannot say where it came from is read as history",5,0,FALSE,FALSE,0,0.00399999999999068,0.00100000000000033,0.00499999999999545,5
+"test-file-name-split.R","file-name-split","split_file_name() agrees with tools on ordinary names",15,0,FALSE,FALSE,0,0.0160000000000053,0.00499999999999989,0.0190000000000055,15
+"test-file-name-split.R","file-name-split","split_file_name() keeps a UTF-8 name whole and marked",3,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00400000000000489,3
+"test-file-name-split.R","file-name-split","the split survives a child process whose locale is C",3,0,FALSE,FALSE,0,0.00699999999999079,0.122000000000001,0.220999999999989,3
+"test-golden-raw-to-result.R","golden-raw-to-result","normalize_omics reproduces the framework's normalized values",1,0,TRUE,FALSE,0,0.0529999999999973,0.024,0.0779999999999887,0
+"test-golden-raw-to-result.R","golden-raw-to-result","the differential results agree with the framework pipeline",1,0,TRUE,FALSE,0,0.007000000000005,0.00200000000000067,0.0100000000000051,0
+"test-golden-raw-to-result.R","golden-raw-to-result","importing the raw workbook does not leave linear values in the project",1,0,TRUE,FALSE,0,0.000999999999990564,0,0.00100000000000477,0
+"test-golden-raw-to-result.R","golden-raw-to-result","an already-normalized workbook is imported without a second transform",1,0,TRUE,FALSE,0,0.00200000000000955,0.00100000000000033,0.00199999999999534,0
+"test-golden-raw-to-result.R","golden-raw-to-result","a layer labelled with the old 'intensity' value still analyses",1,0,TRUE,FALSE,0,0.000999999999990564,0.00100000000000033,0.00199999999999534,0
+"test-hostile-inputs.R","hostile-inputs","no hostile input ends the session or loses the last result",172,0,FALSE,FALSE,0,48.631,1.587,50.471,172
+"test-hostile-inputs.R","hostile-inputs","a hostile upload is refused in the import view, not thrown",4,0,FALSE,FALSE,0,2.071,0.0419999999999998,2.12799999999999,4
+"test-hostile-inputs.R","hostile-inputs","confirming with nothing uploaded, and restoring with nothing saved, are no-ops",2,0,FALSE,FALSE,0,1.03899999999999,0.0140000000000002,1.05500000000001,2
+"test-hostile-inputs.R","hostile-inputs","clicking Re-run n times runs the engine n times",1,0,FALSE,FALSE,0,2.285,0.056,2.357,1
+"test-hostile-inputs.R","hostile-inputs","a hostile project name is stored under a safe slug and shown as text",3,0,FALSE,FALSE,0,2.44800000000001,0.0669999999999993,2.52200000000002,3
+"test-hostile-inputs.R","hostile-inputs","an uploaded .rds is refused before its fields are read",6,0,FALSE,FALSE,0,0.0900000000000034,0.00400000000000045,0.09699999999998,6
+"test-hostile-inputs.R","hostile-inputs","the file picker no longer offers .rds",1,0,FALSE,FALSE,0,0.01400000000001,0.00100000000000033,0.0150000000000148,1
+"test-import-confirmation.R","import-confirmation","the shape summary reports the parsed dimensions",5,0,FALSE,FALSE,0,0.133999999999986,0.0139999999999993,0.146999999999991,5
+"test-import-confirmation.R","import-confirmation","the shape summary says so when there is nothing to import",1,0,FALSE,FALSE,0,0.00300000000001432,0,0.00200000000000955,1
+"test-import-confirmation.R","import-confirmation","every sheet gets a role dropdown, including unplaced ones",6,0,FALSE,FALSE,0,0.120000000000005,0.0129999999999999,0.132000000000005,6
+"test-import-confirmation.R","import-confirmation","previews show the parsed values, not the raw sheet",7,0,FALSE,FALSE,0,0.134999999999991,0.0140000000000002,0.149000000000001,7
+"test-import-confirmation.R","import-confirmation","previews degrade quietly on empty input",3,0,FALSE,FALSE,0,0.00399999999999068,0.000999999999999446,0.00499999999999545,3
+"test-import-confirmation.R","import-confirmation","changing a sheet role re-reads the file with that assignment",4,0,FALSE,FALSE,0,0.188999999999993,0.0209999999999999,0.212999999999994,4
+"test-import-confirmation.R","import-confirmation","a new file clears the previous role overrides",3,0,FALSE,FALSE,0,0.377999999999986,0.0310000000000006,0.409999999999997,3
+"test-import-confirmation.R","import-confirmation","read_omics honours an explicit sheet role",2,0,FALSE,FALSE,0,0.0450000000000159,0.0149999999999997,0.061000000000007,2
+"test-import-confirmation.R","import-confirmation","read_omics rejects a malformed or unknown role",2,0,FALSE,FALSE,0,0.0139999999999816,0.00600000000000023,0.0209999999999866,2
+"test-import-confirmation.R","import-confirmation","changing the matrix sheet is a different import",2,0,FALSE,FALSE,0,0.229000000000013,0.0220000000000002,0.254999999999995,2
+"test-import-confirmation.R","import-confirmation","the same roles in a different order are the same parse",2,0,FALSE,FALSE,0,0.0169999999999959,0.00699999999999967,0.0240000000000009,2
+"test-import-normalization.R","import-normalization","a linear proteomics upload is labelled raw_intensity",3,0,FALSE,FALSE,0,0.114000000000004,0.0129999999999999,0.127999999999986,3
+"test-import-normalization.R","import-normalization","an already-log2 proteomics upload is labelled normalized_intensity",2,0,FALSE,FALSE,0,0.128999999999991,0.0140000000000002,0.143000000000001,2
+"test-import-normalization.R","import-normalization","RNA-seq is labelled raw_count and never offered normalization",2,0,FALSE,FALSE,0,0.11699999999999,0.0129999999999999,0.129999999999995,2
+"test-import-normalization.R","import-normalization","choosing a different scale rewrites the label and drops confirmation",4,0,FALSE,FALSE,0,0.207000000000022,0.0149999999999997,0.222000000000008,4
+"test-import-normalization.R","import-normalization","confirming a linear upload normalizes it by default",4,0,FALSE,FALSE,0,0.129000000000019,0.0129999999999999,0.14100000000002,4
+"test-import-normalization.R","import-normalization","normalization keeps the pre-normalization matrix",3,0,FALSE,FALSE,0,0.131999999999977,0.0129999999999999,0.144999999999982,3
+"test-import-normalization.R","import-normalization","unticking normalize imports the linear values unchanged",2,0,FALSE,FALSE,0,0.144000000000005,0.0129999999999999,0.157000000000011,2
+"test-import-normalization.R","import-normalization","an already-log2 upload is committed untouched",2,0,FALSE,FALSE,0,0.125,0.0129999999999999,0.137999999999977,2
+"test-import-normalization.R","import-normalization","RNA-seq counts are committed without transformation",2,0,FALSE,FALSE,0,0.145999999999987,0.0149999999999997,0.164999999999992,2
+"test-import-normalization.R","import-normalization","vsn is used when asked for and available",3,0,FALSE,FALSE,0,0.14500000000001,0.0150000000000006,0.160000000000025,3
+"test-import-normalization.R","import-normalization","the normalization choice is part of the upload's identity",2,0,FALSE,FALSE,0,0.0139999999999816,0.00699999999999967,0.0200000000000102,2
+"test-import-normalization.R","import-normalization","a failed normalization commits nothing and stays retryable",4,0,FALSE,FALSE,0,0.149000000000001,0.0140000000000002,0.163999999999987,4
+"test-import-normalization.R","import-normalization","unticking Normalize on import still cannot reach limma",1,0,FALSE,FALSE,0,0.129999999999995,0.0140000000000002,0.144000000000005,1
+"test-import-symbol-source.R","import-symbol-source","the column the symbol came from is named",2,0,FALSE,FALSE,0,0.0810000000000173,0.00299999999999923,0.0830000000000268,2
+"test-import-symbol-source.R","import-symbol-source","a few real symbols are shown, so a wrong column is visible",1,0,FALSE,FALSE,0,0.099000000000018,0.00300000000000011,0.103000000000009,1
+"test-import-symbol-source.R","import-symbol-source","the heading is recognised whatever the vendor called it",6,0,FALSE,FALSE,0,0.23599999999999,0.00700000000000056,0.242999999999995,6
+"test-import-symbol-source.R","import-symbol-source","no gene column says so, and says what it costs",3,0,FALSE,FALSE,0,0.0829999999999984,0.00300000000000011,0.0859999999999843,3
+"test-import-symbol-source.R","import-symbol-source","nothing is claimed before a file is parsed",1,0,FALSE,FALSE,0,0.0689999999999884,0.00199999999999978,0.070999999999998,1
+"test-import-templates.R","import-templates","each template has the sheets that kind of vendor actually ships",2,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000033,0.00399999999999068,2
+"test-import-templates.R","import-templates","both templates import cleanly and end up with symbols",8,0,FALSE,FALSE,0,0.11099999999999,0.0250000000000004,0.137,8
+"test-import-templates.R","import-templates","the README sheet is ignored rather than mistaken for data",1,0,FALSE,FALSE,0,0.0339999999999918,0.0110000000000001,0.0459999999999923,1
+"test-import-templates.R","import-templates","the two templates share donors but not sample ids",2,0,FALSE,FALSE,0,0.00200000000000955,0,0.00300000000001432,2
+"test-import-templates.R","import-templates","the RNA-seq template's ids are real enough to map",1,0,FALSE,FALSE,0,0.0029999999999859,0.00100000000000033,0.0029999999999859,1
+"test-import-templates.R","import-templates","the download handlers produce importable workbooks",3,0,FALSE,FALSE,0,0.102000000000004,0.00899999999999945,0.110000000000014,3
+"test-integration-pairing.R","integration-pairing","a guessed pairing offers to be accepted, and saves when it is",7,0,FALSE,FALSE,0,0.135999999999996,0.00700000000000056,0.143000000000001,7
+"test-integration-pairing.R","integration-pairing","a stated donor column needs no confirmation",2,0,FALSE,FALSE,0,0.0939999999999941,0.00300000000000011,0.100999999999999,2
+"test-integration-pairing.R","integration-pairing","no pairing says what to do instead of failing later",3,0,FALSE,FALSE,0,0.0800000000000125,0.00299999999999923,0.0819999999999936,3
+"test-integration-pairing.R","integration-pairing","one layer is not a pairing problem, it is a missing layer",2,0,FALSE,FALSE,0,0.0749999999999886,0.00300000000000011,0.078000000000003,2
+"test-integration-pairing.R","integration-pairing","the second layer inherits the first layer's covariates",3,0,FALSE,FALSE,0,0.0790000000000077,0.00300000000000011,0.0829999999999984,3
+"test-integration-pairing.R","integration-pairing","a second layer that cannot carry the model stops rather than differing",4,0,FALSE,FALSE,0,0.171999999999997,0.00400000000000045,0.176999999999992,4
+"test-integration-pairing.R","integration-pairing","running unadjusted is a choice, and it stays on the result",3,0,FALSE,FALSE,0,0.307000000000016,0.00599999999999934,0.312999999999988,3
+"test-late-callbacks.R","late-callbacks","a result that comes back into another project is refused",5,0,FALSE,FALSE,0,0.110000000000014,0.00400000000000045,0.113,5
+"test-late-callbacks.R","late-callbacks","a result is stamped with where it started, not where it landed",3,0,FALSE,FALSE,0,0.00800000000000978,0.00100000000000033,0.00899999999998613,3
+"test-late-callbacks.R","late-callbacks","a result is refused when the data changed under it",2,0,FALSE,FALSE,0,0.00200000000000955,0.000999999999999446,0.00300000000001432,2
+"test-late-callbacks.R","late-callbacks","a context that cannot be read is a refusal, not a pass",3,0,FALSE,FALSE,0,0.00399999999999068,0.00100000000000033,0.00600000000000023,3
+"test-late-callbacks.R","late-callbacks","reopening the same project refuses an outstanding result",2,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000033,0.0029999999999859,2
+"test-late-callbacks.R","late-callbacks","an unchanged project admits the result it was launched with",2,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.00399999999999068,2
+"test-late-callbacks.R","late-callbacks","an upstream that has been retired refuses its dependant",3,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000033,0.00499999999999545,3
+"test-late-callbacks.R","late-callbacks","the demo still computes, and is still bound by the request number",2,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.00300000000001432,2
+"test-late-callbacks.R","late-callbacks","an unattributed result is not filed into any project",2,0,FALSE,FALSE,0,0.00200000000000955,0,0.0029999999999859,2
+"test-layer-replacement.R","layer-replacement","the same file yields the same fingerprint",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00200000000000955,1
+"test-layer-replacement.R","layer-replacement","different content yields a different fingerprint",1,0,FALSE,FALSE,0,0.00200000000000955,0,0.00200000000000955,1
+"test-layer-replacement.R","layer-replacement","the parse settings are part of the fingerprint",1,0,FALSE,FALSE,0,0.00199999999998113,0,0.00200000000000955,1
+"test-layer-replacement.R","layer-replacement","an unreadable path has no fingerprint",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00199999999998113,1
+"test-layer-replacement.R","layer-replacement","a match needs a fingerprint on both sides",4,0,FALSE,FALSE,0,0.00499999999999545,0.000999999999999446,0.00600000000000023,4
+"test-layer-replacement.R","layer-replacement","a first import commits without asking",1,0,FALSE,FALSE,0,0.078000000000003,0.00200000000000067,0.0799999999999841,1
+"test-layer-replacement.R","layer-replacement","re-picking the same file commits nothing",1,0,FALSE,FALSE,0,0.0999999999999943,0.00300000000000011,0.102000000000004,1
+"test-layer-replacement.R","layer-replacement","new data does not commit until the replace is confirmed",3,0,FALSE,FALSE,0,0.0909999999999798,0.00199999999999978,0.0939999999999941,3
+"test-layer-replacement.R","layer-replacement","the replace dialog names the analyses that will be lost",3,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000033,0.00499999999999545,3
+"test-layer-replacement.R","layer-replacement","replacing the layer clears the QC result",2,0,FALSE,FALSE,0,0.375999999999976,0.00799999999999912,0.385999999999996,2
+"test-layer-replacement.R","layer-replacement","replacing the layer clears the differential result",2,0,FALSE,FALSE,0,0.121000000000009,0.00300000000000011,0.123999999999995,2
+"test-layer-replacement.R","layer-replacement","replacing the layer clears the enrichment result",2,0,FALSE,FALSE,0,0.204000000000008,0.00499999999999989,0.210000000000008,2
+"test-layer-replacement.R","layer-replacement","replacing the layer clears the integration result",2,0,FALSE,FALSE,0,0.449999999999989,0.00899999999999945,0.467999999999989,2
+"test-layer-replacement.R","layer-replacement","a view keeps its result when nothing was replaced",1,0,FALSE,FALSE,0,0.669999999999987,0.0110000000000001,0.682999999999993,1
+"test-layer-visibility.R","layer-visibility","QC offers a layer picker and honours it",3,0,FALSE,FALSE,0,0.467999999999989,0.00900000000000034,0.478000000000009,3
+"test-layer-visibility.R","layer-visibility","the picker wins over a layer another view asked for",2,0,FALSE,FALSE,0,0.455000000000013,0.00999999999999979,0.47199999999998,2
+"test-layer-visibility.R","layer-visibility","a single-layer project gets no picker to choose from",2,0,FALSE,FALSE,0,0.253999999999991,0.00599999999999934,0.260999999999996,2
+"test-layer-visibility.R","layer-visibility","Enrichment states its layer rather than offering to change it",2,0,FALSE,FALSE,0,0.146999999999991,0.00400000000000045,0.15100000000001,2
+"test-layer-visibility.R","layer-visibility","the diff view hands its layer tag out",3,0,FALSE,FALSE,0,0.105000000000018,0.00300000000000011,0.108000000000004,3
+"test-layer-visibility.R","layer-visibility","the quality panel defaults to the question the modality raises",2,0,FALSE,FALSE,0,0.492999999999995,0.00699999999999967,0.501999999999981,2
+"test-layer-visibility.R","layer-visibility","the default is a default, not a lock",2,0,FALSE,FALSE,0,0.355999999999995,0.00499999999999989,0.361999999999995,2
+"test-layer-visibility.R","layer-visibility","the panel title follows the panel",2,0,FALSE,FALSE,0,0.37299999999999,0.00600000000000023,0.379999999999995,2
+"test-missing-deps.R","missing-deps","the enrichment view points at the missing package instead of computing",4,0,FALSE,FALSE,0,0.171999999999997,0.00499999999999989,0.177000000000021,4
+"test-missing-deps.R","missing-deps","the report view offers no download without openxlsx",3,0,FALSE,FALSE,0,0.0490000000000066,0.00199999999999978,0.0509999999999877,3
+"test-missing-deps.R","missing-deps","the differential view names the engines it cannot offer",2,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000955,2
+"test-missing-deps.R","missing-deps","with nothing missing the differential view reports nothing missing",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00199999999998113,1
+"test-missing-deps.R","missing-deps","the template writer refuses without openxlsx",1,0,FALSE,FALSE,0,0.00300000000001432,0,0.00300000000001432,1
+"test-missing-deps.R","missing-deps","every optional-package question in the app goes through has_pkg()",1,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.00699999999997658,1
+"test-mod_diff_view-server.R","mod_diff_view-server","with no project the view analyses the demo, for real",4,0,FALSE,FALSE,0,0.152000000000015,0.00499999999999989,0.157999999999987,4
+"test-mod_diff_view-server.R","mod_diff_view-server","diff view runs run_diff() against the live project",7,0,FALSE,FALSE,0,0.207999999999998,0.0170000000000003,0.225999999999999,7
+"test-mod_diff_view-server.R","mod_diff_view-server","diff view surfaces validation errors instead of crashing",2,0,FALSE,FALSE,0,0.0869999999999891,0.0119999999999996,0.0999999999999943,2
+"test-mod_diff_view-server.R","mod_diff_view-server","the demo (proteomics) view hides the count engines",4,0,FALSE,FALSE,0,0.063999999999993,0.00300000000000011,0.0670000000000073,4
+"test-mod_diff_view-server.R","mod_diff_view-server","a raw-count layer offers the count engines instead",3,0,FALSE,FALSE,0,0.0860000000000127,0.0110000000000001,0.0970000000000084,3
+"test-mod_diff_view-server.R","mod_diff_view-server","the volcano does not depend on the threshold sliders",2,0,FALSE,FALSE,0,0.226999999999975,0.00499999999999989,0.231999999999999,2
+"test-mod_diff_view-server.R","mod_diff_view-server","the sliders still drive the hit table",1,0,FALSE,FALSE,0,0.173000000000002,0.00600000000000023,0.181999999999988,1
+"test-mod_diff_view-server.R","mod_diff_view-server","the volcano card says the sliders do not reach it",1,0,FALSE,FALSE,0,0.00500000000002387,0,0.00499999999999545,1
+"test-mod_enrich_view-server.R","mod_enrich_view-server","enrich view falls back to demo when diff_bundle is NULL",3,0,FALSE,FALSE,0,0.167000000000002,0.00300000000000011,0.169999999999987,3
+"test-mod_enrich_view-server.R","mod_enrich_view-server","enrich view runs run_enrichment when clusterProfiler is installed",3,0,FALSE,FALSE,0,0.15900000000002,0.00399999999999956,0.163000000000011,3
+"test-mod_enrich_view-server.R","mod_enrich_view-server","the enrichment download writes the whole table, not the filtered view",5,0,FALSE,FALSE,0,0.0739999999999839,0.00400000000000045,0.0769999999999982,5
+"test-mod_enrich_view-server.R","mod_enrich_view-server","the exported table is sorted so the file opens on the strongest result",1,0,FALSE,FALSE,0,0.167000000000002,0.00300000000000011,0.170999999999992,1
+"test-mod_import_view-server.R","mod_import_view-server","import view exposes an omics_input after Confirm",7,0,FALSE,FALSE,0,0.111999999999995,0.0129999999999999,0.126000000000005,7
+"test-mod_import_view-server.R","mod_import_view-server","import view surfaces read_omics warnings without crashing",4,0,FALSE,FALSE,0,0.0669999999999789,0.00300000000000011,0.0699999999999932,4
+"test-mod_import_view-server.R","mod_import_view-server","changing omics_type after upload re-parses and resets confirm",6,0,FALSE,FALSE,0,0.215000000000003,0.0190000000000001,0.238999999999976,6
+"test-mod_integration_view-server.R","mod_integration_view-server","integration view falls back to demo when prerequisites are absent",3,0,FALSE,FALSE,0,0.340000000000003,0.00699999999999967,0.347000000000008,3
+"test-mod_integration_view-server.R","mod_integration_view-server","integration view stays on demo when project has only one experiment",2,0,FALSE,FALSE,0,0.11099999999999,0.0140000000000002,0.125,2
+"test-mod_integration_view-server.R","mod_integration_view-server","integration view runs concordance when two compatible layers exist",4,0,FALSE,FALSE,0,0.236999999999995,0.0149999999999997,0.251000000000005,4
+"test-mod_project_view-server.R","mod_project_view-server","project view falls back to demo when current_project is NULL",1,0,FALSE,FALSE,0,0.0099999999999909,0.00100000000000033,0.0099999999999909,1
+"test-mod_project_view-server.R","mod_project_view-server","project view shows live experiment when project has one layer",1,0,FALSE,FALSE,0,0.0370000000000061,0.00999999999999979,0.046999999999997,1
+"test-mod_project_view-server.R","mod_project_view-server","project view lists both experiments when project has two layers",1,0,FALSE,FALSE,0,0.0550000000000068,0.0110000000000001,0.0660000000000025,1
+"test-mod_qc_view-server.R","mod_qc_view-server","qc view falls back to example_qc_bundle when project is NULL",4,0,FALSE,FALSE,0,0.26400000000001,0.00699999999999967,0.272999999999996,4
+"test-mod_qc_view-server.R","mod_qc_view-server","qc view re-runs run_qc against the live project",5,0,FALSE,FALSE,0,0.508999999999986,0.0200000000000005,0.531999999999982,5
+"test-mod_qc_view-server.R","mod_qc_view-server","qc view surfaces run_qc errors instead of crashing",2,0,FALSE,FALSE,0,0.0960000000000036,0.0129999999999999,0.110000000000014,2
+"test-mod_report_view-server.R","mod_report_view-server","report view boots with demo fixture when project is NULL",1,0,FALSE,FALSE,0,0.00899999999998613,0,0.00900000000001455,1
+"test-mod_report_view-server.R","mod_report_view-server","report view boots with live project and bundles attached",1,0,FALSE,FALSE,0,0.0380000000000109,0.00999999999999979,0.0480000000000018,1
+"test-mod_report_view-server.R","mod_report_view-server","report view boots when project has no bundles yet",1,0,FALSE,FALSE,0,0.0349999999999966,0.00899999999999945,0.0450000000000159,1
+"test-mod_report_view-server.R","mod_report_view-server","the code panel is empty until there is a project",2,0,FALSE,FALSE,0,0.0509999999999877,0.00199999999999978,0.0520000000000209,2
+"test-mod_report_view-server.R","mod_report_view-server","the code panel shows the calls that produced the project",4,0,FALSE,FALSE,0,0.0769999999999982,0.0120000000000005,0.0889999999999986,4
+"test-mod_report_view-server.R","mod_report_view-server","a project that cannot be rendered shows a comment, not a crash",2,0,FALSE,FALSE,0,0.135000000000019,0.00299999999999923,0.138999999999982,2
+"test-mod_views_edge.R","mod_views_edge","import view boots without error",2,0,FALSE,FALSE,0,0.0699999999999932,0.00200000000000067,0.0720000000000027,2
+"test-mod_views_edge.R","mod_views_edge","import view can toggle format",2,0,FALSE,FALSE,0,0.0620000000000118,0.00199999999999978,0.0640000000000214,2
+"test-mod_views_edge.R","mod_views_edge","qc view boots without error with NULL project",2,0,FALSE,FALSE,0,0.288999999999987,0.00699999999999967,0.295999999999992,2
+"test-mod_views_edge.R","mod_views_edge","qc view handles project with single experiment",2,0,FALSE,FALSE,0,0.27000000000001,0.0150000000000006,0.287000000000006,2
+"test-mod_views_edge.R","mod_views_edge","qc view can switch outlier methods without crashing",2,0,FALSE,FALSE,0,0.764999999999986,0.0140000000000002,0.782999999999987,2
+"test-mod_views_edge.R","mod_views_edge","project view boots with NULL project",2,0,FALSE,FALSE,0,0.0099999999999909,0.000999999999999446,0.0109999999999957,2
+"test-mod_views_edge.R","mod_views_edge","project view boots with one experiment",2,0,FALSE,FALSE,0,0.0099999999999909,0.00100000000000033,0.0109999999999957,2
+"test-mod_views_edge.R","mod_views_edge","project view boots with two experiments",2,0,FALSE,FALSE,0,0.0100000000000193,0,0.0109999999999957,2
+"test-mod_views_edge.R","mod_views_edge","report view boots without crashing with NULL project",2,0,FALSE,FALSE,0,0.0100000000000193,0,0.0099999999999909,2
+"test-mod_views_edge.R","mod_views_edge","report view boots with project but no bundles",2,0,FALSE,FALSE,0,0.0289999999999964,0.00100000000000033,0.0300000000000011,2
+"test-mod_views_edge.R","mod_views_edge","report view boots with project and bundles",2,0,FALSE,FALSE,0,0.0169999999999959,0.00100000000000033,0.0180000000000007,2
+"test-project-store.R","project-store","project_slug keeps readable names and collapses separators",3,0,FALSE,FALSE,0,0.00300000000001432,0.000999999999999446,0.0040000000000191,3
+"test-project-store.R","project-store","project_slug neutralises path traversal",12,0,FALSE,FALSE,0,0.0099999999999909,0.00300000000000011,0.0120000000000005,12
+"test-project-store.R","project-store","project_slug refuses names that resolve to nothing usable",5,0,FALSE,FALSE,0,0.00499999999999545,0.00100000000000033,0.00600000000000023,5
+"test-project-store.R","project-store","no user-supplied name can reach the autosave slot",7,0,FALSE,FALSE,0,0.007000000000005,0.00199999999999978,0.00900000000001455,7
+"test-project-store.R","project-store","project_slug caps very long names",1,0,FALSE,FALSE,0,0.000999999999976353,0.00100000000000033,0.00199999999998113,1
+"test-project-store.R","project-store","project_slug strips control characters",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000955,1
+"test-project-store.R","project-store","project_slug preserves non-Latin names in any locale",2,0,FALSE,FALSE,0,0.00200000000000955,0.000999999999999446,0.00200000000000955,2
+"test-project-store.R","project-store","truncating a long non-Latin name still yields valid UTF-8",2,0,FALSE,FALSE,0,0.00199999999998113,0,0.00100000000000477,2
+"test-project-store.R","project-store","quota is unlimited when unset or malformed",4,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000033,0.00499999999999545,4
+"test-project-store.R","project-store","quota reads a valid value",1,0,FALSE,FALSE,0,0.00100000000000477,0.000999999999999446,0.00200000000000955,1
+"test-project-store.R","project-store","usage starts at zero and grows with saved files",2,0,FALSE,FALSE,0,0.00199999999998113,0,0.00199999999998113,2
+"test-project-store.R","project-store","quota_exceeded fires only once the directory is over budget",2,0,FALSE,FALSE,0,0.00200000000000955,0.000999999999999446,0.00300000000001432,2
+"test-project-store.R","project-store","a project round-trips through the store",5,0,FALSE,FALSE,0,0.00499999999999545,0.00200000000000067,0.00699999999997658,5
+"test-project-store.R","project-store","saving refuses to clobber without overwrite",4,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.00800000000000978,4
+"test-project-store.R","project-store","saving rejects an unusable name and a non-project",4,0,FALSE,FALSE,0,0.00199999999998113,0.000999999999999446,0.0029999999999859,4
+"test-project-store.R","project-store","a new save is blocked at quota but an overwrite is not",4,0,FALSE,FALSE,0,0.0040000000000191,0.00200000000000067,0.00600000000000023,4
+"test-project-store.R","project-store","delete removes the file and reports a missing one",3,0,FALSE,FALSE,0,0.00399999999999068,0.00200000000000067,0.00600000000000023,3
+"test-project-store.R","project-store","loading a missing project fails cleanly",3,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.0029999999999859,3
+"test-project-store.R","project-store","list_saved_projects is empty for a fresh store",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00200000000000955,1
+"test-project-store.R","project-store","list_saved_projects hides the autosave snapshot",3,0,FALSE,FALSE,0,0.00300000000001432,0.00199999999999978,0.00499999999999545,3
+"test-project-store.R","project-store","autosave round-trips and reports its timestamp",6,0,FALSE,FALSE,0,0.0040000000000191,0.00199999999999978,0.007000000000005,6
+"test-project-store.R","project-store","autosave ignores non-projects and never throws",2,0,FALSE,FALSE,0,0.00199999999998113,0.00100000000000033,0.0029999999999859,2
+"test-project-store.R","project-store","autosave still writes when the store is over quota",2,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000033,0.00499999999999545,2
+"test-project-store.R","project-store","an upload is archived under the raw directory",4,0,FALSE,FALSE,0,0.0029999999999859,0.00100000000000033,0.00500000000002387,4
+"test-project-store.R","project-store","archiving the same upload twice does not duplicate it",3,0,FALSE,FALSE,0,0.00200000000000955,0.000999999999999446,0.00399999999999068,3
+"test-project-store.R","project-store","archiving is skipped at quota but reports why",2,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.0029999999999859,2
+"test-project-store.R","project-store","archiving fails soft on a missing file or fingerprint",3,0,FALSE,FALSE,0,0.00200000000000955,0.00100000000000033,0.00200000000000955,3
+"test-project-store.R","project-store","archived uploads do not show up as saved projects",2,0,FALSE,FALSE,0,0.0029999999999859,0.00199999999999978,0.00399999999999068,2
+"test-project-store.R","project-store","a project change reaches the store",3,0,FALSE,FALSE,0,0.0109999999999957,0.00199999999999978,0.0130000000000052,3
+"test-project-store.R","project-store","the write lands in the same flush, with no clock to advance",1,0,FALSE,FALSE,0,0.007000000000005,0.00199999999999978,0.00799999999998136,1
+"test-project-store.R","project-store","a cascade leaves the latest state on disk",2,0,FALSE,FALSE,0,0.007000000000005,0.00100000000000033,0.007000000000005,2
+"test-project-store.R","project-store","a NULL project is never autosaved",1,0,FALSE,FALSE,0,0.0029999999999859,0,0.00399999999999068,1
+"test-project-store.R","project-store","a successful autosave says when",3,0,FALSE,FALSE,0,0.00200000000000955,0.000999999999999446,0.0029999999999859,3
+"test-project-store.R","project-store","a failed autosave says why, and does not throw",3,0,FALSE,FALSE,0,0.0029999999999859,0.00100000000000033,0.00399999999999068,3
+"test-project-store.R","project-store","the failure reaches stderr, where a recycled container leaves it",1,0,FALSE,FALSE,0,0.00300000000001432,0.000999999999999446,0.00300000000001432,1
+"test-project-store.R","project-store","wire_autosave reports each outcome without breaking the observer",4,0,FALSE,FALSE,0,0.0120000000000005,0.00100000000000033,0.0130000000000052,4
+"test-project-store.R","project-store","a writer that throws is still reported rather than lost",2,0,FALSE,FALSE,0,0.00699999999997658,0,0.007000000000005,2
+"test-project-store.R","project-store","an unwritable store is detected at startup, not at the first save",3,0,FALSE,FALSE,0,0.00300000000001432,0.000999999999999446,0.0040000000000191,3
+"test-project-store.R","project-store","the startup probe leaves nothing behind",2,0,FALSE,FALSE,0,0.00200000000000955,0.00100000000000033,0.00200000000000955,2
+"test-project-store.R","project-store","saving over the same name is not a copy",4,0,FALSE,FALSE,0,0.00399999999999068,0.00199999999999978,0.00600000000000023,4
+"test-project-store.R","project-store","saving under a second name forks, and says so",6,0,FALSE,FALSE,0,0.01400000000001,0.00300000000000011,0.0159999999999911,6
+"test-project-store.R","project-store","the copy's results belong to the copy, and still hang together",3,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000033,0.00499999999999545,3
+"test-project-store.R","project-store","both files exist afterwards and open independently",5,0,FALSE,FALSE,0,0.00600000000000023,0.00300000000000011,0.00800000000000978,5
+"test-project-store.R","project-store","a project that has never been saved does not fork on its first save",2,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.00399999999999068,2
+"test-qc-applies-downstream.R","qc-applies-downstream","previewing changes nothing downstream",2,0,FALSE,FALSE,0,0.282000000000011,0.00399999999999956,0.286000000000001,2
+"test-qc-applies-downstream.R","qc-applies-downstream","the module hands back the applied layer, not the preview",4,0,FALSE,FALSE,0,0.538999999999987,0.00800000000000001,0.548999999999978,4
+"test-qc-applies-downstream.R","qc-applies-downstream","a preview that failed cannot be applied",3,0,FALSE,FALSE,0,0.272999999999996,0.00400000000000045,0.277000000000015,3
+"test-qc-applies-downstream.R","qc-applies-downstream","a preview from another layer cannot be applied to this one",3,0,FALSE,FALSE,0,0.474000000000018,0.00600000000000023,0.481999999999999,3
+"test-qc-applies-downstream.R","qc-applies-downstream","loosening the cutoff after applying recovers the features",3,0,FALSE,FALSE,0,1.05600000000001,0.0179999999999998,1.07900000000001,3
+"test-qc-applies-downstream.R","qc-applies-downstream","applying the same settings twice does not compound",1,0,FALSE,FALSE,0,0.841000000000008,0.0170000000000003,0.861999999999995,1
+"test-qc-applies-downstream.R","qc-applies-downstream","arriving at a layer shows the settings it was applied with",2,0,FALSE,FALSE,0,1.10600000000002,0.0200000000000005,1.12700000000001,2
+"test-qc-applies-downstream.R","qc-applies-downstream","preprocessing left behind by a replaced layer is not offered back",1,0,FALSE,FALSE,0,0.933999999999997,0.0199999999999996,0.957999999999998,1
+"test-qc-applies-downstream.R","qc-applies-downstream","the differential runs on the applied layer",5,0,FALSE,FALSE,0,0.631,0.0140000000000002,0.648000000000025,5
+"test-qc-applies-downstream.R","qc-applies-downstream","without an applied layer the differential uses the import",1,0,FALSE,FALSE,0,0.0859999999999843,0.00300000000000011,0.0900000000000034,1
+"test-qc-applies-downstream.R","qc-applies-downstream","each layer keeps its own applied preprocessing",3,0,FALSE,FALSE,0,1.08599999999998,0.024,1.11500000000001,3
+"test-qc-applies-downstream.R","qc-applies-downstream","the integration's second layer uses the applied version too",3,0,FALSE,FALSE,1,0.615000000000009,0.0140000000000002,0.631,2
+"test-qc-applies-downstream.R","qc-applies-downstream","re-applying keeps the parameters that have no control",3,0,FALSE,FALSE,0,0.310000000000002,0.00599999999999934,0.317999999999984,3
+"test-qc-applies-downstream.R","qc-applies-downstream","a visible control still overrides what was saved",2,0,FALSE,FALSE,0,0.558999999999997,0.0110000000000001,0.568999999999988,2
+"test-qc-applies-downstream.R","qc-applies-downstream","an unrelated project update does not overwrite the draft",2,0,FALSE,FALSE,0,0.836999999999989,0.0150000000000006,0.855000000000018,2
+"test-qc-applies-downstream.R","qc-applies-downstream","applying does not clear the result it just produced",3,0,FALSE,FALSE,0,0.335000000000008,0.00700000000000056,0.342000000000013,3
+"test-qc-applies-downstream.R","qc-applies-downstream","the QC bundle reaches the project, not just the cleaned data",2,0,FALSE,FALSE,0,3.54999999999998,0.0920000000000005,3.661,2
+"test-qc-controls.R","qc-controls","the outlier radio reaches run_qc on the demo project",3,0,FALSE,FALSE,0,0.751000000000005,0.0209999999999999,0.775000000000006,3
+"test-qc-controls.R","qc-controls","the missing-rate slider changes what the demo keeps",1,0,FALSE,FALSE,0,0.498999999999995,0.0110000000000001,0.512,1
+"test-qc-controls.R","qc-controls","the demo input is stable across calls",2,0,FALSE,FALSE,0,0.00199999999998113,0.000999999999999446,0.00399999999999068,2
+"test-qc-controls.R","qc-controls","example_qc_bundle still answers at its documented settings",2,0,FALSE,FALSE,0,0.00200000000000955,0.00100000000000033,0.00300000000001432,2
+"test-result-attribution.R","result-attribution","a restored project drops a saved result when its data changes",5,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.00300000000001432,5
+"test-result-attribution.R","result-attribution","a result whose data is unchanged survives retirement",2,0,FALSE,FALSE,0,0.00200000000000955,0,0.00199999999998113,2
+"test-result-attribution.R","result-attribution","retirement reaches the autosave, not just the page",5,0,FALSE,FALSE,0,0.00399999999999068,0.00199999999999978,0.007000000000005,5
+"test-result-attribution.R","result-attribution","a result from another project is never adopted",2,0,FALSE,FALSE,0,0.00200000000000955,0.00100000000000033,0.0029999999999859,2
+"test-result-attribution.R","result-attribution","a result with no attribution is not filled in with the current one",2,0,FALSE,FALSE,0,0.00200000000000955,0.00100000000000033,0.00200000000000955,2
+"test-result-attribution.R","result-attribution","bind_result refuses to stamp what it cannot describe",3,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.00399999999999068,3
+"test-result-attribution.R","result-attribution","the same analysis on the same data keeps the same id",2,0,FALSE,FALSE,0,0.00300000000001432,0,0.0029999999999859,2
+"test-result-attribution.R","result-attribution","enrichment goes when the differential under it goes",2,0,FALSE,FALSE,0,0.00200000000000955,0,0.00200000000000955,2
+"test-result-attribution.R","result-attribution","opening an earlier save of the same project is an activation",1,0,FALSE,FALSE,0,1.851,0.0599999999999996,1.91399999999999,1
+"test-result-attribution.R","result-attribution","restoring the autosave is an activation too",1,0,FALSE,FALSE,0,1.44200000000001,0.0470000000000006,1.493,1
+"test-result-attribution.R","result-attribution","opening a project shows the differential it was saved with",2,0,FALSE,FALSE,0,0.119,0.00299999999999923,0.122000000000014,2
+"test-result-attribution.R","result-attribution","a saved result the data has moved past is not restored",1,0,FALSE,FALSE,0,0.061000000000007,0.00200000000000067,0.0619999999999834,1
+"test-result-attribution.R","result-attribution","an unattributed saved result is not restored either",1,0,FALSE,FALSE,0,0.0629999999999882,0.00199999999999978,0.0649999999999977,1
+"test-run-app.R","run-app","launch passes host and port through to Shiny",3,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.00499999999999545,3
+"test-run-app.R","run-app","launch raises the upload ceiling above Shiny's 5 MB default",1,0,FALSE,FALSE,0,0.007000000000005,0.00100000000000033,0.00800000000000978,1
+"test-run-app.R","run-app","launch restores the upload option when the app stops",1,0,FALSE,FALSE,0,0.00200000000000955,0,0.00200000000000955,1
+"test-run-app.R","run-app","workers > 0 installs a parallel future plan",2,0,FALSE,FALSE,0,0.0029999999999859,0,0.00399999999999068,2
+"test-run-app.R","run-app","workers = 0 leaves the caller's plan untouched",1,0,FALSE,FALSE,0,0.00200000000000955,0,0.00300000000001432,1
+"test-run-app.R","run-app","launch restores the previous future plan when the app stops",1,0,FALSE,FALSE,0,0.007000000000005,0.00100000000000033,0.00800000000000978,1
+"test-run-app.R","run-app","launch validates its numeric arguments",3,0,FALSE,FALSE,0,0.00600000000000023,0.000999999999999446,0.00800000000000978,3
+"test-run-app.R","run-app","a project named at launch is the one that opens",2,0,FALSE,FALSE,0,0.972999999999985,0.024,0.99799999999999,2
+"test-run-app.R","run-app","without the option the autosave is still restored",1,0,FALSE,FALSE,0,0.985000000000014,0.0249999999999995,1.012,1
+"test-run-app.R","run-app","a named project that cannot be opened is reported, not skipped",1,0,FALSE,FALSE,0,1.15600000000001,0.0310000000000006,1.19399999999999,1
+"test-run-app.R","run-app","launch() does not leave the option set for the next call",1,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.0029999999999859,1
+"test-stat-card-accents.R","stat-card-accents","every accent R accepts has a rule to style it",1,0,FALSE,FALSE,0,0.00200000000000955,0,0.00200000000000955,1
+"test-stat-card-accents.R","stat-card-accents","every accent the stylesheet defines is one R will accept",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00199999999998113,1
+"test-stat-card-accents.R","stat-card-accents","each accent renders the class its stylesheet rule targets",5,0,FALSE,FALSE,0,0.007000000000005,0.000999999999999446,0.00800000000000978,5
+"test-stat-card-accents.R","stat-card-accents","warn is accepted, since two callers already depend on it",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00100000000000477,1
+"test-stat-card-accents.R","stat-card-accents","the QC stats card survives a sample being flagged",3,0,FALSE,FALSE,0,0.614999999999981,0.016,0.63300000000001,3
+"test-stat-card-accents.R","stat-card-accents","an import that is mostly missing still renders its summary",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00100000000000477,1
+"test-store-adversarial.R","store-adversarial","no name escapes the store",24,0,FALSE,FALSE,0,0.0219999999999914,0.00600000000000023,0.0279999999999916,24
+"test-store-adversarial.R","store-adversarial","a name of only punctuation resolves to nothing usable",7,0,FALSE,FALSE,0,0.007000000000005,0.00199999999999978,0.00900000000001455,7
+"test-store-adversarial.R","store-adversarial","the stored filename never doubles a dot",3,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.0029999999999859,3
+"test-store-adversarial.R","store-adversarial","a name is capped in bytes, which is what filesystems count",6,0,FALSE,FALSE,0,0.00399999999999068,0.00100000000000033,0.00499999999999545,6
+"test-store-adversarial.R","store-adversarial","a malformed quota means unlimited, not locked out",7,0,FALSE,FALSE,0,0.007000000000005,0.00300000000000011,0.00899999999998613,7
+"test-store-adversarial.R","store-adversarial","a fractional quota is honoured",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000955,1
+"test-store-adversarial.R","store-adversarial","usage counts the raw archive as well as the projects",1,0,FALSE,FALSE,0,0.00199999999998113,0.00199999999999978,0.0029999999999859,1
+"test-store-adversarial.R","store-adversarial","a quota that is already exceeded still allows tidying up",4,0,FALSE,FALSE,0,0.00500000000002387,0.00300000000000011,0.00800000000000978,4
+"test-store-adversarial.R","store-adversarial","a corrupt project file fails to open without taking the app down",4,0,FALSE,FALSE,0,0.0040000000000191,0.00199999999999978,0.00600000000000023,4
+"test-store-adversarial.R","store-adversarial","a foreign file in the store is ignored rather than listed",1,0,FALSE,FALSE,0,0.000999999999976353,0.00100000000000033,0.00200000000000955,1
+"test-store-adversarial.R","store-adversarial","saving into a store whose directory has vanished recreates it",1,0,FALSE,FALSE,0,0.00100000000000477,0.00199999999999978,0.0029999999999859,1
+"test-store-adversarial.R","store-adversarial","autosave survives the store directory vanishing mid-session",2,0,FALSE,FALSE,0,0.0029999999999859,0.00199999999999978,0.0040000000000191,2
+"test-store-adversarial.R","store-adversarial","two files with the same name but different content both survive",4,0,FALSE,FALSE,0,0.0040000000000191,0.00200000000000067,0.00500000000002387,4
+"test-store-adversarial.R","store-adversarial","an upload with a hostile filename is archived safely",2,0,FALSE,FALSE,0,0.00199999999998113,0.000999999999999446,0.0040000000000191,2
+"test-store-adversarial.R","store-adversarial","a real .omp outside the store can be neither opened nor deleted",7,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.0099999999999909,7
+"test-store-adversarial.R","store-adversarial","an absolute path outside the store is refused",3,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000033,0.00499999999999545,3
+"test-store-adversarial.R","store-adversarial","a symlink in the store pointing out of it is refused",3,0,FALSE,FALSE,0,0.00399999999999068,0.00199999999999978,0.00600000000000023,3
+"test-store-adversarial.R","store-adversarial","a normal project, including a CJK name, still opens and deletes",8,0,FALSE,FALSE,0,0.0099999999999909,0.00499999999999989,0.0149999999999864,8
+"test-store-adversarial.R","store-adversarial","a slug that vanishes between listing and use is reported as such",3,0,FALSE,FALSE,0,0.00399999999999068,0.00100000000000033,0.0040000000000191,3
+"test-two-sessions.R","two-sessions","what one session imports, the other does not see",5,0,FALSE,FALSE,0,22.61,0.515000000000001,26.753,5
+"test-ui-helpers.R","ui-helpers","view_header() renders title, subtitle, and action slot",7,0,FALSE,FALSE,0,0.0040000000000191,0,0.0040000000000191,7
+"test-ui-helpers.R","ui-helpers","view_header() omits actions when not provided",3,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.00499999999999545,3
+"test-ui-helpers.R","ui-helpers","stat_card() applies label, value, trend, and accent class",4,0,FALSE,FALSE,0,0.00200000000000955,0.000999999999999446,0.0029999999999859,4
+"test-ui-helpers.R","ui-helpers","stat_card() mono = TRUE switches the value to monospace class",1,0,FALSE,FALSE,0,0.00199999999998113,0,0.00100000000000477,1
+"test-ui-helpers.R","ui-helpers","stat_card() rejects unknown accent values",1,0,FALSE,FALSE,0,0.00200000000000955,0.00100000000000122,0.00200000000000955,1
+"test-ui-helpers.R","ui-helpers","pill() picks the right kind class",6,0,FALSE,FALSE,0,0.0029999999999859,0,0.00300000000001432,6
+"test-ui-helpers.R","ui-helpers","confidence_bar() clamps and renders the right CSS variable",4,0,FALSE,FALSE,0,0.00300000000001432,0.000999999999999446,0.0029999999999859,4
+"test-ui-helpers.R","ui-helpers","confidence_bar() rejects non-numeric input",3,0,FALSE,FALSE,0,0.00499999999999545,0,0.00600000000000023,3
+"test-ui-helpers.R","ui-helpers","view_placeholder() still emits a card with title + body",4,0,FALSE,FALSE,0,0.00399999999999068,0.000999999999999446,0.00499999999999545,4
+"test-ui-helpers.R","ui-helpers","step_item() reflects state in the outer class",5,0,FALSE,FALSE,0,0.00499999999999545,0.00100000000000122,0.00499999999999545,5
+"test-ui-helpers.R","ui-helpers","step_item() done-state replaces the index with a check mark",3,0,FALSE,FALSE,0,0.00200000000000955,0,0.0029999999999859,3
+"test-ui-helpers.R","ui-helpers","step_item() omits desc when not provided",2,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000955,2
+"test-ui-helpers.R","ui-helpers","schema_row() renders the five-column grid",8,0,FALSE,FALSE,0,0.0029999999999859,0.000999999999999446,0.00499999999999545,8
+"test-ui-helpers.R","ui-helpers","schema_row() forwards role_kind and accent overrides",2,0,FALSE,FALSE,0,0.00200000000000955,0,0.00200000000000955,2
+"test-ui-helpers.R","ui-helpers","schema_row() renders the actions slot when provided",1,0,FALSE,FALSE,0,0.00200000000000955,0.00100000000000122,0.00199999999998113,1
+"test-ui-helpers.R","ui-helpers","schema_row() rejects non-numeric confidence",1,0,FALSE,FALSE,0,0.0029999999999859,0,0.00300000000001432,1
+"test-ui-helpers.R","ui-helpers","notice() emits the right modifier class and icon",6,0,FALSE,FALSE,0,0.00399999999999068,0.000999999999999446,0.00399999999999068,6
+"test-ui-helpers.R","ui-helpers","notice() omits detail when not provided",1,0,FALSE,FALSE,0,0.00200000000000955,0,0.00199999999998113,1
+"test-ui-helpers.R","ui-helpers","file_row() renders name, meta, size, and default icon",5,0,FALSE,FALSE,0,0.0029999999999859,0,0.00300000000001432,5
+"test-ui-helpers.R","ui-helpers","file_row() omits optional slots when not provided",3,0,FALSE,FALSE,0,0.00300000000001432,0.00100000000000122,0.0029999999999859,3
+"test-ui-helpers.R","ui-helpers","param_group() wraps an <h4> title and children in .param-group",3,0,FALSE,FALSE,0,0.0029999999999859,0,0.0029999999999859,3
+"test-ui-helpers.R","ui-helpers","param_group() accepts multiple children",2,0,FALSE,FALSE,0,0.00300000000001432,0.000999999999999446,0.00300000000001432,2
+"test-ui-helpers.R","ui-helpers","legend_swatch() emits the swatch span with the given color",3,0,FALSE,FALSE,0,0.00199999999998113,0,0.00199999999998113,3
+"test-ui-server-wiring.R","ui-server-wiring","every input a module reads is a control it draws",7,0,FALSE,FALSE,0,0.0929999999999893,0.00399999999999956,0.0979999999999848,7
+"test-ui-server-wiring.R","ui-server-wiring","every output a module assigns has a placeholder",7,0,FALSE,FALSE,0,0.0490000000000066,0.00300000000000011,0.0520000000000209,7
+"test-ui-server-wiring.R","ui-server-wiring","every control a module draws is read back, and every placeholder filled",14,0,FALSE,FALSE,0,0.0529999999999973,0.00400000000000134,0.056999999999988,14
+"test-ui-server-wiring.R","ui-server-wiring","the top level wires its nav links and mounts each module under one id",6,0,FALSE,FALSE,0,0.00500000000002387,0,0.00499999999999545,6
+"test-ui-server-wiring.R","ui-server-wiring","the walker tells a Shiny input from an omics_input",4,0,FALSE,FALSE,0,0.0029999999999859,0,0.00399999999999068,4
+"test-view-layer-link.R","view-layer-link","the View cell is an actual control when a namespace is given",3,0,FALSE,FALSE,0,0.00799999999998136,0.000999999999999446,0.00899999999998613,3
+"test-view-layer-link.R","view-layer-link","without a namespace the cell is inert rather than a fake link",2,0,FALSE,FALSE,0,0.0100000000000193,0.000999999999999446,0.0110000000000241,2
+"test-view-layer-link.R","view-layer-link","the card carries no literal non-ASCII into the page",1,0,FALSE,FALSE,0,0.00199999999998113,0.000999999999999446,0.0029999999999859,1
+"test-view-layer-link.R","view-layer-link","clicking a row reports that row's tag",2,0,FALSE,FALSE,0,0.0450000000000159,0.00100000000000122,0.0459999999999923,2
+"test-view-layer-link.R","view-layer-link","a click on a row that no longer exists is ignored",1,0,FALSE,FALSE,0,0.0749999999999886,0.00300000000000011,0.0769999999999982,1
+"test-view-layer-link.R","view-layer-link","QC shows the requested layer instead of its default pick",1,0,FALSE,FALSE,0,0.0139999999999816,0,0.0149999999999864,1
+"test-view-layer-link.R","view-layer-link","no request means the previous behaviour, unchanged",1,0,FALSE,FALSE,0,0.01400000000001,0,0.01400000000001,1
+"test-view-layer-link.R","view-layer-link","a request naming a layer that is gone falls back rather than emptying",2,0,FALSE,FALSE,0,0.0149999999999864,0.000999999999999446,0.0159999999999911,2

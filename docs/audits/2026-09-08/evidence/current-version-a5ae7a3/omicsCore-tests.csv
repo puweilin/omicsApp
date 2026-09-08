@@ -1,0 +1,1138 @@
+"file","context","test","nb","failed","skipped","error","warning","user","system","real","passed"
+"test-analysis-binding.R","analysis-binding","ids do not consume the analysis random stream",2,0,FALSE,FALSE,0,0.00700000000000012,0.001,0.00999999999999979,2
+"test-analysis-binding.R","analysis-binding","input_version answers to the whole input, not just the matrix",4,0,FALSE,FALSE,0,0.0230000000000001,0.003,0.0259999999999998,4
+"test-analysis-binding.R","analysis-binding","a binding from another project is not current here",2,0,FALSE,FALSE,0,0.0189999999999997,0.003,0.0220000000000002,2
+"test-analysis-binding.R","analysis-binding","an empty input map is not a verified binding",2,0,FALSE,FALSE,0,0.00199999999999978,0.001,0.00300000000000011,2
+"test-analysis-binding.R","analysis-binding","structurally broken bindings are reported, not trusted",13,0,FALSE,FALSE,0,0.0100000000000002,0.004,0.0140000000000002,13
+"test-analysis-binding.R","analysis-binding","a bundle with no binding at all does not break the algorithm",2,0,FALSE,FALSE,0,0.00200000000000022,0.001,0.00300000000000011,2
+"test-analysis-binding.R","analysis-binding","a saved result whose inputs are unchanged stays valid",2,0,FALSE,FALSE,0,0.016,0.00299999999999997,0.0190000000000001,2
+"test-analysis-binding.R","analysis-binding","a callback is refused when the data moved under it",3,0,FALSE,FALSE,0,0.012,0.002,0.0139999999999998,3
+"test-analysis-binding.R","analysis-binding","a callback is refused when a newer request has been made",1,0,FALSE,FALSE,0,0.00199999999999978,0,0.00300000000000011,1
+"test-analysis-binding.R","analysis-binding","request numbers do not cross between views",1,0,FALSE,FALSE,0,0.00800000000000001,0.002,0.0100000000000002,1
+"test-analysis-binding.R","analysis-binding","a missing parameter signature is refused rather than matched",2,0,FALSE,FALSE,0,0.00200000000000022,0.001,0.00300000000000011,2
+"test-analysis-binding.R","analysis-binding","both callback outcomes are held to the same test",2,0,FALSE,FALSE,0,0.00200000000000022,0.001,0.00299999999999967,2
+"test-analysis-binding.R","analysis-binding","an integration is valid the moment it completes",2,0,FALSE,FALSE,0,0.00600000000000023,0.001,0.00700000000000012,2
+"test-analysis-binding.R","analysis-binding","invalidation is transitive and order-independent",3,0,FALSE,FALSE,0,0.00399999999999956,0,0.004,3
+"test-analysis-binding.R","analysis-binding","retiring keeps the graph consistent and bounded",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00299999999999967,2
+"test-analysis-binding.R","analysis-binding","history is compressed and capped",82,0,FALSE,FALSE,0,0.0700000000000003,0.021,0.0910000000000002,82
+"test-analysis-binding.R","analysis-binding","retiring never drops a node a valid result still references",2,0,FALSE,FALSE,0,0.00299999999999967,0.001,0.004,2
+"test-analysis-binding.R","analysis-binding","each layer keeps its own applied preprocessing",3,0,FALSE,FALSE,0,0.00600000000000023,0.001,0.00699999999999967,3
+"test-analysis-binding.R","analysis-binding","preprocessing built on a replaced layer is not served",3,0,FALSE,FALSE,0,0.004,0.001,0.004,3
+"test-analysis-binding.R","analysis-binding","QC reads the imported baseline, not the last cleaned layer",2,0,FALSE,FALSE,0,0.00200000000000022,0.001,0.00299999999999967,2
+"test-analysis-binding.R","analysis-binding","a layer's version is cached rather than recomputed per query",1,0,FALSE,FALSE,0,0.00199999999999978,0.001,0.00199999999999978,1
+"test-analysis-binding.R","analysis-binding","an analysis with no parameters still has a signature",4,0,FALSE,FALSE,0,0.0220000000000002,0.002,0.024,4
+"test-analysis-binding.R","analysis-binding","a result filed under the wrong key is reported and excluded",3,0,FALSE,FALSE,0,0.00299999999999967,0.001,0.00300000000000011,3
+"test-analysis-binding.R","analysis-binding","a signature that does not describe the saved parameters is reported",2,0,FALSE,FALSE,0,0.00200000000000022,0,0.00300000000000011,2
+"test-analysis-binding.R","analysis-binding","a cycle is named as a malformed record, not left to look stale",3,0,FALSE,FALSE,0,0.00200000000000022,0,0.004,3
+"test-analysis-binding.R","analysis-binding","a coherent registry reports nothing",1,0,FALSE,FALSE,0,0.00199999999999978,0.001,0.00300000000000011,1
+"test-analysis-binding.R","analysis-binding","a copy gets its own identity, and its results come with it",8,0,FALSE,FALSE,0,0.00800000000000001,0.002,0.0089999999999999,8
+"test-analysis-binding.R","analysis-binding","the original is untouched by the copy",2,0,FALSE,FALSE,0,0.0110000000000001,0,0.012,2
+"test-analysis-binding.R","analysis-binding","a copy's results are not accepted back by the original",3,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.004,3
+"test-analysis-binding.R","analysis-binding","history is re-attributed too",2,0,FALSE,FALSE,0,0.00200000000000022,0,0.00199999999999978,2
+"test-api-contract.R","api-contract","no public function answers a wrong argument with an internal error",1,0,FALSE,FALSE,0,2.252,0.055,2.323,1
+"test-api-contract.R","api-contract","the file-writing functions hold the same line",1,0,FALSE,FALSE,0,1.578,0.337,1.924,1
+"test-api-contract.R","api-contract","the heavy engines hold the same line",1,0,TRUE,FALSE,0,0.000999999999999446,0.001,0.00100000000000033,0
+"test-api-contract.R","api-contract","a threshold that is not a probability is refused, not applied",7,0,FALSE,FALSE,0,0.0140000000000002,0.001,0.0150000000000006,7
+"test-api-contract.R","api-contract","a count that is not a whole number is refused",4,0,FALSE,FALSE,0,0.00699999999999967,0.001,0.00700000000000056,4
+"test-api-contract.R","api-contract","a name that is not a string is refused",5,0,FALSE,FALSE,0,0.00900000000000034,0,0.00900000000000034,5
+"test-api-contract.R","api-contract","a level may be a number, because a metadata column may hold one",1,0,FALSE,FALSE,0,0.00899999999999945,0,0.00899999999999945,1
+"test-api-contract.R","api-contract","an empty covariate selection means none",1,0,FALSE,FALSE,0,0.00600000000000023,0.001,0.00600000000000023,1
+"test-api-contract.R","api-contract","a flag that is not TRUE or FALSE is refused",2,0,FALSE,FALSE,0,0.00499999999999989,0,0.00499999999999989,2
+"test-api-contract.R","api-contract","an object of the wrong kind is described, not dereferenced",6,0,FALSE,FALSE,0,0.0110000000000001,0.001,0.0120000000000005,6
+"test-api-contract.R","api-contract","gene-set sizes must be whole, positive and ordered",3,0,FALSE,FALSE,0,0.0149999999999997,0,0.016,3
+"test-api-contract.R","api-contract","describe_value names what arrived",11,0,FALSE,FALSE,0,0.00899999999999945,0.003,0.0129999999999999,11
+"test-applicable-diff-methods.R","applicable-diff-methods","raw counts get the count-native engines only",2,0,FALSE,FALSE,0,0.00199999999999978,0.001,0.00299999999999923,2
+"test-applicable-diff-methods.R","applicable-diff-methods","continuous data never offers a count model",8,0,FALSE,FALSE,0,0.00700000000000056,0.002,0.00900000000000034,8
+"test-applicable-diff-methods.R","applicable-diff-methods","rnaseq only counts as counts when the assay says so",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00300000000000011,2
+"test-applicable-diff-methods.R","applicable-diff-methods","auto is always offered",2,0,FALSE,FALSE,0,0.00299999999999923,0.001,0.00300000000000011,2
+"test-applicable-diff-methods.R","applicable-diff-methods","a continuous predictor narrows to the regression backends",2,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00300000000000011,2
+"test-applicable-diff-methods.R","applicable-diff-methods","every offered method is one run_diff() accepts",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00300000000000011,2
+"test-applicable-diff-methods.R","applicable-diff-methods","auto never resolves to a method the gate would have hidden",1,0,FALSE,FALSE,0,0.00100000000000033,0.001,0.00199999999999978,1
+"test-assay-type-contract.R","assay-type-contract","SUPPORTED_ASSAY_TYPES covers every supported omics type",6,0,FALSE,FALSE,0,0.00400000000000045,0.002,0.00499999999999989,6
+"test-assay-type-contract.R","assay-type-contract","every log-scale assay type is itself a known assay type",1,0,FALSE,FALSE,0,0.00100000000000033,0,0.00199999999999978,1
+"test-assay-type-contract.R","assay-type-contract","deprecated aliases point at values in the vocabulary",3,0,FALSE,FALSE,0,0.00300000000000011,0.002,0.00499999999999989,3
+"test-assay-type-contract.R","assay-type-contract","unknown assay types warn but are still accepted",2,0,FALSE,FALSE,0,0.00400000000000045,0,0.00400000000000045,2
+"test-assay-type-contract.R","assay-type-contract","a missing assay type warns",1,0,FALSE,FALSE,0,0.00199999999999978,0.001,0.00200000000000067,1
+"test-assay-type-contract.R","assay-type-contract","omics_input rewrites a deprecated alias",2,0,FALSE,FALSE,0,0.00399999999999956,0.001,0.00499999999999989,2
+"test-assay-type-contract.R","assay-type-contract","validate_omics_input accepts a stored alias without calling it unknown",3,0,FALSE,FALSE,0,0.00400000000000045,0.001,0.00499999999999989,3
+"test-assay-type-contract.R","assay-type-contract","check_assay_scale passes when values match the declared scale",2,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00300000000000011,2
+"test-assay-type-contract.R","assay-type-contract","check_assay_scale catches log-scale values labelled linear",2,0,FALSE,FALSE,0,0.00299999999999923,0,0.00399999999999956,2
+"test-assay-type-contract.R","assay-type-contract","check_assay_scale catches linear values labelled normalized",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00300000000000011,2
+"test-assay-type-contract.R","assay-type-contract","check_assay_scale stays quiet for assay types it cannot place",1,0,FALSE,FALSE,0,0.00100000000000033,0.001,0.000999999999999446,1
+"test-assay-type-contract.R","assay-type-contract","omics_input runs the scale check once at construction",1,0,FALSE,FALSE,0,0.00199999999999978,0,0.00199999999999978,1
+"test-assay-type-contract.R","assay-type-contract","normalize_omics with log2 moves the input onto a log scale",4,0,FALSE,FALSE,0,0.00199999999999978,0.001,0.00399999999999956,4
+"test-assay-type-contract.R","assay-type-contract","normalize_omics keeps the pre-normalization matrix in raw_mat",2,0,FALSE,FALSE,0,0.00199999999999978,0.001,0.00400000000000045,2
+"test-assay-type-contract.R","assay-type-contract","normalize_omics with vsn returns glog2-scale values",5,0,FALSE,FALSE,0,0.0110000000000001,0.001,0.0119999999999996,5
+"test-assay-type-contract.R","assay-type-contract","normalize_omics refuses to normalize twice",5,0,FALSE,FALSE,0,0.00699999999999967,0,0.00800000000000001,5
+"test-assay-type-contract.R","assay-type-contract","normalize_omics treats zero and negative intensities as missing",3,0,FALSE,FALSE,0,0.00399999999999956,0.001,0.00400000000000045,3
+"test-assay-type-contract.R","assay-type-contract","normalize_omics rejects RNA-seq with an explanation",1,0,FALSE,FALSE,0,0.00199999999999978,0,0.00199999999999978,1
+"test-assay-type-contract.R","assay-type-contract","normalize_omics output survives validation and subsetting",3,0,FALSE,FALSE,0,0.00300000000000011,0,0.00400000000000045,3
+"test-assay-type-contract.R","assay-type-contract","limma refuses linear input rather than calling the result log2FC",3,0,FALSE,FALSE,0,0.00899999999999945,0,0.00999999999999979,3
+"test-assay-type-contract.R","assay-type-contract","the check runs after auto resolves, not before",1,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00300000000000011,1
+"test-assay-type-contract.R","assay-type-contract","the refusal names a step the user can take",3,0,FALSE,FALSE,0,0.00400000000000045,0,0.00499999999999989,3
+"test-assay-type-contract.R","assay-type-contract","backends whose effect label is honest are not narrowed",2,0,FALSE,FALSE,0,0.0199999999999996,0.001,0.0209999999999999,2
+"test-assay-type-contract.R","assay-type-contract","lm keeps transforming raw counts itself",2,0,FALSE,FALSE,0,0.0330000000000004,0.001,0.0330000000000004,2
+"test-assay-type-contract.R","assay-type-contract","limma accepts every log-scale assay type",5,0,FALSE,FALSE,0,0.0189999999999992,0.001,0.0199999999999996,5
+"test-assay-type-contract.R","assay-type-contract","magnitude overrides the label where magnitude is informative",2,0,FALSE,FALSE,0,0.00699999999999967,0,0.00800000000000001,2
+"test-assay-type-contract.R","assay-type-contract","an explicit raw_intensity label is believed, whatever the values",3,0,FALSE,FALSE,0,0.00800000000000001,0,0.00900000000000034,3
+"test-assay-type-contract.R","assay-type-contract","TPM and FPKM are refused on the label, since magnitude cannot help",1,0,FALSE,FALSE,0,0.00199999999999978,0.001,0.00300000000000011,1
+"test-backend-agreement.R","backend-agreement","limma group with a covariate matches lmFit / contrasts.fit / eBayes",13,0,FALSE,FALSE,0,0.0169999999999995,0.003,0.0199999999999996,13
+"test-backend-agreement.R","backend-agreement","limma continuous matches topTable(coef = 2) and a Spearman correlation",8,0,FALSE,FALSE,0,0.0839999999999996,0.003,0.0859999999999994,8
+"test-backend-agreement.R","backend-agreement","ttest matches per-feature Welch t.test and BH",11,0,FALSE,FALSE,0,0.0270000000000001,0.002,0.0289999999999999,11
+"test-backend-agreement.R","backend-agreement","lm group with a covariate matches per-feature lm()",12,0,FALSE,FALSE,0,0.114,0.004,0.12,12
+"test-backend-agreement.R","backend-agreement","deseq2 group matches DESeqDataSetFromMatrix / DESeq / results",13,0,FALSE,FALSE,0,1.821,0.079,1.906,13
+"test-backend-agreement.R","backend-agreement","edger group matches DGEList / estimateDisp / glmQLFit / glmQLFTest",12,0,FALSE,FALSE,0,0.0890000000000004,0.006,0.0950000000000006,12
+"test-backend-agreement.R","backend-agreement","the count engines agree with each other on what moved",3,0,FALSE,FALSE,0,0.734,0.00800000000000001,0.744,3
+"test-boundary-edge.R","boundary-edge","omics_input accepts a 1-feature matrix",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00300000000000011,1
+"test-boundary-edge.R","boundary-edge","omics_input accepts a 2-sample matrix",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","summarize_omics handles 1-feature input",1,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","omics_input accepts matrix with all-NA feature",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","omics_input accepts matrix with constant feature",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.000999999999999446,1
+"test-boundary-edge.R","boundary-edge","omics_input accepts matrix with all-zero feature",1,0,FALSE,FALSE,0,0,0,0.000999999999999446,1
+"test-boundary-edge.R","boundary-edge","omics_input accepts negative values (log-transformed data)",1,0,FALSE,FALSE,0,0.00100000000000122,0,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","omics_input accepts Inf values (downstream may filter)",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.000999999999999446,1
+"test-boundary-edge.R","boundary-edge","omics_input accepts NaN values",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00100000000000122,1
+"test-boundary-edge.R","boundary-edge","omics_input accepts integer matrix (RNA-seq counts)",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.000999999999999446,1
+"test-boundary-edge.R","boundary-edge","run_qc on 3-sample input returns a bundle",1,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00300000000000011,1
+"test-boundary-edge.R","boundary-edge","run_qc on all-complete matrix returns a bundle",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00300000000000011,1
+"test-boundary-edge.R","boundary-edge","run_qc on matrix with one NA returns a bundle",1,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00400000000000134,1
+"test-boundary-edge.R","boundary-edge","run_qc on matrix with constant feature does not crash hard",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00300000000000011,1
+"test-boundary-edge.R","boundary-edge","run_qc result_df has expected columns",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,1
+"test-boundary-edge.R","boundary-edge","run_diff ttest with 2 samples per group",1,0,FALSE,FALSE,0,0.00399999999999956,0.001,0.004999999999999,1
+"test-boundary-edge.R","boundary-edge","run_diff ttest with constant feature does not crash",1,0,FALSE,FALSE,0,0.00399999999999956,0,0.00399999999999956,1
+"test-boundary-edge.R","boundary-edge","run_diff ttest with all-NA feature returns NA stats for it",1,0,FALSE,FALSE,0,0.00399999999999956,0,0.004999999999999,1
+"test-boundary-edge.R","boundary-edge","run_diff_continuous with numeric column (lm backend)",1,0,FALSE,FALSE,0,0.00799999999999912,0.001,0.00799999999999912,1
+"test-boundary-edge.R","boundary-edge","filter_diff_results with all NA p-values returns 0 rows",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00300000000000011,1
+"test-boundary-edge.R","boundary-edge","filter_diff_results respects p_preference 'raw'",2,0,FALSE,FALSE,0,0.00200000000000067,0,0.00399999999999956,2
+"test-boundary-edge.R","boundary-edge","filter_diff_results respects effect_cutoff",1,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","filter_diff_results with effect_cutoff handles negative effects",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","filter_diff_results errors on non-data.frame",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","subset_omics_samples with single sample",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","subset_omics_features with single feature",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","subset_omics with all samples and all features (no-op)",1,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","subset preserves omics_type",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","subset preserves assay_type",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","subset preserves metadata length consistency",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","impute_matrix mean returns same matrix when no NA",2,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00299999999999834,2
+"test-boundary-edge.R","boundary-edge","impute_matrix mean fills NA with row mean",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","impute_matrix min returns finite for normal data",2,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,2
+"test-boundary-edge.R","boundary-edge","impute_matrix errors on invalid method",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","impute_matrix refuses what is not a matrix, by name",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00399999999999956,1
+"test-boundary-edge.R","boundary-edge","impute_matrix preserves rownames/colnames",2,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00300000000000011,2
+"test-boundary-edge.R","boundary-edge","run_diff ttest is deterministic",1,0,FALSE,FALSE,0,0.0080000000000009,0.001,0.0080000000000009,1
+"test-boundary-edge.R","boundary-edge","summarize_omics is pure (no input mutation)",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","subset_omics is pure (no input mutation)",1,0,FALSE,FALSE,0,0.00100000000000122,0,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","filter_diff_results is pure",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","run_diff handles factor group column",1,0,FALSE,FALSE,0,0.00399999999999956,0.001,0.004999999999999,1
+"test-boundary-edge.R","boundary-edge","run_diff handles ordered factor group column",1,0,FALSE,FALSE,0,0.00600000000000023,0.001,0.0080000000000009,1
+"test-boundary-edge.R","boundary-edge","run_diff with 3+ groups still works for 1-vs-1",1,0,FALSE,FALSE,0,0.00500000000000078,0,0.00600000000000023,1
+"test-boundary-edge.R","boundary-edge","omics_project can hold 5 experiments",1,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00399999999999956,1
+"test-boundary-edge.R","boundary-edge","omics_project add+remove leaves project intact",1,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00199999999999889,1
+"test-boundary-edge.R","boundary-edge","omics_project add+remove+add re-uses tag name",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","omics_project supports tags with dots and underscores",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","new_import_report creates empty report",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","new_import_report with sheets as data.frame",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","new_import_report with warnings",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00200000000000067,1
+"test-boundary-edge.R","boundary-edge","new_import_report with source",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","new_analysis_bundle returns an analysis_bundle",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","new_analysis_bundle accepts results = list()",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","new_analysis_bundle accepts warnings",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","new_analysis_bundle accepts messages",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","new_analysis_bundle preserves analysis_name",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","is_analysis_bundle returns FALSE for a plain list",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","is_analysis_bundle returns FALSE for NULL",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","diff_result_from_bundle extracts the diff_result_df",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,2
+"test-bundle-edge.R","bundle-edge","diff_result_from_bundle errors on non-bundle",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00399999999999956,1
+"test-bundle-edge.R","bundle-edge","new_diff_result_template returns a 0-row data.frame",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00400000000000134,2
+"test-bundle-edge.R","bundle-edge","new_diff_result_template has the required columns",1,0,FALSE,FALSE,0,0.0080000000000009,0.001,0.00999999999999979,1
+"test-bundle-edge.R","bundle-edge","new_enrich_result_template returns a 0-row data.frame",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00399999999999956,2
+"test-bundle-edge.R","bundle-edge","new_enrich_result_template has the required columns",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","new_integration_result_template returns a 0-row data.frame",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00400000000000134,2
+"test-bundle-edge.R","bundle-edge","make_ranked_features returns a named numeric vector",2,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,2
+"test-bundle-edge.R","bundle-edge","make_ranked_features ranks by effect by default",1,0,FALSE,FALSE,0,0.00500000000000078,0.001,0.00600000000000023,1
+"test-bundle-edge.R","bundle-edge","make_ranked_features supports custom feature_col",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","make_ranked_features supports custom rank_col",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","make_ranked_features drops NA ranks",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.004999999999999,1
+"test-bundle-edge.R","bundle-edge","filter_enrich_results errors on non-data.frame",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00299999999999834,1
+"test-bundle-edge.R","bundle-edge","pick_features_by_variance returns top-N feature_ids",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","pick_features_by_variance n_top larger than rows returns all rows",1,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","safe_z z-scores a numeric vector",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","safe_z returns finite values for constant vector",1,0,FALSE,FALSE,0,0.00100000000000122,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","scale_rows returns a matrix of the same shape",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","scale_rows centers rows around zero",1,0,FALSE,FALSE,0,0.00100000000000122,0.001,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","format_short returns a character",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","parse_overlap_size handles 'a/b' format",1,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","parse_overlap_size returns NA on bad input",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","tidy_pathway_names trims and cleans labels",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","tidy_pathway_names handles empty input",1,0,FALSE,FALSE,0,0.00100000000000122,0,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","truncate_pathway_name shortens overlong names",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","truncate_pathway_name preserves short names",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","summarize_omics_input returns a list for a valid input",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","summarize_omics_input is non-mutating",1,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","summarize_omics_input handles NA-containing matrix",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00300000000000011,1
+"test-bundle-edge.R","bundle-edge","is_installed returns TRUE for base package",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","is_installed returns FALSE for a fake package",1,0,FALSE,FALSE,0,0.00100000000000122,0.001,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","resolve_install_group accepts valid group",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","resolve_install_group errors on unknown group",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","materialize_matrix returns a matrix from features-as-rows df",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00199999999999889,1
+"test-bundle-edge.R","bundle-edge","materialize_metadata picks rows by sample_ids",1,0,FALSE,FALSE,0,0.00100000000000122,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","materialize_feature_annot picks rows by feature_ids",1,0,FALSE,FALSE,0,0.000999999999999446,0.001,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","subset_omics_samples preserves feature_df",1,0,FALSE,FALSE,0,0.00100000000000122,0.001,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","subset_omics_features preserves meta_df",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","subset_omics_samples errors on unknown sample",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00200000000000067,1
+"test-bundle-edge.R","bundle-edge","subset_omics_features errors on unknown feature",1,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00399999999999956,1
+"test-c-locale.R","c-locale","CJK identifiers survive import, save, load and analysis under LC_ALL=C",13,0,FALSE,FALSE,0,0.0380000000000003,0.0559999999999999,2.625,13
+"test-concurrent-save.R","concurrent-save","the temp name is generated, not derived from the target",5,0,FALSE,FALSE,0,0.004999999999999,0.003,0.00899999999999856,5
+"test-concurrent-save.R","concurrent-save","the temp file sits beside its target, not in tempdir()",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00500000000000078,2
+"test-concurrent-save.R","concurrent-save","nothing is left behind when the write fails",2,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00399999999999956,2
+"test-concurrent-save.R","concurrent-save","a reader never sees a partial file",5,0,FALSE,FALSE,0,0.00700000000000145,0.006,0.0129999999999999,5
+"test-concurrent-writers.R","concurrent-writers","two writers on one file never leave a reader with a torn file",9,0,FALSE,FALSE,0,0.0389999999999997,0.056,2.477,9
+"test-concurrent-writers.R","concurrent-writers","a reader that starts mid-write sees the previous complete file",4,0,FALSE,FALSE,0,0.004999999999999,0.004,0.00900000000000034,4
+"test-constants.R","constants","SUPPORTED_OMICS_TYPES contains expected types",4,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00399999999999956,4
+"test-constants.R","constants","SUPPORTED_DIFF_ANALYSIS_TYPES contains expected values",5,0,FALSE,FALSE,0,0.00299999999999834,0.001,0.00399999999999956,5
+"test-constants.R","constants","SUPPORTED_ENRICH_PREFERENCE is valid",3,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00300000000000011,3
+"test-constants.R","constants","SUPPORTED_PREFERENCE is a character vector",2,0,FALSE,FALSE,0,0.00100000000000122,0.001,0.000999999999999446,2
+"test-constants.R","constants","DIFF_RESULT_REQUIRED_COLS is a character vector",4,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00399999999999956,4
+"test-constants.R","constants","ENRICH_RESULT_REQUIRED_COLS is a character vector",3,0,FALSE,FALSE,0,0.00200000000000067,0.001,0.00300000000000011,3
+"test-constants.R","constants","INTEGRATION_RESULT_REQUIRED_COLS is a character vector",1,0,FALSE,FALSE,0,0.000999999999999446,0,0.000999999999999446,1
+"test-constants.R","constants","IMPORT_REPORT_ROLES is a named character vector",3,0,FALSE,FALSE,0,0.00200000000000067,0.002,0.00399999999999956,3
+"test-constants.R","constants","DEFAULT_CACHE_MAX_AGE_HOURS is a positive number",2,0,FALSE,FALSE,0,0.00100000000000122,0,0.00199999999999889,2
+"test-constants.R","constants","CANONICAL_DATABASES is a character vector",2,0,FALSE,FALSE,0,0.00199999999999889,0.001,0.00199999999999889,2
+"test-degenerate-designs.R","degenerate-designs","a covariate identical to the group is refused, not silently dropped",3,0,FALSE,FALSE,0,0.00900000000000034,0.00199999999999989,0.0120000000000005,3
+"test-degenerate-designs.R","degenerate-designs","a covariate that merely correlates with the group is allowed",4,0,FALSE,FALSE,0,0.0689999999999991,0.018,0.088000000000001,4
+"test-degenerate-designs.R","degenerate-designs","a constant covariate is refused",2,0,FALSE,FALSE,0,0.00500000000000078,0.001,0.00600000000000023,2
+"test-degenerate-designs.R","degenerate-designs","a covariate with missing values names the samples",4,0,FALSE,FALSE,0,0.00900000000000034,0.001,0.0109999999999992,4
+"test-degenerate-designs.R","degenerate-designs","a missing value outside the contrast does not block it",2,0,FALSE,FALSE,0,0.0630000000000006,0.00800000000000001,0.072000000000001,2
+"test-degenerate-designs.R","degenerate-designs","a group level that is not in the column is named, with what is",6,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,6
+"test-degenerate-designs.R","degenerate-designs","control and case must differ",1,0,FALSE,FALSE,0,0.00300000000000011,0.001,0.00300000000000011,1
+"test-degenerate-designs.R","degenerate-designs","a continuous variable with no variation is refused",2,0,FALSE,FALSE,0,0.00399999999999956,0.001,0.004999999999999,2
+"test-degenerate-designs.R","degenerate-designs","a continuous variable with missing values names the samples",2,0,FALSE,FALSE,0,0.00399999999999956,0.001,0.00500000000000256,2
+"test-degenerate-designs.R","degenerate-designs","a covariate confounded with the continuous variable is refused",2,0,FALSE,FALSE,0,0.00500000000000078,0.001,0.00600000000000023,2
+"test-degenerate-designs.R","degenerate-designs","the messages the backends already used are unchanged",3,0,FALSE,FALSE,0,0.00600000000000023,0.001,0.00800000000000267,3
+"test-degenerate-designs.R","degenerate-designs","a valid design still runs on every engine",5,0,FALSE,FALSE,0,0.362,0.02,0.382000000000001,5
+"test-design-contrast.R","design-contrast","a payload column name reaches the model and has no effect",27,0,FALSE,FALSE,0,0.0719999999999992,0.006,0.0779999999999994,27
+"test-design-contrast.R","design-contrast","a payload covariate name has no effect either",2,0,FALSE,FALSE,0,0.00600000000000023,0,0.00600000000000023,2
+"test-design-contrast.R","design-contrast","a payload continuous column has no effect",3,0,FALSE,FALSE,0,0.0230000000000015,0.00100000000000011,0.0240000000000009,3
+"test-design-contrast.R","design-contrast","group labels that collide with internal identifiers still contrast correctly",10,0,FALSE,FALSE,0,0.0379999999999985,0.004,0.0410000000000004,10
+"test-design-contrast.R","design-contrast","a covariate named after the group column does not steal the contrast",2,0,FALSE,FALSE,0,0.0080000000000009,0.00099999999999989,0.00799999999999912,2
+"test-design-contrast.R","design-contrast","ten or more model terms do not truncate a design column",4,0,FALSE,FALSE,0,0.00999999999999979,0.00100000000000011,0.0120000000000005,4
+"test-design-contrast.R","design-contrast","spaces, CJK and punctuation in column names model correctly",30,0,FALSE,FALSE,0,0.097999999999999,0.006,0.105999999999998,30
+"test-design-contrast.R","design-contrast","group labels with spaces and CJK model correctly",6,0,FALSE,FALSE,0,0.0140000000000011,0.00100000000000011,0.0160000000000018,6
+"test-design-contrast.R","design-contrast","build_design refuses to emit duplicate column names",3,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00400000000000134,3
+"test-design-contrast.R","design-contrast","design_contrast places -1 and +1 on the requested levels only",4,0,FALSE,FALSE,0,0.00399999999999956,0.002,0.00500000000000256,4
+"test-diff-edge.R","diff-edge","run_diff with ttest backend returns an analysis_bundle",1,0,FALSE,FALSE,0,0.00500000000000078,0.00100000000000011,0.004999999999999,1
+"test-diff-edge.R","diff-edge","run_diff returns standardized result columns",4,0,FALSE,FALSE,0,0.0149999999999988,0.00099999999999989,0.0169999999999995,4
+"test-diff-edge.R","diff-edge","run_diff includes input_info and params",4,0,FALSE,FALSE,0,0.00699999999999967,0.00099999999999989,0.00799999999999912,4
+"test-diff-edge.R","diff-edge","run_diff with lm backend returns an analysis_bundle",1,0,FALSE,FALSE,0,0.00900000000000034,0.00100000000000011,0.00999999999999801,1
+"test-diff-edge.R","diff-edge","run_diff with auto method selects a backend",1,0,FALSE,FALSE,0,0.00399999999999956,0,0.004999999999999,1
+"test-diff-edge.R","diff-edge","run_diff with covariates runs successfully",1,0,FALSE,FALSE,0,0.011000000000001,0,0.0120000000000005,1
+"test-diff-edge.R","diff-edge","run_diff errors on unsupported method for analysis_type",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00300000000000011,1
+"test-diff-edge.R","diff-edge","run_diff errors when group_col missing from meta",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-diff-edge.R","diff-edge","run_diff errors when control_group not found in meta",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00200000000000244,1
+"test-diff-edge.R","diff-edge","run_diff errors on invalid input type",1,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00200000000000244,1
+"test-diff-edge.R","diff-edge","run_diff errors when control equals case",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00200000000000244,1
+"test-diff-edge.R","diff-edge","run_diff errors on invalid analysis_type",1,0,FALSE,FALSE,0,0.00200000000000067,0.00100000000000011,0.00400000000000134,1
+"test-diff-edge.R","diff-edge","run_diff_continuous with lm backend returns an analysis_bundle",1,0,FALSE,FALSE,0,0.00999999999999979,0.00099999999999989,0.0159999999999982,1
+"test-diff-edge.R","diff-edge","run_diff_continuous errors without continuous_col",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00900000000000034,1
+"test-diff-edge.R","diff-edge","filter_diff_results filters by effect and adj_p",1,0,FALSE,FALSE,0,0.00399999999999956,0.00100000000000011,0.00500000000000256,1
+"test-diff-edge.R","diff-edge","filter_diff_results with strict cutoff returns fewer features",1,0,FALSE,FALSE,0,0.004999999999999,0.00099999999999989,0.00600000000000023,1
+"test-diff-edge.R","diff-edge","filter_diff_results validates result_df schema",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00300000000000011,1
+"test-diff-edge.R","diff-edge","is_analysis_bundle returns TRUE for valid bundles",1,0,FALSE,FALSE,0,0.004999999999999,0.00100000000000011,0.004999999999999,1
+"test-diff-edge.R","diff-edge","is_analysis_bundle returns FALSE for other objects",3,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,3
+"test-diff-edge.R","diff-edge","new_analysis_bundle creates a valid bundle",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000011,0.00300000000000011,3
+"test-diff-edge.R","diff-edge","check_diff_result_schema passes for valid result df",1,0,FALSE,FALSE,0,0.00500000000000078,0.00099999999999989,0.004999999999999,1
+"test-diff-edge.R","diff-edge","check_diff_result_schema errors when columns missing",1,0,FALSE,FALSE,0,0.00200000000000067,0,0.00199999999999889,1
+"test-diff.R","diff","run_diff t-test returns a well-formed analysis_bundle",8,0,FALSE,FALSE,0,0.0100000000000016,0.002,0.0109999999999992,8
+"test-diff.R","diff","run_diff drops the fitted model unless asked for it",4,0,FALSE,FALSE,0,0.0139999999999993,0.00099999999999989,0.0159999999999982,4
+"test-diff.R","diff","the DESeq2 design formula does not carry its calling frame",1,0,FALSE,FALSE,0,0.393000000000001,0.00700000000000012,0.401,1
+"test-diff.R","diff","run_diff t-test detects the injected signal",1,0,FALSE,FALSE,0,0.004999999999999,0.00099999999999989,0.004999999999999,1
+"test-diff.R","diff","run_diff lm group returns standardized schema",4,0,FALSE,FALSE,0,0.0150000000000006,0.00100000000000011,0.0169999999999995,4
+"test-diff.R","diff","run_diff lm group accepts covariates",2,0,FALSE,FALSE,0,0.016,0.00099999999999989,0.0169999999999995,2
+"test-diff.R","diff","run_diff lm continuous returns spearman correlation as effect",3,0,FALSE,FALSE,0,0.0149999999999988,0.002,0.0159999999999982,3
+"test-diff.R","diff","run_diff auto picks limma for proteomics when installed",1,0,FALSE,FALSE,0,0.004999999999999,0,0.00600000000000023,1
+"test-diff.R","diff","run_diff requires group_col / control_group / case_group for group analysis",2,0,FALSE,FALSE,0,0.00399999999999956,0,0.004999999999999,2
+"test-diff.R","diff","run_diff requires continuous_col for continuous analysis",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-diff.R","diff","run_diff anova is limma-only",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,1
+"test-diff.R","diff","run_diff edger backend is group-only",1,0,FALSE,FALSE,0,0.00600000000000023,0,0.00599999999999667,1
+"test-diff.R","diff","filter_diff_results applies cutoffs and sets is_significant",5,0,FALSE,FALSE,0,0.00799999999999912,0.00099999999999989,0.00900000000000034,5
+"test-diff.R","diff","filter_diff_results supports raw p-value preference",1,0,FALSE,FALSE,0,0.00500000000000078,0.00100000000000011,0.00600000000000023,1
+"test-diff.R","diff","make_ranked_features returns a decreasing named vector with unique names",4,0,FALSE,FALSE,0,0.00699999999999967,0.00099999999999989,0.00799999999999912,4
+"test-diff.R","diff","make_ranked_features errors on unknown columns",2,0,FALSE,FALSE,0,0.0080000000000009,0,0.00900000000000034,2
+"test-diff.R","diff","plot_volcano returns a ggplot for a t-test bundle",1,0,FALSE,FALSE,0,0.0280000000000005,0.00099999999999989,0.0299999999999976,1
+"test-diff.R","diff","plot_volcano honors label_features",1,0,FALSE,FALSE,0,0.020999999999999,0.00100000000000011,0.0210000000000008,1
+"test-diff.R","diff","plot_ma returns a ggplot when base_mean is populated",1,0,FALSE,FALSE,0,0.0279999999999987,0.00099999999999989,0.0289999999999999,1
+"test-diff.R","diff","plot_ma errors when base_mean is all NA",1,0,FALSE,FALSE,0,0.00600000000000023,0,0.0069999999999979,1
+"test-diff.R","diff","plot_pca returns a ggplot and supports color_by",2,0,FALSE,FALSE,0,0.0290000000000017,0,0.0299999999999976,2
+"test-diff.R","diff","plot_pca errors on unknown color_by column",1,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00300000000000011,1
+"test-diff.R","diff","plot_feature_expression returns a ggplot for a given feature set",1,0,FALSE,FALSE,0,0.0149999999999988,0,0.0160000000000018,1
+"test-diff.R","diff","plot_feature_expression resolves feature_symbol as well as feature_id",1,0,FALSE,FALSE,0,0.016,0,0.0160000000000018,1
+"test-diff.R","diff","plot_feature_expression errors when no features match",1,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,1
+"test-diff.R","diff","run_diff limma group returns a well-formed bundle",3,0,FALSE,FALSE,0,0.00699999999999967,0.00100000000000011,0.00800000000000267,3
+"test-diff.R","diff","run_diff limma continuous runs and populates correlation effect",2,0,FALSE,FALSE,0,0.0150000000000006,0.00099999999999989,0.0160000000000018,2
+"test-diff.R","diff","run_diff limma anova returns F-statistic effect",1,0,FALSE,FALSE,0,0.004999999999999,0.00100000000000011,0.00500000000000256,1
+"test-diff.R","diff","run_diff deseq2 group returns log2FC effect on raw counts",3,0,FALSE,FALSE,0,0.404999999999999,0.00499999999999989,0.412000000000003,3
+"test-diff.R","diff","run_diff edger group returns log2FC effect on raw counts",2,0,FALSE,FALSE,0,0.0210000000000008,0.00099999999999989,0.022000000000002,2
+"test-diff.R","diff","an ordinary call with the setting omitted still runs",2,0,FALSE,FALSE,0,0.0170000000000012,0.00100000000000011,0.0180000000000007,2
+"test-diff.R","diff","an explicit NULL is the same as omitting it",3,0,FALSE,FALSE,0,0.0219999999999985,0.00099999999999989,0.0219999999999985,3
+"test-diff.R","diff","an actual value is refused, with somewhere to go",3,0,FALSE,FALSE,0,0.00699999999999967,0,0.00799999999999912,3
+"test-diff.R","diff","a backend that supports the setting applies it",4,0,FALSE,FALSE,0,0.0289999999999999,0.002,0.0310000000000024,4
+"test-enrich-edge.R","enrich-edge","run_enrichment ORA with hallmark returns an analysis_bundle",2,0,FALSE,FALSE,0,0.00699999999999967,0.00099999999999989,0.00700000000000145,2
+"test-enrich-edge.R","enrich-edge","run_enrichment returns standardized result columns",2,0,FALSE,FALSE,0,0.0299999999999994,0.002,0.0309999999999988,2
+"test-enrich-edge.R","enrich-edge","run_enrichment ORA with 'up' direction works",1,0,FALSE,FALSE,0,0.00600000000000023,0,0.0069999999999979,1
+"test-enrich-edge.R","enrich-edge","run_enrichment ORA with 'down' direction works",1,0,FALSE,FALSE,0,0.00600000000000023,0,0.00700000000000145,1
+"test-enrich-edge.R","enrich-edge","run_enrichment ORA with different databases works",1,0,TRUE,FALSE,0,0.00600000000000023,0.00099999999999989,0.0069999999999979,0
+"test-enrich-edge.R","enrich-edge","run_enrichment GSEA with hallmark works",2,0,FALSE,FALSE,0,14.087,0.338,14.529,2
+"test-enrich-edge.R","enrich-edge","run_enrichment errors on invalid bundle input",1,0,FALSE,FALSE,0,0.00199999999999889,0.002,0.00300000000000011,1
+"test-enrich-edge.R","enrich-edge","run_enrichment errors on invalid type",1,0,FALSE,FALSE,0,0.00700000000000145,0.00499999999999989,0.0120000000000005,1
+"test-enrich-edge.R","enrich-edge","run_enrichment errors on invalid database",1,0,FALSE,FALSE,0,0.00700000000000145,0.002,0.00900000000000034,1
+"test-enrich-edge.R","enrich-edge","run_enrichment errors on invalid direction",1,0,FALSE,FALSE,0,0.00700000000000145,0.002,0.00900000000000034,1
+"test-enrich-edge.R","enrich-edge","filter_enrich_results filters by adj_p",1,0,FALSE,FALSE,0,0.0119999999999969,0.00300000000000011,0.0150000000000006,1
+"test-enrich-edge.R","enrich-edge","filter_enrich_results with strict cutoff returns empty",1,0,FALSE,FALSE,0,0.00600000000000023,0.00099999999999989,0.0069999999999979,1
+"test-enrich-edge.R","enrich-edge","filter_enrich_results validates input",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00400000000000489,1
+"test-enrich-edge.R","enrich-edge","make_ranked_features returns a named numeric vector",3,0,FALSE,FALSE,0,0.00700000000000145,0.002,0.00900000000000034,3
+"test-enrich-edge.R","enrich-edge","make_ranked_features validates input",1,0,FALSE,FALSE,0,0.00299999999999656,0.00100000000000011,0.00300000000000011,1
+"test-enrich-edge.R","enrich-edge","list_gene_sets returns a non-empty data.frame",2,0,FALSE,FALSE,0,0.00500000000000256,0.00299999999999989,0.0069999999999979,2
+"test-enrich-edge.R","enrich-edge","check_enrich_result_schema passes for valid result df",1,0,FALSE,FALSE,0,0.00600000000000023,0.002,0.00800000000000267,1
+"test-enrich-edge.R","enrich-edge","check_enrich_result_schema errors when columns missing",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,1
+"test-enrich-realistic.R","enrich-realistic","GSEA finds the pathway that was perturbed, and does not fail quietly",5,0,FALSE,FALSE,0,0.065999999999999,0.0680000000000001,0.160000000000004,5
+"test-enrich-realistic.R","enrich-realistic","GSEA on counts, through DESeq2, finds the same pathway",2,0,FALSE,FALSE,0,0.498000000000001,0.145,0.698,2
+"test-enrich-realistic.R","enrich-realistic","GSEA is reproducible under a seed",2,0,FALSE,FALSE,0,0.100000000000001,0.115,0.267000000000003,2
+"test-enrich-realistic.R","enrich-realistic","ORA finds the perturbed pathway",2,0,FALSE,FALSE,0,0.0189999999999984,0.00700000000000012,0.0260000000000034,2
+"test-enrich-realistic.R","enrich-realistic","ORA enriches exactly the features the thresholds admit",2,0,FALSE,FALSE,0,0.0289999999999999,0.00599999999999978,0.0350000000000037,2
+"test-enrich-realistic.R","enrich-realistic","ORA by direction splits the list by the sign of the effect",2,0,FALSE,FALSE,0,0.0189999999999984,0.004,0.0229999999999961,2
+"test-enrich-realistic.R","enrich-realistic","a null dataset produces no confident pathway",1,0,FALSE,FALSE,0,0.004999999999999,0.002,0.0069999999999979,1
+"test-enrich-realistic.R","enrich-realistic","GSVA scores the perturbed set higher in the perturbed group",7,0,FALSE,FALSE,0,0.571999999999999,0.119,0.696000000000005,7
+"test-enrich-realistic.R","enrich-realistic","GSVA accepts the caller's own gene sets",2,0,FALSE,FALSE,0,0.0309999999999988,0.00100000000000011,0.0330000000000013,2
+"test-enrich-realistic.R","enrich-realistic","GSVA on counts log-transforms before scoring",1,0,FALSE,FALSE,0,0.00900000000000034,0.00099999999999989,0.00999999999999801,1
+"test-enrichment-grid.R","enrichment-grid","ORA runs per direction and GSEA runs once per database",5,0,FALSE,FALSE,0,0.187000000000001,0.104,0.413000000000004,5
+"test-enrichment-grid.R","enrichment-grid","the stacked rows say which combination they came from",4,0,FALSE,FALSE,0,0.186999999999998,0.117,0.433999999999997,4
+"test-enrichment-grid.R","enrichment-grid","a combination that fails does not stop the grid",5,0,FALSE,FALSE,0,0.0790000000000006,0.02,0.0989999999999966,5
+"test-enrichment-grid.R","enrichment-grid","the log accounts for every combination, empty included",3,0,FALSE,FALSE,0,0.161000000000001,0.109,0.393000000000001,3
+"test-enrichment-grid.R","enrichment-grid","run_enrichment_grid rejects a bundle that is not a differential",2,0,FALSE,FALSE,0,0.00399999999999778,0.00200000000000022,0.00600000000000023,2
+"test-enrichment-grid.R","enrichment-grid","on_progress is told where the grid has got to",3,0,FALSE,FALSE,0,0.160999999999998,0.105,0.389000000000003,3
+"test-enrichment.R","enrichment","list_gene_sets returns a non-empty tibble for hallmark",4,0,FALSE,FALSE,0,0.0109999999999992,0.00300000000000011,0.0140000000000029,4
+"test-enrichment.R","enrichment","list_gene_sets accepts organism aliases",1,0,FALSE,FALSE,0,0.00700000000000145,0.00299999999999967,0.00999999999999801,1
+"test-enrichment.R","enrichment","list_gene_sets rejects unknown databases / organisms",2,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00500000000000256,2
+"test-enrichment.R","enrichment","run_enrichment ORA returns a standardized bundle",7,0,FALSE,FALSE,0,0.0210000000000008,0.00700000000000012,0.0279999999999987,7
+"test-enrichment.R","enrichment","run_enrichment records which gene-set source produced it",2,0,FALSE,FALSE,0,0.0370000000000026,0.0110000000000001,0.0490000000000066,2
+"test-enrichment.R","enrichment","run_enrichment ORA respects direction = 'up'",1,0,FALSE,FALSE,0,0.0169999999999995,0.00499999999999989,0.0219999999999985,1
+"test-enrichment.R","enrichment","run_enrichment GSEA returns a standardized bundle",4,0,FALSE,FALSE,0,0.0450000000000017,0.0550000000000002,0.111000000000004,4
+"test-enrichment.R","enrichment","filter_enrich_results respects p_cutoff and direction",4,0,FALSE,FALSE,0,0.00399999999999778,0.00300000000000011,0.00800000000000267,4
+"test-enrichment.R","enrichment","filter_enrich_results errors on missing p column",1,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00399999999999778,1
+"test-enrichment.R","enrichment","run_gsva returns a pathways-by-samples matrix",5,0,FALSE,FALSE,0,0.027000000000001,0.0140000000000002,0.0400000000000063,5
+"test-enrichment.R","enrichment","run_gsva accepts a user-supplied gene_sets list",1,0,FALSE,FALSE,0,0.00999999999999801,0.00499999999999989,0.0150000000000006,1
+"test-enrichment.R","enrichment","plot_enrichment returns a ggplot from an ORA bundle",2,0,FALSE,FALSE,0,0.036999999999999,0.0140000000000002,0.0519999999999996,2
+"test-enrichment.R","enrichment","plot_gsva_heatmap returns an object for a GSVA bundle",1,0,FALSE,FALSE,0,0.0269999999999975,0.0089999999999999,0.036999999999999,1
+"test-export-script-robustness.R","export-script-robustness","every project shape yields a script that parses",12,0,FALSE,FALSE,0,0.0180000000000007,0.00800000000000001,0.0279999999999987,12
+"test-export-script-robustness.R","export-script-robustness","a project with analyses but no data defines what it references",3,0,FALSE,FALSE,0,0.00400000000000134,0.00299999999999967,0.007000000000005,3
+"test-export-script-robustness.R","export-script-robustness","a literal containing angle brackets survives",6,0,FALSE,FALSE,0,0.00900000000000034,0.00500000000000034,0.036999999999999,6
+"test-export-script-robustness.R","export-script-robustness","literal vectors and numerics round-trip exactly",14,0,FALSE,FALSE,0,0.0180000000000007,0.0089999999999999,0.0289999999999964,14
+"test-export-script-robustness.R","export-script-robustness","a value that is not source becomes a note, not broken code",3,0,FALSE,FALSE,0,0.00400000000000134,0.00199999999999978,0.00600000000000023,3
+"test-export-script-robustness.R","export-script-robustness","an argument named `name` is not rewritten by the integration block",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00499999999999545,2
+"test-export-script-robustness.R","export-script-robustness","two exports of one project differ only in the timestamp",1,0,FALSE,FALSE,0,0.00199999999999889,0.00199999999999978,0.00399999999999778,1
+"test-export-script-robustness.R","export-script-robustness","writing to a path returns the same lines it wrote",1,0,FALSE,FALSE,0,0.0139999999999993,0.00199999999999978,0.017000000000003,1
+"test-export-script.R","export-script","export_script rejects anything that is not a project",1,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,1
+"test-export-script.R","export-script","the header records what produced the script",4,0,FALSE,FALSE,0,0.004999999999999,0.00200000000000022,0.0069999999999979,4
+"test-export-script.R","export-script","the input line points at the archived file",3,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.007000000000005,3
+"test-export-script.R","export-script","a project with no archived file says so instead of guessing",3,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00300000000000011,3
+"test-export-script.R","export-script","derived values are not emitted as arguments",3,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00399999999999778,3
+"test-export-script.R","export-script","arguments follow the function signature order",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999778,3
+"test-export-script.R","export-script","bundles are emitted in dependency order",2,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00300000000000011,2
+"test-export-script.R","export-script","a non-literal parameter becomes a note, not broken code",3,0,FALSE,FALSE,0,0.00300000000000011,0.00200000000000022,0.00499999999999545,3
+"test-export-script.R","export-script","export_script writes to disk when given a path",2,0,FALSE,FALSE,0,0.00199999999999889,0.00199999999999978,0.00399999999999778,2
+"test-export-script.R","export-script","figures are emitted by default and can be turned off",2,0,FALSE,FALSE,0,0.00299999999999656,0.00099999999999989,0.00500000000000256,2
+"test-export-script.R","export-script","each analysis emits the figure its view shows",6,0,FALSE,FALSE,0,0.00400000000000134,0.00099999999999989,0.00500000000000256,6
+"test-export-script.R","export-script","the volcano is emitted at the same cut the app draws",3,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00399999999999778,3
+"test-export-script.R","export-script","an exported script reproduces the analysis it describes",8,0,FALSE,FALSE,0,0.0460000000000029,0.02,0.731000000000002,8
+"test-export-script.R","export-script","an unrecorded layer stops the script instead of guessing",3,0,FALSE,FALSE,0,0.00300000000000011,0,0.00200000000000244,3
+"test-export-script.R","export-script","a layer tag is never pasted into the refusal as source",1,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00200000000000244,1
+"test-export-workbook.R","export-workbook","each analysis that ran contributes a sheet",2,0,FALSE,FALSE,0,0.0100000000000016,0.00200000000000022,0.0109999999999957,2
+"test-export-workbook.R","export-workbook","the imputed matrix appears only when imputation ran",2,0,FALSE,FALSE,0,0.0339999999999989,0.00200000000000022,0.0359999999999943,2
+"test-export-workbook.R","export-workbook","the imputed sheet carries feature ids, not just numbers",3,0,FALSE,FALSE,0,0.0100000000000016,0.00099999999999989,0.0109999999999957,3
+"test-export-workbook.R","export-workbook","the enrichment grid becomes one sheet per test",4,0,FALSE,FALSE,0,0.0100000000000016,0.00199999999999978,0.0109999999999957,4
+"test-export-workbook.R","export-workbook","the log ships even when every combination came back empty",2,0,FALSE,FALSE,0,0.00999999999999801,0.00099999999999989,0.00999999999999801,2
+"test-export-workbook.R","export-workbook","a project with no analyses has nothing to export",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999778,2
+"test-export-workbook.R","export-workbook","export_workbook writes a readable file at the path given",3,0,FALSE,FALSE,0,0.0429999999999993,0.0179999999999998,0.0609999999999999,3
+"test-export-workbook.R","export-workbook","export_workbook refuses to overwrite by default",2,0,FALSE,FALSE,0,0.0569999999999986,0.0150000000000001,0.0730000000000004,2
+"test-export-workbook.R","export-workbook","export_workbook rejects things that are not projects",2,0,FALSE,FALSE,0,0.00399999999999778,0,0.00399999999999778,2
+"test-export-workbook.R","export-workbook","sheet names are ones Excel will accept",4,0,FALSE,FALSE,0,0.00300000000000011,0,0.00399999999999778,4
+"test-export-workbook.R","export-workbook","the parameters sheet says what each analysis ran with",4,0,FALSE,FALSE,0,0.0109999999999992,0.00099999999999989,0.0129999999999981,4
+"test-export.R","export","export_bundle writes tables + params for a diff bundle",7,0,FALSE,FALSE,0,0.0229999999999997,0.0110000000000001,0.0349999999999966,7
+"test-export.R","export","export_bundle writes plots when supplied",2,0,FALSE,FALSE,0,0.108999999999998,0.0089999999999999,0.119,2
+"test-export.R","export","export_bundle honors prefix",1,0,FALSE,FALSE,0,0.00700000000000145,0.00100000000000033,0.0069999999999979,1
+"test-export.R","export","export_bundle errors on non-bundle inputs",1,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,1
+"test-export.R","export","export_report renders an HTML file",3,0,FALSE,FALSE,0,0.546000000000003,0.0489999999999999,0.783000000000001,3
+"test-export.R","export","export_report errors on non-projects",1,0,FALSE,FALSE,0,0.430999999999997,0.0379999999999998,0.470999999999997,1
+"test-export.R","export","export_report writes to the exact path when it has no extension",4,0,FALSE,FALSE,0,0.0509999999999984,0.016,0.164999999999999,4
+"test-export.R","export","export_report survives its own tempdir cleanup",3,0,FALSE,FALSE,0,0.049000000000003,0.0170000000000003,0.163000000000004,3
+"test-export.R","export","export_report leaves nothing beside its template",2,0,FALSE,FALSE,0,0.0510000000000019,0.0190000000000001,0.182000000000002,2
+"test-export.R","export","export_report refuses to overwrite by default",1,0,FALSE,FALSE,0,0.0529999999999973,0.0159999999999996,0.165999999999997,1
+"test-feature-symbols.R","feature-symbols","known genes map to their current symbols",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00200000000000244,1
+"test-feature-symbols.R","feature-symbols","the version suffix does not stop a match",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00200000000000244,1
+"test-feature-symbols.R","feature-symbols","an unmapped id becomes NA, not the id",2,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,2
+"test-feature-symbols.R","feature-symbols","both enrichment paths drop the unmapped features",2,0,FALSE,FALSE,0,0.00199999999999889,0,0.00200000000000244,2
+"test-feature-symbols.R","feature-symbols","ids that are not Ensembl are left alone",4,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00499999999999545,4
+"test-feature-symbols.R","feature-symbols","a symbol column the file supplied is not overwritten",2,0,FALSE,FALSE,0,0.00199999999999889,0.00100000000000033,0.00300000000000011,2
+"test-feature-symbols.R","feature-symbols","the note says how many mapped, and where the table came from",3,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00199999999999534,3
+"test-feature-symbols.R","feature-symbols","provenance names a retrieval date, so a result can cite it",1,0,FALSE,FALSE,0,0,0,0.000999999999997669,1
+"test-feature-symbols.R","feature-symbols","symbols are attached by id, not by row position",1,0,FALSE,FALSE,0,0.000999999999997669,0.00099999999999989,0.00200000000000244,1
+"test-gene-set-names.R","gene-set-names","the collection prefix is stripped",4,0,FALSE,FALSE,0,0.00399999999999778,0.00099999999999989,0.00499999999999545,4
+"test-gene-set-names.R","gene-set-names","the longer KEGG prefixes win over the shorter one",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,2
+"test-gene-set-names.R","gene-set-names","casing is left as the source wrote it",2,0,FALSE,FALSE,0,0.00100000000000122,0.00100000000000033,0.00199999999999534,2
+"test-gene-set-names.R","gene-set-names","a name with no known prefix is left alone but still cleaned",1,0,FALSE,FALSE,0,0.00100000000000122,0.00099999999999989,0.000999999999997669,1
+"test-gene-set-names.R","gene-set-names","NA and empty survive",3,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,3
+"test-gene-set-names.R","gene-set-names","term2name carries the name, not the definition",3,0,FALSE,FALSE,0,0.949000000000002,0.065,1.017,3
+"test-geneset-cache.R","geneset-cache","the cache file name encodes database and organism",1,0,FALSE,FALSE,0,0.00100000000000122,0.00099999999999989,0.00399999999999778,1
+"test-geneset-cache.R","geneset-cache","no cache directory means no cache",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00200000000000244,1
+"test-geneset-cache.R","geneset-cache","a directory that does not exist means no cache",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000244,1
+"test-geneset-cache.R","geneset-cache","a missing file for this database means no cache",1,0,FALSE,FALSE,0,0.004999999999999,0.00099999999999989,0.00600000000000023,1
+"test-geneset-cache.R","geneset-cache","a cached table is returned when it is there",3,0,FALSE,FALSE,0,0.00300000000000011,0.00200000000000022,0.00499999999999545,3
+"test-geneset-cache.R","geneset-cache","a corrupt file degrades to no cache rather than an error",1,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00199999999999534,1
+"test-geneset-cache.R","geneset-cache","a table missing the required columns is ignored",1,0,FALSE,FALSE,0,0.00199999999999889,0.00200000000000022,0.00399999999999778,1
+"test-geneset-cache.R","geneset-cache","an empty table is ignored",1,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00300000000000011,1
+"test-geneset-cache.R","geneset-cache","fetch_msigdbr_table prefers the cache over msigdbr",2,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00400000000000489,2
+"test-geneset-cache.R","geneset-cache","the cached table still satisfies every downstream reader",5,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.0069999999999979,5
+"test-geneset-refresh.R","geneset-refresh","parse_kegg_symbol takes the first symbol before the semicolon",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00999999999999801,1
+"test-geneset-refresh.R","geneset-refresh","kegg_org_code maps supported organisms and rejects others",3,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00500000000000256,3
+"test-geneset-refresh.R","geneset-refresh","fetch_kegg_live assembles a cache-contract table",5,0,FALSE,FALSE,0,0.00399999999999778,0.00199999999999978,0.00500000000000256,5
+"test-geneset-refresh.R","geneset-refresh","fetch_kegg_live fails loudly on an unexpected response shape",1,0,FALSE,FALSE,0,0.0120000000000005,0.00099999999999989,0.0130000000000052,1
+"test-geneset-refresh.R","geneset-refresh","refresh writes a cache the normal read path then serves",4,0,FALSE,FALSE,0,0.004999999999999,0.00200000000000022,0.0069999999999979,4
+"test-geneset-refresh.R","geneset-refresh","a fresh cache is kept unless force = TRUE",3,0,FALSE,FALSE,0,0.0370000000000026,0.00499999999999989,0.0419999999999945,3
+"test-geneset-refresh.R","geneset-refresh","a failed fetch keeps the previous cache intact",3,0,FALSE,FALSE,0,0.004999999999999,0.00200000000000022,0.00600000000000023,3
+"test-geneset-refresh.R","geneset-refresh","the msigdbr snapshot path trims columns and stamps provenance",2,0,FALSE,FALSE,0,0.00199999999999889,0,0.00300000000000011,2
+"test-geneset-refresh.R","geneset-refresh","a stale live-sourced cache refreshes itself on next use",4,0,FALSE,FALSE,0,0.0069999999999979,0.00099999999999989,0.00800000000000267,4
+"test-geneset-refresh.R","geneset-refresh","OMICSCORE_GENESET_TTL_DAYS=0 disables the auto-refresh",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00299999999999301,1
+"test-geneset-refresh.R","geneset-refresh","a prewarmed msigdbr cache never triggers a network call",1,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00199999999999534,1
+"test-geneset-refresh.R","geneset-refresh","the env var wins, the per-user dir is the fallback",5,0,FALSE,FALSE,0,0.00399999999999778,0.00199999999999978,0.00600000000000023,5
+"test-geneset-refresh.R","geneset-refresh","geneset_cache_status reports source and age",4,0,FALSE,FALSE,0,0.00500000000000256,0.00200000000000022,0.00600000000000023,4
+"test-geneset-refresh.R","geneset-refresh","geneset_table_source reads provenance off the session memo",2,0,FALSE,FALSE,0,0.00199999999999889,0.00099999999999989,0.00300000000000011,2
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","the pipeline's counts file imports whole, ids and samples intact",1,0,TRUE,FALSE,0,0.00100000000000122,0.00099999999999989,0.00199999999999534,0
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","the feature filter keeps exactly the genes the legacy run kept",1,0,TRUE,FALSE,0,0.00799999999999912,0,0.00900000000000034,0
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","winsorize_counts reproduces the legacy clipping, gene by gene",1,0,TRUE,FALSE,0,0.000999999999997669,0,0.00200000000000244,0
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","edgeR with age as covariate reproduces the legacy table",1,0,TRUE,FALSE,0,0.00100000000000122,0.00099999999999989,0.00200000000000244,0
+"test-golden-rnaseq-follicle.R","golden-rnaseq-follicle","the count backends survive the real matrix, constant genes and all",1,0,TRUE,FALSE,0,0,0,0.000999999999997669,0
+"test-gsva-util-edge.R","gsva-util-edge","run_gsva returns a bundle on valid input",3,0,FALSE,FALSE,0,0.0459999999999994,0.00600000000000023,0.0529999999999973,3
+"test-gsva-util-edge.R","gsva-util-edge","run_gsva produces a gene-set by sample score matrix",6,0,FALSE,FALSE,0,0.0210000000000008,0.00099999999999989,0.0230000000000032,6
+"test-gsva-util-edge.R","gsva-util-edge","run_gsva supports ssgsea method",3,0,FALSE,FALSE,0,0.0210000000000008,0.00200000000000022,0.0229999999999961,3
+"test-gsva-util-edge.R","gsva-util-edge","run_gsva respects min_size and max_size",2,0,FALSE,FALSE,0,0.0339999999999989,0.00200000000000022,0.0339999999999989,2
+"test-gsva-util-edge.R","gsva-util-edge","run_gsva errors on bogus database",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-gsva-util-edge.R","gsva-util-edge","OPTIONAL_GROUPS contains rnaseq group",1,0,FALSE,FALSE,0,0.00100000000000122,0.00099999999999989,0.00199999999999534,1
+"test-gsva-util-edge.R","gsva-util-edge","OPTIONAL_GROUPS contains proteomics group",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000244,1
+"test-gsva-util-edge.R","gsva-util-edge","OPTIONAL_GROUPS contains enrichment group",1,0,FALSE,FALSE,0,0.00100000000000122,0,0.00100000000000477,1
+"test-gsva-util-edge.R","gsva-util-edge","OPTIONAL_GROUPS contains imputation group",1,0,FALSE,FALSE,0,0.00100000000000122,0.00099999999999989,0.000999999999997669,1
+"test-gsva-util-edge.R","gsva-util-edge","OPTIONAL_GROUPS rnaseq lists DESeq2 and edgeR",1,0,FALSE,FALSE,0,0.00100000000000122,0,0.00200000000000244,1
+"test-gsva-util-edge.R","gsva-util-edge","OPTIONAL_GROUPS enrichment lists fgsea",1,0,FALSE,FALSE,0,0.00100000000000122,0.00099999999999989,0.00200000000000244,1
+"test-gsva-util-edge.R","gsva-util-edge","OPTIONAL_GROUPS imputation lists imputeLCMD",1,0,FALSE,FALSE,0,0.00199999999999889,0,0.00199999999999534,1
+"test-gsva-util-edge.R","gsva-util-edge","check_install with no missing groups returns invisibly",1,0,FALSE,FALSE,0,0.481999999999999,0.0629999999999997,0.551000000000002,1
+"test-gsva-util-edge.R","gsva-util-edge","BIOC_PACKAGES is a character vector",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.000999999999997669,1
+"test-gsva-util-edge.R","gsva-util-edge","CANONICAL_DATABASES includes core databases",1,0,FALSE,FALSE,0,0.000999999999997669,0.00099999999999989,0.00200000000000244,1
+"test-gsva-util-edge.R","gsva-util-edge","SUPPORTED_OMICS_TYPES includes proteomics and rnaseq",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000244,1
+"test-gsva-util-edge.R","gsva-util-edge","SUPPORTED_DIFF_METHODS includes ttest",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00200000000000244,1
+"test-gsva-util-edge.R","gsva-util-edge","SUPPORTED_DIFF_ANALYSIS_TYPES includes group",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-gsva-util-edge.R","gsva-util-edge","SUPPORTED_ENRICH_TYPES includes ora and gsea",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-gsva-util-edge.R","gsva-util-edge","SUPPORTED_INTEGRATION_METHODS includes concordance",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00200000000000244,1
+"test-hygiene.R","hygiene","a seeded stream is where the caller left it",14,0,FALSE,FALSE,0,1.518,0.341,1.90900000000001,14
+"test-hygiene.R","hygiene","no seed is planted in a session that had none",5,0,FALSE,FALSE,0,0.526000000000003,0.0430000000000001,0.57,5
+"test-hygiene.R","hygiene","the engines answer the same table twice, whatever the stream",4,0,FALSE,FALSE,0,0.991,0.173,1.216,4
+"test-hygiene.R","hygiene","a jittered figure is the same on every render",1,0,FALSE,FALSE,0,0.0790000000000006,0.0180000000000002,0.0959999999999965,1
+"test-hygiene.R","hygiene","nothing else is left behind by a full pipeline",9,0,FALSE,FALSE,0,1.74,0.171,2.209,9
+"test-hygiene.R","hygiene","the report renders nothing beside its template",2,0,FALSE,FALSE,0,0.439,0.0329999999999999,0.763000000000005,2
+"test-hygiene.R","hygiene","package code seeds the stream only where it puts it back",1,0,FALSE,FALSE,0,0.0129999999999981,0.00299999999999967,0.0159999999999982,1
+"test-impute-winsorize.R","impute-winsorize","impute_matrix returns unchanged when method='none'",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-impute-winsorize.R","impute-winsorize","impute_matrix returns unchanged when no NAs present",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-impute-winsorize.R","impute-winsorize","impute_matrix min replaces NAs with per-feature minimum",8,0,FALSE,FALSE,0,0.00800000000000267,0.00299999999999967,0.0109999999999957,8
+"test-impute-winsorize.R","impute-winsorize","MinDet imputes at the bottom of the sample, not of the feature",6,0,FALSE,FALSE,0,0.0200000000000031,0.00200000000000022,0.0210000000000008,6
+"test-impute-winsorize.R","impute-winsorize","impute_matrix min handles features with no non-NA values",2,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,2
+"test-impute-winsorize.R","impute-winsorize","MAR methods stay inside the observed range, MNAR go below it",2,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,2
+"test-impute-winsorize.R","impute-winsorize","every method fills every NA and keeps the shape",20,0,FALSE,FALSE,0,0.0320000000000036,0.00499999999999989,0.0379999999999967,20
+"test-impute-winsorize.R","impute-winsorize","draws are reproducible, so a report and its script agree",3,0,FALSE,FALSE,0,0.0129999999999981,0.00200000000000022,0.0150000000000006,3
+"test-impute-winsorize.R","impute-winsorize","impute_matrix works on single-row matrix",2,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,2
+"test-impute-winsorize.R","impute-winsorize","impute_matrix works on single-column matrix",2,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,2
+"test-impute-winsorize.R","impute-winsorize","impute_matrix preserves integer-like values with min method",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,2
+"test-impute-winsorize.R","impute-winsorize","impute_matrix validates method argument",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000244,1
+"test-impute-winsorize.R","impute-winsorize","impute_matrix converts data.frame to matrix",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.000999999999997669,1
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts returns list with expected components",6,0,FALSE,FALSE,0,0.00499999999999545,0.00099999999999989,0.0069999999999979,6
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts clips extreme values",2,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,2
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts handles NAs transparently",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,1
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts on constant row does not error",2,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00299999999999301,2
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts with low k clips more",1,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,1
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts works on single-row matrix",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00200000000000244,1
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts works on single-column matrix",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts preserves dimnames",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,2
+"test-impute-winsorize.R","impute-winsorize","winsorize_counts stats df has expected columns",2,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00300000000000011,2
+"test-install-optional.R","install-optional","resolve_install_group expands 'all' to the union",3,0,FALSE,FALSE,0,0.00300000000000011,0,0.00399999999999778,3
+"test-install-optional.R","install-optional","resolve_install_group rejects unknown groups",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-install-optional.R","install-optional","check_install returns a row per group",4,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00399999999999778,4
+"test-install-optional.R","install-optional","install_optional() is a no-op when ask=FALSE and group is empty",1,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,1
+"test-install-optional.R","install-optional","new_artifact_registry has the expected schema",3,0,FALSE,FALSE,0,0.00300000000000011,0,0.00400000000000489,3
+"test-install-optional.R","install-optional","register_artifact appends a row",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00399999999999778,2
+"test-install-optional.R","install-optional","schema validators catch missing columns",2,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00399999999999778,2
+"test-install-optional.R","install-optional","new_analysis_bundle() returns a valid bundle",3,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00399999999999778,3
+"test-integration-edge.R","integration-edge","run_integration concordance returns an analysis_bundle",2,0,FALSE,FALSE,0,0.0450000000000017,0.00199999999999978,0.046999999999997,2
+"test-integration-edge.R","integration-edge","run_integration concordance result has integration_df",1,0,FALSE,FALSE,0,0.0140000000000029,0.00099999999999989,0.0150000000000006,1
+"test-integration-edge.R","integration-edge","run_integration concordance with feature_link works",1,0,FALSE,FALSE,0,0.0100000000000051,0.00100000000000033,0.00999999999999801,1
+"test-integration-edge.R","integration-edge","run_integration errors on invalid project",1,0,FALSE,FALSE,0,0.00600000000000023,0.00099999999999989,0.0069999999999979,1
+"test-integration-edge.R","integration-edge","run_integration errors when too few experiments",1,0,FALSE,FALSE,0,0.00600000000000023,0,0.007000000000005,1
+"test-integration-edge.R","integration-edge","run_integration errors on invalid method",1,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,1
+"test-integration-edge.R","integration-edge","run_integration errors when experiment tag not found",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-integration-edge.R","integration-edge","plot_integration renders a ggplot for concordance result",1,0,FALSE,FALSE,0,0.027000000000001,0.00100000000000033,0.0280000000000058,1
+"test-integration-edge.R","integration-edge","check_integration_result_schema passes for valid result df",1,0,FALSE,FALSE,0,0.00999999999999801,0,0.00999999999999801,1
+"test-integration-edge.R","integration-edge","check_integration_result_schema errors when columns missing",1,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,1
+"test-integration-sample-link.R","integration-sample-link","a stated donor column pairs the layers",4,0,FALSE,FALSE,0,0.00500000000000256,0.00199999999999978,0.00600000000000023,4
+"test-integration-sample-link.R","integration-sample-link","without a donor column the ids are used to suggest one",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,2
+"test-integration-sample-link.R","integration-sample-link","an ambiguous stem yields no suggestion at all",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00399999999999778,2
+"test-integration-sample-link.R","integration-sample-link","layers that genuinely share ids need no donor",2,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00399999999999778,2
+"test-integration-sample-link.R","integration-sample-link","a stated donor beats a guess the ids would have supported",3,0,FALSE,FALSE,0,0.00399999999999778,0.00200000000000022,0.00600000000000023,3
+"test-integration-sample-link.R","integration-sample-link","samples missing from one layer are dropped, not paired blindly",1,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,1
+"test-integration-sample-link.R","integration-sample-link","donor_column finds the usual spellings and nothing else",6,0,FALSE,FALSE,0,0.0069999999999979,0.00199999999999978,0.00900000000000034,6
+"test-integration-sample-link.R","integration-sample-link","sample_stem cuts at the first separator",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000244,1
+"test-integration-sample-link.R","integration-sample-link","derive_sample_link needs the column on both sides",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-integration.R","integration","integration result template has the standard columns",3,0,FALSE,FALSE,0,0.00300000000000011,0,0.00399999999999778,3
+"test-integration.R","integration","resolve_experiment_pair returns both tags when project has two",4,0,FALSE,FALSE,0,0.0069999999999979,0.00100000000000033,0.00800000000000267,4
+"test-integration.R","integration","build_sample_pairs uses sample_link donor map",4,0,FALSE,FALSE,0,0.0140000000000029,0.00099999999999989,0.0140000000000029,4
+"test-integration.R","integration","build_feature_pairs joins by feature_symbol",2,0,FALSE,FALSE,0,0.00300000000000011,0.00099999999999989,0.00300000000000011,2
+"test-integration.R","integration","classify_concordance_quadrant labels all four quadrants",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00199999999999534,1
+"test-integration.R","integration","run_integration correlation produces a standard bundle",8,0,FALSE,FALSE,0,0.0529999999999973,0.00200000000000022,0.0549999999999997,8
+"test-integration.R","integration","correlation requires the configured minimum sample count",1,0,FALSE,FALSE,0,0.0150000000000006,0.00099999999999989,0.0159999999999982,1
+"test-integration.R","integration","concordance reads the project's names, not its data",2,0,FALSE,FALSE,0,0.0150000000000006,0.00099999999999989,0.0160000000000053,2
+"test-integration.R","integration","run_integration concordance produces a standard bundle",6,0,FALSE,FALSE,0,0.0150000000000006,0.00100000000000033,0.0159999999999982,6
+"test-integration.R","integration","concordance requires diff_bundles",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00400000000000489,1
+"test-integration.R","integration","concordance rejects non-run_diff bundles",1,0,FALSE,FALSE,0,0.0139999999999958,0.00099999999999989,0.0140000000000029,1
+"test-integration.R","integration","active_pathways returns the integration schema when installed",2,0,FALSE,FALSE,0,0.044000000000004,0.004,0.0479999999999947,2
+"test-integration.R","integration","plot_integration scatter view works for correlation",1,0,FALSE,FALSE,0,0.0539999999999949,0,0.0539999999999949,1
+"test-integration.R","integration","plot_integration dual_volcano + quadrant work for concordance",2,0,FALSE,FALSE,0,0.0500000000000043,0.00099999999999989,0.0519999999999996,2
+"test-integration.R","integration","plot_integration rejects view/method mismatches",3,0,FALSE,FALSE,0,0.0279999999999987,0.00099999999999989,0.0289999999999964,3
+"test-integration.R","integration","concordance keeps each layer's own effect and p",8,0,FALSE,FALSE,0,0.0190000000000055,0.00199999999999978,0.019999999999996,8
+"test-integration.R","integration","the effect-pair plot draws those columns",3,0,FALSE,FALSE,0,0.0349999999999966,0.00200000000000022,0.0359999999999943,3
+"test-integration.R","integration","a result saved without them says so instead of drawing zeros",3,0,FALSE,FALSE,0,0.0380000000000038,0.00099999999999989,0.0399999999999991,3
+"test-integration.R","integration","the two sides record which p and which effect kind they are",4,0,FALSE,FALSE,0,0.0379999999999967,0.00300000000000011,0.0409999999999968,4
+"test-integration.R","integration","no combined p is reported unless it is asked for",5,0,FALSE,FALSE,0,0.0150000000000006,0.00199999999999978,0.0180000000000007,5
+"test-integration.R","integration","agreement between the layers is still reported",4,0,FALSE,FALSE,0,0.0130000000000052,0.00200000000000022,0.0150000000000006,4
+"test-integration.R","integration","asking for it produces it, and says so in the parameters",3,0,FALSE,FALSE,0,0.0139999999999958,0.00099999999999989,0.0150000000000006,3
+"test-integration.R","integration","the dual volcano says why it has no axis rather than inventing one",2,0,FALSE,FALSE,0,0.0370000000000061,0.00099999999999989,0.0379999999999967,2
+"test-io-robust-edge.R","io-robust-edge","save_project writes a file and load_project reads it back",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","save_project + load_project round-trips a project",1,0,FALSE,FALSE,0,0.00400000000000489,0.00199999999999978,0.007000000000005,1
+"test-io-robust-edge.R","io-robust-edge","save_project round-trip preserves experiment tags",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","save_project round-trip preserves expr_mat content",1,0,FALSE,FALSE,0,0.00199999999999534,0.00099999999999989,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","save_project errors if path exists and overwrite=FALSE",1,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","save_project allows overwrite=TRUE",1,0,FALSE,FALSE,0,0.00100000000000477,0.00099999999999989,0.00199999999999534,1
+"test-io-robust-edge.R","io-robust-edge","load_project errors on nonexistent path",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","save_project errors on non-project input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00399999999999778,1
+"test-io-robust-edge.R","io-robust-edge","read_omics errors on nonexistent file",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","read_omics errors on invalid type",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","detect_file_type recognizes csv",1,0,FALSE,FALSE,0,0.000999999999997669,0.00099999999999989,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","detect_file_type recognizes excel",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00100000000000477,1
+"test-io-robust-edge.R","io-robust-edge","detect_file_type recognizes rds",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.000999999999997669,1
+"test-io-robust-edge.R","io-robust-edge","detect_file_type returns something for unknown ext",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-io-robust-edge.R","io-robust-edge","read_omics_rds round-trips an omics_input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","read_omics_rds errors on nonexistent file",1,0,FALSE,FALSE,0,0.00900000000000034,0.00099999999999989,0.00900000000000034,1
+"test-io-robust-edge.R","io-robust-edge","write_table writes an xlsx file",1,0,FALSE,FALSE,0,0.0069999999999979,0.00499999999999989,0.0120000000000005,1
+"test-io-robust-edge.R","io-robust-edge","write_table supports tsv format",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","write_table with empty formats writes no files",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","write_matrix writes a tsv file",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","new_artifact_registry returns a list",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","register_artifact records an entry",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","merge_artifact_registries merges two registries",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","classify_sheet_role returns a label for expression-like sheet",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00300000000000011,1
+"test-io-robust-edge.R","io-robust-edge","classify_sheet_role tolerates empty data",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","classify_sheet_role tolerates one-row data",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","detect_orientation returns something on a sane data.frame",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","detect_id_columns finds a feature_id-like column",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","pick_id_column returns something or errors on minimal df",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","new_import_report stores sheets correctly",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-io-robust-edge.R","io-robust-edge","add_import_warning appends a warning",1,0,FALSE,FALSE,0,0.000999999999997669,0.00099999999999989,0.00199999999999534,1
+"test-io-robust-edge.R","io-robust-edge","import_report_sheets returns the sheets table",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","import_report_warnings returns the warnings vector",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000244,1
+"test-io-robust-edge.R","io-robust-edge","import_report_sheets_template returns a data.frame template",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00199999999999534,1
+"test-io-robust-edge.R","io-robust-edge","is_import_report identifies the class",1,0,FALSE,FALSE,0,0.00200000000000244,0.00099999999999989,0.00199999999999534,1
+"test-io-vendor-corpus.R","io-vendor-corpus","MaxQuant proteinGroups.txt: the LFQ block is the matrix, nothing else is",8,0,FALSE,FALSE,0,0.0180000000000007,0.00300000000000011,0.0210000000000008,8
+"test-io-vendor-corpus.R","io-vendor-corpus","Spectronaut report: 'Filtered' is a missing value, and the sample keeps its name",9,0,FALSE,FALSE,0,0.0339999999999989,0.00299999999999967,0.036999999999999,9
+"test-io-vendor-corpus.R","io-vendor-corpus","DIA-NN pg_matrix: raw-file paths become sample names",7,0,FALSE,FALSE,0,0.0150000000000006,0.00300000000000011,0.017000000000003,7
+"test-io-vendor-corpus.R","io-vendor-corpus","featureCounts: the command line is skipped and the annotation columns are not samples",7,0,FALSE,FALSE,0,0.0139999999999958,0.00200000000000022,0.0159999999999982,7
+"test-io-vendor-corpus.R","io-vendor-corpus","a dual-unit report named .xls is read as text and keeps the counts",7,0,FALSE,FALSE,0,0.0129999999999981,0.00199999999999978,0.0159999999999982,7
+"test-io-vendor-corpus.R","io-vendor-corpus","a merged quantification table with versioned Ensembl ids maps to symbols",3,0,FALSE,FALSE,0,0.00800000000000267,0.00200000000000022,0.00900000000000034,3
+"test-io-vendor-corpus.R","io-vendor-corpus","csv, tsv, CRLF, BOM, .xlsx and TSV-named-.xls all give the identical matrix",21,0,FALSE,FALSE,0,0.0640000000000001,0.0139999999999998,0.0790000000000006,21
+"test-io-vendor-corpus.R","io-vendor-corpus","every spelling of 'missing' is NA, and the column stays a sample",4,0,FALSE,FALSE,0,0.0110000000000028,0.00200000000000022,0.0120000000000005,4
+"test-io-vendor-corpus.R","io-vendor-corpus","thousands separators are read as the numbers they group",2,0,FALSE,FALSE,0,0.00900000000000034,0.00099999999999989,0.00999999999999801,2
+"test-io-vendor-corpus.R","io-vendor-corpus","a numeric column stored as text in a workbook is still numeric",1,0,FALSE,FALSE,0,0.0309999999999988,0.00700000000000012,0.0379999999999967,1
+"test-io-vendor-corpus.R","io-vendor-corpus","samples in rows are recognised and transposed",6,0,FALSE,FALSE,0,0.0129999999999981,0.00300000000000011,0.0150000000000006,6
+"test-io-vendor-corpus.R","io-vendor-corpus","duplicate and empty ids are made unique rather than dropped",4,0,FALSE,FALSE,0,0.0110000000000028,0.00200000000000022,0.0179999999999936,4
+"test-io-vendor-corpus.R","io-vendor-corpus","a symbol column mangled by Excel is still picked up, as written",6,0,FALSE,FALSE,0,0.0140000000000029,0.00199999999999978,0.0189999999999984,6
+"test-io-vendor-corpus.R","io-vendor-corpus","a plain matrix with a few annotation columns is still a matrix",6,0,FALSE,FALSE,0,0.0129999999999981,0.00199999999999978,0.0160000000000053,6
+"test-io-vendor-corpus.R","io-vendor-corpus","a sample sheet is not mistaken for a matrix",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00399999999999778,1
+"test-io-vendor-corpus.R","io-vendor-corpus","numeric identifiers stay identifiers, and the matrix stays the right way up",15,0,FALSE,FALSE,0,0.027000000000001,0.00499999999999989,0.0339999999999989,15
+"test-io-vendor-corpus.R","io-vendor-corpus","zero-padded probe ids keep their zeros",5,0,FALSE,FALSE,0,0.00999999999999801,0.00199999999999978,0.0109999999999957,5
+"test-io-vendor-corpus.R","io-vendor-corpus","in a delimited file the first column is the identifiers, whatever it holds",2,0,FALSE,FALSE,0,0.007000000000005,0.00100000000000033,0.00799999999999557,2
+"test-io-vendor-corpus.R","io-vendor-corpus","in a workbook a numeric first column is data unless it is named like an id",7,0,FALSE,FALSE,0,0.036999999999999,0.016,0.0529999999999973,7
+"test-io-vendor-corpus.R","io-vendor-corpus","whitespace around identifiers and sample names is not part of them",5,0,FALSE,FALSE,0,0.00900000000000034,0.00199999999999978,0.0120000000000005,5
+"test-io-vendor-corpus.R","io-vendor-corpus","numeric sample names are kept as written",2,0,FALSE,FALSE,0,0.00799999999999557,0.00100000000000033,0.00900000000000034,2
+"test-io-vendor-corpus.R","io-vendor-corpus","a repeated sample name is made unique, and the report says so",4,0,FALSE,FALSE,0,0.00900000000000034,0.00199999999999978,0.0110000000000028,4
+"test-io-vendor-corpus.R","io-vendor-corpus","columns with no values are not samples",7,0,FALSE,FALSE,0,0.0130000000000052,0.00199999999999978,0.0150000000000006,7
+"test-io-vendor-corpus.R","io-vendor-corpus","a Total row is a spreadsheet's sum, not a feature",6,0,FALSE,FALSE,0,0.0109999999999957,0.00200000000000067,0.0120000000000005,6
+"test-legacy-subcollection.R","legacy-subcollection","only KEGG is renamed for the pre-v10 msigdbr data",6,0,FALSE,FALSE,0,0.00499999999999545,0.00100000000000033,0.00600000000000023,6
+"test-legacy-subcollection.R","legacy-subcollection","a collection with no subcollection survives the translation",2,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00300000000000011,2
+"test-legacy-subcollection.R","legacy-subcollection","every subcollection in the map translates to something usable",13,0,FALSE,FALSE,0,0.00799999999999557,0.00200000000000067,0.00900000000000034,13
+"test-lightweight-install.R","lightweight-install","each differential engine names itself and its install group when absent",9,0,FALSE,FALSE,0,0.00900000000000034,0.000999999999999446,0.00999999999999801,9
+"test-lightweight-install.R","lightweight-install","method = 'auto' steps down to an engine that is present",3,0,FALSE,FALSE,0,0.0110000000000028,0.00100000000000033,0.0120000000000005,3
+"test-lightweight-install.R","lightweight-install","the enrichment layer lists every missing package at once",3,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.00600000000000023,3
+"test-lightweight-install.R","lightweight-install","run_gsva() refuses without GSVA and says which group installs it",2,0,FALSE,FALSE,0,0.00199999999999534,0,0.00200000000000244,2
+"test-lightweight-install.R","lightweight-install","normalize_omics() refuses without vsn",1,0,FALSE,FALSE,0,0.000999999999997669,0.000999999999999446,0.00200000000000244,1
+"test-lightweight-install.R","lightweight-install","save_project() and load_project() refuse without qs2",3,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,3
+"test-lightweight-install.R","lightweight-install","export_report() refuses without rmarkdown",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.000999999999997669,1
+"test-lightweight-install.R","lightweight-install","each imputation method names its package when absent",6,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,6
+"test-lightweight-install.R","lightweight-install","ActivePathways integration refuses without the package",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.000999999999997669,1
+"test-lightweight-install.R","lightweight-install","the volcano still draws without ggrepel",2,0,FALSE,FALSE,0,0.0230000000000032,0.00100000000000033,0.0229999999999961,2
+"test-lightweight-install.R","lightweight-install","the heatmap falls back to ggplot without ComplexHeatmap",2,0,FALSE,FALSE,0,0.0420000000000016,0.00100000000000033,0.0429999999999993,2
+"test-lightweight-install.R","lightweight-install","the gates read is_installed(), so this file tests what it claims",1,0,FALSE,FALSE,0,0.00999999999999801,0.00300000000000011,0.0120000000000005,1
+"test-metamorphic-diff.R","metamorphic-diff","ttest : swapping control and case negates the effect and keeps p",4,0,FALSE,FALSE,0,0.0229999999999961,0.00199999999999978,0.0249999999999986,4
+"test-metamorphic-diff.R","metamorphic-diff","ttest : the sample order does not matter",2,0,FALSE,FALSE,0,0.0360000000000014,0.000999999999999446,0.036999999999999,2
+"test-metamorphic-diff.R","metamorphic-diff","ttest : the feature order does not matter",3,0,FALSE,FALSE,0,0.0210000000000008,0.00100000000000033,0.0219999999999985,3
+"test-metamorphic-diff.R","metamorphic-diff","ttest : sample ids are labels, not data",2,0,FALSE,FALSE,0,0.0200000000000031,0.000999999999999446,0.0210000000000008,2
+"test-metamorphic-diff.R","metamorphic-diff","ttest : a duplicated feature gets its twin's statistics",2,0,FALSE,FALSE,0,0.0120000000000005,0.00100000000000033,0.0140000000000029,2
+"test-metamorphic-diff.R","metamorphic-diff","ttest : run_diff leaves significance unanswered",1,0,FALSE,FALSE,0,0.0110000000000028,0.00100000000000033,0.0120000000000005,1
+"test-metamorphic-diff.R","metamorphic-diff","lm : swapping control and case negates the effect and keeps p",4,0,FALSE,FALSE,0,0.104999999999997,0.00199999999999978,0.106999999999999,4
+"test-metamorphic-diff.R","metamorphic-diff","lm : the sample order does not matter",2,0,FALSE,FALSE,0,0.105000000000004,0.00300000000000011,0.110999999999997,2
+"test-metamorphic-diff.R","metamorphic-diff","lm : the feature order does not matter",3,0,FALSE,FALSE,0,0.115000000000002,0.00300000000000011,0.119,3
+"test-metamorphic-diff.R","metamorphic-diff","lm : sample ids are labels, not data",2,0,FALSE,FALSE,0,0.101999999999997,0.00199999999999978,0.103999999999999,2
+"test-metamorphic-diff.R","metamorphic-diff","lm : a duplicated feature gets its twin's statistics",2,0,FALSE,FALSE,0,0.0530000000000044,0.000999999999999446,0.054000000000002,2
+"test-metamorphic-diff.R","metamorphic-diff","lm : run_diff leaves significance unanswered",1,0,FALSE,FALSE,0,0.0640000000000001,0.00200000000000067,0.0649999999999977,1
+"test-metamorphic-diff.R","metamorphic-diff","limma : swapping control and case negates the effect and keeps p",4,0,FALSE,FALSE,0,0.0129999999999981,0.000999999999999446,0.0139999999999958,4
+"test-metamorphic-diff.R","metamorphic-diff","limma : the sample order does not matter",2,0,FALSE,FALSE,0,0.0110000000000028,0.00100000000000033,0.0120000000000005,2
+"test-metamorphic-diff.R","metamorphic-diff","limma : the feature order does not matter",3,0,FALSE,FALSE,0,0.0120000000000005,0.000999999999999446,0.0129999999999981,3
+"test-metamorphic-diff.R","metamorphic-diff","limma : sample ids are labels, not data",2,0,FALSE,FALSE,0,0.0130000000000052,0.00100000000000033,0.0159999999999982,2
+"test-metamorphic-diff.R","metamorphic-diff","limma : a duplicated feature gets its twin's statistics",2,0,FALSE,FALSE,0,0.0069999999999979,0.000999999999999446,0.00799999999999557,2
+"test-metamorphic-diff.R","metamorphic-diff","limma : run_diff leaves significance unanswered",1,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.00600000000000023,1
+"test-metamorphic-diff.R","metamorphic-diff","deseq2 : swapping control and case negates the effect and keeps p",4,0,FALSE,FALSE,0,0.929000000000002,0.0140000000000002,0.966000000000001,4
+"test-metamorphic-diff.R","metamorphic-diff","deseq2 : the sample order does not matter",2,0,FALSE,FALSE,0,0.949000000000005,0.00800000000000001,0.963999999999999,2
+"test-metamorphic-diff.R","metamorphic-diff","deseq2 : the feature order does not matter",3,0,FALSE,FALSE,0,0.917000000000002,0.0110000000000001,0.933999999999997,3
+"test-metamorphic-diff.R","metamorphic-diff","deseq2 : sample ids are labels, not data",2,0,FALSE,FALSE,0,0.933,0.00999999999999979,0.945,2
+"test-metamorphic-diff.R","metamorphic-diff","deseq2 : a duplicated feature gets its twin's statistics",2,0,FALSE,FALSE,0,0.443999999999996,0.00400000000000045,0.451,2
+"test-metamorphic-diff.R","metamorphic-diff","deseq2 : run_diff leaves significance unanswered",1,0,FALSE,FALSE,0,0.446999999999996,0.00499999999999989,0.453000000000003,1
+"test-metamorphic-diff.R","metamorphic-diff","edger : swapping control and case negates the effect and keeps p",4,0,FALSE,FALSE,0,0.0539999999999949,0.00300000000000011,0.0560000000000045,4
+"test-metamorphic-diff.R","metamorphic-diff","edger : the sample order does not matter",2,0,FALSE,FALSE,0,0.0660000000000025,0.00199999999999978,0.0679999999999978,2
+"test-metamorphic-diff.R","metamorphic-diff","edger : the feature order does not matter",3,0,FALSE,FALSE,0,0.0530000000000044,0.00199999999999978,0.0570000000000022,3
+"test-metamorphic-diff.R","metamorphic-diff","edger : sample ids are labels, not data",2,0,FALSE,FALSE,0,0.0529999999999973,0.00199999999999978,0.0570000000000022,2
+"test-metamorphic-diff.R","metamorphic-diff","edger : a duplicated feature gets its twin's statistics",2,0,FALSE,FALSE,0,0.0279999999999987,0.00200000000000067,0.0309999999999988,2
+"test-metamorphic-diff.R","metamorphic-diff","edger : run_diff leaves significance unanswered",1,0,FALSE,FALSE,0,0.027000000000001,0.000999999999999446,0.0289999999999964,1
+"test-metamorphic-diff.R","metamorphic-diff","ttest : a constant added to every value changes nothing",2,0,FALSE,FALSE,0,0.0210000000000008,0.00100000000000033,0.0219999999999985,2
+"test-metamorphic-diff.R","metamorphic-diff","ttest : scaling every value scales the effect and keeps p",2,0,FALSE,FALSE,0,0.019999999999996,0,0.0210000000000008,2
+"test-metamorphic-diff.R","metamorphic-diff","lm : a constant added to every value changes nothing",2,0,FALSE,FALSE,0,0.106000000000002,0.00100000000000033,0.107000000000006,2
+"test-metamorphic-diff.R","metamorphic-diff","lm : scaling every value scales the effect and keeps p",2,0,FALSE,FALSE,0,0.117000000000004,0.00199999999999978,0.119999999999997,2
+"test-metamorphic-diff.R","metamorphic-diff","limma : a constant added to every value changes nothing",2,0,FALSE,FALSE,0,0.0110000000000028,0.00100000000000033,0.0129999999999981,2
+"test-metamorphic-diff.R","metamorphic-diff","limma : scaling every value scales the effect and keeps p",2,0,FALSE,FALSE,0,0.0119999999999933,0.000999999999999446,0.0130000000000052,2
+"test-metamorphic-diff.R","metamorphic-diff","filter_diff_results keeps exactly the rows inside the cutoffs",18,0,FALSE,FALSE,0,0.0210000000000008,0.00199999999999978,0.0230000000000032,18
+"test-metamorphic-diff.R","metamorphic-diff","a looser cutoff admits a superset",5,0,FALSE,FALSE,0,0.0140000000000029,0.00100000000000033,0.0159999999999982,5
+"test-metamorphic-diff.R","metamorphic-diff","the volcano colours exactly the points the thresholds admit",4,0,FALSE,FALSE,0,0.0879999999999939,0.00199999999999978,0.0910000000000011,4
+"test-metamorphic-diff.R","metamorphic-diff","with no threshold the volcano colours nothing",1,0,FALSE,FALSE,0,0.0280000000000058,0,0.0280000000000058,1
+"test-metamorphic-diff.R","metamorphic-diff","the MA plot agrees with the volcano about who is significant",1,0,FALSE,FALSE,0,0.046999999999997,0,0.0480000000000018,1
+"test-metamorphic-diff.R","metamorphic-diff","GSEA ignores the feature thresholds ORA obeys",4,0,FALSE,FALSE,0,0.134999999999998,0.191,0.372999999999998,4
+"test-metamorphic-diff.R","metamorphic-diff","constant features neither break the PCA nor change it",4,0,FALSE,FALSE,0,0.00500000000000256,0.00199999999999978,0.00799999999999557,4
+"test-metamorphic-diff.R","metamorphic-diff","too few varying features is an error that says how many",1,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999778,1
+"test-metamorphic-diff.R","metamorphic-diff","applicable_diff_methods is decided by the assay, not the matrix",4,0,FALSE,FALSE,0,0.00400000000000489,0.00199999999999978,0.00600000000000023,4
+"test-numeric-edge.R","numeric-edge","ttest with one-sample-per-group still produces a bundle",1,0,FALSE,FALSE,0,0.00499999999999545,0.00199999999999978,0.00600000000000023,1
+"test-numeric-edge.R","numeric-edge","ttest with unequal group sizes works",2,0,FALSE,FALSE,0,0.00999999999999801,0.00399999999999956,0.0129999999999981,2
+"test-numeric-edge.R","numeric-edge","ttest p-values are bounded in [0, 1]",1,0,FALSE,FALSE,0,0.00500000000000256,0.00200000000000067,0.0069999999999979,1
+"test-numeric-edge.R","numeric-edge","ttest adj_p_value >= p_value (BH monotonicity)",1,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.007000000000005,1
+"test-numeric-edge.R","numeric-edge","ttest with no real signal yields uniformly-distributed p-values",1,0,FALSE,FALSE,0,0.0130000000000052,0.00499999999999989,0.0180000000000007,1
+"test-numeric-edge.R","numeric-edge","ttest detects strong signal",1,0,FALSE,FALSE,0,0.00499999999999545,0.00199999999999978,0.0069999999999979,1
+"test-numeric-edge.R","numeric-edge","limma backend returns a bundle",1,0,FALSE,FALSE,0,0.00600000000000023,0.00200000000000067,0.00799999999999557,1
+"test-numeric-edge.R","numeric-edge","limma produces standardized output columns",1,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.007000000000005,1
+"test-numeric-edge.R","numeric-edge","limma with single feature works",1,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.0069999999999979,1
+"test-numeric-edge.R","numeric-edge","deseq2 backend returns a bundle for raw counts",2,0,FALSE,FALSE,1,0.448999999999998,0.0449999999999999,0.494999999999997,1
+"test-numeric-edge.R","numeric-edge","deseq2 effect column is log2FC",1,0,FALSE,FALSE,0,0.472000000000001,0.00800000000000001,0.481999999999999,1
+"test-numeric-edge.R","numeric-edge","deseq2 errors on non-integer matrix",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00400000000000489,1
+"test-numeric-edge.R","numeric-edge","edger backend returns a bundle for counts",1,0,FALSE,FALSE,0,0.0210000000000008,0.000999999999999446,0.0219999999999985,1
+"test-numeric-edge.R","numeric-edge","edger rejects non-counts omics_type",1,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00399999999999778,1
+"test-numeric-edge.R","numeric-edge","lm backend supports continuous covariate",1,0,FALSE,FALSE,0,0.0110000000000028,0.00100000000000033,0.0120000000000005,1
+"test-numeric-edge.R","numeric-edge","lm backend errors when continuous_col missing",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-numeric-edge.R","numeric-edge","lm backend handles character-coerced numeric column (silent coerce or error)",1,0,FALSE,FALSE,0,0.0110000000000028,0.000999999999999446,0.0109999999999957,1
+"test-numeric-edge.R","numeric-edge","run_enrichment ORA p-values are bounded in [0, 1]",1,0,FALSE,FALSE,0,0.0069999999999979,0.00100000000000033,0.007000000000005,1
+"test-numeric-edge.R","numeric-edge","run_enrichment ORA adj_p >= p (BH monotonicity)",1,0,FALSE,FALSE,0,0.0069999999999979,0,0.0069999999999979,1
+"test-numeric-edge.R","numeric-edge","make_ranked_features returns sorted vector by default",2,0,FALSE,FALSE,0,0.00600000000000023,0,0.007000000000005,2
+"test-numeric-edge.R","numeric-edge","make_ranked_features has unique names",1,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.00600000000000023,1
+"test-numeric-edge.R","numeric-edge","winsorize_counts preserves dimensions",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00200000000000244,1
+"test-numeric-edge.R","numeric-edge","winsorize_counts clips extreme values",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-numeric-edge.R","numeric-edge","winsorize_counts with k = 0 always clips",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-numeric-edge.R","numeric-edge","winsorize_counts result includes stats per feature",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00200000000000244,1
+"test-numeric-edge.R","numeric-edge","winsorize_counts preserves integer-ness when input is integer",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000244,1
+"test-numeric-edge.R","numeric-edge","run_integration concordance returns integration_df with rows",1,0,FALSE,FALSE,0,0.00999999999999801,0.00100000000000033,0.0110000000000028,1
+"test-numeric-edge.R","numeric-edge","run_integration concordance produces stable shape",1,0,FALSE,FALSE,0,0.0129999999999981,0.000999999999999446,0.0149999999999935,1
+"test-numeric-edge.R","numeric-edge","run_integration correlation method works",1,0,FALSE,FALSE,0,0.00900000000000034,0.00100000000000033,0.0100000000000051,1
+"test-omics_input-edge.R","omics_input-edge","omics_input creates a valid object from matrix input",4,0,FALSE,FALSE,0,0.00399999999999778,0.00199999999999978,0.00499999999999545,4
+"test-omics_input-edge.R","omics_input-edge","omics_input works with rnaseq type",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00199999999999534,2
+"test-omics_input-edge.R","omics_input-edge","omics_input stores raw_mat when provided",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00199999999999534,1
+"test-omics_input-edge.R","omics_input-edge","omics_input stores normalized_mat when provided",1,0,FALSE,FALSE,0,0.000999999999997669,0.000999999999999446,0.000999999999997669,1
+"test-omics_input-edge.R","omics_input-edge","omics_input stores raw_object",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000244,1
+"test-omics_input-edge.R","omics_input-edge","omics_input errors when expr_mat has no colnames",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-omics_input-edge.R","omics_input-edge","omics_input errors when meta has no rownames",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-omics_input-edge.R","omics_input-edge","omics_input errors when feature_df lacks feature_id column",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-omics_input-edge.R","omics_input-edge","omics_input errors when samples in expr_mat not in meta",1,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,1
+"test-omics_input-edge.R","omics_input-edge","omics_input errors when features not in feature_df",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00200000000000244,1
+"test-omics_input-edge.R","omics_input-edge","omics_input allows custom omics_type strings but warns",3,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00399999999999778,3
+"test-omics_input-edge.R","omics_input-edge","omics_input rejects a missing or empty omics_type",2,0,FALSE,FALSE,0,0.00399999999999778,0.000999999999999446,0.00399999999999778,2
+"test-omics_input-edge.R","omics_input-edge","supported omics types validate without a warning",2,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000244,2
+"test-omics_input-edge.R","omics_input-edge","omics_input keeps rownames matching column order",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,2
+"test-omics_input-edge.R","omics_input-edge","is_omics_input returns TRUE for omics_input objects",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00200000000000244,1
+"test-omics_input-edge.R","omics_input-edge","is_omics_input returns FALSE for other objects",3,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,3
+"test-omics_input-edge.R","omics_input-edge","new_omics_input creates without validation",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00100000000000477,1
+"test-omics_input-edge.R","omics_input-edge","print.omics_input prints without error",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00200000000000244,2
+"test-omics_input.R","omics_input","omics_input() constructs and validates",4,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00499999999999545,4
+"test-omics_input.R","omics_input","omics_input() rejects mismatched dimensions",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00199999999999534,1
+"test-omics_input.R","omics_input","omics_input() requires feature_id column",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-omics_input.R","omics_input","subset_omics() handles samples, features, or both",5,0,FALSE,FALSE,0,0.00799999999999557,0.00199999999999978,0.00900000000000034,5
+"test-omics_input.R","omics_input","subset_omics() with both NULL returns equivalent input",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000244,1
+"test-omics_input.R","omics_input","subset_omics_samples / features error on no overlap",2,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00399999999999778,2
+"test-omics_input.R","omics_input","drop_meta_na removes rows with NA in target column",2,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,2
+"test-omics_input.R","omics_input","select_complete_cases applies missingness cutoff",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,3
+"test-omics_project.R","omics_project","omics_project() constructs an empty project",4,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999778,4
+"test-omics_project.R","omics_project","omics_project() accepts pre-populated experiments",1,0,FALSE,FALSE,0,0.00100000000000477,0.000999999999999446,0.00300000000000011,1
+"test-omics_project.R","omics_project","omics_project() rejects unnamed or non-input entries",2,0,FALSE,FALSE,0,0.00399999999999778,0,0.00400000000000489,2
+"test-omics_project.R","omics_project","add_experiment / remove_experiment round-trip",4,0,FALSE,FALSE,0,0.00499999999999545,0.000999999999999446,0.0069999999999979,4
+"test-omics_project.R","omics_project","sample_link is validated against experiment tags",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-omics_project.R","omics_project","sample_link missing required cols errors",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,1
+"test-omp-corpus.R","omp-corpus","the corpus holds a file written under the current schema version",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00200000000000244,1
+"test-omp-corpus.R","omp-corpus","still opens: schema-1.0.0__omicsCore-0.0.0.9000.omp",6,0,FALSE,FALSE,0,0.00499999999999545,0.00199999999999978,0.00600000000000023,6
+"test-omp-corpus.R","omp-corpus","its analyses are still usable: schema-1.0.0__omicsCore-0.0.0.9000.omp",4,0,FALSE,FALSE,0,0.036999999999999,0.00300000000000011,0.0409999999999968,4
+"test-omp-failure-modes.R","omp-failure-modes","a truncated file fails with a message, not a crash",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00399999999999778,2
+"test-omp-failure-modes.R","omp-failure-modes","a file that is not qs2 at all is refused",2,0,FALSE,FALSE,0,0.00500000000000256,0.00100000000000033,0.00600000000000023,2
+"test-omp-failure-modes.R","omp-failure-modes","a qs2 file whose payload is not a project is refused by name",2,0,FALSE,FALSE,0,0.00500000000000256,0.00199999999999978,0.007000000000005,2
+"test-omp-failure-modes.R","omp-failure-modes","an empty file and a missing file are told apart",2,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00500000000000256,2
+"test-omp-failure-modes.R","omp-failure-modes","saving never leaves a partial file where a good one was",3,0,FALSE,FALSE,0,0.00500000000000256,0.000999999999999446,0.00600000000000023,3
+"test-output-p-cutoff.R","output-p-cutoff","both backends take an output bound separate from p_cutoff",3,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00400000000000489,3
+"test-output-p-cutoff.R","output-p-cutoff","it defaults to p_cutoff, so old callers are unaffected",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,3
+"test-output-p-cutoff.R","output-p-cutoff","filter_enrich_results reads whichever p it is told to",3,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00500000000000256,3
+"test-output-p-cutoff.R","output-p-cutoff","both enrichment types record how much of the table they hold",6,0,FALSE,FALSE,0,0.118000000000002,0.165999999999999,0.332000000000001,6
+"test-pathological-values.R","pathological-values","an infinite intensity is treated as missing, and the bundle says so",12,0,FALSE,FALSE,0,0.0450000000000017,0.0150000000000006,0.0589999999999975,12
+"test-pathological-values.R","pathological-values","a clean matrix carries no such warning",1,0,FALSE,FALSE,0,0.0109999999999957,0.00299999999999923,0.0139999999999958,1
+"test-pathological-values.R","pathological-values","NaN is missing already, and needs no warning",4,0,FALSE,FALSE,0,0.0130000000000052,0.00399999999999956,0.0169999999999959,4
+"test-pathological-values.R","pathological-values","a feature with no values, a constant feature and a zero row still yield a table",10,0,FALSE,FALSE,0,0.0249999999999986,0.00900000000000034,0.0339999999999989,10
+"test-pathological-values.R","pathological-values","a sample with no values does not stop QC, the PCA or the test",5,0,FALSE,FALSE,0,0.0450000000000017,0.0140000000000002,0.0589999999999975,5
+"test-pathological-values.R","pathological-values","a value at the edge of double precision is carried, not crashed on",4,0,FALSE,FALSE,0,0.0519999999999996,0.0100000000000007,0.0619999999999976,4
+"test-pathological-values.R","pathological-values","a feature observed in one group only gets no estimate, not an error",8,0,FALSE,FALSE,0,0.0389999999999944,0.00999999999999979,0.0500000000000043,8
+"test-pathological-values.R","pathological-values","infinite, negative and missing counts are refused by count",12,0,FALSE,FALSE,0,0.0229999999999961,0.00399999999999956,0.027000000000001,12
+"test-pathological-values.R","pathological-values","a sample that sequenced nothing is named",2,0,FALSE,FALSE,0,0.00500000000000256,0,0.00500000000000256,2
+"test-pathological-values.R","pathological-values","an empty sample outside the contrast does not block it",6,0,FALSE,FALSE,0,0.478000000000002,0.0199999999999996,0.499000000000002,6
+"test-pathological-values.R","pathological-values","a count past the integer range is refused for DESeq2 and carried by edgeR",4,0,FALSE,FALSE,0,0.0330000000000013,0.00199999999999978,0.0349999999999966,4
+"test-pathological-values.R","pathological-values","a fractional count is refused by DESeq2 in words and accepted by edgeR",4,0,FALSE,FALSE,0,0.0339999999999989,0.00300000000000011,0.0379999999999967,4
+"test-pathological-values.R","pathological-values","a gene with no counts, or none in one group, gets a row and no error",8,0,FALSE,FALSE,0,0.544000000000004,0.0120000000000005,0.562000000000005,8
+"test-pathological-values.R","pathological-values","QC and depth still run on every one of these matrices",3,0,FALSE,FALSE,0,0.00399999999999778,0.000999999999999446,0.00499999999999545,3
+"test-pca-constant-features.R","pca-constant-features","a scaled prcomp is what fails on constant features",1,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,1
+"test-pca-constant-features.R","pca-constant-features","pca_over_samples runs anyway and says how many it dropped",3,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,3
+"test-pca-constant-features.R","pca-constant-features","nothing is dropped when every feature varies",1,0,FALSE,FALSE,0,0.000999999999997669,0.000999999999999446,0.00199999999999534,1
+"test-pca-constant-features.R","pca-constant-features","a matrix with nothing left to decompose says so",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-pca-constant-features.R","pca-constant-features","row_variance agrees with var() on which rows are constant",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00199999999999534,1
+"test-pca-constant-features.R","pca-constant-features","an all-NA row counts as constant rather than erroring",2,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00300000000000011,2
+"test-perf-budget.R","perf-budget","a 63k x 258 tab-separated counts file imports within a minute",1,0,TRUE,FALSE,0,0.00100000000000477,0,0.000999999999997669,0
+"test-perf-budget.R","perf-budget","PCA over 63k genes, a fifth of them constant, takes seconds not minutes",1,0,TRUE,FALSE,0,0.000999999999997669,0,0.000999999999997669,0
+"test-perf-budget.R","perf-budget","re-masking a 63k-row result at a new threshold is instant",1,0,TRUE,FALSE,0,0,0,0.00100000000000477,0
+"test-perf-budget.R","perf-budget","limma over 20k features and 258 samples fits inside the progress bar",1,0,TRUE,FALSE,0,0,0.00100000000000033,0.000999999999997669,0
+"test-persistence-edge.R","persistence-edge","save_project writes a file and load_project reads it back",4,0,FALSE,FALSE,0,0.00400000000000489,0.00199999999999978,0.00500000000000256,4
+"test-persistence-edge.R","persistence-edge","save_project overwrites existing file with overwrite=TRUE",1,0,FALSE,FALSE,0,0.00499999999999545,0.00100000000000033,0.00500000000000256,1
+"test-persistence-edge.R","persistence-edge","save_project errors when file exists and overwrite=FALSE",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00399999999999778,1
+"test-persistence-edge.R","persistence-edge","save_project errors on non-omics_project",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-persistence-edge.R","persistence-edge","load_project errors on nonexistent file",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-persistence-edge.R","persistence-edge","load_project errors on invalid RDS",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00299999999999301,1
+"test-persistence-edge.R","persistence-edge","save/load round-trip preserves experiment data",2,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00400000000000489,2
+"test-persistence-edge.R","persistence-edge","save/load round-trip preserves metadata",2,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,2
+"test-persistence-edge.R","persistence-edge","save/load round-trip preserves sample_link",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00400000000000489,2
+"test-persistence-edge.R","persistence-edge","export_bundle writes tabular files to dir",1,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.0069999999999979,1
+"test-persistence-edge.R","persistence-edge","export_bundle creates parent directories if needed",1,0,FALSE,FALSE,0,0.00900000000000034,0.00199999999999978,0.00900000000000034,1
+"test-persistence-edge.R","persistence-edge","export_bundle errors on non-analysis_bundle",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-persistence-edge.R","persistence-edge","export_report HTML creates a file",2,0,FALSE,FALSE,0,0.0499999999999972,0.0179999999999998,0.163999999999994,2
+"test-persistence-edge.R","persistence-edge","export_report HTML with bundles includes analysis sections",1,0,FALSE,FALSE,0,0.421999999999997,0.0300000000000002,0.587000000000003,1
+"test-persistence-edge.R","persistence-edge","export_report errors on non-omics_project",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-persistence-edge.R","persistence-edge","export_report errors on invalid format",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-persistence-edge.R","persistence-edge","export_report accepts overwrite argument",1,0,FALSE,FALSE,0,0.101000000000006,0.0360000000000005,0.347999999999999,1
+"test-persistence-round-trip.R","persistence-round-trip","the import fingerprint survives a save/load cycle",1,0,FALSE,FALSE,0,0.00200000000000244,0.00199999999999978,0.00300000000000011,1
+"test-persistence-round-trip.R","persistence-round-trip","the archived file path survives a save/load cycle",1,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.0069999999999979,1
+"test-persistence-round-trip.R","persistence-round-trip","a project saved before these fields existed still loads",3,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00600000000000023,3
+"test-persistence-round-trip.R","persistence-round-trip","bundles survive well enough to export a script from a restored project",4,0,FALSE,FALSE,0,0.00800000000000267,0.00199999999999978,0.0109999999999957,4
+"test-persistence-round-trip.R","persistence-round-trip","a restored bundle still plots",1,0,FALSE,FALSE,0,0.0230000000000032,0.00199999999999978,0.0239999999999938,1
+"test-persistence-round-trip.R","persistence-round-trip","save_project refuses to clobber unless told to",2,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00399999999999778,2
+"test-persistence-round-trip.R","persistence-round-trip","an interrupted save leaves the previous file intact",2,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00500000000000256,2
+"test-persistence.R","persistence","save_project requires an omics_project",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-persistence.R","persistence","save_project / load_project round-trips a project",6,0,FALSE,FALSE,0,0.00500000000000256,0.00200000000000067,0.0069999999999979,6
+"test-persistence.R","persistence","save_project refuses to overwrite by default",2,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.00799999999999557,2
+"test-persistence.R","persistence","load_project rejects non-omp files",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00400000000000489,1
+"test-persistence.R","persistence","load_project rejects future schema versions",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-persistence.R","persistence","load_project errors when file is missing",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-plot-boundaries.R","plot-boundaries","a diff result with no rows still draws a volcano",2,0,FALSE,FALSE,0,0.0519999999999996,0.00100000000000033,0.0530000000000044,2
+"test-plot-boundaries.R","plot-boundaries","a single-feature result draws",1,0,FALSE,FALSE,0,0.0230000000000032,0,0.0229999999999961,1
+"test-plot-boundaries.R","plot-boundaries","an all-NA effect column does not stop the volcano",1,0,FALSE,FALSE,0,0.0219999999999985,0,0.0219999999999985,1
+"test-plot-boundaries.R","plot-boundaries","an all-NA p column does not stop the volcano",1,0,FALSE,FALSE,0,0.0200000000000031,0.000999999999999446,0.0210000000000008,1
+"test-plot-boundaries.R","plot-boundaries","explicit NULL thresholds mean 'draw no rule', not an error",3,0,FALSE,FALSE,0,0.054000000000002,0.00100000000000033,0.0549999999999997,3
+"test-plot-boundaries.R","plot-boundaries","NULL thresholds fall back to the analysis's own mask",1,0,FALSE,FALSE,0,0.0350000000000037,0.00100000000000033,0.0360000000000014,1
+"test-plot-boundaries.R","plot-boundaries","a threshold nothing passes colours nothing significant",1,0,FALSE,FALSE,0,0.0419999999999945,0.00100000000000033,0.0429999999999993,1
+"test-plot-boundaries.R","plot-boundaries","top_n larger than the result is not an error",1,0,FALSE,FALSE,0,0.0219999999999985,0.000999999999999446,0.0230000000000032,1
+"test-plot-boundaries.R","plot-boundaries","top_n of zero draws no labels",1,0,FALSE,FALSE,0,0.0210000000000008,0,0.0210000000000008,1
+"test-plot-boundaries.R","plot-boundaries","label_features naming nothing present is not an error",1,0,FALSE,FALSE,0,0.036999999999999,0,0.036999999999999,1
+"test-plot-boundaries.R","plot-boundaries","an enrichment result without an effect column falls back",1,0,FALSE,FALSE,0,0.0189999999999984,0,0.0189999999999984,1
+"test-plot-boundaries.R","plot-boundaries","an enrichment result with no rows returns an empty plot",1,0,FALSE,FALSE,0,0.00799999999999557,0.000999999999999446,0.00900000000000034,1
+"test-plot-boundaries.R","plot-boundaries","the integration views reject a method they cannot draw",2,0,FALSE,FALSE,0,0.00500000000000256,0.00100000000000033,0.00500000000000256,2
+"test-plot-boundaries.R","plot-boundaries","an integration bundle with no rows returns an empty plot",1,0,FALSE,FALSE,0,0.00900000000000034,0,0.00900000000000034,1
+"test-plot-boundaries.R","plot-boundaries","the default cut separates the features that clear it",4,0,FALSE,FALSE,0,0.0429999999999993,0.000999999999999446,0.044000000000004,4
+"test-plot-boundaries.R","plot-boundaries","an effect threshold narrows the set further",1,0,FALSE,FALSE,0,0.080999999999996,0.00199999999999978,0.0820000000000007,1
+"test-plot-boundaries.R","plot-boundaries","both thresholds NULL defers to the stored column",1,0,FALSE,FALSE,0,0.0370000000000061,0.00100000000000033,0.0390000000000015,1
+"test-plot-boundaries.R","plot-boundaries","the figure states the cut it was drawn at",3,0,FALSE,FALSE,0,0.225000000000001,0.00299999999999923,0.228999999999999,3
+"test-plot-boundaries.R","plot-boundaries","run_diff leaves significance unanswered rather than answering FALSE",2,0,FALSE,FALSE,0,0.0069999999999979,0.00100000000000033,0.00800000000000267,2
+"test-plot-boundaries.R","plot-boundaries","filter_diff_results still answers TRUE on what it keeps",2,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.007000000000005,2
+"test-plot-boundaries.R","plot-boundaries","the MA plot decides significance the same way the volcano does",2,0,FALSE,FALSE,0,0.114999999999995,0.00300000000000011,0.119999999999997,2
+"test-plot-boundaries.R","plot-boundaries","the MA plot honours a supplied threshold",1,0,FALSE,FALSE,0,0.0960000000000036,0.000999999999999446,0.097999999999999,1
+"test-plot-edge.R","plot-edge","plot_volcano returns a ggplot for a standard bundle",1,0,FALSE,FALSE,0,0.0219999999999985,0,0.0229999999999961,1
+"test-plot-edge.R","plot-edge","plot_volcano respects top_n = 0",1,0,FALSE,FALSE,0,0.0250000000000057,0,0.0260000000000034,1
+"test-plot-edge.R","plot-edge","plot_volcano respects top_n larger than n_features",1,0,FALSE,FALSE,0,0.0209999999999937,0.000999999999999446,0.0219999999999985,1
+"test-plot-edge.R","plot-edge","plot_volcano respects p_basis = 'raw'",1,0,FALSE,FALSE,0,0.0219999999999985,0.00100000000000033,0.0219999999999985,1
+"test-plot-edge.R","plot-edge","plot_volcano errors on invalid p_basis",1,0,FALSE,FALSE,0,0.00600000000000023,0.000999999999999446,0.007000000000005,1
+"test-plot-edge.R","plot-edge","plot_volcano errors on non-bundle",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00200000000000244,1
+"test-plot-edge.R","plot-edge","plot_volcano respects p_threshold",2,0,FALSE,FALSE,0,0.0399999999999991,0,0.0399999999999991,2
+"test-plot-edge.R","plot-edge","plot_volcano respects effect_threshold",2,0,FALSE,FALSE,0,0.0420000000000016,0.000999999999999446,0.0429999999999993,2
+"test-plot-edge.R","plot-edge","plot_volcano label_features highlights known features",1,0,FALSE,FALSE,0,0.0219999999999985,0,0.0229999999999961,1
+"test-plot-edge.R","plot-edge","plot_volcano label_features ignores unknown ids",1,0,FALSE,FALSE,0,0.0559999999999974,0.00199999999999978,0.0579999999999998,1
+"test-plot-edge.R","plot-edge","plot_ma returns a ggplot",1,0,FALSE,FALSE,0,0.0230000000000032,0,0.0229999999999961,1
+"test-plot-edge.R","plot-edge","plot_ma respects top_n = 0",1,0,FALSE,FALSE,0,0.0219999999999985,0.000999999999999446,0.0219999999999985,1
+"test-plot-edge.R","plot-edge","plot_ma errors on non-bundle",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-plot-edge.R","plot-edge","plot_ma handles label_features",1,0,FALSE,FALSE,0,0.0219999999999985,0,0.0220000000000056,1
+"test-plot-edge.R","plot-edge","plot_enrichment renders for a hallmark ORA bundle",1,0,FALSE,FALSE,0,0.0130000000000052,0.00100000000000033,0.0129999999999981,1
+"test-plot-edge.R","plot-edge","plot_enrichment respects view = 'bar'",1,0,FALSE,FALSE,0,0.0129999999999981,0.000999999999999446,0.0130000000000052,1
+"test-plot-edge.R","plot-edge","plot_enrichment respects view = 'gsea_dot' on GSEA bundle",1,0,FALSE,FALSE,0,0.0660000000000025,0.115,0.207000000000001,1
+"test-plot-edge.R","plot-edge","plot_enrichment errors on invalid view",1,0,FALSE,FALSE,0,0.00800000000000267,0.00399999999999956,0.0120000000000005,1
+"test-plot-edge.R","plot-edge","plot_enrichment errors on invalid p_preference",1,0,FALSE,FALSE,0,0.00800000000000267,0.00199999999999978,0.0109999999999957,1
+"test-plot-edge.R","plot-edge","plot_enrichment errors on non-bundle",1,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00399999999999778,1
+"test-plot-edge.R","plot-edge","plot_enrichment handles p_cutoff = 1",1,0,FALSE,FALSE,0,0.0129999999999981,0.00700000000000056,0.0210000000000008,1
+"test-plot-edge.R","plot-edge","plot_enrichment handles top_n = 0",1,0,FALSE,FALSE,0,0.0139999999999958,0.00499999999999989,0.0180000000000007,1
+"test-plot-edge.R","plot-edge","plot_heatmap works with omics_input directly",1,0,FALSE,FALSE,0,0.00900000000000034,0.00800000000000001,0.0169999999999959,1
+"test-plot-edge.R","plot-edge","plot_heatmap works with diff bundle + input",1,0,FALSE,FALSE,0,0.0109999999999957,0.00700000000000056,0.0169999999999959,1
+"test-plot-edge.R","plot-edge","plot_heatmap with n_top larger than features",1,0,FALSE,FALSE,0,0.00800000000000267,0.00300000000000011,0.00999999999999801,1
+"test-plot-edge.R","plot-edge","plot_heatmap with specific feature list",1,0,FALSE,FALSE,0,0.0069999999999979,0.00199999999999978,0.00900000000000034,1
+"test-plot-edge.R","plot-edge","plot_heatmap errors on invalid scale",1,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00399999999999778,1
+"test-plot-edge.R","plot-edge","plot_heatmap with annotation_cols renders",1,0,FALSE,FALSE,0,0.0129999999999981,0.00400000000000045,0.0180000000000007,1
+"test-plot-edge.R","plot-edge","plot_heatmap with cluster flags disabled",1,0,FALSE,FALSE,0,0.00800000000000267,0.00199999999999978,0.00900000000000034,1
+"test-plot-edge.R","plot-edge","plot_heatmap errors on neither bundle nor input",1,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00399999999999778,1
+"test-plot-edge.R","plot-edge","plot_pca renders with shape_by",1,0,FALSE,FALSE,0,0.0180000000000007,0.00400000000000045,0.0220000000000056,1
+"test-plot-edge.R","plot-edge","plot_pca renders with log2 = TRUE",1,0,FALSE,FALSE,0,0.0179999999999936,0.00399999999999956,0.0219999999999985,1
+"test-plot-edge.R","plot-edge","plot_pca renders with log2 = FALSE",1,0,FALSE,FALSE,0,0.0360000000000014,0.00900000000000034,0.0460000000000065,1
+"test-plot-edge.R","plot-edge","plot_pca handles nonexistent color_by gracefully",1,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00399999999999778,1
+"test-plot-edge.R","plot-edge","plot_pca handles 2-sample input",1,0,FALSE,FALSE,0,0.0180000000000007,0.00399999999999956,0.0219999999999985,1
+"test-plot-edge.R","plot-edge","plot_feature_expression with color_by",1,0,FALSE,FALSE,0,0.0189999999999984,0.00300000000000011,0.0219999999999985,1
+"test-plot-edge.R","plot-edge","plot_feature_expression with many features",1,0,FALSE,FALSE,0,0.019999999999996,0.00400000000000045,0.0240000000000009,1
+"test-plot-edge.R","plot-edge","plot_feature_expression errors on unknown feature",1,0,FALSE,FALSE,0,0.00400000000000489,0.000999999999999446,0.00400000000000489,1
+"test-plot-edge.R","plot-edge","plot_feature_expression errors on unknown group_by",1,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00399999999999068,1
+"test-plot-edge.R","plot-edge","plot_qc view = 'pca' renders",1,0,FALSE,FALSE,0,0.0180000000000007,0.00399999999999956,0.0210000000000008,1
+"test-plot-edge.R","plot-edge","plot_qc view = 'missing' renders",1,0,FALSE,FALSE,0,0.0529999999999973,0.00800000000000001,0.0609999999999928,1
+"test-plot-edge.R","plot-edge","plot_qc view = 'connectivity' renders",1,0,FALSE,FALSE,0,0.0200000000000031,0.00200000000000067,0.0210000000000008,1
+"test-plot-edge.R","plot-edge","plot_qc errors on invalid view",1,0,FALSE,FALSE,0,0.00500000000000256,0,0.00499999999999545,1
+"test-plot-edge.R","plot-edge","plot_qc errors on non-bundle",1,0,FALSE,FALSE,0,0.00199999999999534,0.000999999999999446,0.00199999999999534,1
+"test-plot-edge.R","plot-edge","plot_qc with color_by renders",1,0,FALSE,FALSE,0,0.0159999999999982,0.00100000000000033,0.0169999999999959,1
+"test-plot-edge.R","plot-edge","plot_integration view = 'scatter' renders",1,0,FALSE,FALSE,0,0.027000000000001,0.00100000000000033,0.0279999999999916,1
+"test-plot-edge.R","plot-edge","plot_integration view = 'quadrant' renders",1,0,FALSE,FALSE,0,0.0310000000000059,0.000999999999999446,0.0330000000000013,1
+"test-plot-edge.R","plot-edge","plot_integration view = 'dual_volcano' renders",1,0,FALSE,FALSE,0,0.0300000000000011,0.00100000000000033,0.0309999999999917,1
+"test-plot-edge.R","plot-edge","plot_integration view = 'dotplot' renders",1,0,FALSE,FALSE,0,0.00999999999999801,0.000999999999999446,0.0100000000000051,1
+"test-plot-edge.R","plot-edge","plot_integration errors on invalid view",1,0,FALSE,FALSE,0,0.0260000000000034,0.00100000000000033,0.0260000000000105,1
+"test-plot-edge.R","plot-edge","plot_integration errors on non-bundle",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-plot-edge.R","plot-edge","plot_integration respects top_n = 0",1,0,FALSE,FALSE,0,0.0279999999999987,0,0.0280000000000058,1
+"test-plot-edge.R","plot-edge","plot_integration respects p_cutoff = 1",1,0,FALSE,FALSE,0,0.027000000000001,0.000999999999999446,0.0280000000000058,1
+"test-plot-edge.R","plot-edge","plot_gsea errors on non-bundle",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-plot-edge.R","plot-edge","plot_gsea errors on missing pathway_id",1,0,FALSE,FALSE,0,0.0489999999999995,0.0880000000000001,0.161999999999992,1
+"test-plot-edge.R","plot-edge","plot_gsva_heatmap renders for a gsva bundle",1,0,FALSE,FALSE,0,0.036999999999999,0.0119999999999996,0.0490000000000066,1
+"test-plot-edge.R","plot-edge","plot_gsva_heatmap with pathways subset",1,0,FALSE,FALSE,0,0.0250000000000057,0.00599999999999934,0.0309999999999917,1
+"test-plot-edge.R","plot-edge","plot_gsva_heatmap errors on non-bundle",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00400000000000489,1
+"test-plot-edge.R","plot-edge","plot_gsva_heatmap errors on invalid scale",1,0,FALSE,FALSE,0,0.019999999999996,0.00499999999999989,0.0249999999999915,1
+"test-plot-edge.R","plot-edge","the palette covers every quadrant a concordance plot can emit",3,0,FALSE,FALSE,0,0.00300000000000011,0.00199999999999978,0.00499999999999545,3
+"test-plot-edge.R","plot-edge","plot_volcano re-derives significance from supplied thresholds",3,0,FALSE,FALSE,0,0.088000000000001,0.024,0.113,3
+"test-plot-edge.R","plot-edge","plot_volcano leaves the stored mask alone when not asked",1,0,FALSE,FALSE,0,0.0250000000000057,0.00400000000000045,0.0290000000000106,1
+"test-plot-enrichment-size.R","plot-enrichment-size","GSEA results plot every point despite having no overlap size",1,0,FALSE,FALSE,0,0.0620000000000047,0.00999999999999979,0.0729999999999933,1
+"test-plot-enrichment-size.R","plot-enrichment-size","ORA results still size by overlap",1,0,FALSE,FALSE,0,0.0450000000000017,0.00600000000000023,0.0520000000000067,1
+"test-plot-enrichment-size.R","plot-enrichment-size","points are drawn even when neither size column is usable",1,0,FALSE,FALSE,0,0.0409999999999968,0.000999999999999446,0.0430000000000064,1
+"test-plot-enrichment-size.R","plot-enrichment-size","the size legend is named for the column actually mapped",2,0,FALSE,FALSE,0,0.0409999999999968,0.00100000000000033,0.0429999999999922,2
+"test-plot-enrichment-size.R","plot-enrichment-size","no size scale is added when nothing can be mapped to it",1,0,FALSE,FALSE,0,0.0210000000000008,0.000999999999999446,0.0219999999999914,1
+"test-plot-qc-missing.R","plot-qc-missing","the panel is still a ggplot, so every caller keeps working",2,0,FALSE,FALSE,0,0.0429999999999993,0.000999999999999446,0.0450000000000017,2
+"test-plot-qc-missing.R","plot-qc-missing","samples are ordered worst first",1,0,FALSE,FALSE,0,0.0220000000000056,0.00100000000000033,0.0230000000000103,1
+"test-plot-qc-missing.R","plot-qc-missing","every sample gets a bar when there are few of them",2,0,FALSE,FALSE,0,0.0189999999999984,0.00100000000000033,0.0190000000000055,2
+"test-plot-qc-missing.R","plot-qc-missing","a large cohort keeps every sample, as a ranked curve",2,0,FALSE,FALSE,0,0.0339999999999989,0.00199999999999978,0.0350000000000108,2
+"test-plot-qc-missing.R","plot-qc-missing","the ranked curve names the worst samples in its subtitle",3,0,FALSE,FALSE,0,0.0220000000000056,0.00100000000000033,0.0230000000000103,3
+"test-plot-qc-missing.R","plot-qc-missing","rank 1 is the worst sample",1,0,FALSE,FALSE,0,0.0169999999999959,0.000999999999999446,0.0180000000000007,1
+"test-plot-qc-missing.R","plot-qc-missing","the switch happens at the documented threshold, not near it",2,0,FALSE,FALSE,0,0.0330000000000013,0.00100000000000033,0.034000000000006,2
+"test-plot-qc-missing.R","plot-qc-missing","features are drawn as a density over the possible range",3,0,FALSE,FALSE,0,0.0219999999999985,0.000999999999999446,0.0229999999999961,3
+"test-plot-qc-missing.R","plot-qc-missing","all-complete data does not error on a zero bandwidth",2,0,FALSE,FALSE,0,0.0180000000000007,0.00100000000000033,0.0180000000000007,2
+"test-plot-qc-missing.R","plot-qc-missing","a single feature does not error",1,0,FALSE,FALSE,0,0.0180000000000007,0,0.0190000000000055,1
+"test-plot-qc-missing.R","plot-qc-missing","the axis is anchored at zero and never runs past 100%",4,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00400000000000489,4
+"test-plot-qc-missing.R","plot-qc-missing","an empty or all-NA set of rates still gives a usable range",2,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00200000000000955,2
+"test-plot-qc-missing.R","plot-qc-missing","both panels are given the same range",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00400000000000489,2
+"test-project-edge.R","project-edge","omics_project creates empty project",4,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00500000000000966,4
+"test-project-edge.R","project-edge","omics_project errors on non-string name",3,0,FALSE,FALSE,0,0.00500000000000256,0,0.00500000000000966,3
+"test-project-edge.R","project-edge","omics_project errors when experiments are not named",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-project-edge.R","project-edge","omics_project errors when experiments have duplicate names",1,0,FALSE,FALSE,0,0.00600000000000023,0,0.00600000000000023,1
+"test-project-edge.R","project-edge","omics_project errors when experiments contain non-omics_input",1,0,FALSE,FALSE,0,0.00399999999999778,0.000999999999999446,0.00400000000000489,1
+"test-project-edge.R","project-edge","omics_project accepts valid experiments",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,2
+"test-project-edge.R","project-edge","omics_project stores sample_link when valid",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-project-edge.R","project-edge","omics_project errors when sample_link references unknown tags",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00199999999999534,1
+"test-project-edge.R","project-edge","omics_project errors when feature_link is not a data.frame",1,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,1
+"test-project-edge.R","project-edge","omics_project stores metadata",2,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,2
+"test-project-edge.R","project-edge","omics_project has correct structure fields",2,0,FALSE,FALSE,0,0.00199999999999534,0.000999999999999446,0.00300000000000011,2
+"test-project-edge.R","project-edge","is_omics_project returns TRUE for omics_project objects",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-project-edge.R","project-edge","is_omics_project returns FALSE for other objects",4,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00500000000000966,4
+"test-project-edge.R","project-edge","add_experiment adds a new experiment",3,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,3
+"test-project-edge.R","project-edge","a layer carries the version of what it actually holds",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-project-edge.R","project-edge","add_experiment errors on duplicate tag",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-project-edge.R","project-edge","add_experiment errors on invalid project",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-project-edge.R","project-edge","add_experiment errors on empty tag name",2,0,FALSE,FALSE,0,0.00500000000000256,0,0.00600000000000023,2
+"test-project-edge.R","project-edge","add_experiment errors on non-omics_input",1,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00199999999999534,1
+"test-project-edge.R","project-edge","add_experiment validates the input before adding",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-project-edge.R","project-edge","remove_experiment removes an existing experiment",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999068,3
+"test-project-edge.R","project-edge","remove_experiment errors when tag not found",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-project-edge.R","project-edge","remove_experiment errors on invalid project",1,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00300000000000011,1
+"test-project-edge.R","project-edge","experiment_tags returns character(0) for empty project",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-project-edge.R","project-edge","experiment_tags errors on invalid project",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00199999999999534,1
+"test-project-edge.R","project-edge","print.omics_project does not error",4,0,FALSE,FALSE,0,0.00600000000000023,0.000999999999999446,0.00699999999999079,4
+"test-qc-depth.R","qc-depth","qc_depth reports library size and detection per sample",4,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00500000000000966,4
+"test-qc-depth.R","qc-depth","a shallow library is flagged against the median, not a constant",2,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00399999999999068,2
+"test-qc-depth.R","qc-depth","an even cohort flags nothing",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00100000000000477,1
+"test-qc-depth.R","qc-depth","detection counts signal, whether absence is written 0 or NA",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,2
+"test-qc-depth.R","qc-depth","run_qc carries a depth summary for both modalities",2,0,FALSE,FALSE,0,0.00500000000000256,0.000999999999999446,0.00600000000000023,2
+"test-qc-depth.R","qc-depth","the depth view draws, and refuses a bundle that has none",2,0,FALSE,FALSE,0,0.0390000000000015,0.00100000000000033,0.0400000000000063,2
+"test-qc-edge.R","qc-edge","qc_missingness returns complete structure",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,2
+"test-qc-edge.R","qc-edge","qc_missingness with no NAs flags nothing",4,0,FALSE,FALSE,0,0.00900000000000034,0.00100000000000033,0.0100000000000051,4
+"test-qc-edge.R","qc-edge","qc_missingness flags samples above cutoff",1,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00300000000000011,1
+"test-qc-edge.R","qc-edge","qc_missingness flags features above cutoff",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00200000000000955,1
+"test-qc-edge.R","qc-edge","qc_missingness with NULL sample cutoff leaves samples unflagged",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000955,1
+"test-qc-edge.R","qc-edge","qc_missingness settings echo thresholds",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,2
+"test-qc-edge.R","qc-edge","qc_missingness metrics are within [0, 1]",4,0,FALSE,FALSE,0,0.00499999999999545,0.00100000000000033,0.00499999999999545,4
+"test-qc-edge.R","qc-edge","qc_missingness validates input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-qc-edge.R","qc-edge","qc_outliers pca returns expected structure",3,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00399999999999068,3
+"test-qc-edge.R","qc-edge","qc_outliers pca with default threshold finds few outliers",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,1
+"test-qc-edge.R","qc-edge","qc_outliers pca with tight threshold finds more outliers",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000955,1
+"test-qc-edge.R","qc-edge","qc_outliers connectivity returns expected structure",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,2
+"test-qc-edge.R","qc-edge","qc_outliers connectivity with sd=3 finds few outliers in random data",1,0,FALSE,FALSE,0,0.000999999999997669,0.000999999999999446,0.00200000000000955,1
+"test-qc-edge.R","qc-edge","qc_outliers iqr returns expected structure",2,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,2
+"test-qc-edge.R","qc-edge","qc_outliers iqr works with different k multiplier",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00199999999999534,1
+"test-qc-edge.R","qc-edge","qc_outliers with multiple methods returns union of flags",3,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,3
+"test-qc-edge.R","qc-edge","qc_outliers multi-method stats has method column",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-qc-edge.R","qc-edge","qc_outliers validates method",1,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999068,1
+"test-qc-edge.R","qc-edge","qc_outliers validates input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-qc-edge.R","qc-edge","qc_outliers handles data with NAs via mean imputation",2,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,2
+"test-qc-edge.R","qc-edge","qc_outliers on single sample errors for pca",1,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,1
+"test-qc-edge.R","qc-edge","qc_outliers on single sample works for connectivity",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00400000000000489,1
+"test-qc-edge.R","qc-edge","qc_outliers on single sample works for iqr",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00300000000000011,1
+"test-qc.R","qc","qc_missingness returns matched sample / feature frames",5,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00600000000000023,5
+"test-qc.R","qc","qc_missingness flags features above the cutoff",1,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00600000000000023,1
+"test-qc.R","qc","qc_outliers iqr method flags extreme samples",2,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00300000000000011,2
+"test-qc.R","qc","qc_outliers pca runs and returns z-scores",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,2
+"test-qc.R","qc","qc_outliers connectivity returns correlation-based stats",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000955,1
+"test-qc.R","qc","qc_outliers with multiple methods unions the flags",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,2
+"test-qc.R","qc","impute_matrix passes through when method='none'",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.000999999999990564,1
+"test-qc.R","qc","impute_matrix min replaces NA with row min",3,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,3
+"test-qc.R","qc","impute_matrix min fills with the row minimum",2,0,FALSE,FALSE,0,0.00199999999999534,0.000999999999999446,0.00300000000000011,2
+"test-qc.R","qc","winsorize_counts clips per-gene extremes",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999068,3
+"test-qc.R","qc","low_expression_features keeps a feature seen often enough",4,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,4
+"test-qc.R","qc","run_qc filters low-expression features on raw counts by default",5,0,FALSE,FALSE,0,0.00500000000000256,0.00100000000000033,0.00600000000000023,5
+"test-qc.R","qc","run_qc leaves non-count layers alone",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,2
+"test-qc.R","qc","run_qc returns an analysis_bundle with the expected slots",4,0,FALSE,FALSE,0,0.00500000000000256,0.000999999999999446,0.00600000000000023,4
+"test-qc.R","qc","run_qc removes flagged samples and features",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,2
+"test-qc.R","qc","run_qc with impute_method='min' fills NAs in cleaned input",2,0,FALSE,FALSE,0,0.00399999999999778,0.00100000000000033,0.00399999999999068,2
+"test-qc.R","qc","run_qc errors when filters wipe out the input",1,0,FALSE,FALSE,0,0.00399999999999778,0,0.00400000000000489,1
+"test-qc.R","qc","plot_qc returns ggplot objects for each view",4,0,FALSE,FALSE,0,0.0910000000000011,0.00100000000000033,0.0919999999999987,4
+"test-qc.R","qc","plot_qc 'imputation' errors when no imputation was run",1,0,FALSE,FALSE,0,0.0069999999999979,0.000999999999999446,0.007000000000005,1
+"test-read-omics.R","read-omics","new_import_report builds the expected shape",6,0,FALSE,FALSE,0,0.00500000000000256,0.00100000000000033,0.00500000000000966,6
+"test-read-omics.R","read-omics","new_import_report coerces partial sheets to the canonical schema",2,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00200000000000955,2
+"test-read-omics.R","read-omics","print.ImportReport works without erroring",3,0,FALSE,FALSE,0,0.00799999999999557,0.00100000000000033,0.0099999999999909,3
+"test-read-omics.R","read-omics","classify_sheet_role detects a numeric matrix",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,2
+"test-read-omics.R","read-omics","classify_sheet_role detects metadata by column hints",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-read-omics.R","read-omics","classify_sheet_role detects a feature annotation table",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-read-omics.R","read-omics","classify_sheet_role returns unknown for empty input",2,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00200000000000955,2
+"test-read-omics.R","read-omics","detect_orientation favours feature-like row labels",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000955,1
+"test-read-omics.R","read-omics","detect_id_columns flags UniProt-shaped IDs",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,2
+"test-read-omics.R","read-omics","detect_id_columns flags Ensembl-shaped IDs",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,2
+"test-read-omics.R","read-omics","read_omics reads an Excel workbook and returns input + report",6,0,FALSE,FALSE,0,0.0319999999999965,0.0129999999999999,0.0450000000000017,6
+"test-read-omics.R","read-omics","read_omics ImportReport carries one row per sheet",4,0,FALSE,FALSE,0,0.0519999999999996,0.0120000000000005,0.063999999999993,4
+"test-read-omics.R","read-omics","read_omics returns input = NULL when omics_type is missing",2,0,FALSE,FALSE,0,0.0319999999999965,0.0119999999999996,0.0439999999999969,2
+"test-read-omics.R","read-omics","read_omics still produces a report with no metadata sheet",2,0,FALSE,FALSE,0,0.0230000000000032,0.00900000000000034,0.0309999999999917,2
+"test-read-omics.R","read-omics","read_omics reads a TSV matrix file",3,0,FALSE,FALSE,0,0.00600000000000023,0.000999999999999446,0.00600000000000023,3
+"test-read-omics.R","read-omics","read_omics passes an omics_input through unchanged",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999068,3
+"test-read-omics.R","read-omics","read_omics RDS path tolerates a bare data.frame",2,0,FALSE,FALSE,0,0.00399999999999778,0,0.00400000000000489,2
+"test-read-omics.R","read-omics","read_omics rejects nonexistent paths",1,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,1
+"test-read-omics.R","read-omics","read_omics rejects unsupported extensions",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-read-omics.R","read-omics","read_omics flags an empty workbook gracefully",2,0,FALSE,FALSE,0,0.0120000000000005,0.00800000000000001,0.0190000000000055,2
+"test-read-omics.R","read-omics","a tab-separated file named .xls is read as text, not Excel",3,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00499999999999545,3
+"test-read-omics.R","read-omics","a real xlsx is still detected as Excel",2,0,FALSE,FALSE,0,0.0069999999999979,0.00499999999999989,0.0109999999999957,2
+"test-read-omics.R","read-omics","detect_delimiter picks the delimiter the header actually uses",4,0,FALSE,FALSE,0,0.00500000000000256,0.00199999999999978,0.00600000000000023,4
+"test-read-omics.R","read-omics","apostrophes and # in annotation columns do not eat rows",2,0,FALSE,FALSE,0,0.0069999999999979,0.00100000000000033,0.00800000000000978,2
+"test-read-omics.R","read-omics","default read.table quoting would have lost those rows",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,2
+"test-read-omics.R","read-omics","counts win when a table carries both units",3,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00199999999999534,3
+"test-read-omics.R","read-omics","the suffix is dropped so both report layouts name samples alike",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00100000000000477,1
+"test-read-omics.R","read-omics","a single non-count unit is kept rather than discarded",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00200000000000955,1
+"test-read-omics.R","read-omics","columns without a recognised unit are left alone",2,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00300000000000011,2
+"test-read-omics.R","read-omics","a partly-suffixed table is not touched",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,2
+"test-read-omics.R","read-omics","the unit suffix is read as the last word, not across separators",3,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00400000000000489,3
+"test-read-omics.R","read-omics","names are left intact when stripping would collide",1,0,FALSE,FALSE,0,0.000999999999997669,0.000999999999999446,0.000999999999990564,1
+"test-read-omics.R","read-omics","allow_r_objects = FALSE refuses .rds before the object is loaded",2,0,FALSE,FALSE,0,0.0129999999999981,0.00100000000000033,0.0139999999999958,2
+"test-read-omics.R","read-omics","the refusal points at a format the user can actually produce",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-read-omics.R","read-omics","local scripting keeps the .rds path",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-report-content.R","report-content","the report names every layer with its shape and label",7,0,FALSE,FALSE,0,0.0620000000000047,0.0200000000000005,0.183000000000007,7
+"test-report-content.R","report-content","the report carries each analysis and the head of its result table",6,0,FALSE,FALSE,0,0.466999999999999,0.0350000000000001,0.780999999999992,6
+"test-report-content.R","report-content","a project with no analyses says so rather than rendering nothing",1,0,FALSE,FALSE,0,0.0579999999999998,0.0189999999999992,0.180999999999997,1
+"test-report-content.R","report-content","a restored project reports the same as the live one",1,0,FALSE,FALSE,0,0.983999999999995,0.0650000000000004,1.62599999999999,1
+"test-report-escaping.R","report-escaping","the report shows a hostile name as text",8,0,FALSE,FALSE,0,0.523000000000003,0.0370000000000008,0.869,8
+"test-report-escaping.R","report-escaping","a hostile name survives the .omp round trip unchanged",3,0,FALSE,FALSE,0,0.0189999999999984,0.00200000000000067,0.0220000000000056,3
+"test-report-escaping.R","report-escaping","the script parses whatever the names carry",33,0,FALSE,FALSE,0,0.046999999999997,0.0109999999999992,0.0570000000000022,33
+"test-report-escaping.R","report-escaping","a project with two layers gets variables R can read back",7,0,FALSE,FALSE,0,0.0069999999999979,0.00100000000000033,0.00799999999999557,7
+"test-script-round-trip.R","script-round-trip","the script emits the normalization it performed",2,0,FALSE,FALSE,0,0.0300000000000011,0.0109999999999992,0.0420000000000016,2
+"test-script-round-trip.R","script-round-trip","a log2-normalized layer replays to the same numbers",6,0,FALSE,FALSE,0,0.0900000000000034,0.024,0.11399999999999,6
+"test-script-round-trip.R","script-round-trip","a vsn-normalized layer replays to the same numbers",5,0,FALSE,FALSE,0,0.136000000000003,0.0300000000000002,0.169000000000011,5
+"test-script-round-trip.R","script-round-trip","an applied QC step replays too",8,0,FALSE,FALSE,0,0.0829999999999984,0.0229999999999997,0.106999999999999,8
+"test-script-round-trip.R","script-round-trip","the QC arguments that changed the values are all emitted",7,0,FALSE,FALSE,0,0.0840000000000032,0.0230000000000006,0.106999999999999,7
+"test-script-round-trip.R","script-round-trip","a layer with nothing recorded stops instead of guessing",3,0,FALSE,FALSE,0,0.0309999999999988,0.0119999999999996,0.0490000000000066,3
+"test-script-round-trip.R","script-round-trip","a two-layer integration replays to the same numbers",9,0,FALSE,FALSE,0,0.186,0.0350000000000001,0.222000000000008,9
+"test-script-round-trip.R","script-round-trip","an integration whose upstreams are not registered says so",1,0,FALSE,FALSE,0,0.0640000000000001,0.0179999999999998,0.0819999999999936,1
+"test-subset-edge.R","subset-edge","subset_omics subsets both axes at once",4,0,FALSE,FALSE,0,0.00400000000000489,0.00100000000000033,0.00499999999999545,4
+"test-subset-edge.R","subset-edge","subset_omics with NULL samples retains all samples",2,0,FALSE,FALSE,0,0.00499999999999545,0.000999999999999446,0.00600000000000023,2
+"test-subset-edge.R","subset-edge","subset_omics with NULL features retains all features",2,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00400000000000489,2
+"test-subset-edge.R","subset-edge","subset_omics with both NULL returns identical copy",2,0,FALSE,FALSE,0,0.00199999999999534,0.000999999999999446,0.00399999999999068,2
+"test-subset-edge.R","subset-edge","subset_omics validates input first",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-subset-edge.R","subset-edge","subset_omics_samples errors when no samples match",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00199999999999534,1
+"test-subset-edge.R","subset-edge","subset_omics_samples intersects with existing samples",2,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,2
+"test-subset-edge.R","subset-edge","subset_omics_samples preserves raw_mat when present",2,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,2
+"test-subset-edge.R","subset-edge","subset_omics_samples preserves normalized_mat when present",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000955,1
+"test-subset-edge.R","subset-edge","subset_omics_samples preserves feature_df unchanged",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00199999999999534,1
+"test-subset-edge.R","subset-edge","subset_omics_features errors when no features match",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-subset-edge.R","subset-edge","subset_omics_features aligns feature_df rows",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00400000000000489,2
+"test-subset-edge.R","subset-edge","subset_omics_features intersects with existing features",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,2
+"test-subset-edge.R","subset-edge","subset_omics_features preserves sample metadata unchanged",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-subset-edge.R","subset-edge","drop_meta_na removes samples with NA in specified columns",2,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,2
+"test-subset-edge.R","subset-edge","drop_meta_na errors when column missing",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-subset-edge.R","subset-edge","drop_meta_na on complete data retains all samples",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-subset-edge.R","subset-edge","drop_meta_na respects multiple columns",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-subset-edge.R","subset-edge","select_complete_cases filters features by missingness",3,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00400000000000489,3
+"test-subset-edge.R","subset-edge","select_complete_cases with cutoff=1 keeps all features",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00200000000000955,1
+"test-subset-edge.R","subset-edge","select_complete_cases with cutoff=0 keeps only complete features",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00199999999999534,1
+"test-subset-edge.R","subset-edge","select_complete_cases with cutoff=0 removes all features if all incomplete",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-summarize-heatmap.R","summarize-heatmap","plot_heatmap accepts an omics_input directly",1,0,FALSE,FALSE,0,0.0069999999999979,0.000999999999999446,0.00799999999999557,1
+"test-summarize-heatmap.R","summarize-heatmap","plot_heatmap dispatches on a diff bundle",1,0,FALSE,FALSE,0,0.0139999999999958,0.00100000000000033,0.0150000000000006,1
+"test-summarize-heatmap.R","summarize-heatmap","plot_heatmap rejects a diff bundle without an input",1,0,FALSE,FALSE,0,0.0069999999999979,0,0.00799999999999557,1
+"test-summarize-heatmap.R","summarize-heatmap","plot_heatmap rejects other objects",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-summarize-heatmap.R","summarize-heatmap","plot_heatmap honors a forced feature list",1,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.00699999999999079,1
+"test-summarize-heatmap.R","summarize-heatmap","summarize_omics returns one row per omics_input",7,0,FALSE,FALSE,0,0.00600000000000023,0.00199999999999978,0.00799999999999557,7
+"test-summarize-heatmap.R","summarize-heatmap","summarize_omics counts NAs correctly",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,2
+"test-summarize-heatmap.R","summarize-heatmap","summarize_omics handles a multi-experiment project",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00399999999999068,3
+"test-summarize-heatmap.R","summarize-heatmap","summarize_omics returns empty rows for an empty project",3,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,3
+"test-summarize-heatmap.R","summarize-heatmap","summarize_omics rejects other inputs",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-summarize-plot-edge.R","summarize-plot-edge","summarize_omics returns expected structure for omics_input",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,2
+"test-summarize-plot-edge.R","summarize-plot-edge","summarize_omics returns expected structure for omics_project",1,0,FALSE,FALSE,0,0.00399999999999778,0,0.00399999999999068,1
+"test-summarize-plot-edge.R","summarize-plot-edge","summarize_omics errors on invalid input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-summarize-plot-edge.R","summarize-plot-edge","summarize_omics with omics_input reports sample count",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_heatmap renders a heatmap object",1,0,FALSE,FALSE,0,0.00600000000000023,0.00100000000000033,0.00600000000000023,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_heatmap errors on invalid input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_pca renders a ggplot",1,0,FALSE,FALSE,0,0.0159999999999982,0.000999999999999446,0.0180000000000007,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_pca uses color_by when provided",1,0,FALSE,FALSE,0,0.0159999999999982,0.00100000000000033,0.0170000000000101,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_pca errors on invalid input",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00400000000000489,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_qc renders a ggplot from a qc bundle",1,0,FALSE,FALSE,0,0.0360000000000014,0,0.0369999999999919,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_qc errors on invalid input",1,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00400000000000489,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_feature_expression renders for a valid feature",1,0,FALSE,FALSE,0,0.0330000000000013,0.00100000000000033,0.0349999999999966,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_feature_expression works with multiple features",1,0,FALSE,FALSE,0,0.0159999999999982,0,0.0170000000000101,1
+"test-summarize-plot-edge.R","summarize-plot-edge","plot_feature_expression errors on invalid input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000955,1
+"test-summarize-plot-edge.R","summarize-plot-edge","theme_omicsCore returns a ggplot2 theme",1,0,FALSE,FALSE,0,0.0129999999999981,0,0.01400000000001,1
+"test-symbol-column.R","symbol-column","the accession still becomes feature_id",2,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,2
+"test-symbol-column.R","symbol-column","the gene column is found whatever the vendor calls it",14,0,FALSE,FALSE,0,0.0129999999999981,0.00300000000000011,0.0159999999999911,14
+"test-symbol-column.R","symbol-column","only the leading gene is kept from a packed cell",1,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00199999999999534,1
+"test-symbol-column.R","symbol-column","an empty symbol becomes NA rather than an empty string",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-symbol-column.R","symbol-column","an annotation with no gene column is left as it was",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,2
+"test-symbol-column.R","symbol-column","an existing feature_symbol column is not overwritten",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00199999999999534,1
+"test-symbol-column.R","symbol-column","the id column is never also taken as the symbol",2,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00300000000000011,2
+"test-symbol-column.R","symbol-column","features absent from the annotation still line up",3,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00400000000000489,3
+"test-symbol-column.R","symbol-column","symbols reach the differential result, which is the point",1,0,FALSE,FALSE,0,0.00399999999999778,0.000999999999999446,0.00500000000000966,1
+"test-validation-edge.R","validation-edge","validate_omics_input passes for a valid input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.000999999999990564,1
+"test-validation-edge.R","validation-edge","validate_omics_input errors on a plain list",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","validate_omics_input errors on NULL",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","is_omics_input returns TRUE for a valid input",1,0,FALSE,FALSE,0,0.00500000000000256,0.00100000000000033,0.00499999999999545,1
+"test-validation-edge.R","validation-edge","is_omics_input returns FALSE for a plain list",1,0,FALSE,FALSE,0,0.000999999999997669,0.000999999999999446,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","is_omics_input returns FALSE for NULL",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","check_required_cols passes when all cols present",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.000999999999990564,1
+"test-validation-edge.R","validation-edge","check_required_cols errors on missing col",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","check_required_cols message mentions missing col name",1,0,FALSE,FALSE,0,0,0,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","check_required_cols accepts custom object_name in message",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","check_diff_result_schema passes for full diff df",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.000999999999990564,1
+"test-validation-edge.R","validation-edge","check_diff_result_schema errors on missing required col",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","check_diff_result_schema errors on non-data.frame",1,0,FALSE,FALSE,0,0.00199999999999534,0.00100000000000033,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","check_enrich_result_schema errors on empty df",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","check_enrich_result_schema errors on non-data.frame",1,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","check_integration_result_schema errors on empty df",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","check_meta_matches_expr passes when meta rows = expr cols",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","check_meta_matches_expr errors when row count mismatch",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","check_meta_matches_expr errors on rowname mismatch",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","check_feature_matches_expr passes when rows match",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","check_feature_matches_expr errors when row count mismatch",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","validate_two_group_pairing with NULL paired_col passes regardless",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.000999999999990564,1
+"test-validation-edge.R","validation-edge","validate_two_group_pairing with paired_col errors on broken pairs",1,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","validate_two_group_pairing with bad paired_col name errors",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","validate_two_group_pairing supports a paired column",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.000999999999990564,1
+"test-validation-edge.R","validation-edge","validate_diff_args passes for valid ttest/group args",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","validate_diff_args errors when group_col missing for group analysis",1,0,FALSE,FALSE,0,0.00199999999999534,0.000999999999999446,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","validate_diff_args errors when continuous_col missing",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","validate_diff_args errors when anova uses non-limma method",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","validate_diff_args errors when edger used for continuous",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","validate_sample_link errors on non-data.frame input",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","validate_sample_link errors on missing required cols",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","validate_sample_link passes when tag matches",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","validate_sample_link errors on unknown tag",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","coerce_continuous_col returns numeric vector unchanged",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","coerce_continuous_col coerces character-numeric",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","coerce_continuous_col errors on all-non-numeric character",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","coerce_to_continuous handles raw_count matrix",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","coerce_to_continuous handles intensity matrix",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","schema_is_supported returns TRUE for current major version",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00100000000000477,1
+"test-validation-edge.R","validation-edge","schema_is_supported returns FALSE for empty input",1,0,FALSE,FALSE,0,0.00100000000000477,0.000999999999999446,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","schema_is_supported returns FALSE for far-future major",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","make_unique_labels deduplicates a vector",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","make_unique_labels preserves unique input",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","make_unique_labels handles NA",1,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","normalize_organism returns standard code for Hs",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","normalize_organism handles 'human' alias",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00200000000000955,1
+"test-validation-edge.R","validation-edge","normalize_enrich_database returns input for hallmark",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00300000000000011,1
+"test-validation-edge.R","validation-edge","compute_numeric_fraction is 1 for all-numeric data.frame",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","compute_numeric_fraction is 0 for all-character data.frame",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","compute_numeric_fraction is partial for mixed data.frame",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","compute_numeric_fraction handles zero-column df",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","looks_like_feature_labels recognizes gene-like strings",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00199999999999534,1
+"test-validation-edge.R","validation-edge","looks_like_feature_labels rejects pure numbers",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_required_cols passes when all columns present",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_required_cols errors when columns missing",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","check_required_cols includes object_name in error",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00200000000000955,1
+"test-validation-utils.R","validation-utils","check_required_cols returns invisibly",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.00200000000000955,1
+"test-validation-utils.R","validation-utils","check_meta_matches_expr passes for matching metadata",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_meta_matches_expr errors when expr lacks colnames",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_meta_matches_expr errors when meta lacks rownames",1,0,FALSE,FALSE,0,0.00199999999999534,0.000999999999999446,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_meta_matches_expr errors when samples not in meta",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","check_meta_matches_expr accepts all samples present in meta",1,0,FALSE,FALSE,0,0.00100000000000477,0.00100000000000033,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_feature_matches_expr passes for matching feature data",1,0,FALSE,FALSE,0,0.00199999999999534,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_feature_matches_expr errors when expr lacks rownames",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","check_feature_matches_expr errors when feature_id_col missing",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_feature_matches_expr errors when features not in reference",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","check_feature_matches_expr uses custom feature_id_col",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_paired_col passes when paired_col exists and has values",1,0,FALSE,FALSE,0,0.000999999999997669,0,0.000999999999990564,1
+"test-validation-utils.R","validation-utils","check_paired_col does nothing when paired_col is NULL",1,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","check_paired_col errors when column missing",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","check_paired_col errors when column is all NA",1,0,FALSE,FALSE,0,0.00300000000000011,0.00100000000000033,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","check_paired_col includes object_name in errors",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","validate_two_group_pairing passes for valid paired design",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","validate_two_group_pairing no-ops when paired_col is NULL",1,0,FALSE,FALSE,0,0.000999999999997669,0.000999999999999446,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","validate_two_group_pairing errors when a pair is incomplete",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","validate_two_group_pairing errors when a pair has duplicate groups",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","validate_two_group_pairing handles incomplete pairs from NA filtering",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","validate_continuous_pairing passes when every pair has >=2 samples",1,0,FALSE,FALSE,0,0.00199999999999534,0.000999999999999446,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","validate_continuous_pairing no-ops when paired_col is NULL",1,0,FALSE,FALSE,0,0.00100000000000477,0,0.000999999999990564,1
+"test-validation-utils.R","validation-utils","validate_continuous_pairing errors when a pair has <2 samples",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","validate_continuous_pairing errors when paired_col missing",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","validate_omics_input returns TRUE for valid input",1,0,FALSE,FALSE,0,0.000999999999997669,0.00100000000000033,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","validate_omics_input errors for non-omics_input objects",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","validate_omics_input errors when expr_mat is NULL",1,0,FALSE,FALSE,0,0.00300000000000011,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","validate_omics_input errors when meta_df is NULL",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,1
+"test-validation-utils.R","validation-utils","validate_omics_input errors when feature_df is NULL",1,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","validate_omics_input errors when omics_type field is missing",1,0,FALSE,FALSE,0,0.00200000000000244,0,0.00300000000000011,1
+"test-validation-utils.R","validation-utils","validate_omics_input errors when assay_type field is missing",1,0,FALSE,FALSE,0,0.00200000000000244,0.000999999999999446,0.00300000000000011,1
+"test-wrap-pathway-name.R","wrap-pathway-name","a name that fits is left alone",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00300000000000011,2
+"test-wrap-pathway-name.R","wrap-pathway-name","a long name is wrapped, not shortened",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00200000000000955,2
+"test-wrap-pathway-name.R","wrap-pathway-name","no line runs past the requested width",3,0,FALSE,FALSE,0,0.017000000000003,0.000999999999999446,0.0180000000000007,3
+"test-wrap-pathway-name.R","wrap-pathway-name","a runaway name is capped, and says it was",2,0,FALSE,FALSE,0,0.00200000000000244,0.00100000000000033,0.00199999999999534,2
+"test-wrap-pathway-name.R","wrap-pathway-name","a name exactly at the cap is not marked as elided",2,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,2
+"test-wrap-pathway-name.R","wrap-pathway-name","missing and empty names pass through rather than erroring",3,0,FALSE,FALSE,0,0.00300000000000011,0,0.00300000000000011,3
+"test-wrap-pathway-name.R","wrap-pathway-name","a vector is handled element-wise, with no names attached",4,0,FALSE,FALSE,0,0.00300000000000011,0.000999999999999446,0.00499999999999545,4
+"test-wrap-pathway-name.R","wrap-pathway-name","gene symbols still truncate, since a symbol cannot wrap",2,0,FALSE,FALSE,0,0.00200000000000244,0,0.00199999999999534,2

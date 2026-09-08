@@ -1,0 +1,20 @@
+     nb  failed skipped   error warning  passed 
+   1668       0       5       0       5    1658 
+                           file
+194 test-golden-raw-to-result.R
+195 test-golden-raw-to-result.R
+196 test-golden-raw-to-result.R
+197 test-golden-raw-to-result.R
+198 test-golden-raw-to-result.R
+                                                                      test
+194           normalize_omics reproduces the framework's normalized values
+195             the differential results agree with the framework pipeline
+196 importing the raw workbook does not leave linear values in the project
+197  an already-normalized workbook is imported without a second transform
+198         a layer labelled with the old 'intensity' value still analyses
+    failed skipped error
+194      0    TRUE FALSE
+195      0    TRUE FALSE
+196      0    TRUE FALSE
+197      0    TRUE FALSE
+198      0    TRUE FALSE

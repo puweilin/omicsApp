@@ -91,13 +91,30 @@ run_enrichment_grid <- function(
     if (is.function(on_progress)) on_progress(i - 1L, length(plan), label)
 
     t0 <- Sys.time()
+    # Not suppressWarnings(). The backends answer a failure with a warning
+    # and NULL rather than an error, so suppressing warnings here made a
+    # database that had *broken* indistinguishable from one that found
+    # nothing: `status = "empty"`, no message, and a reader concluding
+    # there is nothing there. The classed warning is collected; ordinary
+    # ones are still quietened, because a grid of 28 runs otherwise
+    # reports every DESeq2 fit note 28 times.
+    backend_failure <- NULL
     res <- tryCatch(
-      suppressWarnings(run_enrichment(
-        diff_bundle, type = step$type, database = step$database,
-        direction = step$direction, ...)),
+      withCallingHandlers(
+        run_enrichment(diff_bundle, type = step$type,
+                       database = step$database,
+                       direction = step$direction, ...),
+        omicsCore_enrich_backend_failure = function(w) {
+          backend_failure <<- conditionMessage(w)
+          invokeRestart("muffleWarning")
+        },
+        warning = function(w) invokeRestart("muffleWarning")),
       error = function(e) e)
     secs <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
 
+    if (!is.null(backend_failure) && !inherits(res, "error")) {
+      res <- simpleError(backend_failure)
+    }
     if (inherits(res, "error")) {
       log[[i]] <- data.frame(
         type = step$type, database = step$database,
@@ -133,12 +150,20 @@ run_enrichment_grid <- function(
   new_analysis_bundle(
     analysis_name = "run_enrichment_grid",
     input_info = diff_bundle$input_info,
-    params = list(
-      types = types,
-      databases = databases,
-      ora_directions = ora_directions,
-      comparison = diff_bundle$params$comparison,
-      n_combinations = length(plan)
+    # The parameters it actually ran with, `...` included. Recording only
+    # the grid's own arguments left the thresholds -- the numbers that
+    # decide which genes go into ORA -- written down nowhere, so a batch
+    # run could not be told from any other batch run, and the script
+    # export had nothing to replay.
+    params = c(
+      list(
+        types = types,
+        databases = databases,
+        ora_directions = ora_directions,
+        comparison = diff_bundle$params$comparison,
+        n_combinations = length(plan)
+      ),
+      list(...)
     ),
     results = list(
       enrich_result_df = stacked,

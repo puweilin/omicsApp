@@ -1,0 +1,27 @@
+SYNTHETIC DATA; local runtime, not server benchmark
+genes=1200; samples=200
+R version 4.4.3 (2025-02-28) 
+DESeq2=1.46.0; future=1.69.0
+Fitting detached design ...
+converting counts to integer mode
+Fitting original attached design ...
+converting counts to integer mode
+Standardized and raw differential tables: IDENTICAL
+converting counts to integer mode
+Actual default keep_model=FALSE: model absent, both tables IDENTICAL
+Fit elapsed: detached=2.722; attached=1.547
+original_full_model globals: func, type, bundle, db_arg, dir_, thr 
+detached_full_model globals: func, type, bundle, db_arg, dir_, thr 
+no_model globals: func, type, bundle, db_arg, dir_, thr 
+only_enrichment_inputs globals: func, type, bundle, db_arg, dir_, thr 
+                   case bundle_base_MiB bundle_future_MiB
+    original_full_model       8.6805496        23.6857605
+    detached_full_model       8.6805496         8.1285181
+               no_model       0.4168777         0.2875128
+ only_enrichment_inputs       0.2860565         0.2182541
+ closure_serialized_MiB globals_total_MiB   func_MiB exported_bundle_MiB
+             23.6866817        47.3727369 23.6866817          23.6857605
+              8.1294394        16.2582521  8.1294394           8.1285181
+              0.2884703         0.5762777  0.2884703           0.2875128
+              0.2192116         0.4377604  0.2192116           0.2182541
+All probes complete.

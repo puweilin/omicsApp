@@ -1,0 +1,57 @@
+TICK 1 PROGRESS= Go
+idle
+×
+audit progress BARS=30% 
+TICK 2 PROGRESS= Go
+idle
+×
+audit progress BARS=30% 
+TICK 3 PROGRESS= Go
+idle
+×
+audit progress BARS=30% 
+TICK 4 PROGRESS= Go
+idle
+×
+audit progress BARS=30% 
+TICK 5 PROGRESS= Go
+idle
+×
+audit progress BARS=30% 
+TICK 6 PROGRESS= Go
+idle
+×
+audit progress BARS=30% 
+TICK 7 PROGRESS= Go
+done BARS= 
+TICK 8 PROGRESS= Go
+done BARS= 
+TICK 9 PROGRESS= Go
+done BARS= 
+{shinytest2} R  info   17:06:51.06 Start AppDriver initialization
+{shinytest2} R  info   17:06:51.12 Starting Shiny app
+{shinytest2} R  info   17:06:55.17 Creating new ChromoteSession
+{shinytest2} R  info   17:06:56.02 Navigating to Shiny app
+{shinytest2} R  info   17:06:56.03 Injecting shiny-tracer.js
+{chromote}   JS info   17:06:56.04 shinytest2; jQuery found
+{chromote}   JS info   17:06:56.05 shinytest2; Waiting for shiny session to connect
+{chromote}   JS info   17:06:56.05 shinytest2; Loaded
+{shinytest2} R  info   17:06:56.05 Waiting for Shiny to become ready
+{chromote}   JS info   17:06:56.07 shinytest2; Connected
+{chromote}   JS info   17:06:56.08 shinytest2; shiny:busy
+{chromote}   JS info   17:06:56.09 shinytest2; shiny:idle
+{chromote}   JS info   17:06:56.09 shinytest2; shiny:value status
+{shinytest2} R  info   17:06:56.15 Waiting for Shiny to become idle for 200ms within 60000ms
+{chromote}   JS info   17:06:56.16 shinytest2; Waiting for Shiny to be stable
+{chromote}   JS info   17:06:56.36 shinytest2; Shiny has been idle for 200ms
+{shinytest2} R  info   17:06:56.36 Shiny app started
+{chromote}   JS info   17:06:57.37 shinytest2; shiny:busy
+{chromote}   JS info   17:07:03.38 shinytest2; shiny:idle
+{chromote}   JS info   17:07:03.38 shinytest2; shiny:value status
+{shiny}      R  stderr ----------- Loading required package: shiny
+{shiny}      R  stderr ----------- 
+{shiny}      R  stderr ----------- Running application in test mode.
+{shiny}      R  stderr ----------- 
+{shiny}      R  stderr ----------- Listening on http://127.0.0.1:6984
+{shiny}      R  stdout ----------- ALLOWOUTPUTREADS= 
+{shiny}      R  stdout ----------- POLL_AT 17:06:56.515

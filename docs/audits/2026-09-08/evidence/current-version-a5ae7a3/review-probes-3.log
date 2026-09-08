@@ -1,0 +1,12 @@
+
+PROBE: new project cannot reuse the staged identical import 
+Loading required package: shiny
+PROJECT_EXISTS_AFTER_IMPORT=TRUE
+PROJECT_EMPTY_AFTER_NEW=TRUE
+PROJECT_STILL_EMPTY_AFTER_RECONFIRM=TRUE
+IMPORT_MODULE_STILL_CONFIRMED=TRUE
+
+PROBE: QC preview reruns on unrelated project result writes 
+QC_RUNS_FOR_UNRELATED_UPDATE=1
+
+THIRD_PROBES_FINISHED

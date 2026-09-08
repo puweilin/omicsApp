@@ -1,0 +1,6 @@
+"file","context","test","nb","failed","skipped","error","warning","user","system","real","passed"
+"test-golden-raw-to-result.R","golden-raw-to-result","normalize_omics reproduces the framework's normalized values",4,0,FALSE,FALSE,0,2.286,0.109,2.396,4
+"test-golden-raw-to-result.R","golden-raw-to-result","the differential results agree with the framework pipeline",5,0,FALSE,FALSE,0,2.48,0.129,2.613,5
+"test-golden-raw-to-result.R","golden-raw-to-result","importing the raw workbook does not leave linear values in the project",6,0,FALSE,FALSE,0,5.677,0.185,5.87,6
+"test-golden-raw-to-result.R","golden-raw-to-result","an already-normalized workbook is imported without a second transform",5,0,FALSE,FALSE,0,2.845,0.179,3.031,5
+"test-golden-raw-to-result.R","golden-raw-to-result","a layer labelled with the old 'intensity' value still analyses",3,0,FALSE,FALSE,0,1.32,0.083,1.404,3

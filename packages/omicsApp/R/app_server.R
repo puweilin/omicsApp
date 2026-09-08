@@ -168,8 +168,12 @@ app_server <- function(input, output, session) {
   # hold is judged invalid as soon as it arrives.
   integration_secondary <- integration_view$secondary
   # Returns the enrichment grid, which is filed like any other result.
+  # The same thresholds the Enrich view runs at. "Run every enrichment"
+  # that quietly used a different cut from the one on screen is a batch
+  # nobody can compare to the single runs beside it.
   enrich_grid <- report_view_server("report",
-                                    current_project = current_project)
+                                    current_project = current_project,
+                                    diff_thresholds = diff_view$thresholds)
 
   # ---- which data the views' results belong to -------------------------
   # A layer's identity is its upload fingerprint, or its shape when it

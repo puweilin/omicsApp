@@ -1,0 +1,13 @@
+"file","context","test","nb","failed","skipped","error","warning","user","system","real","passed"
+"test-api-contract.R","api-contract","no public function answers a wrong argument with an internal error",1,0,FALSE,FALSE,0,2.138,0.077,2.222,1
+"test-api-contract.R","api-contract","the file-writing functions hold the same line",1,0,FALSE,FALSE,0,1.541,0.295,1.84,1
+"test-api-contract.R","api-contract","the heavy engines hold the same line",1,0,FALSE,FALSE,0,17.145,0.568,20.783,1
+"test-api-contract.R","api-contract","a threshold that is not a probability is refused, not applied",7,0,FALSE,FALSE,0,0.0159999999999982,0.00099999999999989,0.0169999999999995,7
+"test-api-contract.R","api-contract","a count that is not a whole number is refused",4,0,FALSE,FALSE,0,0.00700000000000145,0.00100000000000011,0.00799999999999912,4
+"test-api-contract.R","api-contract","a name that is not a string is refused",5,0,FALSE,FALSE,0,0.00800000000000267,0.00099999999999989,0.0100000000000016,5
+"test-api-contract.R","api-contract","a level may be a number, because a metadata column may hold one",1,0,FALSE,FALSE,0,0.0100000000000016,0,0.00999999999999801,1
+"test-api-contract.R","api-contract","an empty covariate selection means none",1,0,FALSE,FALSE,0,0.004999999999999,0,0.004999999999999,1
+"test-api-contract.R","api-contract","a flag that is not TRUE or FALSE is refused",2,0,FALSE,FALSE,0,0.00399999999999778,0.00099999999999989,0.004999999999999,2
+"test-api-contract.R","api-contract","an object of the wrong kind is described, not dereferenced",6,0,FALSE,FALSE,0,0.0100000000000016,0,0.0109999999999992,6
+"test-api-contract.R","api-contract","gene-set sizes must be whole, positive and ordered",3,0,FALSE,FALSE,0,0.004999999999999,0,0.00600000000000023,3
+"test-api-contract.R","api-contract","describe_value names what arrived",11,0,FALSE,FALSE,0,0.00799999999999912,0.00299999999999989,0.0120000000000005,11

@@ -1,0 +1,7 @@
+suppressPackageStartupMessages(library(testthat))
+Sys.setenv(NOT_CRAN='true', OMICSCORE_FUZZ_TESTS='1')
+r <- test_local('packages/omicsCore',filter='api-contract',reporter='summary',stop_on_failure=FALSE)
+saveRDS(r,'audit-results/core-fuzz.rds')
+d <- as.data.frame(r)
+write.csv(d[,!vapply(d,is.list,logical(1)),drop=FALSE],'audit-results/core-fuzz.csv',row.names=FALSE)
+print(colSums(d[,intersect(c('nb','failed','skipped','error','warning','passed'),names(d)),drop=FALSE]))

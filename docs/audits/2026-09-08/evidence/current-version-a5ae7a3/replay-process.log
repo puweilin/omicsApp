@@ -1,0 +1,5 @@
+
+PROBE: exported scale-override script executed in a fresh R process 
+Loading required package: shiny
+ORIGINAL_DIFF_SUCCEEDED=TRUE
+FRESH_PROCESS_REPLAY=limma reports a log2 fold change, but `assay_type = 'raw_count'` is a linear scale, so the values it would report are differences of untransformed measurements. Use a log-scale layer (vst or logcpm) for limma, or a backend that models this scale: deseq2 / edger for raw counts, lm for a linear predictor.

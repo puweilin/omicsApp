@@ -28,7 +28,8 @@ report_view_ui <- function(id) {
 #' @rdname report_view_ui
 #' @keywords internal
 #' @noRd
-report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
+report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
+                               diff_thresholds = shiny::reactive(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # One workbook of tables, not a rendered document.
@@ -130,14 +131,29 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       # and detached_call() re-parents to baseenv() -- where a package
       # internal is not.
       report_progress <- progress_writer(progress_path)
+      # The cut the Enrich view is running at, so "all of them" means all
+      # of them at the settings on screen rather than at whatever the
+      # defaults happen to be. `output_p_cutoff = 1` for the same reason
+      # the single run passes it: which genes go *in* and how much of the
+      # pathway table comes back are two questions, and answering both
+      # with one number stores only what the display threshold admitted.
+      thr <- tryCatch(diff_thresholds(), error = function(e) NULL)
+      grid_args <- list(output_p_cutoff = 1)
+      if (!is.null(thr)) {
+        grid_args$p_cutoff <- thr$p_cutoff
+        grid_args$p_preference <- thr$p_preference
+        grid_args$effect_cutoff <- thr$effect_cutoff
+      }
       run_async(
         detached_call(
           function() {
             on.exit(unlink(progress_path), add = TRUE)
-            omicsCore::run_enrichment_grid(diff_bundle = bundle,
-                                           on_progress = report_progress)
+            do.call(omicsCore::run_enrichment_grid,
+                    c(list(diff_bundle = bundle,
+                           on_progress = report_progress), grid_args))
           },
           bundle = bundle_for_worker(diff),
+          grid_args = grid_args,
           progress_path = progress_path,
           report_progress = report_progress),
         on_success = function(result) {

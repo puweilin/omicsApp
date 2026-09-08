@@ -1,0 +1,21 @@
+
+PROBE: import scale override is missing from replay provenance 
+Loading required package: shiny
+INFERRED_SCALE=raw_count
+CONFIRMED_SCALE=logcpm
+READ_PROVENANCE_SCALE=raw_count
+REPLAY_INPUT_SCALE=raw_count
+REPLAY_DIFF=limma reports a log2 fold change, but `assay_type = 'raw_count'` is a linear scale, so the values it would report are differences of untransformed measurements. Use a log-scale layer (vst or logcpm) for limma, or a backend that models this scale: deseq2 / edger for raw counts, lm for a linear predictor.
+
+PROBE: same-modality layers resolve the wrong input in script 
+TRUE_LAYER=follicle
+SCRIPT_RESOLVES_LAYER=skin
+REPLAY_CALL=diff <- run_diff(   input_skin,   method        = "limma",
+MAX_EFFECT_DIFFERENCE=8
+
+PROBE: clearing a project leaves the previous import staged 
+CONFIRMED_BEFORE_RESET=TRUE
+CONFIRMED_AFTER_RESET=TRUE
+PARSED_AFTER_RESET=TRUE
+
+SECOND_PROBES_FINISHED

@@ -30,11 +30,7 @@ run_ora_database <- function(
       pAdjustMethod = p_adjust_method,
       qvalueCutoff = 1
     ),
-    error = function(e) {
-      warning("ORA failed for database '", database, "': ", conditionMessage(e),
-              call. = FALSE)
-      NULL
-    }
+    error = function(e) enrich_backend_failure("ORA", database, e)
   )
 }
 

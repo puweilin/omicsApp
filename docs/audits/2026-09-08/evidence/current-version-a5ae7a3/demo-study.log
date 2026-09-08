@@ -1,0 +1,37 @@
+
+60 donors, 30 per group
+  demo_rnaseq.xlsx          3900 genes x 60 samples
+  demo_proteomics.xlsx      1200 proteins x 60 samples, 11% missing
+  demo_truth.csv             900 shared symbols
+
+built to be:
+
+concordant_down   concordant_up      discordant            null    protein_only 
+             90              90              60             500              80 
+       rna_only 
+             80 
+
+of the shared genes that move in both layers:
+
+concordant discordant 
+       180         60 
+
+
+imported   RNA 3900 x 60   protein 1200 x 60
+symbols    RNA 3900 mapped from Ensembl   protein 1200 from the file
+after QC   RNA 3207 genes (low-expression filter)   protein 1200
+converting counts to integer mode
+pairing    60 pairs, by donor
+paired     745 shared symbols, 156 significant in both layers
+
+                 reported
+designed          concordant discordant
+  concordant_down         58          0
+  concordant_up           48          0
+  discordant               0         48
+  null                     1          1
+
+0 of 154 designed pairs reported the wrong direction.
+Rows for `null`, `rna_only` and `protein_only` are noise reaching
+ significance in both layers by chance; a few are expected.
+

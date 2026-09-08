@@ -115,3 +115,77 @@ test_that("on_progress is told where the grid has got to", {
   # ends at the end, so a caller driving a progress bar can close it
   expect_equal(seen[[length(seen)]]$done, 4L)
 })
+
+# The backends answer a failure with a warning and NULL, not an error, so
+# a single database can fail without aborting a run. suppressWarnings() in
+# the grid then made "this database broke" and "this database found
+# nothing" the same row: status "empty", no message. Someone reading that
+# concludes there is nothing to find.
+#
+# Mocked at the backend, not at run_enrichment(). A test that makes the
+# outer call throw proves the outer tryCatch works and says nothing about
+# this chain, which is exactly how it was missed.
+test_that("a backend failure is logged as failed, not as empty", {
+  b <- grid_diff_bundle()
+  testthat::local_mocked_bindings(
+    enricher = function(...) stop("gene sets could not be built"),
+    .package = "clusterProfiler")
+
+  # p_cutoff = 1 so every feature goes in: run_ora() returns before
+  # touching the backend when nothing is significant, and a fixture that
+  # never reaches the mock tests nothing.
+  g <- run_enrichment_grid(b, databases = "hallmark", types = "ora",
+                           ora_directions = "both", p_cutoff = 1)
+  lg <- g$results$grid_log
+  expect_identical(lg$status, "failed")
+  expect_match(lg$message, "gene sets could not be built")
+  expect_match(lg$message, "ORA")
+  expect_length(g$warnings, 1L)
+})
+
+test_that("a GSEA backend failure is logged as failed too", {
+  b <- grid_diff_bundle()
+  testthat::local_mocked_bindings(
+    GSEA = function(...) stop("ranking rejected"),
+    .package = "clusterProfiler")
+
+  g <- run_enrichment_grid(b, databases = "hallmark", types = "gsea",
+                           p_cutoff = 1)
+  lg <- g$results$grid_log
+  expect_identical(lg$status, "failed")
+  expect_match(lg$message, "ranking rejected")
+})
+
+# A genuinely empty result must still read as empty: the point is to tell
+# the two apart, not to relabel one as the other.
+test_that("an empty result is still empty", {
+  b <- grid_diff_bundle()
+  testthat::local_mocked_bindings(
+    run_enrichment = function(...) {
+      new_analysis_bundle(analysis_name = "run_enrichment",
+                          results = list(enrich_result_df =
+                                           empty_enrich_result_df()))
+    },
+    .package = "omicsCore")
+  g <- run_enrichment_grid(b, databases = "hallmark", types = "ora",
+                           ora_directions = "both")
+  expect_identical(g$results$grid_log$status, "empty")
+  expect_true(is.na(g$results$grid_log$message))
+  expect_length(g$warnings, 0L)
+})
+
+# What it ran with, not just what it was asked to run. Without this a
+# batch cannot be told from any other batch, and the script export has
+# nothing to replay.
+test_that("the grid records the statistical parameters it was given", {
+  b <- grid_diff_bundle()
+  g <- run_enrichment_grid(b, databases = "hallmark", types = "ora",
+                           ora_directions = "both",
+                           p_cutoff = 0.001, effect_cutoff = 2,
+                           output_p_cutoff = 1)
+  expect_equal(g$params$p_cutoff, 0.001)
+  expect_equal(g$params$effect_cutoff, 2)
+  expect_equal(g$params$output_p_cutoff, 1)
+  # and the grid's own shape stays recorded alongside
+  expect_identical(g$params$databases, "hallmark")
+})
