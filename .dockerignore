@@ -9,11 +9,22 @@ docs
 mockup
 .DS_Store
 
-# deploy/ is kept: prewarm_genesets.R is COPY'd. Nothing else in it is.
+# deploy/docker is kept: prewarm_genesets.R and check_cjk_pdf.R are
+# COPY'd from it. Nothing else in deploy/ is, and two of the directories
+# below hold secrets on a configured server -- the Keycloak .env with the
+# admin and database passwords, and host.env with the address. Nothing
+# COPYs them, so they were never in the image; keeping them out of the
+# build context means they are not sent to the daemon either, which is
+# one fewer place a secret has been.
 deploy/nginx
 deploy/scripts
 deploy/shinyproxy
+deploy/keycloak
+deploy/cron
 deploy/README.md
+deploy/host.env
+deploy/host.env.template
+deploy/rsync.exclude
 
 # R build artefacts
 **/.Rproj.user

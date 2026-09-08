@@ -253,7 +253,6 @@ docker network create sp-net
 docker network create omicsapp-net
 
 sudo mkdir -p /srv/omicsapp/users            # /srv is the HDD
-sudo deploy/scripts/add_user.sh you@example.com   # once per person
 ```
 
 Confirm `/srv` really is the HDD before creating anything — see
@@ -265,7 +264,36 @@ have data in them.
 df -h /srv    # should show the 60 TB volume, not the root filesystem
 ```
 
-### 6. ShinyProxy
+### 6. Keycloak, and the accounts
+
+`add_user.sh` talks to Keycloak's admin API, so Keycloak has to exist
+before there is anyone to add. This step used to come after the one that
+created accounts, which meant a first deployment following the steps in
+order hit a connection refused with nothing to suggest the cause was
+ordering.
+
+Full walk-through, including the realm import and what the two secrets
+are for, in [`keycloak/README.md`](keycloak/README.md). In outline:
+
+```bash
+cd deploy/keycloak
+docker compose up -d          # compose file and realm rendered in step 1
+docker compose logs -f keycloak   # wait for "Running the server"
+```
+
+Then, once it answers:
+
+```bash
+cd -
+sudo deploy/scripts/add_user.sh you@example.com   # once per person
+```
+
+Each account gets a directory named after its Keycloak `sub` -- the id
+that does not change when someone's username or email does. That is why
+a restore needs the account database as well as the files: without it,
+the directories are UUIDs belonging to nobody.
+
+### 7. ShinyProxy
 
 ```bash
 sudo mkdir -p /etc/shinyproxy
@@ -319,7 +347,7 @@ curl -sI http://127.0.0.1:8081 | head -3
 If the `Server` header names something else, that port belongs to
 another service too.
 
-### 7. nginx and firewall
+### 8. nginx and firewall
 
 ```bash
 sudo cp deploy/nginx/omicsapp.conf /etc/nginx/sites-available/omicsapp
@@ -359,7 +387,7 @@ colleague was serving from it.
 
 Users then reach the app at `https://<server-ip>`; plain `http://` redirects there.
 
-### 8. Acceptance
+### 9. Acceptance
 
 Walk one real dataset through, checking each line:
 
@@ -574,8 +602,22 @@ The schedule is a file in the repository rather than something to
 transcribe:
 
 ```bash
+# The dump script first: the crontab calls it by absolute path, and a
+# crontab pointing at a script that is not there fails once a night,
+# quietly, in root's mail.
+sudo install -m 0755 deploy/scripts/backup-keycloak.sh /usr/local/sbin/
 sudo cp deploy/cron/omicsapp-backup /etc/cron.d/omicsapp-backup
 sudo chmod 644 /etc/cron.d/omicsapp-backup
+
+# Prove it before trusting it. The old one-liner could not fail visibly
+# -- it piped pg_dump into the rotation target under a shell with no
+# pipefail, so a night the database was down produced a valid, empty
+# gzip on top of a good backup. Run it once by hand and look at what
+# came out.
+sudo /usr/local/sbin/backup-keycloak.sh
+ls -l /backup/omicsapp/
+gunzip -c /backup/omicsapp/keycloak-$(date +%u).sql.gz | head -3
+# expect "PostgreSQL database dump", and a file of megabytes not bytes
 ```
 
 It takes a `pg_dump` of the account database as well as copying the
@@ -605,6 +647,47 @@ Two things this does not cover, so decide about them explicitly:
   from the backup on Tuesday. That is a mirror, not history; if you want
   to recover a project someone deleted last week, use a snapshotting
   filesystem or `rsync --link-dest` rotations instead.
+
+**Restore drill — before you need it, once.** A backup that has never
+been restored is a hypothesis. Do this on a scratch machine or a spare
+port; it touches nothing in production.
+
+```bash
+# 1. A throwaway Postgres, and the dump loaded into it.
+docker run -d --name restore-test -e POSTGRES_PASSWORD=x   -e POSTGRES_USER=keycloak -e POSTGRES_DB=keycloak postgres:16
+sleep 10
+gunzip -c /backup/omicsapp/keycloak-$(date +%u).sql.gz   | docker exec -i restore-test psql -U keycloak keycloak
+
+# 2. Does it contain accounts, or did it contain an error page?
+docker exec restore-test psql -U keycloak keycloak   -c 'select id, username from user_entity;'
+```
+
+The `id` column is the thing that matters. Each is the `sub` a user
+directory is named after, so this is the step that turns
+`/backup/omicsapp/users/8f3c…/` back into a person:
+
+```bash
+# 3. Every restored account has its files, and every directory has an owner.
+docker exec restore-test psql -U keycloak keycloak -tAc   'select id from user_entity;' | sort > /tmp/accounts.txt
+ls /backup/omicsapp/users/ | sort > /tmp/dirs.txt
+comm -3 /tmp/accounts.txt /tmp/dirs.txt
+# expect no output: an id with no directory is a user who never saved,
+# a directory with no id is data nobody can reach
+
+# 4. A project from the backup actually opens.
+docker run --rm -v /backup/omicsapp/users:/data:ro omicsapp:1.0   Rscript -e 'f <- list.files("/data", "\\.omp$", recursive = TRUE,
+                              full.names = TRUE)[[1]];
+              p <- omicsCore::load_project(f);
+              cat(p$name, "|", length(p$experiments), "layers |",
+                  length(p$bundles), "results\n")'
+
+docker rm -f restore-test
+```
+
+Run it again after any change to the Postgres major version or the
+backup script. The failure this catches is not "the file is missing" --
+that one is obvious -- but "the file is there and does not restore",
+which looks exactly like a working backup until the morning it matters.
 
 **Keeping KEGG current.** The image bakes the MSigDB tables in, and the
 `kegg` table among them is the 2011 `KEGG_LEGACY` snapshot (186 human
