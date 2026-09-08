@@ -636,3 +636,38 @@ test_that("a change that does change the work does re-run it", {
       expect_equal(runs, 2L)
     })
 })
+
+# This observer reads active(), which reads the project, so every write to
+# the project re-ran run_qc -- a rename, a differential being filed, an
+# enrichment result arriving. On the demo that is milliseconds; on
+# 63k x 129 it is not, and none of those writes changes what QC would say.
+test_that("an unrelated write to the project does not re-run QC", {
+  proj <- sm_project()
+  pv <- shiny::reactiveVal(proj)
+  calls <- 0L
+  real_run_qc <- omicsCore::run_qc
+  testthat::local_mocked_bindings(
+    run_qc = function(...) {
+      calls <<- calls + 1L
+      real_run_qc(...)
+    },
+    .package = "omicsCore")
+
+  shiny::testServer(qc_view_server, args = list(current_project = pv), {
+    session$flushReact()
+    first <- calls
+    expect_gt(first, 0L)
+
+    p2 <- proj
+    p2$name <- "renamed"
+    p2$bundles <- list(enrich = list(dummy = TRUE))
+    pv(p2)
+    session$flushReact()
+    expect_equal(calls, first)
+
+    # A control the user moved is different work, and does re-run.
+    session$setInputs(missing_threshold = 0.01)
+    session$flushReact()
+    expect_gt(calls, first)
+  })
+})

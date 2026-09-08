@@ -345,6 +345,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # What this preview is about: which project, which layer, which version
     # of it, and which settings. Captured when the preview runs, so applying
     # can only confirm it -- never mint a fresh identity for a stale result.
+    # The key of the preview last computed, so an unrelated project write
+    # does not recompute it.
+    last_preview_key <- shiny::reactiveVal(NULL)
+
     preview_signature <- function(a, params) {
       list(project_id = current_project()$metadata$project_id,
            tag = a$tag, base_version = a$base_version, params = params)
@@ -363,6 +367,22 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # that is enabled and does nothing reads as a broken app; the demo
       # input is 50 x 12, so a re-run is milliseconds.
       qc_input <- if (a$is_demo) example_qc_input() else a$input
+
+      # The same preview is not computed twice.
+      #
+      # This observer reads active(), which reads the project, so every
+      # write to the project re-ran run_qc -- a rename, a differential
+      # being filed, an enrichment result arriving. On the demo that is
+      # milliseconds; on 63k x 129 it is not, and none of those writes
+      # changes what QC would say.
+      #
+      # preview_signature() is already the right key: project, layer, the
+      # version of the data behind it, and the settings. It was computed
+      # below and used only to stamp the result.
+      key <- if (a$is_demo) list(demo = TRUE, params = params) else
+        preview_signature(a, params)
+      if (identical(key, shiny::isolate(last_preview_key()))) return()
+      last_preview_key(key)
 
       bundle <- tryCatch(
         do.call(omicsCore::run_qc, c(list(input = qc_input), params)),
