@@ -35,7 +35,7 @@ test_that("import view exposes an omics_input after Confirm", {
     expect_null(session$returned())
 
     session$setInputs(confirm = 1)
-    inp <- session$returned()
+    inp <- session$returned()$input
     expect_s3_class(inp, "omics_input")
     expect_equal(nrow(inp$expr_mat), 5L)
     expect_equal(ncol(inp$expr_mat), 6L)
@@ -80,8 +80,8 @@ test_that("changing omics_type after upload re-parses and resets confirm", {
                         size     = file.info(xlsx)$size)
     )
     session$setInputs(confirm = 1)
-    expect_s3_class(session$returned(), "omics_input")
-    expect_equal(session$returned()$omics_type, "proteomics")
+    expect_s3_class(session$returned()$input, "omics_input")
+    expect_equal(session$returned()$input$omics_type, "proteomics")
 
     # Flip the radio. Should reset the confirmed input and rebuild the
     # candidate with the new omics_type.
@@ -91,6 +91,6 @@ test_that("changing omics_type after upload re-parses and resets confirm", {
     expect_equal(parsed()$input$omics_type, "rnaseq")
 
     session$setInputs(confirm = 2)
-    expect_equal(session$returned()$omics_type, "rnaseq")
+    expect_equal(session$returned()$input$omics_type, "rnaseq")
   })
 })

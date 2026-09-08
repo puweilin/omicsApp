@@ -173,7 +173,7 @@ test_that("importing the raw workbook does not leave linear values in the projec
     session$setInputs(normalize = TRUE, normalize_method = "vsn")
     session$setInputs(confirm = 1)
 
-    inp <- session$returned()
+    inp <- session$returned()$input
     # This is the assertion the old validation could not make, because it
     # never started from a raw file: what reaches the project is on the scale
     # limma needs, and the untouched values are still there for QC.
@@ -216,7 +216,7 @@ test_that("an already-normalized workbook is imported without a second transform
     expect_false(normalizable())
 
     session$setInputs(confirm = 1)
-    inp <- session$returned()
+    inp <- session$returned()$input
     expect_identical(inp$assay_type, "normalized_intensity")
     expect_null(inp$raw_mat)
     # Values survive intact rather than being log-transformed again

@@ -132,6 +132,7 @@ integration_view_server <- function(id,
         secondary_tag = secondary_tag,
         secondary     = sec,
         secondary_source = sec_eff$source,
+        secondary_version = sec_eff$version,
         group_col     = gc,
         control       = ctrl,
         case          = case,
@@ -452,16 +453,63 @@ integration_view_server <- function(id,
       )
     }
 
-    shiny::observeEvent(input$rerun, do_run())
-    shiny::observeEvent(can_run(), {
-      # Auto-run as soon as prerequisites become true; observers
-      # higher up (project change, new diff bundle) drive this.
-      # `ignoreInit = TRUE` keeps this quiet on session start --
-      # otherwise the first evaluation of can_run() (=FALSE) would
-      # fire `is_demo(TRUE)` unnecessarily and, combined with a
-      # Re-run click in the same flush, could double-run do_run().
-      if (isTRUE(can_run()$ok)) do_run() else is_demo(TRUE)
-    }, ignoreInit = TRUE)
+    # What identifies this piece of work: the two layers, the versions of
+    # the data behind them, the differential it starts from, and the model.
+    # Not the project object.
+    #
+    # can_run() reads the whole project, so every write to it re-evaluated
+    # -- including the write this view's own result causes. A single
+    # differential therefore launched the integration twice: once when the
+    # prerequisites became true, once when the result of that run was
+    # filed. The second run computed the same numbers, took the same
+    # minute, and replaced the first.
+    #
+    # The key changes only when the answer would.
+    task_key <- shiny::reactive({
+      info <- can_run()
+      if (!isTRUE(info$ok)) return(NULL)
+      list(primary = info$primary_tag,
+           secondary = info$secondary_tag,
+           secondary_version = info$secondary_version,
+           # The differential's analysis id, which already covers its
+           # layer, its input version and its own parameters.
+           upstream = diff_bundle()$provenance_binding$analysis_id
+                        %||% NA_character_,
+           group_col = info$group_col,
+           control = info$control,
+           case = info$case,
+           covariates = info$covariates,
+           paired_col = info$paired_col,
+           unadjusted = info$missing_cols)
+    })
+
+    # The key of the work last launched, so the same work is not launched
+    # again when something unrelated changes.
+    last_key <- shiny::reactiveVal(NULL)
+
+    # Re-run is the user saying so, and always runs.
+    shiny::observeEvent(input$rerun, {
+      last_key(shiny::isolate(task_key()))
+      do_run()
+    })
+
+    shiny::observeEvent(task_key(), {
+      k <- task_key()
+      if (is.null(k)) {
+        is_demo(TRUE)
+        return()
+      }
+      # Same work as last time: the project changed, this did not.
+      if (identical(k, shiny::isolate(last_key()))) return()
+      last_key(k)
+      do_run()
+    # Not ignoreInit: `last_key` is what stops a double run, and it does
+    # it by identity rather than by timing. The old observer skipped its
+    # first evaluation instead, which worked only because can_run() was
+    # false at session start and true a flush later -- an ordering, not a
+    # rule, and one that does not hold when the project and the
+    # differential are both present from the beginning.
+    }, ignoreInit = FALSE, ignoreNULL = FALSE)
 
     # Data sources shared by stats + plots. `req(b)` guards against
     # the transient NULL window between an async run's start and

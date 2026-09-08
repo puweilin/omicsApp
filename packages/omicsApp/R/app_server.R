@@ -110,7 +110,8 @@ app_server <- function(input, output, session) {
                       },
                       on_activate = bump_activation)
   imported_input <- import_view_server("import",
-                        current_project = current_project)
+                        current_project = current_project,
+                        activation = activation)
   # The QC view returns what the user applied, not what it previewed:
   # list(tag, bundle, params, base_version) or NULL.
   qc_applied <- qc_view_server("qc", current_project = current_project,
@@ -298,7 +299,11 @@ app_server <- function(input, output, session) {
   # in the same flush cycle, so bundles always attach to the freshest
   # project rather than the old one.
   shiny::observeEvent(imported_input(), {
-    inp <- imported_input()
+    # `$input`, and a sequence number that makes a repeat confirmation of
+    # the same file a new event rather than an identical assignment
+    # reactiveVal declines to propagate.
+    submission <- imported_input()
+    inp <- submission$input
     if (is.null(inp)) return()
     proj <- current_project()
     tag <- inp$omics_type %||% "experiment"

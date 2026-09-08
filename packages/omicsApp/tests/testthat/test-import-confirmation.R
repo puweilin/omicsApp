@@ -228,7 +228,7 @@ test_that("changing the matrix sheet is a different import", {
       file = list(datapath = xlsx, name = "two.xlsx",
                   size = file.info(xlsx)$size))
     session$setInputs(confirm = 1)
-    first <- session$returned()
+    first <- session$returned()$input
     skip_if(is.null(first), "workbook did not parse in this environment")
     fp_first <- first$source_fingerprint
 
@@ -261,4 +261,60 @@ test_that("the same roles in a different order are the same parse", {
   c_ <- input_fingerprint(xlsx, "proteomics", "normalized_intensity",
                           sheet_roles = c(x = "samples", y = "matrix"))
   expect_false(identical(a, c_))
+})
+
+# ---- a repeat confirmation is a new event -----------------------------
+#
+# reactiveVal does not invalidate when the new value is identical to the
+# old, which is right for state and wrong for an event. After "Start a
+# new project" the module still held the confirmed input, so confirming
+# the same file again assigned the same object, nothing invalidated, and
+# app_server never learned there had been an import: the project stayed
+# empty while the import view said it had confirmed.
+
+staged_input <- function() {
+  mat <- matrix(as.numeric(1:12), nrow = 3,
+                dimnames = list(paste0("g", 1:3), paste0("s", 1:4)))
+  omicsCore::omics_input(
+    mat,
+    data.frame(group = c("A", "A", "B", "B"), row.names = paste0("s", 1:4)),
+    data.frame(feature_id = paste0("g", 1:3)),
+    omics_type = "proteomics", assay_type = "normalized_intensity")
+}
+
+test_that("confirming the same input twice is two submissions", {
+  shiny::testServer(import_view_server,
+                    args = list(current_project = shiny::reactiveVal(NULL)), {
+    out <- session$getReturned()
+    parsed(list(input = staged_input(), report = NULL))
+    session$setInputs(confirm = 1)
+    first <- out()
+    expect_false(is.null(first$input))
+
+    session$setInputs(confirm = 2)
+    second <- out()
+
+    # Same data, different submission: exactly the case the
+    # identical-value shortcut swallowed.
+    expect_identical(second$input, first$input)
+    expect_gt(second$seq, first$seq)
+  })
+})
+
+test_that("activation clears what the last import staged", {
+  act <- shiny::reactiveVal(0L)
+  shiny::testServer(import_view_server,
+                    args = list(current_project = shiny::reactiveVal(NULL),
+                                activation = act), {
+    parsed(list(input = staged_input(), report = NULL))
+    session$setInputs(confirm = 1)
+    expect_false(is.null(confirmed_input()))
+
+    act(1L)                       # "Start a new project"
+    session$flushReact()
+    # The view must not still show a file confirmed into a project that
+    # no longer exists.
+    expect_null(confirmed_input())
+    expect_null(parsed())
+  })
 })

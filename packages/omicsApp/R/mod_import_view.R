@@ -48,7 +48,8 @@ import_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 import_view_server <- function(id,
-                               current_project = shiny::reactiveVal(NULL)) {
+                               current_project = shiny::reactiveVal(NULL),
+                               activation = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -58,6 +59,16 @@ import_view_server <- function(id,
     # The two are separate so the Confirm step is deliberate.
     parsed         <- shiny::reactiveVal(NULL)   # list(input, report) or NULL
     confirmed_input <- shiny::reactiveVal(NULL)  # omics_input or NULL
+    # One number per confirmation, so a submission is never identical to
+    # the one before it.
+    #
+    # reactiveVal does not invalidate when the new value is identical to
+    # the old, which is right for state and wrong for an event. After
+    # "Start a new project" the module still held the confirmed input, so
+    # confirming the *same file* again assigned the same object, nothing
+    # invalidated, and app_server never learned there had been an import:
+    # the project stayed empty and the import view said it had confirmed.
+    confirm_seq <- shiny::reactiveVal(0L)
 
     # ---- parse on upload or omics-type change -------------------------
     # The classifier ignores omics_type, but the final omics_input()
@@ -622,6 +633,7 @@ import_view_server <- function(id,
         }
       }
       confirmed_input(cand)
+      confirm_seq(shiny::isolate(confirm_seq()) + 1L)
     }
 
     shiny::observeEvent(input$confirm, {
@@ -652,8 +664,22 @@ import_view_server <- function(id,
       commit(parsed()$input)
     })
 
+    # A new project, or a different one, leaves nothing of the last
+    # import staged. Without this the view still showed a confirmed file
+    # belonging to a project that is gone.
+    shiny::observeEvent(activation(), {
+      parsed(NULL)
+      confirmed_input(NULL)
+    }, ignoreInit = TRUE, priority = 30L)
+
     # ---- module return ------------------------------------------------
-    shiny::reactive(confirmed_input())
+    # The submission and its number. app_server() reads `$input`; the
+    # number is what makes a repeat confirmation a new event.
+    shiny::reactive({
+      inp <- confirmed_input()
+      if (is.null(inp)) return(NULL)
+      list(seq = confirm_seq(), input = inp)
+    })
   })
 }
 

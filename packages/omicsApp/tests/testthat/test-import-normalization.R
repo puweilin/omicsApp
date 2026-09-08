@@ -76,7 +76,7 @@ test_that("choosing a different scale rewrites the label and drops confirmation"
     # the commit rather than importing raw behind a notification.
     session$setInputs(normalize = FALSE)
     session$setInputs(confirm = 1)
-    expect_s3_class(session$returned(), "omics_input")
+    expect_s3_class(session$returned()$input, "omics_input")
 
     # The inference is a starting point; the user gets the last word
     session$setInputs(assay_type = "imputed_intensity")
@@ -103,7 +103,7 @@ test_that("confirming a linear upload normalizes it by default", {
     session$setInputs(normalize = TRUE, normalize_method = "log2")
     session$setInputs(confirm = 1)
 
-    inp <- session$returned()
+    inp <- session$returned()$input
     expect_s3_class(inp, "omics_input")
     expect_identical(inp$assay_type, "normalized_intensity")
     # The layer that lands in the project is now on a scale limma can use.
@@ -124,7 +124,7 @@ test_that("normalization keeps the pre-normalization matrix", {
     session$setInputs(normalize = TRUE, normalize_method = "log2")
     session$setInputs(confirm = 1)
 
-    inp <- session$returned()
+    inp <- session$returned()$input
     expect_false(is.null(inp$raw_mat))
     expect_identical(dim(inp$raw_mat), dim(inp$expr_mat))
     # raw_mat holds the linear values, expr_mat the transformed ones
@@ -143,7 +143,7 @@ test_that("unticking normalize imports the linear values unchanged", {
     session$setInputs(normalize = FALSE)
     session$setInputs(confirm = 1)
 
-    inp <- session$returned()
+    inp <- session$returned()$input
     expect_identical(inp$assay_type, "raw_intensity")
     expect_gt(max(inp$expr_mat, na.rm = TRUE), 100)
   })
@@ -159,7 +159,7 @@ test_that("an already-log2 upload is committed untouched", {
     session$setInputs(omics_type = "proteomics", file = tiny_upload(xlsx))
     session$setInputs(confirm = 1)
 
-    inp <- session$returned()
+    inp <- session$returned()$input
     expect_identical(inp$assay_type, "normalized_intensity")
     # No second transform: normalizing twice would compress the dynamic range
     expect_null(inp$raw_mat)
@@ -176,7 +176,7 @@ test_that("RNA-seq counts are committed without transformation", {
     session$setInputs(omics_type = "rnaseq", file = tiny_upload(xlsx))
     session$setInputs(confirm = 1)
 
-    inp <- session$returned()
+    inp <- session$returned()$input
     expect_identical(inp$assay_type, "raw_count")
     expect_null(inp$raw_mat)
   })
@@ -196,7 +196,7 @@ test_that("vsn is used when asked for and available", {
     session$setInputs(normalize = TRUE, normalize_method = "vsn")
     session$setInputs(confirm = 1)
 
-    inp <- session$returned()
+    inp <- session$returned()$input
     expect_identical(inp$assay_type, "normalized_intensity")
     expect_identical(dim(inp$expr_mat), c(60L, 6L))
     expect_silent(omicsCore::check_assay_scale(inp))
@@ -257,7 +257,7 @@ test_that("a failed normalization commits nothing and stays retryable", {
       .package = "omicsCore"
     )
     session$setInputs(normalize_method = "log2", confirm = 2)
-    out <- session$returned()
+    out <- session$returned()$input
     expect_s3_class(out, "omics_input")
     expect_equal(out$assay_type, "normalized_intensity")
   })
@@ -276,7 +276,7 @@ test_that("unticking Normalize on import still cannot reach limma", {
     # The checkbox is a legitimate choice: the layer imports, and QC on it is
     # fine. What must not happen is limma reporting log2 fold changes from it.
     session$setInputs(normalize = FALSE, confirm = 1)
-    out <- session$returned()
+    out <- session$returned()$input
     skip_if(is.null(out) || !identical(out$assay_type, "raw_intensity"),
             "fixture did not import as raw intensity")
     expect_error(

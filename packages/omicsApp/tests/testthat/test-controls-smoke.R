@@ -562,3 +562,77 @@ test_that("an untagged result in an ambiguous project is refused, not guessed", 
       expect_match(info$why, "more than one proteomics layer")
     })
 })
+
+# ---- expensive work runs when the work changes ------------------------
+#
+# can_run() reads the whole project, so every write to it re-evaluated --
+# including the write this view's own result causes. One differential
+# therefore launched the integration twice: once when the prerequisites
+# became true, once when the result of the first run was filed. The second
+# computed the same numbers and replaced the first.
+
+test_that("filing the integration's own result does not re-run it", {
+  proj <- sm_project()
+  pv <- shiny::reactiveVal(proj)
+  b <- omicsCore::run_diff(proj$experiments$prot, method = "ttest",
+                           analysis_type = "group", group_col = "condition",
+                           control_group = "G1", case_group = "G2")
+  b$input_info$layer_tag <- "prot"
+  b$provenance_binding <- list(analysis_id = "ana_primary")
+
+  runs <- 0L
+  testthat::local_mocked_bindings(
+    run_async = function(func, on_success, on_error, ...) {
+      runs <<- runs + 1L
+      invisible(NULL)          # never completes: counting launches only
+    },
+    .package = "omicsApp")
+
+  shiny::testServer(
+    integration_view_server,
+    args = list(current_project = pv, diff_bundle = shiny::reactiveVal(b)), {
+      session$flushReact()
+      expect_equal(runs, 1L)
+
+      # A write to the project that changes nothing this view depends on.
+      p2 <- proj
+      p2$name <- "renamed"
+      p2$bundles <- list(integration = list(dummy = TRUE))
+      pv(p2)
+      session$flushReact()
+      expect_equal(runs, 1L)
+    })
+})
+
+test_that("a change that does change the work does re-run it", {
+  proj <- sm_project()
+  pv <- shiny::reactiveVal(proj)
+  b <- omicsCore::run_diff(proj$experiments$prot, method = "ttest",
+                           analysis_type = "group", group_col = "condition",
+                           control_group = "G1", case_group = "G2")
+  b$input_info$layer_tag <- "prot"
+  b$provenance_binding <- list(analysis_id = "ana_primary")
+  bv <- shiny::reactiveVal(b)
+
+  runs <- 0L
+  testthat::local_mocked_bindings(
+    run_async = function(func, on_success, on_error, ...) {
+      runs <<- runs + 1L
+      invisible(NULL)
+    },
+    .package = "omicsApp")
+
+  shiny::testServer(
+    integration_view_server,
+    args = list(current_project = pv, diff_bundle = bv), {
+      session$flushReact()
+      expect_equal(runs, 1L)
+
+      # A different differential upstream is different work.
+      b2 <- b
+      b2$provenance_binding <- list(analysis_id = "ana_other")
+      bv(b2)
+      session$flushReact()
+      expect_equal(runs, 2L)
+    })
+})
