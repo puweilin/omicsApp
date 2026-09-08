@@ -444,3 +444,58 @@ test_that("history is re-attributed too", {
   expect_equal(copy$retired[[1L]]$provenance_binding$project_id,
                copy$metadata$project_id)
 })
+
+# ---- a corrected scale has to reach the script ------------------------
+#
+# `assay_type` is the only record of what scale expr_mat is on, and the
+# backends act on it: log2(x + 1) for raw_count and not otherwise, and
+# limma refuses raw counts. The import lets a user correct a wrong guess,
+# and correcting it used to write the field only -- so the analysis ran on
+# the corrected layer and the exported script replayed the original.
+#
+# The application was right and the download could not reproduce it, which
+# is worse than being wrong loudly.
+
+relabel_input <- function() {
+  set.seed(6)
+  ids <- paste0("g", 1:30); sids <- paste0("s", 1:8)
+  # Rounded log-scale values: small enough to be read as counts.
+  m <- matrix(round(stats::rnorm(240, 8, 1.5)), 30, dimnames = list(ids, sids))
+  m[m < 0] <- 0
+  x <- omics_input(m,
+                   data.frame(group = rep(c("a", "b"), each = 4),
+                              row.names = sids),
+                   data.frame(feature_id = ids, row.names = ids),
+                   omics_type = "rnaseq", assay_type = "raw_count")
+  record_step(x, "read_omics",
+              list(path = "study.xlsx", type = "excel",
+                   omics_type = "rnaseq", assay_type = "raw_count"))
+}
+
+test_that("relabelling changes the field and the record together", {
+  x <- relabel_input()
+  y <- relabel_assay_type(x, "logcpm")
+
+  expect_identical(y$assay_type, "logcpm")
+  step <- Filter(function(s) identical(s$op, "read_omics"),
+                 provenance_steps(y))[[1L]]
+  expect_identical(step$args$assay_type, "logcpm")
+  # and the original is untouched, since this returns a value
+  expect_identical(x$assay_type, "raw_count")
+})
+
+test_that("the exported script replays the corrected scale", {
+  x <- relabel_assay_type(relabel_input(), "logcpm")
+  p <- omics_project("relabelled", experiments = list(rnaseq = x))
+  sc <- export_script(p)
+
+  expect_true(any(grepl("logcpm", sc, fixed = TRUE)))
+  expect_false(any(grepl("raw_count", sc, fixed = TRUE)))
+  expect_no_error(parse(text = sc))
+})
+
+test_that("relabelling refuses a type that layer cannot be on", {
+  x <- relabel_input()
+  expect_error(relabel_assay_type(x, "raw_intensity"))
+  expect_error(relabel_assay_type(x, character(0)))
+})

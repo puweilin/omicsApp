@@ -709,6 +709,58 @@ record_step <- function(input, op, args = list()) {
   input
 }
 
+#' Change a layer's assay type, and its record of it
+#'
+#' `assay_type` is the only note of what scale `expr_mat` is on, and the
+#' analysis backends act on it: `log2(x + 1)` is applied for
+#' `"raw_count"` and not otherwise, and limma refuses raw counts outright.
+#' So the import offers the user a chance to correct a wrong guess.
+#'
+#' Correcting it used to be a single assignment to the field, which left
+#' the provenance still recording the value the file was read with. The
+#' analysis then ran on the corrected layer and the exported script
+#' replayed the original -- so a layer relabelled from `raw_count` to
+#' `logcpm` analysed fine in the application and the downloaded script
+#' stopped at the scale check. The results were right and could not be
+#' reproduced, which is the harder failure to notice.
+#'
+#' Both together, here, so they cannot drift apart again.
+#'
+#' @param input An `omics_input`.
+#' @param assay_type The corrected assay type.
+#'
+#' @return The input, relabelled, with its `read_omics` step updated.
+#' @export
+#' @family omics_input
+relabel_assay_type <- function(input, assay_type) {
+  validate_omics_input(input)
+  assert_string(assay_type, "assay_type")
+  # Refused, not warned about. validate_assay_type() warns because its
+  # other job is a magnitude heuristic that a small or unusual matrix can
+  # legitimately trip. This is not that: an assay type outside the
+  # modality's list is a category error, the picker never offers one, and
+  # a layer silently relabelled `raw_intensity` on RNA-seq is mislabelled
+  # in a way nothing downstream catches.
+  allowed <- SUPPORTED_ASSAY_TYPES[[input$omics_type %||% ""]]
+  if (!is.null(allowed) && !assay_type %in% allowed) {
+    stop("`assay_type = \"", assay_type, "\"` is not one an ",
+         input$omics_type, " layer can be on. Expected one of: ",
+         paste(sprintf("'%s'", allowed), collapse = ", "), ".",
+         call. = FALSE)
+  }
+  # Still runs, for the magnitude warning a legitimate relabel may earn.
+  validate_assay_type(assay_type, input$omics_type)
+  input$assay_type <- assay_type
+  steps <- input$provenance %||% list()
+  for (i in seq_along(steps)) {
+    if (identical(steps[[i]]$op, "read_omics")) {
+      steps[[i]]$args$assay_type <- assay_type
+    }
+  }
+  input$provenance <- steps
+  input
+}
+
 #' The steps recorded on a layer
 #'
 #' @param input An `omics_input`.

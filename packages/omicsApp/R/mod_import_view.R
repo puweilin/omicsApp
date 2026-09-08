@@ -187,7 +187,13 @@ import_view_server <- function(id,
       shiny::req(cand, cand$input)
       if (identical(cand$input$assay_type, input$assay_type)) return()
 
-      cand$input$assay_type <- input$assay_type
+      # Through omicsCore, which changes the field and the provenance
+      # record together. Assigning the field alone left the recorded
+      # read_omics step saying what the file was read as, so the exported
+      # script replayed the wrong scale and stopped at the scale check --
+      # while the analysis in front of the user was correct.
+      cand$input <- omicsCore::relabel_assay_type(cand$input,
+                                                  input$assay_type)
       f <- input$file
       if (!is.null(f)) {
         cand$input$source_fingerprint <- input_fingerprint(

@@ -56,6 +56,7 @@ Other omics_input:
 \code{\link{infer_assay_type}()},
 \code{\link{is_omics_input}()},
 \code{\link{omics_input}()},
+\code{\link{relabel_assay_type}()},
 \code{\link{select_complete_cases}()},
 \code{\link{subset_omics}()},
 \code{\link{subset_omics_features}()},
