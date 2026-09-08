@@ -76,6 +76,59 @@ test_that("project_for_worker keeps the data and drops the analyses", {
   expect_s3_class(out, "omics_project")
 })
 
+# ---- progress across a process boundary --------------------------------
+#
+# The worker cannot touch the session's Progress, and under multisession
+# it does not even share its tempdir(). The filesystem is what both ends
+# have, so the parent picks a path and the worker appends to it. Without
+# this the bar sits at 30% for the length of the run, which on the
+# enrichment grid is a minute of a screen that looks like a stopped one.
+
+test_that("the reader turns what the writer wrote into a fraction", {
+  p <- withr::local_tempfile()
+  write <- progress_writer(p)
+  read <- progress_reader(p)
+
+  expect_null(read())                       # nothing written yet
+  write(0L, 28L, "ORA / hallmark / both")
+  st <- read()
+  expect_equal(st$value, 0)
+  expect_match(st$detail, "0 / 28", fixed = TRUE)
+  expect_match(st$detail, "hallmark", fixed = TRUE)
+
+  write(14L, 28L, "GSEA / go_bp / both")
+  expect_equal(read()$value, 0.5)
+
+  write(28L, 28L, "done")
+  expect_equal(read()$value, 1)
+})
+
+test_that("a half-written line reads as one step behind, not as a break", {
+  # A read can land mid-append. Reporting the previous step is right;
+  # throwing, or reporting a truncated number, is not.
+  p <- withr::local_tempfile()
+  progress_writer(p)(3L, 10L, "ORA / kegg / up")
+  cat("7\t1", file = p, append = TRUE)      # torn write, no newline
+  st <- progress_reader(p)()
+  expect_equal(st$value, 0.3)
+})
+
+test_that("the reader survives a file that is not there or is empty", {
+  expect_null(progress_reader(tempfile())())
+  p <- withr::local_tempfile()
+  file.create(p)
+  expect_null(progress_reader(p)())
+})
+
+test_that("progress never reports more than finished", {
+  # A total the worker revised downward, or a done past it, would send
+  # Progress$set() a value over 1 and Shiny renders that as a full bar
+  # that then keeps running.
+  p <- withr::local_tempfile()
+  progress_writer(p)(30L, 28L, "over")
+  expect_equal(progress_reader(p)()$value, 1)
+})
+
 test_that("the detached function still reaches package code", {
   # baseenv() as parent still resolves ::, which is how the callers
   # invoke omicsCore.

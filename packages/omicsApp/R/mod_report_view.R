@@ -121,18 +121,36 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         upstream = diff$provenance_binding$analysis_id %||% character(0),
         params = list(grid = "all"),
         activation = NA_integer_)
+      # The path is chosen here and handed over, not chosen in the
+      # worker: under `multisession` the worker has its own tempdir(),
+      # so a name it picked would be one this side could not find.
+      progress_path <- tempfile("omicsApp-grid-", fileext = ".progress")
+      # The writer is built here and travels as a value. Built inside the
+      # worker instead it would have to carry progress_writer() across,
+      # and detached_call() re-parents to baseenv() -- where a package
+      # internal is not.
+      report_progress <- progress_writer(progress_path)
       run_async(
         detached_call(
-          function() omicsCore::run_enrichment_grid(diff_bundle = bundle),
-          bundle = bundle_for_worker(diff)),
+          function() {
+            on.exit(unlink(progress_path), add = TRUE)
+            omicsCore::run_enrichment_grid(diff_bundle = bundle,
+                                           on_progress = report_progress)
+          },
+          bundle = bundle_for_worker(diff),
+          progress_path = progress_path,
+          report_progress = report_progress),
         on_success = function(result) {
+          unlink(progress_path)
           grid_error(NULL)
           grid_bundle(stamp_from_launch(result, launch))
         },
         on_error = function(msg) {
+          unlink(progress_path)
           grid_bundle(NULL)
           grid_error(msg)
         },
+        progress_poll = progress_reader(progress_path),
         message = "Running every enrichment..."
       )
     })

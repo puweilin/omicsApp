@@ -39,6 +39,7 @@
 run_async <- function(func, on_success, on_error, message = "Running...",
                       admissible = function(outcome) list(ok = TRUE, reason = ""),
                       on_discard = function(reason) NULL,
+                      progress_poll = NULL,
                       .future = future::future) {
   # Both outcomes go through the same gate. Wrapping only on_success would
   # leave the failure path able to overwrite state the success path is no
@@ -80,6 +81,31 @@ run_async <- function(func, on_success, on_error, message = "Running...",
     session$onSessionEnded(close_progress)
   }
 
+  # A bar that moves, when the caller can say where the work has got to.
+  #
+  # The task runs in another process, so it cannot touch this Progress --
+  # it reports through whatever channel `progress_poll` reads, and this
+  # side asks every half second. Without it the bar sits at 30% for the
+  # length of the run, which on the enrichment grid is a minute of a
+  # screen that looks exactly like a screen that has stopped.
+  if (is.function(progress_poll)) {
+    poll_obs <- shiny::observe({
+      shiny::invalidateLater(500)
+      st <- tryCatch(progress_poll(), error = function(e) NULL)
+      if (is.null(st)) return()
+      progress$set(value = st$value, message = message, detail = st$detail)
+    })
+    # Destroyed with the bar: an observer left running after the task
+    # finishes keeps invalidating for the life of the session.
+    local({
+      inner <- close_progress
+      close_progress <<- function() {
+        tryCatch(poll_obs$destroy(), error = function(e) NULL)
+        inner()
+      }
+    })
+  }
+
   # future() can throw before anything is submitted -- most reliably by
   # refusing to export globals over future.globals.maxSize. Thrown from
   # inside an observer that is what kills the session and greys the
@@ -110,6 +136,72 @@ run_async <- function(func, on_success, on_error, message = "Running...",
       close_progress()
     }
   )
+}
+
+#' Report progress across a process boundary, through a file
+#'
+#' The worker cannot reach the session's `Progress`: it is another
+#' process, and under `multisession` it does not even share its
+#' `tempdir()`. What both ends do share is the filesystem, so the parent
+#' picks a path, hands it over, and the worker appends a line per step.
+#'
+#' Append-per-step rather than rewrite-per-step, so a read that lands
+#' mid-write sees one fewer step rather than a truncated number. The
+#' reader takes the last complete line and ignores a partial one.
+#'
+#' @param path A file the worker can write and the session can read.
+#' @return A `function(done, total, label)` suitable for
+#'   `run_enrichment_grid(on_progress = )`.
+#' @keywords internal
+#' @noRd
+progress_writer <- function(path) {
+  force(path)
+  function(done, total, label) {
+    line <- sprintf("%d\t%d\t%s\n", as.integer(done), as.integer(total),
+                    label %||% "")
+    tryCatch(cat(line, file = path, append = TRUE), error = function(e) NULL)
+  }
+}
+
+#' @rdname progress_writer
+#' @return For `progress_reader()`, a `function()` giving
+#'   `list(value = , detail = )` or `NULL` before the first step lands.
+#' @keywords internal
+#' @noRd
+progress_reader <- function(path) {
+  force(path)
+  function() {
+    if (!file.exists(path)) return(NULL)
+    size <- file.size(path)
+    if (is.na(size) || size == 0) return(NULL)
+    raw <- tryCatch(readChar(path, size, useBytes = TRUE),
+                    error = function(e) "")
+    if (!nzchar(raw)) return(NULL)
+
+    # Only lines a newline has closed. `readLines()` hands back an
+    # unterminated final line without complaint, and a read that landed
+    # halfway through an append would then be parsed as a complete step
+    # -- "7\t1" from a torn "7\t14\tGSEA ..." reads as 7 of 1, a bar that
+    # jumps to full and stays there. A step behind is the right answer.
+    lines <- strsplit(raw, "\n", fixed = TRUE)[[1L]]
+    if (!endsWith(raw, "\n")) lines <- utils::head(lines, -1L)
+
+    parts <- NULL
+    for (i in rev(seq_along(lines))) {
+      p <- strsplit(lines[[i]], "\t", fixed = TRUE)[[1L]]
+      if (length(p) >= 2L && !is.na(suppressWarnings(as.integer(p[[1L]]))) &&
+          !is.na(suppressWarnings(as.integer(p[[2L]])))) {
+        parts <- p
+        break
+      }
+    }
+    if (is.null(parts)) return(NULL)
+    done <- as.integer(parts[[1L]])
+    total <- max(as.integer(parts[[2L]]), 1L)
+    list(value = min(done / total, 1),
+         detail = sprintf("%d / %d  %s", done, total,
+                          if (length(parts) >= 3L) parts[[3L]] else ""))
+  }
 }
 
 #' Build a zero-argument function that carries only what it is given
