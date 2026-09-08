@@ -85,7 +85,42 @@ for (cls in names(designed)) {
     if (!identical(rep_, right)) wrong <- wrong + tab[cls, rep_]
   }
 }
+n_designed <- sum(tab[intersect(names(designed), rownames(tab)), ])
 cat(sprintf("\n%d of %d designed pairs reported the wrong direction.\n",
-            wrong, sum(tab[intersect(names(designed), rownames(tab)), ])))
+            wrong, n_designed))
 cat("Rows for `null`, `rna_only` and `protein_only` are noise reaching\n",
-    "significance in both layers by chance; a few are expected.\n\n")
+    "significance in both layers by chance; a few are expected.\n")
+
+# A non-zero exit, so this can gate a deployment rather than only inform
+# one. Printing a mismatch count and returning 0 is a check that passes
+# while reporting failure, which is the shape of check nobody notices has
+# broken.
+#
+# Three ways this run is not evidence that integration works:
+failures <- character(0)
+if (!identical(pairing$source, "donor")) {
+  failures <- c(failures, sprintf(
+    "pairing fell back to '%s'; the sample ids differ between layers by design, so donor is the only correct answer",
+    pairing$source))
+}
+if (wrong > 0L) {
+  failures <- c(failures, sprintf("%d designed pairs reported the wrong direction",
+                                  wrong))
+}
+# Coverage: a run where almost nothing reached significance in both
+# layers agrees with the truth table trivially, having tested almost
+# nothing. Two thirds of the designed changes is well inside what this
+# generator produces and well outside what a broken pipeline would.
+expected_designed <- sum(truth$expected_concordance != "not comparable")
+if (n_designed < 0.5 * expected_designed) {
+  failures <- c(failures, sprintf(
+    "only %d of %d designed changes reached significance in both layers; too few to conclude anything",
+    n_designed, expected_designed))
+}
+
+if (length(failures) > 0L) {
+  cat("\nFAILED:\n")
+  cat(paste0("  - ", failures, collapse = "\n"), "\n\n")
+  quit(status = 1L)
+}
+cat("\nPASSED\n\n")
