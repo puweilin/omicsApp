@@ -291,6 +291,27 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                 "The built-in demo cannot be saved \u2014 import a file first."
               )
             },
+            # Starting over had no button. The session restores the last
+            # project on arrival, which is what someone coming back wants
+            # and leaves someone starting a new study with no way to say
+            # so: importing a file replaces a *layer* of the project they
+            # are already in, keeping its name and everything else in it.
+            #
+            # Offered only when a project is loaded, because with nothing
+            # loaded this is already where the button would take you.
+            if (have_project) {
+              htmltools::tagList(
+                htmltools::tags$hr(),
+                shiny::actionButton(session$ns("new_project"),
+                                    "Start a new project",
+                                    class = "btn btn-sm btn-outline-secondary"),
+                htmltools::tags$div(
+                  class = "muted", style = "font-size:12px;padding-top:6px",
+                  "Clears this session so the next import starts a project ",
+                  "of its own."
+                )
+              )
+            },
             if (!is.null(stamp)) {
               htmltools::tagList(
                 htmltools::tags$hr(),
@@ -307,6 +328,57 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           )
         )
       )
+    })
+
+    # Clearing the project is safe on its own: wire_autosave() skips a NULL
+    # project, so `_autosave.omp` still holds this work and "Restore last
+    # session" still reaches it. What ends that is the *next* import, whose
+    # first autosave overwrites the file.
+    #
+    # So the warning is about the import, not about this click, and it is
+    # worth making because the two are separated by however long the user
+    # spends choosing a file -- long enough to forget.
+    shiny::observeEvent(input$new_project, {
+      proj <- resolved()$project
+      saved <- tryCatch(nrow(list_saved_projects()) > 0L,
+                        error = function(e) FALSE)
+      shiny::showModal(shiny::modalDialog(
+        title = "Start a new project?",
+        htmltools::tags$p(sprintf(
+          "'%s' will be closed. Nothing on disk is deleted.",
+          proj$name %||% "This project")),
+        htmltools::tags$p(
+          "\u201cRestore last session\u201d still brings it back \u2014 ",
+          "until the new project's first import replaces the autosave. ",
+          "To keep this one for longer than that, save it under a name ",
+          "first."
+        ),
+        if (!saved) {
+          htmltools::tags$p(
+            class = "muted",
+            "You have not saved any project under a name yet."
+          )
+        },
+        footer = htmltools::tagList(
+          shiny::modalButton("Cancel"),
+          shiny::actionButton(session$ns("confirm_new_project"),
+                              "Start a new project",
+                              class = "btn btn-primary")
+        ),
+        easyClose = TRUE
+      ))
+    })
+
+    shiny::observeEvent(input$confirm_new_project, {
+      shiny::removeModal()
+      # Same order as opening one: bump the activation first so the views
+      # let go of the outgoing project before it disappears underneath
+      # them, then clear it.
+      on_activate()
+      current_project(NULL)
+      shiny::showNotification(
+        "Started a new project. Import a file to begin.",
+        type = "message")
     })
 
     shiny::observeEvent(input$save_project, {

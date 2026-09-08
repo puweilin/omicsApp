@@ -221,6 +221,49 @@ test_that("the Projects controls act on the project", {
   })
 })
 
+# The session restores the last project on arrival, which is what someone
+# coming back wants and left someone starting a new study with no way to
+# say so -- importing a file replaces a layer of the project they are
+# already in. This is the way out.
+test_that("Start a new project clears the session, once confirmed", {
+  proj <- shiny::reactiveVal(sm_project())
+  activated <- 0L
+  shiny::testServer(
+    project_view_server,
+    args = list(current_project = proj,
+                on_activate = function() activated <<- activated + 1L), {
+    session$flushReact()
+
+    # Asking is not doing: the modal has to be confirmed.
+    session$setInputs(new_project = 1)
+    session$flushReact()
+    expect_false(is.null(current_project()))
+
+    session$setInputs(confirm_new_project = 1)
+    session$flushReact()
+    expect_null(current_project())
+    # The views are told to let go before the project disappears.
+    expect_gt(activated, 0L)
+  })
+})
+
+test_that("the new-project button is offered only with a project loaded", {
+  # With nothing loaded this is already where the button would take you,
+  # and a button that does nothing reads as a broken one.
+  shiny::testServer(project_view_server,
+                    args = list(current_project = shiny::reactiveVal(NULL)), {
+    session$flushReact()
+    expect_no_match(ui_html(output$storage), "Start a new project",
+                    fixed = TRUE)
+  })
+  shiny::testServer(project_view_server,
+                    args = list(current_project = shiny::reactiveVal(sm_project())), {
+    session$flushReact()
+    expect_match(ui_html(output$storage), "Start a new project",
+                 fixed = TRUE)
+  })
+})
+
 # ---- Integration ------------------------------------------------------
 
 test_that("the Integration pairing control writes the pairing", {
