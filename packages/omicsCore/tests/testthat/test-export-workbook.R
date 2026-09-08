@@ -61,6 +61,58 @@ test_that("the imputed sheet carries feature ids, not just numbers", {
   expect_equal(nrow(s), 20L)
 })
 
+# The grid is what makes the workbook worth having: ORA and GSEA across
+# every database, which the Enrich view can only produce one at a time.
+# Split by test rather than by database -- ORA and GSEA answer different
+# questions and are read apart, while a database is a column the rows
+# already carry.
+test_that("the enrichment grid becomes one sheet per test", {
+  skip_if_not_installed("openxlsx")
+  p <- wb_project()
+  p$bundles$enrich_all <- structure(
+    list(analysis_name = "run_enrichment_grid",
+         results = list(
+           enrich_result_df = data.frame(
+             database = c("hallmark", "kegg", "hallmark"),
+             result_type = c("ora", "ora", "gsea"),
+             direction = c("up", "down", "both"),
+             pathway_id = c("P1", "P2", "P3"),
+             stringsAsFactors = FALSE),
+           grid_log = data.frame(type = "ora", database = "hallmark",
+                                 direction = "up", rows = 2L, seconds = 0.1,
+                                 status = "ok", message = NA_character_,
+                                 stringsAsFactors = FALSE))),
+    class = "analysis_bundle")
+
+  s <- workbook_sheets(p)
+  expect_true(all(c("Enrichment ORA", "Enrichment GSEA",
+                    "Enrichment log") %in% names(s)))
+  expect_equal(nrow(s[["Enrichment ORA"]]), 2L)
+  expect_equal(nrow(s[["Enrichment GSEA"]]), 1L)
+  # both databases stay in the ORA sheet, named in a column
+  expect_setequal(s[["Enrichment ORA"]]$database, c("hallmark", "kegg"))
+})
+
+# "GO BP is not in this workbook" and "GO BP came back with nothing" look
+# identical from the sheets, and only one of them means something is
+# wrong. The log is what tells them apart.
+test_that("the log ships even when every combination came back empty", {
+  skip_if_not_installed("openxlsx")
+  p <- wb_project()
+  p$bundles$enrich_all <- structure(
+    list(analysis_name = "run_enrichment_grid",
+         results = list(
+           enrich_result_df = data.frame(),
+           grid_log = data.frame(type = "ora", database = "kegg",
+                                 direction = "up", rows = 0L, seconds = 0.2,
+                                 status = "empty", message = NA_character_,
+                                 stringsAsFactors = FALSE))),
+    class = "analysis_bundle")
+  s <- workbook_sheets(p)
+  expect_true("Enrichment log" %in% names(s))
+  expect_false(any(grepl("^Enrichment (ORA|GSEA)$", names(s))))
+})
+
 test_that("a project with no analyses has nothing to export", {
   skip_if_not_installed("openxlsx")
   p <- omics_project("empty", experiments = list(prot = wb_input()))

@@ -167,7 +167,9 @@ app_server <- function(input, output, session) {
   # slot -- an integration that names an upstream the project does not
   # hold is judged invalid as soon as it arrives.
   integration_secondary <- integration_view$secondary
-  report_view_server("report", current_project = current_project)
+  # Returns the enrichment grid, which is filed like any other result.
+  enrich_grid <- report_view_server("report",
+                                    current_project = current_project)
 
   # ---- which data the views' results belong to -------------------------
   # A layer's identity is its upload fingerprint, or its shape when it
@@ -232,6 +234,7 @@ app_server <- function(input, output, session) {
       qc          = qc_bundle(),
       diff        = diff_bundle(),
       enrich      = enrich_bundle(),
+      enrich_all  = enrich_grid(),
       integration = integration_bundle()
     )
     pid <- proj$metadata$project_id

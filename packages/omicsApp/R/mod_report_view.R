@@ -18,6 +18,7 @@ report_view_ui <- function(id) {
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
     shiny::uiOutput(ns("notices")),
+    shiny::uiOutput(ns("grid_card")),
     shiny::uiOutput(ns("sheet_card")),
     shiny::uiOutput(ns("bundle_cards")),
     shiny::uiOutput(ns("script_card"))
@@ -77,6 +78,65 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     })
 
     # ---- notices ------------------------------------------------------
+    # ---- the whole enrichment grid --------------------------------------
+    #
+    # The Enrich view runs one combination at a time, which is what you
+    # want while looking at a result and not what you want when you are
+    # finished: everything ORA and GSEA have to say about a differential
+    # took fourteen visits to that view. This runs the grid once.
+    #
+    # A button rather than something the download does on its own. It is
+    # tens of seconds of real work -- forty to sixty here, longer on a
+    # single-core container -- and a download that blocks that long with
+    # nothing on screen is indistinguishable from one that has hung.
+    # Through run_async() like every other analysis, so it gets the
+    # progress bar and the other sessions stay responsive.
+    grid_bundle <- shiny::reactiveVal(NULL)
+    grid_error <- shiny::reactiveVal(NULL)
+
+    # A grid the project already carries -- restored, or run earlier this
+    # session -- so the button does not have to be pressed twice for one
+    # answer.
+    shiny::observe({
+      proj <- current_project()
+      if (is.null(proj)) return()
+      saved <- proj$bundles$enrich_all
+      if (is.null(saved) || is.null(saved$provenance_binding)) return()
+      if (!omicsCore::result_inputs_current(saved$provenance_binding, proj)) {
+        return()
+      }
+      grid_bundle(saved)
+    }, priority = -20L)
+
+    shiny::observeEvent(input$run_grid, {
+      proj <- current_project()
+      diff <- proj$bundles$diff
+      if (is.null(diff)) {
+        grid_error("Run a differential first: enrichment reads its results.")
+        return()
+      }
+      launch <- capture_launch(
+        proj, "enrich_all",
+        tags = diff$input_info$layer_tag %||% character(0),
+        upstream = diff$provenance_binding$analysis_id %||% character(0),
+        params = list(grid = "all"),
+        activation = NA_integer_)
+      run_async(
+        detached_call(
+          function() omicsCore::run_enrichment_grid(diff_bundle = bundle),
+          bundle = bundle_for_worker(diff)),
+        on_success = function(result) {
+          grid_error(NULL)
+          grid_bundle(stamp_from_launch(result, launch))
+        },
+        on_error = function(msg) {
+          grid_bundle(NULL)
+          grid_error(msg)
+        },
+        message = "Running every enrichment..."
+      )
+    })
+
     # The sheets the workbook would hold, asked of omicsCore rather than
     # worked out again here. The header counts them, the card lists them
     # and the download writes them; three routes to the same answer is
@@ -139,6 +199,49 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     })
 
     # ---- bundle status cards ------------------------------------------
+    output$grid_card <- shiny::renderUI({
+      proj <- current_project()
+      have_diff <- !is.null(proj) && !is.null(proj$bundles$diff)
+      g <- grid_bundle()
+      err <- grid_error()
+
+      status <- if (!is.null(err)) {
+        htmltools::tags$div(class = "muted", style = "color:var(--danger)", err)
+      } else if (!is.null(g)) {
+        lg <- g$results$grid_log
+        htmltools::tags$div(
+          class = "muted", style = "font-size:12px",
+          sprintf("%s combinations run · %s returned rows · %s empty · %s failed",
+                  nrow(lg), sum(lg$status == "ok"),
+                  sum(lg$status == "empty"), sum(lg$status == "failed")))
+      } else {
+        htmltools::tags$div(
+          class = "muted", style = "font-size:12px",
+          "ORA in three directions and GSEA, across every database. ",
+          "Tens of seconds; the workbook picks the results up when it ",
+          "finishes.")
+      }
+
+      btn <- shiny::actionButton(
+        session$ns("run_grid"),
+        if (is.null(g)) "Run every enrichment" else "Run them again",
+        class = "btn btn-sm btn-primary")
+      if (!have_diff) {
+        btn <- htmltools::tagAppendAttributes(
+          btn, disabled = NA, style = "pointer-events:none;opacity:0.55",
+          title = "Run a differential first")
+      }
+
+      bslib::card(
+        bslib::card_header(
+          htmltools::tags$h3(class = "card-title", "Enrichment, all of it"),
+          htmltools::tags$span(class = "card-sub",
+                               "one pass instead of fourteen visits")
+        ),
+        bslib::card_body(btn, status)
+      )
+    })
+
     # What the workbook will contain, listed from the workbook itself.
     #
     # The card used to describe the four analyses and the download wrote
@@ -367,5 +470,11 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         writeLines(lines, file)
       }
     )
+
+    # Returned so app_server() can file it into the project, the same way
+    # every other view's result is filed. The workbook then reads it from
+    # the project rather than from this module, so a restored project
+    # exports its grid without anyone pressing anything.
+    shiny::reactive(grid_bundle())
   })
 }

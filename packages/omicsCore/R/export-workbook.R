@@ -134,6 +134,31 @@ workbook_sheets <- function(project) {
   if (!is.null(bundles$enrich$results$enrich_result_df)) {
     sheets[["Enrichment"]] <- bundles$enrich$results$enrich_result_df
   }
+
+  # The full grid, split by test rather than by database. ORA and GSEA
+  # answer different questions and are read separately; databases are a
+  # column within each, which is how the rows already carry them -- one
+  # sheet per database would be fourteen sheets and no more information.
+  #
+  # The log goes out too, because "GO BP is not in this workbook" and "GO
+  # BP came back with nothing" look identical from the sheets alone, and
+  # only one of them means something went wrong.
+  grid <- bundles$enrich_all
+  if (!is.null(grid$results$enrich_result_df)) {
+    all_rows <- grid$results$enrich_result_df
+    if ("result_type" %in% names(all_rows)) {
+      for (rt in unique(all_rows$result_type)) {
+        part <- all_rows[all_rows$result_type == rt, , drop = FALSE]
+        if (nrow(part) == 0L) next
+        sheets[[paste("Enrichment", toupper(rt))]] <- part
+      }
+    } else if (nrow(all_rows) > 0L) {
+      sheets[["Enrichment (all)"]] <- all_rows
+    }
+  }
+  if (!is.null(grid$results$grid_log)) {
+    sheets[["Enrichment log"]] <- grid$results$grid_log
+  }
   if (!is.null(bundles$integration$results$integration_df)) {
     sheets[["Integration"]] <- bundles$integration$results$integration_df
   }

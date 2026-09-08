@@ -185,6 +185,57 @@ test_that("the export button is live exactly when it can work", {
   })
 })
 
+# The Enrich view runs one combination at a time, so everything ORA and
+# GSEA have to say about a differential took fourteen visits to it. The
+# grid is one press, and what it produces has to reach the workbook --
+# through the project, like every other result, not through a private
+# channel between two modules.
+test_that("the enrichment grid runs from the Report view and reaches the sheets", {
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("clusterProfiler")
+  skip_if_not_installed("msigdbr")
+
+  proj <- sm_project()
+  proj$bundles <- list(diff = example_diff_bundle())
+  pv <- shiny::reactiveVal(proj)
+
+  shiny::testServer(report_view_server, args = list(current_project = pv), {
+    session$flushReact()
+    expect_null(grid_bundle())
+
+    session$setInputs(run_grid = 1)
+    session$flushReact()
+
+    g <- grid_bundle()
+    expect_false(is.null(g))
+    expect_identical(g$analysis_name, "run_enrichment_grid")
+    # Both tests attempted, whatever came back
+    expect_setequal(unique(g$results$grid_log$type), c("ora", "gsea"))
+
+    # And the workbook picks it up once it is on the project. app_server()
+    # does the filing; here it is done by hand to keep the test to one
+    # module.
+    p2 <- proj
+    p2$bundles$enrich_all <- g
+    sheets <- names(omicsCore::workbook_sheets(p2))
+    expect_true("Enrichment log" %in% sheets)
+  })
+})
+
+test_that("the grid button is refused without a differential to enrich", {
+  proj <- sm_project()            # layers, no analyses
+  shiny::testServer(report_view_server,
+                    args = list(current_project = shiny::reactiveVal(proj)), {
+    session$flushReact()
+    expect_match(ui_html(output$grid_card), "pointer-events:none")
+
+    # And pressing it anyway says why rather than failing in a worker.
+    session$setInputs(run_grid = 1)
+    session$flushReact()
+    expect_match(grid_error(), "differential")
+  })
+})
+
 test_that("the workbook comes out with a sheet per analysis", {
   skip_if_not_installed("openxlsx")
 
