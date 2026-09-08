@@ -149,9 +149,22 @@ RUN R -q -e 'pkgs <- c("GSVA","enrichplot","clusterProfiler"); \
 # texlive-lang-chinese the font-selection machinery (xeCJK). All three are
 # needed: an engine that can read the character still prints a blank box
 # without a font that can draw it.
+#
+# lmodern and texlive-plain-generic are named because apt lists them as
+# *Recommended* and --no-install-recommends drops them. They carry
+# lmodern.sty and ulem.sty, which pandoc's LaTeX template loads -- the
+# version in this image does so unconditionally, even under XeLaTeX where
+# fontspec makes lmodern redundant. `fonts-lmodern`, which does get pulled
+# in as a dependency, ships the fonts and not the .sty, so the name that
+# looks like it covers this does not.
+#
+# LaTeX stops at the first file it cannot find, so a missing one of these
+# is a build that fails, gets one package added, and fails again on the
+# next. Both are listed at once for that reason.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         texlive-latex-base texlive-fonts-recommended texlive-latex-extra \
         texlive-xetex texlive-lang-chinese \
+        lmodern texlive-plain-generic \
         fonts-noto-cjk fonts-noto-cjk-extra \
     && rm -rf /var/lib/apt/lists/*
 
