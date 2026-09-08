@@ -498,3 +498,67 @@ test_that("only methods whose packages are installed are offered", {
     }
   })
 })
+
+# ---- two layers of one omics type -------------------------------------
+#
+# The failure the review reproduced: a project with `skin` and `follicle`
+# proteomics, a differential run on follicle. Both call sites resolved the
+# primary layer by omics_type and took the first match -- skin -- so the
+# "other" layer was follicle, which is where the primary already came
+# from. Concordance compared follicle with itself and labelled it
+# skin-against-follicle, and the exported script read the wrong file.
+
+two_of_a_kind <- function() {
+  mk <- function(seed) {
+    set.seed(seed)
+    ids <- paste0("F", 1:40); sids <- paste0("s", 1:8)
+    m <- matrix(stats::rnorm(320, 20, 2), 40, dimnames = list(ids, sids))
+    omicsCore::omics_input(
+      m,
+      data.frame(condition = rep(c("G1", "G2"), each = 4),
+                 donor = paste0("D", 1:8), row.names = sids),
+      data.frame(feature_id = ids, feature_symbol = ids, row.names = ids),
+      omics_type = "proteomics", assay_type = "normalized_intensity")
+  }
+  omicsCore::omics_project("two-of-a-kind",
+                           list(skin = mk(1), follicle = mk(2)))
+}
+
+test_that("integration will not pair a layer with itself", {
+  proj <- two_of_a_kind()
+  # A differential that says which layer it ran on.
+  b <- omicsCore::run_diff(proj$experiments$follicle, method = "ttest",
+                           analysis_type = "group", group_col = "condition",
+                           control_group = "G1", case_group = "G2")
+  b$input_info$layer_tag <- "follicle"
+
+  shiny::testServer(
+    integration_view_server,
+    args = list(current_project = shiny::reactiveVal(proj),
+                diff_bundle = shiny::reactiveVal(b)), {
+      session$flushReact()
+      info <- can_run()
+      expect_true(isTRUE(info$ok))
+      expect_identical(info$primary_tag, "follicle")
+      expect_identical(info$secondary_tag, "skin")
+      expect_false(identical(info$primary_tag, info$secondary_tag))
+    })
+})
+
+test_that("an untagged result in an ambiguous project is refused, not guessed", {
+  proj <- two_of_a_kind()
+  b <- omicsCore::run_diff(proj$experiments$follicle, method = "ttest",
+                           analysis_type = "group", group_col = "condition",
+                           control_group = "G1", case_group = "G2")
+  b$input_info$layer_tag <- NULL          # an older project
+
+  shiny::testServer(
+    integration_view_server,
+    args = list(current_project = shiny::reactiveVal(proj),
+                diff_bundle = shiny::reactiveVal(b)), {
+      session$flushReact()
+      info <- can_run()
+      expect_false(isTRUE(info$ok))
+      expect_match(info$why, "more than one proteomics layer")
+    })
+})

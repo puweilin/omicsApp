@@ -29,9 +29,24 @@
 #'   removed, in signature order.
 #' @keywords internal
 #' @noRd
-script_arg_names <- function(fn) {
+script_arg_names <- function(fn, forwards_to = NULL) {
   nms <- names(formals(fn))
-  setdiff(nms[-1L], "...")
+  named <- setdiff(nms[-1L], "...")
+  # A function that forwards through `...` takes arguments its own
+  # signature does not list, and they belong in the script: a batch
+  # enrichment run at `p_cutoff = 0.001` emitted a call carrying no
+  # thresholds at all, which replays as a different analysis under the
+  # same name.
+  #
+  # Named by the function it forwards *to*, not by "whatever is in
+  # params". A bundle's params also hold derived facts -- run_diff records
+  # `comparison`, which is an answer, not an argument -- and emitting
+  # those produced calls that were rejected by the backend. Six replay
+  # tests said so.
+  if (is.null(forwards_to)) return(named)
+  extra <- setdiff(setdiff(names(formals(forwards_to)), "..."),
+                   c(named, nms[[1L]]))
+  c(named, extra)
 }
 
 #' Render an R value as source code
@@ -225,19 +240,38 @@ as_notes <- function(notes) {
   paste0("# NOTE: ", comment_text(notes))
 }
 
-# Find the experiment a bundle was computed on. Bundles record the
-# omics_type they ran against, which is also the tag app_server() files
-# experiments under, so this resolves in the common case and degrades to
-# the first experiment with a note otherwise.
+# Find the experiment a bundle was computed on.
+#
+# The layer tag first, because the result records it: stamp_from_launch()
+# writes `input_info$layer_tag` when the analysis is registered, and that
+# is the answer rather than an inference from it.
+#
+# Falling back to omics_type was the whole rule, and it is wrong exactly
+# when a project holds two layers of one kind. A differential run on a
+# `follicle` proteomics layer would resolve to `skin` because skin comes
+# first, and the exported script then read the wrong file and replayed a
+# different analysis under the right-looking name. So the fallback now
+# applies only when it is unambiguous; when two layers share the type and
+# the result does not say which, this returns NULL and the caller writes
+# the note rather than guessing.
 resolve_tag <- function(project, bundle) {
-  want <- bundle$input_info$omics_type
   tags <- names(project$experiments)
   if (length(tags) == 0L) return(NULL)
-  if (is.null(want)) return(tags[[1L]])
+
+  recorded <- bundle$input_info$layer_tag
+  recorded <- recorded[!is.na(recorded) & nzchar(recorded)]
+  if (length(recorded) >= 1L && recorded[[1L]] %in% tags) {
+    return(recorded[[1L]])
+  }
+
+  want <- bundle$input_info$omics_type
+  if (is.null(want)) return(if (length(tags) == 1L) tags[[1L]] else NULL)
   types <- vapply(project$experiments,
                   function(e) e$omics_type %||% "", character(1))
   hit <- tags[types %in% want]
-  if (length(hit) == 0L) tags[[1L]] else hit[[1L]]
+  if (length(hit) == 1L) return(hit[[1L]])
+  # Zero matches, or more than one and nothing to choose between them.
+  NULL
 }
 
 # One variable per layer. Through make.names(): a tag is whatever the
@@ -341,18 +375,35 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     input_vars[["__missing__"]] <- "input"
   }
 
-  emit <- function(key, title, fn_name, fn, first, var) {
+  emit <- function(key, title, fn_name, fn, first, var,
+                   forwards_to = NULL) {
     bundle <- bundles[[key]]
     if (is.null(bundle)) return(NULL)
     call <- render_call(fn_name, first, bundle$params %||% list(),
-                        script_arg_names(fn), assign_to = var)
+                        script_arg_names(fn, forwards_to), assign_to = var)
     lines <<- c(lines, section(title), call$lines)
     notes <<- c(notes, call$notes)
   }
 
   input_for <- function(key) {
     tag <- resolve_tag(project, bundles[[key]])
-    if (is.null(tag)) "input" else input_vars[[tag]] %||% "input"
+    if (!is.null(tag)) {
+      hit <- input_vars[[tag]]
+      if (!is.null(hit)) return(hit)
+    }
+    # Unresolvable, which in a multi-layer project means the script would
+    # otherwise name a variable that does not exist -- `input` only exists
+    # when there is one layer. Say which analysis and why, rather than
+    # leaving a reader with "object 'input' not found".
+    notes <<- c(notes, sprintf(
+      paste0("%s ran on a layer this project cannot identify (no layer tag ",
+             "recorded, and %d layers share its omics type). The call below ",
+             "names `input`; replace it with the layer it belongs to."),
+      key, sum(vapply(project$experiments,
+                      function(e) identical(e$omics_type %||% "",
+                                            bundles[[key]]$input_info$omics_type),
+                      logical(1)))))
+    "input"
   }
 
   if (!is.null(bundles$qc)) {
@@ -372,6 +423,21 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     if (is.null(bundles$diff)) {
       notes <- c(notes,
                  "enrichment ran on a differential result the project no longer holds.")
+    }
+  }
+  # The grid. The workbook exports it and the script did not, which is the
+  # shape of every new result type that gets wired into storage and one
+  # exit: it works, and the other exits quietly do not know about it.
+  if (!is.null(bundles$enrich_all)) {
+    # The grid's statistical arguments are run_enrichment()'s, passed
+    # through `...`; that is where the script gets their names.
+    emit("enrich_all", "Pathway enrichment (every combination)",
+         "run_enrichment_grid", run_enrichment_grid, "diff", "enrich_all",
+         forwards_to = run_enrichment)
+    if (is.null(bundles$diff)) {
+      notes <- c(notes,
+                 paste0("the batch enrichment ran on a differential result ",
+                        "the project no longer holds."))
     }
   }
   if (!is.null(bundles$integration)) {

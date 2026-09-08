@@ -69,10 +69,35 @@ integration_view_server <- function(id,
       if (is.null(proj) || is.null(bundle)) return(list(ok = FALSE))
       exps <- proj$experiments
       if (length(exps) < 2L) return(list(ok = FALSE))
+      # Which layer the primary result came from, taken from the result
+      # rather than inferred from its omics type. Two proteomics layers --
+      # `skin` and `follicle` -- and a differential run on the second one
+      # resolved to the first, so the second layer was chosen as
+      # "the other one" and turned out to be the layer the primary was
+      # already computed on. The concordance then compared follicle with
+      # follicle and reported it as skin against follicle.
       types <- vapply(exps, function(e) e$omics_type %||% "", character(1))
-      primary_idx <- which(types == bundle$input_info$omics_type)
-      if (length(primary_idx) == 0L) primary_idx <- 1L
+      recorded <- bundle$input_info$layer_tag
+      recorded <- recorded[!is.na(recorded) & nzchar(recorded)]
+      primary_idx <- if (length(recorded) >= 1L && recorded[[1L]] %in% names(exps)) {
+        match(recorded[[1L]], names(exps))
+      } else {
+        # No tag on the result: an older project, or one built outside the
+        # app. The type is enough only when it picks out one layer;
+        # otherwise there is nothing to choose between them and guessing
+        # is what produced the self-comparison.
+        hit <- which(types == bundle$input_info$omics_type)
+        if (length(hit) != 1L) return(list(
+          ok = FALSE,
+          why = paste0(
+            "This project has more than one ", bundle$input_info$omics_type,
+            " layer and the differential does not record which one it ran ",
+            "on. Re-run the differential from the Differential view, which ",
+            "records the layer, and integration can then pair it.")))
+        hit
+      }
       secondary_idx <- setdiff(seq_along(exps), primary_idx[1L])[1L]
+      if (is.na(secondary_idx)) return(list(ok = FALSE))
       params <- bundle$params
       gc <- params$group_col
       ctrl <- params$control_group
@@ -376,17 +401,17 @@ integration_view_server <- function(id,
           # detached closure also hides it from every static check.
           sec <- stamp_from_launch(out$secondary, sec_launch)
           result <- out$integration
-          # Both layers, named, from the launch record. Re-reading the
-          # versions here would let an old computation be described by
-          # whatever the project holds now.
-          result <- stamp_from_launch(result, launch)
-          # And the upstream is the pair, now that the second layer is a
-          # result the project will hold rather than a local in a worker.
-          both <- c(launch$upstream,
-                    sec$provenance_binding$analysis_id %||% character(0))
-          result$provenance_binding$upstream_ids <- both
-          result$input_info$upstream_ids <- both
 
+          # Everything that belongs on the result goes on it *before* the
+          # stamp, and nothing is added afterwards.
+          #
+          # stamp_from_launch() derives the analysis id from the bundle's
+          # params as they stand when it runs. These three fields used to
+          # be written after it, so the signature described the params
+          # before them and the project's own registry check then read
+          # "params signature does not match the saved parameters" and
+          # retire_invalid() removed the result. A run with covariates
+          # computed correctly, was filed, and disappeared.
           result$params$secondary_covariates <-
             if (length(info$missing_cols)) NULL else info$covariates
           result$params$secondary_paired_col <-
@@ -396,6 +421,18 @@ integration_view_server <- function(id,
           # two layers were modelled differently.
           result$params$unadjusted_secondary <-
             if (length(info$missing_cols)) info$missing_cols else NULL
+
+          # The upstream is the pair, now that the second layer is a
+          # result the project will hold rather than a local in a worker.
+          # Put on the launch rather than patched onto the stamp, so the
+          # id covers it too.
+          both <- c(launch$upstream,
+                    sec$provenance_binding$analysis_id %||% character(0))
+          launch$upstream <- both
+          # Both layers, named, from the launch record. Re-reading the
+          # versions here would let an old computation be described by
+          # whatever the project holds now.
+          result <- stamp_from_launch(result, launch)
 
           integration_error(NULL)
           is_demo(FALSE)

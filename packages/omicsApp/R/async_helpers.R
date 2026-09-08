@@ -301,7 +301,25 @@ bundle_for_worker <- function(bundle) {
 project_for_worker <- function(project, assays = TRUE) {
   if (!inherits(project, "omics_project")) return(project)
   project$bundles <- NULL
+  # `$bundles` is where the display slots live and it was the only thing
+  # removed, which left three more places holding the same kind of weight:
+  #
+  #   $analyses      every result ever registered, by analysis id -- the
+  #                  same objects, including fitted models on a project
+  #                  restored from before run_diff stopped keeping them
+  #   $preprocessing the QC-cleaned matrix per layer, which is a second
+  #                  copy of the data the `assays = FALSE` branch below is
+  #                  emptying
+  #   $retired       results superseded by a change of data, kept so the
+  #                  project can say what it dropped
+  #
+  # A probe put a 4 MiB model in `$analyses` and applied QC: the
+  # experiments came out 0x0 and all 4 MiB still travelled. None of the
+  # three is read by run_integration() or by run_diff().
+  project$analyses <- NULL
+  project$retired <- NULL
   if (!isTRUE(assays)) {
+    project$preprocessing <- NULL
     project$experiments <- lapply(project$experiments, function(e) {
       # Emptied rather than removed: `experiments` still has to be a list
       # of layers with the right names for experiment_tags() to read.

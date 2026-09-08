@@ -192,3 +192,48 @@ test_that("a normal run still succeeds and still closes its progress", {
   }))
   expect_identical(got, 42L)
 })
+
+# `$bundles` was the only thing removed, which left three more places
+# holding the same weight: `$analyses` (every registered result, models
+# and all), `$preprocessing` (a second copy of each QC-cleaned matrix) and
+# `$retired`. A probe put a 4 MiB model in `$analyses` and applied QC: the
+# experiments came out 0x0 and all 4 MiB still travelled.
+test_that("a trimmed project carries no registry, preprocessing or retired", {
+  m <- matrix(rnorm(30), nrow = 3,
+              dimnames = list(paste0("f", 1:3), paste0("s", 1:10)))
+  inp <- omicsCore::omics_input(
+    m,
+    data.frame(group = rep(c("a", "b"), 5), row.names = colnames(m)),
+    data.frame(feature_id = rownames(m), row.names = rownames(m)),
+    omics_type = "proteomics", assay_type = "normalized_intensity")
+  p <- omicsCore::omics_project("p", experiments = list(prot = inp))
+  heavy <- matrix(rnorm(3e5), ncol = 10)
+  p$bundles <- list(diff = list(big = heavy))
+  p$analyses <- list(ana_1 = list(big = heavy))
+  p$preprocessing <- list(prot = list(cleaned = heavy))
+  p$retired <- list(ana_0 = list(big = heavy))
+
+  out <- project_for_worker(p, assays = FALSE)
+  expect_null(out$bundles)
+  expect_null(out$analyses)
+  expect_null(out$preprocessing)
+  expect_null(out$retired)
+  expect_identical(names(out$experiments), "prot")
+  # Bounded by one copy of the model, so this cannot be satisfied by
+  # trimming three of the four places and leaving the fourth.
+  expect_lt(length(serialize(out, NULL)), length(serialize(heavy, NULL)))
+})
+
+# `assays = TRUE` is the Integration view's other caller shape; the
+# registry and retired history are dead weight there too.
+test_that("keeping the assays does not mean keeping the registry", {
+  p <- omicsCore::omics_project("p", experiments = list())
+  p$analyses <- list(a = 1)
+  p$retired <- list(b = 2)
+  p$preprocessing <- list(c = 3)
+  out <- project_for_worker(p, assays = TRUE)
+  expect_null(out$analyses)
+  expect_null(out$retired)
+  # preprocessing describes the layers, which are still here
+  expect_false(is.null(out$preprocessing))
+})
