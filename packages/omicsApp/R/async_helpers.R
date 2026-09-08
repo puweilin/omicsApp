@@ -135,6 +135,65 @@ detached_call <- function(fn, ...) {
 }
 
 
+#' A diff bundle with the parts the worker will not read removed
+#'
+#' `detached_call()` bounds *which* values travel; this bounds how big one
+#' of them is. Both are needed, and the second was missing: `run_diff()` now
+#' defaults to dropping the fitted model, but a default cannot reach an
+#' object that already exists. A project saved before that change, restored
+#' from its `.omp`, still carries the model -- and so does any bundle from
+#' `keep_model = TRUE`, which is a supported thing to ask for.
+#'
+#' Measured on a restored bundle of that shape, 63k features x 48 samples:
+#' `future` refused the enrichment payload at 802 MiB. The same bundle
+#' through here is 25 MB, and stays there whatever the model would have
+#' weighed, because what is left scales with features rather than samples.
+#'
+#' Subtraction rather than reconstruction. Building a "lightweight bundle"
+#' from the fields enrichment is known to read would have dropped
+#' `provenance_binding`, which `run_integration()` reads through
+#' `side_analysis_id()` and enrichment does not -- the sort of omission that
+#' surfaces as a blank column in a table nobody checks. Taking away two
+#' named elements cannot silently lose a third.
+#'
+#' `diff_result_df` is kept whole. Filtering it here would change the
+#' answer, not the payload: ORA's universe is every tested feature, and
+#' GSEA ranks the full list.
+#'
+#' @param bundle An `analysis_bundle` from `run_diff()`, or `NULL`.
+#' @keywords internal
+#' @noRd
+bundle_for_worker <- function(bundle) {
+  if (!inherits(bundle, "analysis_bundle")) return(bundle)
+  # The fitted model: nothing downstream of run_diff() reads it.
+  bundle$results$diff_object <- NULL
+  # The backend-native table: neither run_enrichment() nor
+  # run_integration() reads it, and it is the standardized one they use.
+  bundle$results$diff_raw_df <- NULL
+  bundle
+}
+
+#' A project carrying its data but not its analyses
+#'
+#' `run_integration()` wants the project for one thing --
+#' `resolve_experiment_pair()`, which reads `project$experiments`. The
+#' bundles it works from arrive separately in `diff_bundles`.
+#'
+#' `project$bundles` therefore travels for nothing, and it is the largest
+#' thing in a project that has been used: every analysis run against every
+#' layer, including the diff bundles that are being passed in properly
+#' alongside. On a restored project that is where the fitted models are.
+#'
+#' @param project An `omics_project`, or `NULL`.
+#' @keywords internal
+#' @noRd
+project_for_worker <- function(project) {
+  if (!inherits(project, "omics_project")) return(project)
+  project$bundles <- NULL
+  project
+}
+
+
 #' A gate that admits only the newest request for a view
 #'
 #' The narrow half of the contract in omicsCore: a request number per view,

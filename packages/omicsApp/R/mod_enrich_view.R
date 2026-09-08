@@ -177,7 +177,13 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
               )
             }
           },
-          bundle = bundle, type = type, db_arg = db_arg, dir_ = dir_,
+          # Slimmed here rather than trusted to arrive slim: run_diff()
+          # defaults to dropping the fitted model now, but a project
+          # restored from a `.omp` written before that still carries one,
+          # and `keep_model = TRUE` is a supported request. Either way
+          # this is the point where it would cross a process boundary.
+          bundle = bundle_for_worker(bundle),
+          type = type, db_arg = db_arg, dir_ = dir_,
           thr = thr
         ),
         on_success = function(result) {

@@ -353,7 +353,15 @@ integration_view_server <- function(id,
             # on come back together, or neither does.
             list(integration = integ, secondary = sec_diff)
           },
-          info = info, sec_method = sec_method, primary = primary, proj = proj
+          # Same reason as the Enrich view, and more of it: this call
+          # carries a diff bundle *and* a project, and a project holds
+          # every analysis ever run against every layer. run_integration()
+          # wants the project only for resolve_experiment_pair(), which
+          # reads `experiments`; the bundles it works from are the ones
+          # passed alongside.
+          info = info, sec_method = sec_method,
+          primary = bundle_for_worker(primary),
+          proj = project_for_worker(proj)
         ),
         on_success = function(out) {
           # Stamped here rather than in the worker: the worker computes,

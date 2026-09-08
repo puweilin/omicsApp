@@ -133,6 +133,91 @@ test_that("the integration view sends the project, not its scope", {
   expect_carries_only(sizes, list(proj, primary))
 })
 
+# ---- what a payload must NOT carry ------------------------------------
+#
+# The three tests above bound the payload by the size of the data it is
+# about, which is right for the question they ask -- does the module's
+# scope travel -- and blind to this one. A bundle carrying a fitted model
+# *is* that much data, so the bound grew with it and the test kept
+# passing while an enrichment run was refused at 802 MiB.
+#
+# run_diff() no longer keeps the model by default, but a default cannot
+# reach an object that already exists: a project restored from a `.omp`
+# written before that change still carries one, and `keep_model = TRUE`
+# is a supported request. These assert the submission point drops it,
+# which is the only place that covers both.
+
+heavy_model <- function(n = 3e5) matrix(rnorm(n), ncol = 10)
+
+test_that("a bundle carrying a fitted model does not carry it to the worker", {
+  skip_if_not_installed("clusterProfiler")
+  skip_if_not_installed("msigdbr")
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("readxl")
+  proj <- tiny_project()
+  bundle <- omicsCore::run_diff(
+    proj$experiments$proteomics, method = "ttest", analysis_type = "group",
+    group_col = "group", control_group = "G1", case_group = "G2"
+  )
+  # The shape a restored project has.
+  bundle$results$diff_object <- heavy_model()
+  expect_gt(bytes(bundle), 2e6)
+
+  sizes <- payload_sizes(
+    shiny::testServer(
+      enrich_view_server,
+      args = list(diff_bundle = shiny::reactiveVal(bundle)),
+      {
+        session$setInputs(type = "ora", database = "hallmark",
+                          direction = "both", rerun = 1)
+      }
+    )
+  )
+  expect_gt(length(sizes), 0L)
+  # Not "smaller than the bundle" -- smaller than the model it contains,
+  # so this cannot be satisfied by trimming something else.
+  expect_lt(max(sizes), bytes(bundle$results$diff_object))
+})
+
+test_that("the integration payload carries neither the model nor the project's analyses", {
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("readxl")
+  xlsx <- tempfile(fileext = ".xlsx")
+  on.exit(unlink(xlsx), add = TRUE)
+  write_tiny_omics_xlsx(xlsx, n_features = 30L, n_samples = 8L)
+  prot <- omicsCore::read_omics(xlsx, omics_type = "proteomics",
+                                assay_type = "normalized_intensity")$input
+  rna <- omicsCore::read_omics(xlsx, omics_type = "rnaseq",
+                               assay_type = "logcpm")$input
+  proj <- omicsCore::omics_project(
+    name = "two", experiments = list(proteomics = prot, rnaseq = rna))
+  primary <- omicsCore::run_diff(
+    prot, method = "ttest", analysis_type = "group",
+    group_col = "group", control_group = "G1", case_group = "G2")
+  primary$results$diff_object <- heavy_model()
+  # A used project: run_integration() reads `experiments`, never these.
+  proj$bundles <- list(diff = primary, qc = primary)
+
+  sizes <- payload_sizes(
+    shiny::testServer(
+      integration_view_server,
+      args = list(current_project = shiny::reactiveVal(proj),
+                  diff_bundle = shiny::reactiveVal(primary)),
+      {
+        session$setInputs(rerun = 0)
+        expect_true(isTRUE(can_run()$ok))
+        session$setInputs(rerun = 1)
+        expect_s3_class(integration_bundle(), "analysis_bundle")
+      }
+    )
+  )
+  expect_gt(length(sizes), 0L)
+  # Three copies of the model are reachable from what this call site was
+  # handed -- one in the bundle, two more through the project. None
+  # should travel.
+  expect_lt(max(sizes), bytes(primary$results$diff_object))
+})
+
 test_that("every run_async() call site in the package goes through detached_call()", {
   # The three tests above cover the call sites that exist today. This
   # keeps a fourth from arriving without one.
