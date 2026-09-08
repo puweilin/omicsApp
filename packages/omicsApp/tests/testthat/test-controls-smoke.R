@@ -149,37 +149,56 @@ test_that("the Enrichment display controls change the table and the plot", {
 
 # ---- Report -----------------------------------------------------------
 
-test_that("the report buttons are live exactly when they can work", {
-  skip_if_not_installed("rmarkdown")
+test_that("the export button is live exactly when it can work", {
+  skip_if_not_installed("openxlsx")
 
-  # No project: do_export() stops on req(proj), silently, as req() does.
+  # No project: the handler stops on req(proj), silently, as req() does.
   # A live-looking button that produces no file and no message is
   # indistinguishable from a broken one -- which is what it looked like.
   shiny::testServer(report_view_server,
                     args = list(current_project = shiny::reactiveVal(NULL)), {
-    html <- paste(as.character(output$header), collapse = "")
+    html <- ui_html(output$header)
     expect_match(html, "disabled")
-    expect_match(paste(as.character(output$notices), collapse = ""),
-                 "Import data first")
+    expect_match(ui_html(output$notices), "Import data first")
   })
 
+  # A project with no analyses is the same case, and used to be missed:
+  # the workbook would hold nothing, so there is nothing to download.
   shiny::testServer(report_view_server,
                     args = list(current_project = shiny::reactiveVal(sm_project())), {
-    html <- paste(as.character(output$header), collapse = "")
-    expect_no_match(html, "pointer-events:none")
+    expect_match(ui_html(output$header), "pointer-events:none")
+    expect_match(ui_html(output$sheet_card), "Nothing to export yet")
+  })
+
+  withr::with_options(list(shiny.allowoutputreads = TRUE), {
+    proj <- sm_project()
+    proj$bundles <- list(qc = example_qc_bundle(), diff = example_diff_bundle())
+    shiny::testServer(report_view_server,
+                      args = list(current_project = shiny::reactiveVal(proj)), {
+      expect_no_match(ui_html(output$header), "pointer-events:none")
+      # The card lists what the file will hold, from the same source the
+      # download reads, so the two cannot describe different workbooks.
+      card <- ui_html(output$sheet_card)
+      expect_match(card, "Differential", fixed = TRUE)
+      expect_match(card, "Analysis parameters", fixed = TRUE)
+    })
   })
 })
 
-test_that("a report actually renders, in both formats", {
-  skip_if_not_installed("rmarkdown")
-  skip_if_not(rmarkdown::pandoc_available(), "pandoc not available")
+test_that("the workbook comes out with a sheet per analysis", {
+  skip_if_not_installed("openxlsx")
 
   proj <- sm_project()
   proj$bundles <- list(qc = example_qc_bundle(), diff = example_diff_bundle())
 
-  out <- withr::local_tempfile(fileext = ".html")
-  omicsCore::export_report(proj, out, format = "html", overwrite = TRUE)
-  expect_gt(file.size(out), 10000)
+  out <- withr::local_tempfile(fileext = ".xlsx")
+  omicsCore::export_workbook(proj, out, overwrite = TRUE)
+  sheets <- openxlsx::getSheetNames(out)
+  expect_true(all(c("Analysis parameters", "Differential") %in% sheets))
+  # and the rows survive the trip, which a workbook of headers would not
+  back <- openxlsx::read.xlsx(out, sheet = "Differential")
+  expect_equal(nrow(back),
+               nrow(proj$bundles$diff$results$diff_result_df))
 })
 
 # ---- Project ----------------------------------------------------------

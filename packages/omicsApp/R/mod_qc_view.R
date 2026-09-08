@@ -275,7 +275,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
             min = 0, step = 1),
           shiny::numericInput(
             session$ns("min_samples"),
-            label = "…in at least this many samples",
+            label = "Minimum samples",
             value = base[["min_samples"]] %||% 3,
             min = 0, step = 1)
         ),
@@ -285,8 +285,8 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         # able to find out why without asking.
         htmltools::tags$div(
           class = "muted", style = "font-size:12px;margin-top:-8px",
-          "Features detected in too few samples are dropped before ",
-          "testing. Both DESeq2 and edgeR ask for this: an undetected ",
+          "A feature is kept when at least this many samples reach this ",
+          "count. Both DESeq2 and edgeR ask for the filter: an undetected ",
           "feature cannot support a contrast, and testing it anyway adds ",
           "to the multiple-testing correction. Set either to 0 to test ",
           "everything."

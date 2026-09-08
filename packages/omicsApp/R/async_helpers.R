@@ -184,12 +184,42 @@ bundle_for_worker <- function(bundle) {
 #' layer, including the diff bundles that are being passed in properly
 #' alongside. On a restored project that is where the fitted models are.
 #'
+#' `assays = FALSE` goes further and drops the layers' data as well,
+#' leaving the project's shape and its layer names. That is legitimate for
+#' exactly one caller: the concordance path reads the project through
+#' `resolve_experiment_pair()`, which asks `experiment_tags()` for names
+#' and touches nothing else. The two result tables it works from arrive in
+#' `diff_bundles`.
+#'
+#' It is also the difference between running and not: dropping the bundles
+#' alone still left `proj` at 277 MiB of a 600 MiB payload, because on a
+#' 63k x 129 layer the data *is* the project.
+#'
+#' A stripped project is deliberately unusable for anything that needs the
+#' matrices -- `run_integration(method = "correlation")` would get an empty
+#' one and stop. That is the right failure: loud, immediate, and at the
+#' call site that asked for it. `test-integration.R` holds the other end,
+#' asserting concordance gives the same answer either way, so this stops
+#' being safe the moment that stops being true.
+#'
 #' @param project An `omics_project`, or `NULL`.
+#' @param assays Keep the layers' matrices? `TRUE` by default.
 #' @keywords internal
 #' @noRd
-project_for_worker <- function(project) {
+project_for_worker <- function(project, assays = TRUE) {
   if (!inherits(project, "omics_project")) return(project)
   project$bundles <- NULL
+  if (!isTRUE(assays)) {
+    project$experiments <- lapply(project$experiments, function(e) {
+      # Emptied rather than removed: `experiments` still has to be a list
+      # of layers with the right names for experiment_tags() to read.
+      e$expr_mat   <- e$expr_mat[0L, 0L, drop = FALSE]
+      e$raw_mat    <- NULL
+      e$feature_df <- e$feature_df[0L, , drop = FALSE]
+      e$meta_df    <- e$meta_df[0L, , drop = FALSE]
+      e
+    })
+  }
   project
 }
 

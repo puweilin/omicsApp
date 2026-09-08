@@ -87,18 +87,18 @@ test_that("upload, run, enrich, download, replace: the wiring holds end to end",
   expect_no_error(parse(text = script))
   expect_true(any(grepl("run_diff(", script, fixed = TRUE)))
 
-  # ---- and so does the report ----------------------------------------
+  # ---- and so does the workbook --------------------------------------
   # This journey downloaded the script and stopped, which is why nobody
-  # noticed that both report buttons served an empty file: export_report()
+  # noticed that the report buttons served an empty file: the export
   # raised nothing, returned the path it was given, and wrote somewhere
   # else -- and then a tempdir sweep inside it deleted what had been
   # written. Neither failure is visible from R alone with a path that
   # carries an extension, and every unit test used one.
-  report_path <- app$get_download("report-download_html")
-  expect_true(file.exists(report_path))
-  expect_gt(file.info(report_path)$size, 1000L)
-  html <- paste(readLines(report_path, warn = FALSE), collapse = "\n")
-  expect_match(html, "</html>", fixed = TRUE)
+  xlsx_path <- app$get_download("report-download_xlsx")
+  expect_true(file.exists(xlsx_path))
+  expect_gt(file.info(xlsx_path)$size, 1000L)
+  sheets <- openxlsx::getSheetNames(xlsx_path)
+  expect_true("Differential" %in% sheets)
 
   # ---- a different file asks before clearing --------------------------
   app$click(selector = "#nav_import")

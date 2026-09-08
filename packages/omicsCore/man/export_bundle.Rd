@@ -67,7 +67,9 @@ code can keep tracking every file from one entry point.
 Other persistence: 
 \code{\link{export_report}()},
 \code{\link{export_script}()},
+\code{\link{export_workbook}()},
 \code{\link{load_project}()},
-\code{\link{save_project}()}
+\code{\link{save_project}()},
+\code{\link{workbook_sheets}()}
 }
 \concept{persistence}

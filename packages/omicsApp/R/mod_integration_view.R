@@ -361,7 +361,14 @@ integration_view_server <- function(id,
           # passed alongside.
           info = info, sec_method = sec_method,
           primary = bundle_for_worker(primary),
-          proj = project_for_worker(proj)
+          # Without its layers, too. This view runs concordance, which
+          # reads the project through resolve_experiment_pair() -- names,
+          # nothing else -- and works from the two result tables it is
+          # handed. Dropping only the bundles still left `proj` at 277 MiB
+          # of a 600 MiB payload, because on a 63k x 129 layer the data is
+          # the project. The secondary layer travels separately in `info`,
+          # because run_diff() genuinely needs it.
+          proj = project_for_worker(proj, assays = FALSE)
         ),
         on_success = function(out) {
           # Stamped here rather than in the worker: the worker computes,

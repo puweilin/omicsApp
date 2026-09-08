@@ -25,6 +25,8 @@ Other persistence:
 \code{\link{export_bundle}()},
 \code{\link{export_report}()},
 \code{\link{export_script}()},
-\code{\link{save_project}()}
+\code{\link{export_workbook}()},
+\code{\link{save_project}()},
+\code{\link{workbook_sheets}()}
 }
 \concept{persistence}

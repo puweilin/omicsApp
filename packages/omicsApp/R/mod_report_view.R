@@ -18,6 +18,7 @@ report_view_ui <- function(id) {
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
     shiny::uiOutput(ns("notices")),
+    shiny::uiOutput(ns("sheet_card")),
     shiny::uiOutput(ns("bundle_cards")),
     shiny::uiOutput(ns("script_card"))
   )
@@ -29,83 +30,76 @@ report_view_ui <- function(id) {
 report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
 
-    have_rmd <- has_pkg("rmarkdown")
-    # HTML needs rmarkdown; PDF needs an engine and a font, which are
-    # system packages rmarkdown knows nothing about. Gating both on
-    # `has_pkg("rmarkdown")` offered a PDF button that failed at download
-    # time -- and on the projects most likely to be named in Chinese,
-    # which is most of them here.
-    pdf_status <- omicsCore::pdf_toolchain_status()
+    # One workbook of tables, not a rendered document.
+    #
+    # What a reader does next with a finished project is open its tables:
+    # sort the differential by p, filter the pathways, paste a column into
+    # a figure. HTML and PDF answered "what did this run do" in a form
+    # nobody could carry into the next step, and the PDF half of that cost
+    # a LaTeX toolchain, a CJK font stack and three rounds of debugging.
+    have_xlsx <- has_pkg("openxlsx")
     ns <- session$ns
 
     # ---- header -------------------------------------------------------
     output$header <- shiny::renderUI({
       proj <- current_project()
+      n_sheets <- length(sheet_names())
       subtitle <- if (is.null(proj)) {
-        "Demo fixture \u00B7 rmarkdown"
+        "Demo fixture \u00B7 one sheet per analysis"
       } else {
-        sprintf("%s \u00B7 %d experiment(s)",
+        sprintf("%s \u00B7 %d experiment(s) \u00B7 %d sheet(s)",
                 proj$name %||% "Project",
-                length(proj$experiments))
+                length(proj$experiments),
+                n_sheets)
       }
-      # There is nothing to report on until a project exists, and
-      # do_export() stops on req(proj) when there is not -- silently, as
-      # req() does. A live-looking button that produces no file and no
-      # message is indistinguishable from a broken one, and that is what
-      # it looked like.
-      ready <- have_rmd && !is.null(proj)
-      dl <- function(id, label, primary, extra_ok = TRUE, extra_why = NULL) {
-        enabled <- ready && isTRUE(extra_ok)
-        btn <- shiny::downloadButton(
-          ns(id), label,
-          class = paste("btn", if (enabled && primary) "btn-primary" else "btn-ghost"))
-        if (enabled) return(btn)
-        # `disabled` on the anchor, plus the pointer-events guard,
-        # because a download link is an <a> and browsers do not honour
-        # the attribute on its own.
-        htmltools::tagAppendAttributes(
+      # There is nothing to export until a project exists, and do_export()
+      # stops on req(proj) when there is not -- silently, as req() does. A
+      # live-looking button that produces no file and no message is
+      # indistinguishable from a broken one, and that is what it looked
+      # like. A project with no analyses is the same case: the workbook
+      # would have nothing in it, and export_workbook() says so.
+      why <- if (!have_xlsx) "openxlsx is not installed"
+             else if (is.null(proj)) "Import a project first"
+             else if (n_sheets == 0L) "Run an analysis first"
+             else NULL
+      btn <- shiny::downloadButton(
+        ns("download_xlsx"), "Generate xlsx",
+        class = paste("btn", if (is.null(why)) "btn-primary" else "btn-ghost"))
+      if (!is.null(why)) {
+        # `disabled` on the anchor, plus the pointer-events guard, because
+        # a download link is an <a> and browsers do not honour the
+        # attribute on its own.
+        btn <- htmltools::tagAppendAttributes(
           btn, disabled = NA,
-          style = "pointer-events:none;opacity:0.55",
-          title = if (!have_rmd) "rmarkdown is not installed"
-                  else if (!isTRUE(extra_ok)) extra_why
-                  else "Import a project first")
+          style = "pointer-events:none;opacity:0.55", title = why)
       }
-      view_header(
-        title    = "Report",
-        subtitle = subtitle,
-        actions  = htmltools::tagList(
-          dl("download_html", "Generate HTML", TRUE),
-          dl("download_pdf", "Generate PDF", FALSE,
-             extra_ok = isTRUE(pdf_status$ok), extra_why = pdf_status$message)
-        )
-      )
+      view_header(title = "Report", subtitle = subtitle, actions = btn)
     })
 
     # ---- notices ------------------------------------------------------
+    # The sheets the workbook would hold, asked of omicsCore rather than
+    # worked out again here. The header counts them, the card lists them
+    # and the download writes them; three routes to the same answer is
+    # three chances for the page to describe a file it did not produce.
+    sheet_names <- shiny::reactive({
+      proj <- current_project()
+      if (is.null(proj)) return(character(0))
+      tryCatch(names(omicsCore::workbook_sheets(proj)),
+               error = function(e) character(0))
+    })
+
     output$notices <- shiny::renderUI({
       tagged <- htmltools::tagList()
-      if (!have_rmd) {
+      if (!have_xlsx) {
         tagged <- htmltools::tagAppendChild(
           tagged,
           notice(
-            title  = "rmarkdown unavailable",
+            title  = "openxlsx unavailable",
             detail = paste0(
-              "Install rmarkdown to generate reports: ",
-              "`install.packages(\"rmarkdown\")`. ",
-              "The Generate buttons below are disabled until it is available."
+              "Install openxlsx to export results: ",
+              "`install.packages(\"openxlsx\")`. ",
+              "The Generate button below is disabled until it is available."
             ),
-            kind   = "warn"
-          )
-        )
-      }
-      if (have_rmd && !isTRUE(pdf_status$ok)) {
-        tagged <- htmltools::tagAppendChild(
-          tagged,
-          notice(
-            title  = "PDF export is unavailable on this server",
-            detail = paste0(
-              pdf_status$message,
-              " HTML reports are unaffected."),
             kind   = "warn"
           )
         )
@@ -145,6 +139,51 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     })
 
     # ---- bundle status cards ------------------------------------------
+    # What the workbook will contain, listed from the workbook itself.
+    #
+    # The card used to describe the four analyses and the download wrote
+    # whatever it wrote; the two agreed only as long as someone kept them
+    # agreeing. This asks omicsCore the same question the download asks,
+    # so a sheet that appears here is a sheet in the file.
+    output$sheet_card <- shiny::renderUI({
+      proj <- current_project()
+      sheets <- if (is.null(proj)) NULL else
+        tryCatch(omicsCore::workbook_sheets(proj), error = function(e) NULL)
+
+      body <- if (is.null(proj)) {
+        htmltools::tags$div(
+          class = "muted", style = "font-size:13px",
+          "Import data and run an analysis to see what the workbook ",
+          "would contain.")
+      } else if (length(sheets) == 0L) {
+        htmltools::tags$div(
+          class = "muted", style = "font-size:13px",
+          "Nothing to export yet. Run QC, a differential, an enrichment ",
+          "or an integration.")
+      } else {
+        htmltools::tagList(
+          lapply(seq_along(sheets), function(i) {
+            df <- sheets[[i]]
+            schema_row(
+              ix    = as.character(i),
+              title = names(sheets)[[i]],
+              desc  = sprintf("%s rows · %d columns",
+                              format(nrow(df), big.mark = ","), ncol(df)),
+              role  = "sheet",
+              confidence = 1.0, accent = "ok", role_kind = "ok")
+          })
+        )
+      }
+      bslib::card(
+        bslib::card_header(
+          htmltools::tags$h3(class = "card-title", "Workbook contents"),
+          htmltools::tags$span(class = "card-sub",
+                               "one sheet per analysis")
+        ),
+        bslib::card_body(body)
+      )
+    })
+
     output$bundle_cards <- shiny::renderUI({
       proj <- current_project()
 
@@ -240,41 +279,26 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     # `export_report` is wrapped in tryCatch + showNotification so a
     # failure inside the rmarkdown render surfaces as a banner instead
     # of an opaque Shiny error overlay.
-    do_export <- function(file, format) {
-      shiny::req(have_rmd)
-      proj <- current_project()
-      shiny::req(proj)
-      tryCatch(
-        omicsCore::export_report(proj, file, format = format,
-                                 overwrite = TRUE),
-        error = function(e) {
-          shiny::showNotification(
-            sprintf("Report export failed (%s): %s",
-                    format, conditionMessage(e)),
-            type = "error",
-            duration = 8
-          )
-          stop(e)
-        }
-      )
-    }
-
-    output$download_html <- shiny::downloadHandler(
+    output$download_xlsx <- shiny::downloadHandler(
       filename = function() {
         proj <- current_project()
         nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
-        sprintf("%s_report.html", gsub("[^A-Za-z0-9_.-]+", "_", nm))
+        sprintf("%s_results.xlsx", gsub("[^A-Za-z0-9_.-]+", "_", nm))
       },
-      content = function(file) do_export(file, "html")
-    )
-
-    output$download_pdf <- shiny::downloadHandler(
-      filename = function() {
+      content = function(file) {
+        shiny::req(have_xlsx)
         proj <- current_project()
-        nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
-        sprintf("%s_report.pdf", gsub("[^A-Za-z0-9_.-]+", "_", nm))
-      },
-      content = function(file) do_export(file, "pdf")
+        shiny::req(proj)
+        tryCatch(
+          omicsCore::export_workbook(proj, file, overwrite = TRUE),
+          error = function(e) {
+            shiny::showNotification(
+              sprintf("Export failed: %s", conditionMessage(e)),
+              type = "error", duration = 8)
+            stop(e)
+          }
+        )
+      }
     )
 
     # ---- reproducibility script ---------------------------------------

@@ -162,6 +162,39 @@ test_that("correlation requires the configured minimum sample count", {
 
 # ---- concordance backend ----------------------------------------------
 
+# The Integration view sends the worker a project with its layers emptied,
+# because concordance reads the project through resolve_experiment_pair()
+# -- names, nothing else -- and the layers were 277 MiB of a 600 MiB
+# payload that future refused. This is the other end of that: the app is
+# entitled to strip them for exactly as long as this holds.
+#
+# Asserted on the result rather than by inspecting which fields get read,
+# so a future concordance that starts using the matrices fails here
+# instead of in a worker on somebody's data.
+test_that("concordance reads the project's names, not its data", {
+  p <- make_integration_project()
+  diffs <- build_integration_diff_bundles(p)
+
+  stripped <- p
+  stripped$experiments <- lapply(p$experiments, function(e) {
+    e$expr_mat   <- e$expr_mat[0L, 0L, drop = FALSE]
+    e$raw_mat    <- NULL
+    e$feature_df <- e$feature_df[0L, , drop = FALSE]
+    e$meta_df    <- e$meta_df[0L, , drop = FALSE]
+    e
+  })
+
+  full <- run_integration(p, method = "concordance",
+                          experiments = c("proteo", "rna"),
+                          diff_bundles = diffs)
+  thin <- run_integration(stripped, method = "concordance",
+                          experiments = c("proteo", "rna"),
+                          diff_bundles = diffs)
+
+  expect_identical(thin$results$integration_df, full$results$integration_df)
+  expect_identical(thin$params, full$params)
+})
+
 test_that("run_integration concordance produces a standard bundle", {
   p <- make_integration_project()
   diffs <- build_integration_diff_bundles(p)

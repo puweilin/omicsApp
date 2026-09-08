@@ -46,7 +46,9 @@ placeholder path for the reader to fill in.
 Other persistence: 
 \code{\link{export_bundle}()},
 \code{\link{export_report}()},
+\code{\link{export_workbook}()},
 \code{\link{load_project}()},
-\code{\link{save_project}()}
+\code{\link{save_project}()},
+\code{\link{workbook_sheets}()}
 }
 \concept{persistence}

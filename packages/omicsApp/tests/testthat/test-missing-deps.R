@@ -34,16 +34,18 @@ test_that("the enrichment view points at the missing package instead of computin
   )
 })
 
-test_that("the report view offers no download without rmarkdown", {
-  absent("rmarkdown")
+test_that("the report view offers no download without openxlsx", {
+  # The Report view exports a workbook now, so openxlsx is the dependency
+  # that decides whether the button can work -- not rmarkdown.
+  absent("openxlsx")
   shiny::testServer(
     report_view_server,
     args = list(current_project = shiny::reactiveVal(NULL)),
     {
       html <- render_html(output$notices)
-      expect_match(html, "rmarkdown unavailable", fixed = TRUE)
+      expect_match(html, "openxlsx unavailable", fixed = TRUE)
       expect_match(html, "install.packages", fixed = TRUE)
-      # And the buttons are there but disabled, not gone
+      # And the button is there but disabled, not gone
       head_html <- render_html(output$header)
       expect_match(head_html, "disabled", fixed = TRUE)
     }
