@@ -161,10 +161,16 @@ RUN R -q -e 'pkgs <- c("GSVA","enrichplot","clusterProfiler"); \
 # LaTeX stops at the first file it cannot find, so a missing one of these
 # is a build that fails, gets one package added, and fails again on the
 # next. Both are listed at once for that reason.
+#
+# poppler-utils is for the check below rather than for the reports.
+# XeLaTeX writes its font dictionaries into compressed object streams, so
+# whether a font is embedded cannot be answered by searching the file --
+# pdffonts reads the structure and says.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         texlive-latex-base texlive-fonts-recommended texlive-latex-extra \
         texlive-xetex texlive-lang-chinese \
         lmodern texlive-plain-generic \
+        poppler-utils \
         fonts-noto-cjk fonts-noto-cjk-extra \
     && rm -rf /var/lib/apt/lists/*
 

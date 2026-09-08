@@ -9,11 +9,29 @@
 # The old pdfLaTeX default failed loudly instead, with "Unicode character
 # 蛋 (U+86CB) not set up for use with LaTeX", which is at least honest. The
 # point of this check is to keep that honesty after switching engines.
+#
+# ---- how the embedding is verified -------------------------------------
+#
+# With pdffonts, not by searching the file for the font's name. XeLaTeX
+# writes its cross-reference table and font dictionaries into compressed
+# object streams, so a PDF it produced contains neither "Noto" nor even
+# the literal "BaseFont" as plain bytes -- a raw grep reports every such
+# PDF as having no embedded font, whatever is really in it. That check
+# could only ever fail, which is worse than no check: it fails the build
+# on a correct image and teaches whoever sees it to stop reading.
+#
+# pdffonts reads the structure and prints one row per font with an `emb`
+# column. That is the question being asked, answered by the tool that
+# exists for it.
 
 suppressPackageStartupMessages(library(rmarkdown))
 
 if (!rmarkdown::pandoc_available()) {
   stop("pandoc is not available; the report view cannot render anything.")
+}
+if (!nzchar(Sys.which("pdffonts"))) {
+  stop("pdffonts is not available; install poppler-utils. ",
+       "The build cannot verify that the CJK font was embedded without it.")
 }
 
 dir <- file.path(tempdir(), "cjk-check")
@@ -29,6 +47,10 @@ writeLines(c(
   "header-includes:",
   "  - \\usepackage{xeCJK}",
   "  - \\setCJKmainfont{Noto Sans CJK SC}",
+  # Named so xeCJK does not warn about an undefined mono family. The
+  # warning is harmless and the noise is not: a build log that always
+  # carries warnings is one nobody reads when a real one appears.
+  "  - \\setCJKmonofont{Noto Sans Mono CJK SC}",
   "---",
   "",
   "样本数量与差异蛋白：这一行必须能排版出来。",
@@ -47,13 +69,20 @@ if (!file.exists(out) || is.na(size) || size < 1000) {
 }
 
 # A PDF that rendered blank boxes is the same size as one that rendered
-# glyphs, so size is not the test. The font has to be embedded, and its
-# name appears in the file when it is.
-raw <- readBin(out, "raw", n = size)
-txt <- rawToChar(raw[raw != as.raw(0)])
-if (!grepl("Noto|CJK", txt, useBytes = TRUE)) {
-  stop("The CJK font was not embedded; the report would print empty boxes. ",
-       "Check that fonts-noto-cjk and texlive-lang-chinese are installed.")
+# glyphs, so size is not the test.
+fonts <- system2("pdffonts", shQuote(out), stdout = TRUE, stderr = TRUE)
+
+# Columns are name, type, encoding, emb, sub, uni, object ID. Subset
+# fonts carry a six-letter tag -- `ABCDEF+NotoSansCJKsc-Regular` -- so the
+# name is matched rather than compared.
+rows <- grep("Noto|CJK", fonts, value = TRUE, ignore.case = TRUE)
+embedded <- grep("\\byes\\b", rows, value = TRUE)
+
+if (length(embedded) == 0L) {
+  stop("No CJK font is embedded; the report would print empty boxes. ",
+       "Check that fonts-noto-cjk and texlive-lang-chinese are installed.\n",
+       "pdffonts said:\n", paste(fonts, collapse = "\n"))
 }
 
 cat("CJK PDF check passed:", size, "bytes\n")
+cat("  embedded:", sub("\\s.*$", "", trimws(embedded[[1L]])), "\n")
