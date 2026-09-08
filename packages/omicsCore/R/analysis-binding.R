@@ -223,6 +223,12 @@ valid_result_ids <- function(project) {
   analyses <- project$analyses %||% list()
   ids <- names(analyses)
   if (length(ids) == 0L) return(character(0))
+  # Coherence before currency. A result filed under a key that is not the
+  # id it claims resolves an upstream reference to a different analysis,
+  # and no amount of version comparison notices.
+  broken <- validate_analysis_registry(project)$analysis_id
+  ids <- setdiff(ids, broken)
+  if (length(ids) == 0L) return(character(0))
   repeat {
     keep <- Filter(function(id) {
       pb <- analyses[[id]]$provenance_binding
@@ -291,6 +297,156 @@ retire_invalid <- function(project, max_history = 20L,
     n <- length(project$retired)
     project$retired <- project$retired[seq.int(n - max_history + 1L, n)]
   }
+  project
+}
+
+#' Check the registry's own bookkeeping
+#'
+#' Three things the fixed-point algorithm cannot see, because it reasons
+#' about which results are current rather than about whether the record is
+#' coherent in the first place.
+#'
+#' The key a result is filed under has to be the id it claims. They are set
+#' in two places -- `register_analysis()` takes an `id`, the binding carries
+#' one -- and if they diverge, an upstream reference resolves to a different
+#' analysis than the one it names, silently.
+#'
+#' The parameter signature has to match the parameters actually saved.
+#' Otherwise a result can be re-filed under a different id after its
+#' settings changed, and both copies look valid.
+#'
+#' And the graph has to be acyclic. A cycle makes every member invalid,
+#' which is the right answer, but arrived at for the wrong reason: they are
+#' not stale, the record is malformed, and saying so is the difference
+#' between a bug report and a shrug.
+#'
+#' @param project An `omics_project`.
+#' @return A data frame of `analysis_id` and `problem`; zero rows when the
+#'   registry is coherent.
+#' @keywords internal
+#' @export
+validate_analysis_registry <- function(project) {
+  analyses <- project$analyses %||% list()
+  problems <- list()
+  add <- function(id, what) {
+    problems[[length(problems) + 1L]] <<-
+      data.frame(analysis_id = id, problem = what, stringsAsFactors = FALSE)
+  }
+
+  for (key in names(analyses)) {
+    b <- analyses[[key]]
+    pb <- b$provenance_binding
+    if (is.null(pb)) {
+      add(key, "no provenance binding")
+      next
+    }
+    structure_ok <- validate_provenance_binding(pb)
+    if (!isTRUE(structure_ok$ok)) {
+      add(key, structure_ok$reason)
+      next
+    }
+    if (!identical(key, pb$analysis_id)) {
+      add(key, sprintf("filed under '%s' but claims '%s'", key, pb$analysis_id))
+    }
+    if (!identical(pb$params_signature, params_signature(b$params))) {
+      add(key, "params signature does not match the saved parameters")
+    }
+  }
+
+  # Reachability, iterated. A self-reference is caught by
+  # validate_provenance_binding(); this finds the longer loops.
+  edges <- lapply(analyses, function(b) b$provenance_binding$upstream_ids %||% character(0))
+  for (start in names(edges)) {
+    seen <- character(0)
+    frontier <- edges[[start]]
+    while (length(frontier) > 0L) {
+      if (start %in% frontier) {
+        add(start, "the dependency graph contains a cycle")
+        break
+      }
+      nxt <- setdiff(frontier, seen)
+      seen <- c(seen, nxt)
+      frontier <- unique(unlist(edges[intersect(nxt, names(edges))]))
+      frontier <- setdiff(frontier, seen)
+    }
+  }
+
+  if (length(problems) == 0L) {
+    return(data.frame(analysis_id = character(0), problem = character(0),
+                      stringsAsFactors = FALSE))
+  }
+  do.call(rbind, problems)
+}
+
+#' Fork a project into a copy with its own identity
+#'
+#' Save-as is not the same file under a different name. Two projects that
+#' share an id are one project as far as every ownership check is
+#' concerned, so a copy that kept it would accept the original's results as
+#' its own and the original would accept the copy's.
+#'
+#' This is the one place a result's ownership is rewritten. Everywhere else
+#' an unattributed or foreign result is refused rather than adopted --
+#' rewriting identity is how a record becomes a claim about data it was
+#' never computed from, so it happens only here, deliberately, for every
+#' result at once, and `derived_from` says where they came from.
+#'
+#' @param project An `omics_project`.
+#' @param from_slug Where the original was saved, for the record.
+#' @return The project, with a new identity and every result re-attributed.
+#' @keywords internal
+#' @export
+fork_project <- function(project, from_slug = NA_character_) {
+  old_id <- project$metadata$project_id
+  new_id <- new_project_id()
+  project$metadata$project_id <- new_id
+  project$metadata$derived_from <- list(
+    project_id = old_id,
+    saved_as = from_slug,
+    at = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  )
+
+  retag <- function(b) {
+    if (!is.null(b$provenance_binding) &&
+        identical(b$provenance_binding$project_id, old_id)) {
+      b$provenance_binding$project_id <- new_id
+    }
+    b
+  }
+  project$bundles  <- lapply(project$bundles %||% list(), retag)
+  project$analyses <- lapply(project$analyses %||% list(), retag)
+  # History too: a retired result whose owner no longer exists cannot be
+  # told apart from one that was never attributed.
+  project$retired  <- lapply(project$retired %||% list(), retag)
+
+  # The ids are derived from the project id among other things, so they
+  # change with it -- and the upstream references have to follow, or every
+  # dependant names a node the copy does not contain.
+  remap <- character(0)
+  for (key in names(project$analyses)) {
+    b <- project$analyses[[key]]
+    fresh <- paste0("ana_", params_signature(list(
+      view = b$analysis_name, inputs = b$provenance_binding$inputs,
+      upstream = b$provenance_binding$upstream_ids,
+      params = b$params, project = new_id)))
+    remap[[key]] <- fresh
+  }
+  relabel <- function(b) {
+    pb <- b$provenance_binding
+    if (is.null(pb)) return(b)
+    if (!is.na(remap[pb$analysis_id] %||% NA_character_)) {
+      pb$analysis_id <- unname(remap[[pb$analysis_id]])
+    }
+    known <- intersect(pb$upstream_ids, names(remap))
+    if (length(known)) {
+      pb$upstream_ids[match(known, pb$upstream_ids)] <- unname(remap[known])
+    }
+    b$provenance_binding <- pb
+    b
+  }
+  project$analyses <- stats::setNames(
+    lapply(project$analyses, relabel), unname(remap[names(project$analyses)]))
+  project$bundles <- lapply(project$bundles %||% list(), relabel)
   project
 }
 

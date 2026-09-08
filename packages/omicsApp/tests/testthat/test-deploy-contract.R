@@ -532,3 +532,90 @@ test_that("a compression failure does not overwrite the previous backup", {
   expect_gt(attr(out, "status") %||% 0L, 0L)
   expect_identical(tools::md5sum(kept), before)
 })
+
+# --- the workflows have to cover what these tests read --------------------
+
+# Every test in this file asserts something about deploy/, and the check
+# workflow's path filter excluded it. So a change to the nginx config, the
+# crontab or the Dockerfile ran no test at all -- while the tests that
+# would have caught it sat here passing on unrelated commits.
+workflows_dir <- function() {
+  d <- file.path(dirname(deploy_root()), ".github", "workflows")
+  skip_if_not(dir.exists(d), "workflows not present")
+  d
+}
+
+read_workflow <- function(name) {
+  skip_if_not_installed("yaml")
+  path <- file.path(workflows_dir(), name)
+  skip_if_not(file.exists(path), paste(name, "not present"))
+  suppressWarnings(yaml::read_yaml(path))
+}
+
+# Keys as well as values: an option like `ignore-unfixed: true` lives in
+# the name, and unlist() hands back only what it points at.
+workflow_text <- function(wf) {
+  flat <- unlist(wf)
+  paste(c(names(flat), as.character(flat)), collapse = "\n")
+}
+
+test_that("a change under deploy/ triggers the package checks", {
+  wf <- read_workflow("R-CMD-check.yaml")
+  # YAML 1.1 reads a bare `on` as the boolean true, so the key arrives as
+  # "TRUE" rather than "on". Worth knowing before writing a check that
+  # silently matches nothing.
+  trig <- wf[["on"]] %||% wf[["TRUE"]]
+  expect_false(is.null(trig))
+  for (event in c("push", "pull_request")) {
+    paths <- trig[[event]]$paths
+    expect_true(any(grepl("^deploy/", paths)),
+                info = sprintf("%s does not watch deploy/", event))
+  }
+})
+
+test_that("there is a workflow that builds and tests the release image", {
+  wf <- read_workflow("release-image.yaml")
+  txt <- workflow_text(wf$jobs)
+
+  # The image itself, not a runner that resembles it: the check workflow
+  # uses R release and today's CRAN, the image is Bioconductor 3.20 on a
+  # pinned snapshot, and "the tests pass" on one says nothing about the
+  # other.
+  expect_match(txt, "deploy/docker/Dockerfile", fixed = TRUE)
+  expect_match(txt, "test_dir", fixed = TRUE)
+  # Tagged by commit. A moving tag means the thing tested and the thing
+  # running are related only by hope.
+  expect_match(txt, "github.sha", fixed = TRUE)
+  expect_match(txt, "image-digest", fixed = TRUE)
+})
+
+test_that("the release workflow proves the CJK toolchain in the image", {
+  wf <- read_workflow("release-image.yaml")
+  txt <- workflow_text(wf$jobs)
+  # A missing font does not make XeLaTeX fail -- it typesets empty boxes --
+  # so rendering is the only check that means anything.
+  expect_match(txt, "check_cjk_pdf.R", fixed = TRUE)
+})
+
+test_that("the release workflow produces an SBOM and a vulnerability scan", {
+  wf <- read_workflow("release-image.yaml")
+  txt <- workflow_text(wf$jobs)
+  expect_match(txt, "sbom", ignore.case = TRUE)
+  expect_match(txt, "trivy", ignore.case = TRUE)
+  # Fixable findings fail; a base-image CVE published this morning with no
+  # patch available is not a reason to lose the ability to build.
+  expect_match(txt, "ignore-unfixed", fixed = TRUE)
+})
+
+test_that("the CJK check script is in the build context", {
+  # .dockerignore excludes most of deploy/, and the Dockerfile COPYs this
+  # one. Excluding it would break the build rather than skip the check,
+  # but only on a clean build -- which is the one that matters.
+  root <- dirname(deploy_root())
+  ignore <- file.path(root, ".dockerignore")
+  skip_if_not(file.exists(ignore))
+  patterns <- grep("^[^#]", readLines(ignore, warn = FALSE), value = TRUE)
+  patterns <- trimws(patterns[nzchar(trimws(patterns))])
+  expect_false(any(patterns == "deploy/docker"))
+  expect_true(file.exists(file.path(deploy_root(), "docker", "check_cjk_pdf.R")))
+})

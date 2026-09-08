@@ -1,0 +1,156 @@
+# Build the image users actually get, and test in it.
+#
+# The check workflow runs on ubuntu-latest with R release and whatever
+# CRAN has today. The image is Bioconductor 3.20 on R 4.4 against a
+# pinned CRAN snapshot, so "the tests pass" there is a statement about a
+# different set of package versions than the one anyone will run. Both
+# are worth having; neither substitutes for the other.
+#
+# Nothing here is a deployment. It builds, tests inside, records the
+# digest, and stops -- the target-server acceptance (user isolation,
+# container recycling, backup restore) needs a target server and is not
+# something a CI runner can stand in for.
+
+name: release-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "deploy/**"
+      - ".github/workflows/release-image.yaml"
+  workflow_dispatch:
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Tagged by commit, not by `latest`. A digest is what makes a
+      # deployment traceable back to source; a moving tag means the thing
+      # that was tested and the thing that is running are related only by
+      # hope.
+      - name: Build the release image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          tags: omicsapp:${{ github.sha }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Record the digest
+        run: |
+          set -euo pipefail
+          digest="$(docker image inspect --format '{{index .Id}}' omicsapp:${{ github.sha }})"
+          {
+            echo "### Release image"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| image id | \`${digest}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "${digest}" > image-digest.txt
+
+      # The tests, in the image, against the pinned versions. This is the
+      # only place the two are the same.
+      - name: Run both test suites inside the image
+        run: |
+          docker run --rm --user root \
+            -e NOT_CRAN=true -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 \
+            -v "${{ github.workspace }}:/src:ro" \
+            omicsapp:${{ github.sha }} \
+            Rscript -e '
+              for (p in c("omicsCore", "omicsApp")) {
+                cat("==", p, "\n")
+                r <- testthat::test_dir(file.path("/src/packages", p, "tests/testthat"),
+                                        package = p, load_package = "installed",
+                                        stop_on_failure = TRUE)
+              }'
+
+      # The pinned versions the image actually resolved, so a later
+      # divergence is visible rather than inferred.
+      - name: Record the resolved dependency versions
+        run: |
+          docker run --rm omicsapp:${{ github.sha }} \
+            Rscript -e 'ip <- installed.packages()[, c("Package","Version")];
+                        write.csv(ip, "", row.names = FALSE)' > resolved-versions.csv
+          echo "recorded $(wc -l < resolved-versions.csv) package versions"
+
+      # A PDF of a Chinese-named project, rendered in the image. Missing
+      # CJK fonts do not make XeLaTeX fail -- it typesets empty boxes --
+      # so this is the only way to know the font is really there.
+      - name: Render a CJK report in the image
+        run: |
+          docker run --rm --user root \
+            -v "${{ github.workspace }}:/src:ro" \
+            omicsapp:${{ github.sha }} \
+            Rscript /src/deploy/docker/check_cjk_pdf.R
+
+      - name: What is in the image
+        run: |
+          docker run --rm --entrypoint sh omicsapp:${{ github.sha }} -c \
+            'command -v xelatex && fc-list :family | grep -ci "noto sans cjk" || true'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-image-provenance-${{ github.sha }}
+          path: |
+            image-digest.txt
+            resolved-versions.csv
+          if-no-files-found: error
+
+  # Scan runs beside the build rather than gating it, because a base-image
+  # CVE published this morning is not a reason to lose the ability to
+  # build. It fails on fixable high/critical findings, which are the ones
+  # somebody can actually act on.
+  scan:
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Rebuild for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          tags: omicsapp:${{ github.sha }}
+          load: true
+          cache-from: type=gha
+
+      - name: SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: omicsapp:${{ github.sha }}
+          format: spdx-json
+          artifact-name: sbom-${{ github.sha }}.spdx.json
+
+      - name: Vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: omicsapp:${{ github.sha }}
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      # Uploaded whether or not the step above failed: a report nobody can
+      # read is not a scan, and "the job went red" is not a finding.
+      - if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif

@@ -529,3 +529,100 @@ test_that("the startup probe leaves nothing behind", {
   expect_true(store_writable(d)$ok)
   expect_length(list.files(d, all.files = TRUE, no.. = TRUE), 0L)
 })
+
+# --- saving under a second name is a copy ---------------------------------
+
+# Two projects sharing an id are one project to every ownership check, so a
+# copy that kept it would accept the original's results as its own -- and
+# the original would accept the copy's. Save-as therefore forks: new
+# identity, results re-attributed, `derived_from` recording where they came
+# from. That is the one place ownership is rewritten; everywhere else a
+# foreign result is refused rather than adopted.
+sa_project <- function(name = "first") {
+  p <- tiny_project(name)
+  b <- omicsCore::new_analysis_bundle(
+    "run_diff", params = list(comparison = "B_vs_A"),
+    results = list(diff_result_df = data.frame(feature_id = "g1", effect = 1)))
+  b$provenance_binding <- omicsCore::new_provenance_binding(
+    analysis_id = "ana-1", project_id = p$metadata$project_id,
+    inputs = list(proteomics = omicsCore::effective_input(p, "proteomics")$version),
+    params_signature = omicsCore::params_signature(b$params))
+  p <- omicsCore::register_analysis(p, b)
+  p$bundles <- list(diff = b)
+  p
+}
+
+test_that("saving over the same name is not a copy", {
+  with_temp_store({
+    p <- sa_project()
+    first <- store_save_project(p, slug = "one")
+    expect_true(first$ok)
+    expect_false(isTRUE(first$forked))
+    id <- first$project$metadata$project_id
+
+    again <- store_save_project(first$project, slug = "one", overwrite = TRUE)
+    expect_false(isTRUE(again$forked))
+    expect_identical(again$project$metadata$project_id, id)
+  })
+})
+
+test_that("saving under a second name forks, and says so", {
+  with_temp_store({
+    p <- sa_project()
+    first <- store_save_project(p, slug = "one")
+    copy <- store_save_project(first$project, slug = "two")
+
+    expect_true(copy$ok)
+    expect_true(isTRUE(copy$forked))
+    expect_match(copy$message, "copy")
+    expect_false(identical(copy$project$metadata$project_id,
+                           first$project$metadata$project_id))
+    expect_equal(copy$project$metadata$derived_from$project_id,
+                 first$project$metadata$project_id)
+    expect_equal(copy$project$metadata$derived_from$saved_as, "one")
+  })
+})
+
+test_that("the copy's results belong to the copy, and still hang together", {
+  with_temp_store({
+    p <- sa_project()
+    first <- store_save_project(p, slug = "one")
+    copy <- store_save_project(first$project, slug = "two")
+
+    expect_length(omicsCore::valid_result_ids(copy$project), 1L)
+    expect_equal(nrow(omicsCore::validate_analysis_registry(copy$project)), 0L)
+    # And they are not the original's, on data that is byte-identical.
+    for (b in copy$project$analyses) {
+      expect_false(omicsCore::result_inputs_current(b$provenance_binding,
+                                                    first$project))
+    }
+  })
+})
+
+test_that("both files exist afterwards and open independently", {
+  with_temp_store({
+    p <- sa_project()
+    first <- store_save_project(p, slug = "one")
+    store_save_project(first$project, slug = "two")
+
+    a <- store_load_project("one")
+    b <- store_load_project("two")
+    expect_true(a$ok); expect_true(b$ok)
+    expect_false(identical(a$project$metadata$project_id,
+                           b$project$metadata$project_id))
+    # Opening records where each lives, so the next save knows whether it
+    # is a copy or a rewrite.
+    expect_equal(a$project$metadata$saved_as, "one")
+    expect_equal(b$project$metadata$saved_as, "two")
+  })
+})
+
+test_that("a project that has never been saved does not fork on its first save", {
+  with_temp_store({
+    p <- sa_project()
+    id <- p$metadata$project_id
+    res <- store_save_project(p, slug = "one")
+    expect_false(isTRUE(res$forked))
+    expect_identical(res$project$metadata$project_id, id)
+  })
+})

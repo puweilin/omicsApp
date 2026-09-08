@@ -35,7 +35,12 @@ mk_project <- function(...) {
 
 mk_bundle <- function(project, tag, id = new_analysis_id(), upstream = character(0),
                       params = list(a = 1), name = "run_diff", inputs = NULL) {
-  b <- new_analysis_bundle(analysis_name = name, results = list(x = 1))
+  # The parameters go on the bundle as well as into the signature. Setting
+  # only the signature was an inconsistency the registry check now catches
+  # -- correctly: a signature that does not describe the saved parameters
+  # lets the same analysis be filed twice under different ids.
+  b <- new_analysis_bundle(analysis_name = name, params = params,
+                           results = list(x = 1))
   b$provenance_binding <- new_provenance_binding(
     analysis_id = id,
     project_id  = project$metadata$project_id,
@@ -342,4 +347,100 @@ test_that("an analysis with no parameters still has a signature", {
   expect_identical(params_signature(list()), params_signature(NULL))
   expect_identical(params_signature(list(b = 2, a = 1)),
                    params_signature(list(a = 1, b = 2)))
+})
+
+
+# --- the registry's own bookkeeping ---------------------------------------
+
+test_that("a result filed under the wrong key is reported and excluded", {
+  # The key and the id are set in two places, and if they diverge an
+  # upstream reference resolves to a different analysis than it names --
+  # silently, because every version comparison still passes.
+  p <- mk_project()
+  b <- mk_bundle(p, "prot", id = "claims-this")
+  p$analyses <- list(`filed-as-that` = b)
+  probs <- validate_analysis_registry(p)
+  expect_equal(nrow(probs), 1L)
+  expect_match(probs$problem, "claims")
+  expect_length(valid_result_ids(p), 0L)
+})
+
+test_that("a signature that does not describe the saved parameters is reported", {
+  p <- mk_project()
+  b <- mk_bundle(p, "prot", id = "d1", params = list(cutoff = 0.05))
+  b$params$cutoff <- 0.01          # settings changed, signature did not
+  p <- register_analysis(p, b)
+  probs <- validate_analysis_registry(p)
+  expect_match(probs$problem, "params signature")
+  expect_length(valid_result_ids(p), 0L)
+})
+
+test_that("a cycle is named as a malformed record, not left to look stale", {
+  p <- mk_project()
+  a <- mk_bundle(p, "prot", id = "a", upstream = "b")
+  b <- mk_bundle(p, "prot", id = "b", upstream = "a", params = list(a = 2))
+  p <- register_analysis(p, a)
+  p <- register_analysis(p, b)
+  probs <- validate_analysis_registry(p)
+  expect_true(all(c("a", "b") %in% probs$analysis_id))
+  expect_match(probs$problem[[1L]], "cycle")
+  expect_length(valid_result_ids(p), 0L)
+})
+
+test_that("a coherent registry reports nothing", {
+  p <- integration_project()
+  expect_equal(nrow(validate_analysis_registry(p)), 0L)
+})
+
+# --- saving a copy --------------------------------------------------------
+
+test_that("a copy gets its own identity, and its results come with it", {
+  # Two projects sharing an id are one project to every ownership check,
+  # so a copy that kept it would accept the original's results as its own.
+  p <- integration_project()
+  before <- valid_result_ids(p)
+  copy <- fork_project(p, from_slug = "original")
+
+  expect_false(identical(copy$metadata$project_id, p$metadata$project_id))
+  expect_equal(copy$metadata$derived_from$project_id, p$metadata$project_id)
+  expect_equal(copy$metadata$derived_from$saved_as, "original")
+
+  # Every result is the copy's now, and the dependency graph survived the
+  # relabelling -- the ids are derived from the project id, so they change
+  # with it and the upstream references have to follow.
+  expect_length(valid_result_ids(copy), length(before))
+  expect_equal(nrow(validate_analysis_registry(copy)), 0L)
+  for (b in copy$analyses) {
+    expect_equal(b$provenance_binding$project_id, copy$metadata$project_id)
+  }
+})
+
+test_that("the original is untouched by the copy", {
+  p <- integration_project()
+  id <- p$metadata$project_id
+  invisible(fork_project(p, "original"))
+  expect_equal(p$metadata$project_id, id)
+  expect_length(valid_result_ids(p), 3L)
+})
+
+test_that("a copy's results are not accepted back by the original", {
+  p <- integration_project()
+  copy <- fork_project(p, "original")
+  for (b in copy$analyses) {
+    expect_false(result_inputs_current(b$provenance_binding, p))
+  }
+})
+
+test_that("history is re-attributed too", {
+  p <- mk_project()
+  p <- register_analysis(p, mk_bundle(p, "prot", id = "d1"))
+  p$experiments$prot <- stamp_version(mk_input(seed = 9))
+  p <- retire_invalid(p)
+  expect_length(p$retired, 1L)
+
+  copy <- fork_project(p, "original")
+  # A retired result whose owner no longer exists cannot be told apart
+  # from one that was never attributed.
+  expect_equal(copy$retired[[1L]]$provenance_binding$project_id,
+               copy$metadata$project_id)
 })

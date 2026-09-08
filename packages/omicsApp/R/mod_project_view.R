@@ -323,7 +323,14 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
       shiny::showNotification(res$message,
                               type = if (isTRUE(res$ok)) "message" else "error")
-      if (isTRUE(res$ok)) bump_store()
+      if (isTRUE(res$ok)) {
+        # The saved object is what the session continues with. A copy has a
+        # new identity and re-attributed results, and leaving the session on
+        # the pre-fork object would mean the next autosave wrote the
+        # original's identity over the copy's file.
+        if (!is.null(res$project)) current_project(res$project)
+        bump_store()
+      }
     })
 
     shiny::observeEvent(input$open_project, {

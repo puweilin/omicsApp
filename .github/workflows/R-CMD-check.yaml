@@ -14,12 +14,20 @@ on:
     paths:
       - "packages/omicsCore/**"
       - "packages/omicsApp/**"
+      # The deployment contract tests read deploy/ and assert the files
+      # agree with each other and with the packages -- the nginx port
+      # against the ShinyProxy port, the package lists in the Dockerfile
+      # against check_pins.R, the backup script against the crontab. A
+      # third of this project's fix commits are deploy fixes, and without
+      # this a change to any of those files ran no test at all.
+      - "deploy/**"
       - ".github/workflows/R-CMD-check.yaml"
   pull_request:
     branches: [main]
     paths:
       - "packages/omicsCore/**"
       - "packages/omicsApp/**"
+      - "deploy/**"
       - ".github/workflows/R-CMD-check.yaml"
   workflow_dispatch:
 

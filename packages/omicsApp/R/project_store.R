@@ -397,11 +397,28 @@ store_save_project <- function(project, slug, dir = omicsapp_data_dir(),
   if (!dir.exists(dir)) {
     dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   }
+
+  # Saving under a name this project has not been saved under before is a
+  # copy, and a copy needs its own identity: two projects sharing one would
+  # each accept the other's results as their own, which is the failure the
+  # ownership check exists for. Saving over where it already lives is not a
+  # copy, so it keeps everything.
+  home <- project$metadata$saved_as %||% NA_character_
+  forked <- !is.na(home) && !identical(home, slug)
+  if (forked) {
+    project <- omicsCore::fork_project(project, from_slug = home)
+  }
+  project$metadata$saved_as <- slug
+
   result <- tryCatch(
     {
       omicsCore::save_project(project, path, overwrite = TRUE)
-      list(ok = TRUE, path = path,
-           message = sprintf("Saved '%s'.", slug))
+      list(ok = TRUE, path = path, project = project, forked = forked,
+           message = if (forked) {
+             sprintf("Saved a copy as '%s'. It is now a separate project.", slug)
+           } else {
+             sprintf("Saved '%s'.", slug)
+           })
     },
     error = function(e) fail(paste0("Save failed: ", conditionMessage(e)))
   )
@@ -511,7 +528,13 @@ store_load_project <- function(slug, dir = omicsapp_data_dir()) {
          # must neither be adopted into the current project nor silently
          # emptied. migrate_legacy_project() moves those results to
          # history with a reason.
-         project = omicsCore::migrate_legacy_project(omicsCore::load_project(path)),
+         project = local({
+           p <- omicsCore::migrate_legacy_project(omicsCore::load_project(path))
+           # Where it lives, so a later Save under another name is
+           # recognised as a copy rather than a rename.
+           p$metadata$saved_as <- slug
+           p
+         }),
          message = sprintf("Opened '%s'.", slug)),
     error = function(e) fail(paste0("Open failed: ", conditionMessage(e)))
   )
