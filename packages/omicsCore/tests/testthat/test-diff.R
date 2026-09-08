@@ -100,6 +100,24 @@ test_that("run_diff drops the fitted model unless asked for it", {
   expect_equal(default$results$diff_result_df, kept$results$diff_result_df)
 })
 
+# A formula keeps its environment, and `as.formula(<string>)` takes the
+# calling frame. DESeq2 stores the design inside the DESeqDataSet, so the
+# model object referred back to run_deseq2_group()'s frame -- which held the
+# count matrix, the results, and the DESeqDataSet itself. Following that
+# reference turned 39 MB of data into 131 MB, of which the formula was 98 MB.
+#
+# Asserting on the environment rather than on a size: object.size() cannot
+# see the difference at all, and future's measure is not part of its API.
+test_that("the DESeq2 design formula does not carry its calling frame", {
+  skip_if_not_installed("DESeq2")
+  x <- make_rna()
+  b <- run_diff(x, method = "deseq2", analysis_type = "group",
+                group_col = "group", control_group = "ctrl",
+                case_group = "case", keep_model = TRUE)
+  env <- environment(DESeq2::design(b$results$diff_object))
+  expect_identical(env, baseenv())
+})
+
 test_that("run_diff t-test detects the injected signal", {
   x <- make_proteo()
   b <- run_diff(x, method = "ttest", analysis_type = "group",

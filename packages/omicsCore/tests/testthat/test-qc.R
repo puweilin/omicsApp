@@ -109,6 +109,83 @@ test_that("winsorize_counts clips per-gene extremes", {
   expect_lt(res$count_mat[1, 1], 1e6)
 })
 
+# ---- low-expression filter --------------------------------------------
+
+make_counts_input <- function(n_features = 10, n_samples = 6, counts = NULL) {
+  ids <- paste0("g", seq_len(n_features))
+  sids <- paste0("s", seq_len(n_samples))
+  m <- counts %||% matrix(100L, n_features, n_samples,
+                          dimnames = list(ids, sids))
+  dimnames(m) <- list(ids, sids)
+  omics_input(m,
+              data.frame(group = rep(c("a", "b"), length.out = n_samples),
+                         row.names = sids),
+              data.frame(feature_id = ids, row.names = ids),
+              omics_type = "rnaseq", assay_type = "raw_count")
+}
+
+test_that("low_expression_features keeps a feature seen often enough", {
+  m <- rbind(
+    plenty  = c(50L, 50L, 50L, 50L),
+    exactly = c(10L, 10L, 10L,  0L),   # 3 samples reach 10
+    thin    = c(10L, 10L,  0L,  0L),   # only 2 do
+    spike   = c(999L, 0L,  0L,  0L),   # a big total, one sample
+    silent  = c(0L,  0L,  0L,  0L)
+  )
+  colnames(m) <- paste0("s", 1:4)
+  dropped <- low_expression_features(m, min_count = 10, min_samples = 3)
+  expect_setequal(dropped, c("thin", "spike", "silent"))
+
+  # A row of NA is not a row of detections
+  m2 <- rbind(m, allna = rep(NA_integer_, 4))
+  expect_true("allna" %in%
+                low_expression_features(m2, min_count = 10, min_samples = 3))
+
+  # Off when either number is zero
+  expect_length(low_expression_features(m, 0, 3), 0L)
+  expect_length(low_expression_features(m, 10, 0), 0L)
+})
+
+test_that("run_qc filters low-expression features on raw counts by default", {
+  set.seed(4)
+  m <- matrix(100L, 10, 6, dimnames = list(paste0("g", 1:10), paste0("s", 1:6)))
+  m[9:10, ] <- 0L                       # two features nobody detected
+  x <- make_counts_input(counts = m)
+
+  b <- run_qc(x)
+  kept <- rownames(b$results$cleaned_input$expr_mat)
+  expect_false(any(c("g9", "g10") %in% kept))
+  expect_length(kept, 8L)
+
+  # and the numbers used are recorded, not just their effect
+  expect_equal(b$params$min_count, 10)
+  expect_equal(b$params$min_samples, 3)
+
+  # switched off, nothing is dropped for being quiet
+  b0 <- run_qc(x, min_count = 0, min_samples = 0)
+  expect_length(rownames(b0$results$cleaned_input$expr_mat), 10L)
+})
+
+# 10 reads is a low number on raw counts and a high one on TPM or logCPM,
+# where it would drop most of the matrix. The filter is not adapted to those
+# scales -- it is withheld from them, and the control is not offered either.
+test_that("run_qc leaves non-count layers alone", {
+  set.seed(9)
+  # Varying, not constant: a matrix of one repeated value makes the
+  # correlation in qc_outliers() undefined, and the warning has nothing to
+  # do with what is being tested here.
+  m <- matrix(rnorm(60, mean = 1), 10, 6,
+              dimnames = list(paste0("g", 1:10), paste0("s", 1:6)))
+  ids <- rownames(m)
+  x <- omics_input(m,
+                   data.frame(group = rep(c("a", "b"), 3), row.names = colnames(m)),
+                   data.frame(feature_id = ids, row.names = ids),
+                   omics_type = "rnaseq", assay_type = "logcpm")
+  b <- run_qc(x)
+  expect_equal(b$params$min_count, 0)
+  expect_length(rownames(b$results$cleaned_input$expr_mat), 10L)
+})
+
 test_that("run_qc returns an analysis_bundle with the expected slots", {
   x <- make_qc_input()
   b <- run_qc(x, missing_threshold = 0.5,

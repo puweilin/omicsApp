@@ -252,6 +252,70 @@ test_that("counts are never imputed, even with a method left selected", {
   })
 })
 
+# The low-expression filter is the mirror of imputation: offered on raw
+# counts, withheld everywhere else. Both halves matter, and the second one
+# is the half that bites -- Shiny keeps a removed input's value, so a count
+# threshold set here would otherwise follow the user to an intensity layer,
+# where 10 is not a low number.
+
+test_that("the low-expression control reaches run_qc and changes the result", {
+  # A mixture rather than sm_input()'s uniform Poisson(300): a threshold
+  # that drops every feature is refused by run_qc() -- rightly -- and the
+  # preview then keeps the previous bundle, so a test built that way
+  # watches nothing change and cannot tell why.
+  quiet <- sm_input("rnaseq")
+  quiet$expr_mat[1:10, ] <- 0
+  proj <- shiny::reactiveVal(
+    omicsCore::omics_project("smoke", list(prot = sm_input("proteomics"),
+                                           rna = quiet)))
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "rna")
+    session$flushReact()
+    expect_true(rendered(output$ui_low_expression))
+
+    # Defaults: the ten silent features go, the other thirty stay.
+    b <- last_bundle()
+    expect_identical(b$params$min_count, 10)
+    expect_equal(nrow(b$results$cleaned_input$expr_mat), 30L)
+
+    session$setInputs(min_count = 0, min_samples = 0)
+    session$flushReact()
+    expect_equal(nrow(last_bundle()$results$cleaned_input$expr_mat), 40L)
+  })
+})
+
+test_that("an emptied threshold box does not break the preview", {
+  proj <- shiny::reactiveVal(sm_project())
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "rna")
+    session$flushReact()
+    # numericInput reports NA while the field is empty, and NA satisfies
+    # is.numeric() -- so it reached assert_number() and the preview failed
+    # on the keystroke that cleared the box.
+    session$setInputs(min_count = NA_real_, min_samples = NA_real_)
+    session$flushReact()
+    expect_null(last_error())
+    expect_false(is.null(last_bundle()))
+  })
+})
+
+test_that("intensity layers are never filtered by a count threshold", {
+  proj <- shiny::reactiveVal(sm_project())
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "rna", min_count = 250, min_samples = 8)
+    session$flushReact()
+    expect_true(rendered(output$ui_low_expression))
+
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    expect_null(output$ui_low_expression)
+    b <- last_bundle()
+    expect_identical(b$params$min_count, 0)
+    # nothing dropped for being "low" on a scale where 10000 is meaningless
+    expect_equal(nrow(b$results$cleaned_input$expr_mat), 40L)
+  })
+})
+
 test_that("only methods whose packages are installed are offered", {
   proj <- shiny::reactiveVal(sm_project())
   shiny::testServer(qc_view_server, args = list(current_project = proj), {

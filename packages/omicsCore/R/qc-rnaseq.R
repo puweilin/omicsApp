@@ -1,3 +1,42 @@
+#' Which features are too lowly expressed to test
+#'
+#' Keeps a feature when at least `min_samples` samples reach `min_count`,
+#' the filter edgeR and DESeq2 both ask for and spell the same way. It is
+#' deliberately not "total counts across all samples": a gene at 200 in one
+#' sample and zero everywhere else passes that and cannot support a
+#' contrast.
+#'
+#' Two reasons to run it, and the second is the one people forget. A
+#' feature nobody detected carries no information about any contrast, and
+#' fitting a model for it costs exactly what fitting a real one costs -- on
+#' a full human index roughly a fifth of the rows are zero in every sample.
+#' And every one of them still enters the multiple-testing correction, so
+#' testing them makes the real findings harder to detect rather than
+#' easier.
+#'
+#' Returns the features to *drop*, so the caller can union it with whatever
+#' else it is dropping.
+#'
+#' @param count_mat Counts, features x samples.
+#' @param min_count The count a sample must reach to be counted.
+#' @param min_samples How many samples must reach it.
+#'
+#' @return Character vector of feature ids failing the filter.
+#' @keywords internal
+#' @noRd
+low_expression_features <- function(count_mat, min_count, min_samples) {
+  if (!is.numeric(min_count) || !is.numeric(min_samples) ||
+      min_count <= 0 || min_samples <= 0) {
+    return(character(0))
+  }
+  # NA counted as not reaching the threshold. A missing count is not a
+  # detection, and treating it as one is how an all-NA row survives a
+  # filter whose whole purpose is to remove rows with nothing in them.
+  reached <- rowSums(!is.na(count_mat) & count_mat >= min_count)
+  ids <- rownames(count_mat) %||% as.character(seq_len(nrow(count_mat)))
+  ids[reached < min_samples]
+}
+
 #' Winsorize per-gene outliers in a count matrix
 #'
 #' For each gene (row), values exceeding `Q3 + k * IQR` are clipped to that

@@ -34,6 +34,21 @@
 #'   or a vector of those (other than `"none"`) to union their flags.
 #' @param outlier_sd_threshold Z-score / IQR multiplier passed to
 #'   [qc_outliers()]. Default `3`.
+#' @param min_count,min_samples Low-expression filter: a feature is kept
+#'   when at least `min_samples` samples reach `min_count`. `NULL` (the
+#'   default) resolves per modality, as `impute_method` and
+#'   `outlier_method` do -- `10` and `3` on a `raw_count` RNA-seq layer,
+#'   and off everywhere else. Off rather than adapted, because `10` means
+#'   ten reads on raw counts and something quite different on `tpm` or
+#'   `logcpm`, where it is a high value rather than a low one.
+#'
+#'   Both DESeq2 and edgeR ask for this filter. A feature detected in
+#'   nobody says nothing about any contrast, costs a model fit to say it,
+#'   and still takes its place in the multiple-testing correction -- so
+#'   testing it makes the real findings harder to reach. On a full human
+#'   index roughly a fifth of rows are zero in every sample.
+#'
+#'   Set both to `0` to test everything.
 #' @param ... Forwarded to the imputation backend.
 #'
 #' @return An `analysis_bundle` with the following fields under `results`:
@@ -66,11 +81,15 @@ run_qc <- function(
   impute_method = NULL,
   outlier_method = NULL,
   outlier_sd_threshold = 3,
+  min_count = NULL,
+  min_samples = NULL,
   ...
 ) {
   assert_number(missing_threshold, "missing_threshold", lower = 0, upper = 1)
   assert_number(sample_missing_threshold, "sample_missing_threshold",
                 lower = 0, upper = 1, allow_null = TRUE)
+  assert_number(min_count, "min_count", lower = 0, allow_null = TRUE)
+  assert_number(min_samples, "min_samples", lower = 0, allow_null = TRUE)
   assert_subset(outlier_method, "outlier_method",
                 c("none", "pca", "connectivity", "iqr"), allow_null = TRUE)
   assert_number(outlier_sd_threshold, "outlier_sd_threshold", lower = 0)
@@ -94,6 +113,28 @@ run_qc <- function(
       rnaseq     = "connectivity",
       "pca"
     )
+  }
+
+  # Low-expression filtering, resolved per modality like the two above.
+  #
+  # Counts only, and raw counts at that: `min_count = 10` means ten reads
+  # on `raw_count` and something else entirely on `tpm` or `logcpm`, where
+  # ten is a high value rather than a low one. A filter that means
+  # different things on different layers is worse than no filter, so the
+  # others resolve to off and the control offers it only where it applies.
+  #
+  # Ten reads in at least three samples is what DESeq2's vignette reaches
+  # for and roughly what edgeR's filterByExpr() arrives at; three because
+  # it is the smallest group that supports a variance estimate.
+  counts_layer <- identical(input$omics_type %||% "", "rnaseq") &&
+                  identical(input$assay_type %||% "", "raw_count")
+  if (is.null(min_count))   min_count   <- if (counts_layer) 10 else 0
+  if (is.null(min_samples)) min_samples <- if (counts_layer) 3 else 0
+
+  low_expressed <- if (counts_layer) {
+    low_expression_features(input$expr_mat, min_count, min_samples)
+  } else {
+    character(0)
   }
 
   # ---- missingness ----
@@ -126,7 +167,7 @@ run_qc <- function(
     missingness$flagged_samples,
     outliers$flagged_samples
   ))
-  remove_features <- unique(missingness$flagged_features)
+  remove_features <- unique(c(missingness$flagged_features, low_expressed))
 
   # ---- build cleaned input ----
   keep_samples <- setdiff(colnames(input$expr_mat), remove_samples)
@@ -155,7 +196,9 @@ run_qc <- function(
          sample_missing_threshold = sample_missing_threshold,
          impute_method = impute_method,
          outlier_method = outlier_method,
-         outlier_sd_threshold = outlier_sd_threshold),
+         outlier_sd_threshold = outlier_sd_threshold,
+         min_count = min_count,
+         min_samples = min_samples),
     list(...)
   )
   cleaned <- record_step(cleaned, "run_qc", resolved_args)

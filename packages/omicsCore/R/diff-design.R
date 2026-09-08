@@ -67,6 +67,33 @@ safe_frame <- function(meta, terms) {
 #'
 #' @param meta Sample metadata.
 #' @param terms Model terms, in order; the first is normally the primary one.
+#' A formula that does not carry the frame it was built in
+#'
+#' `stats::as.formula()` on a string takes `env = parent.frame()`, and a
+#' formula holds its environment for as long as anything holds the formula.
+#' That is fine for a formula consumed and dropped, and a leak for one that
+#' is stored: DESeq2 keeps the design inside the `DESeqDataSet`, so the
+#' object returned by `run_deseq2_group()` referred back to that function's
+#' frame -- which by the time it returned held the subsetted count matrix,
+#' the standardized results, and the `DESeqDataSet` itself. A cycle.
+#'
+#' Measured at 63k features x 12 samples: 39 MB of actual data, 131 MB once
+#' the environment is followed, of which the formula accounted for 98 MB.
+#' `object.size()` does not follow environments and so reported the first
+#' number; `future` does, and refused to send the bundle to a worker.
+#'
+#' The design terms are columns of the data frame passed alongside, so
+#' nothing is ever looked up in the formula's environment. `baseenv()`
+#' rather than `emptyenv()`, because code that calls `environment(f)` on a
+#' formula expects something it can search.
+#'
+#' @param text The formula, as a string.
+#' @keywords internal
+#' @noRd
+detached_formula <- function(text) {
+  stats::as.formula(text, env = baseenv())
+}
+
 #' @param primary Which of `terms` carries the contrast, if any.
 #' @param intercept Include an intercept column.
 #'

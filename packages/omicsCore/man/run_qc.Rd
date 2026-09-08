@@ -11,6 +11,8 @@ run_qc(
   impute_method = NULL,
   outlier_method = NULL,
   outlier_sd_threshold = 3,
+  min_count = NULL,
+  min_samples = NULL,
   ...
 )
 }
@@ -34,6 +36,22 @@ or a vector of those (other than \code{"none"}) to union their flags.}
 
 \item{outlier_sd_threshold}{Z-score / IQR multiplier passed to
 \code{\link[=qc_outliers]{qc_outliers()}}. Default \code{3}.}
+
+\item{min_count, min_samples}{Low-expression filter: a feature is kept
+when at least \code{min_samples} samples reach \code{min_count}. \code{NULL} (the
+default) resolves per modality, as \code{impute_method} and
+\code{outlier_method} do -- \code{10} and \code{3} on a \code{raw_count} RNA-seq layer,
+and off everywhere else. Off rather than adapted, because \code{10} means
+ten reads on raw counts and something quite different on \code{tpm} or
+\code{logcpm}, where it is a high value rather than a low one.
+
+Both DESeq2 and edgeR ask for this filter. A feature detected in
+nobody says nothing about any contrast, costs a model fit to say it,
+and still takes its place in the multiple-testing correction -- so
+testing it makes the real findings harder to reach. On a full human
+index roughly a fifth of rows are zero in every sample.
+
+Set both to \code{0} to test everything.}
 
 \item{...}{Forwarded to the imputation backend.}
 }

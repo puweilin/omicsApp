@@ -230,6 +230,53 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                          choices = choices, selected = sel)
     })
 
+    # The mirror image of imputation: offered on raw counts and withheld
+    # everywhere else.
+    #
+    # `min_count = 10` means ten reads, which is a low value on
+    # `raw_count` and a high one on `tpm` or `logcpm` -- the same number
+    # would filter almost nothing on one layer and almost everything on
+    # another. So the control is not offered where it cannot be read the
+    # same way, and run_qc() resolves those layers to off.
+    low_expression_applies <- shiny::reactive({
+      a <- active()
+      inp <- if (a$is_demo) example_qc_input() else a$input
+      identical(inp$omics_type %||% "", "rnaseq") &&
+        identical(inp$assay_type %||% "", "raw_count")
+    })
+
+    output$ui_low_expression <- shiny::renderUI({
+      if (!low_expression_applies()) return(NULL)
+      base <- shiny::isolate(applied_pp()$params) %||% list()
+      htmltools::tagList(
+        htmltools::tags$div(
+          class = "row-grid r-6-6",
+          shiny::numericInput(
+            session$ns("min_count"),
+            label = "Minimum count",
+            value = base[["min_count"]] %||% 10,
+            min = 0, step = 1),
+          shiny::numericInput(
+            session$ns("min_samples"),
+            label = "…in at least this many samples",
+            value = base[["min_samples"]] %||% 3,
+            min = 0, step = 1)
+        ),
+        # Said out loud because the effect is large and invisible: on a
+        # full human index this drops most of the rows, and someone who
+        # reads "63,241 features" on import and "15,593" here should be
+        # able to find out why without asking.
+        htmltools::tags$div(
+          class = "muted", style = "font-size:12px;margin-top:-8px",
+          "Features detected in too few samples are dropped before ",
+          "testing. Both DESeq2 and edgeR ask for this: an undetected ",
+          "feature cannot support a contrast, and testing it anyway adds ",
+          "to the multiple-testing correction. Set either to 0 to test ",
+          "everything."
+        )
+      )
+    })
+
     # The settings as run_qc() would resolve them, in one place, so the
     # preview's signature and the record kept on apply cannot disagree about
     # what was asked for.
@@ -254,6 +301,26 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         "none"
       } else {
         input$impute_method %||% base[["impute_method"]]
+      }
+      # Same reasoning, and the same trap: Shiny keeps a hidden input's
+      # last value, so a count threshold set on an RNA-seq layer would
+      # otherwise follow the user to a proteomics one and filter it on a
+      # scale where 10 is not a low number.
+      if (!low_expression_applies()) {
+        base[["min_count"]] <- 0
+        base[["min_samples"]] <- 0
+      } else {
+        # numericInput yields NA while the box is empty or mid-edit, and
+        # NA reaches assert_number() as a number -- the preview failed
+        # with a validation error on every keystroke that cleared the
+        # field.
+        num <- function(v, fallback) {
+          if (is.null(v) || length(v) != 1L || is.na(v)) fallback else v
+        }
+        base[["min_count"]] <- num(input$min_count,
+                                   base[["min_count"]] %||% 10)
+        base[["min_samples"]] <- num(input$min_samples,
+                                     base[["min_samples"]] %||% 3)
       }
       base
     }
@@ -595,6 +662,16 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         shiny::updateSelectInput(session, "impute_method",
                                  selected = params$impute_method)
       }
+      if (low_expression_applies()) {
+        if (!is.null(params$min_count)) {
+          shiny::updateNumericInput(session, "min_count",
+                                    value = params$min_count)
+        }
+        if (!is.null(params$min_samples)) {
+          shiny::updateNumericInput(session, "min_samples",
+                                    value = params$min_samples)
+        }
+      }
     }, priority = 25L, ignoreNULL = FALSE)
 
     # What leaves the module is the applied preprocessing, never the preview.
@@ -642,6 +719,8 @@ qc_controls_card <- function(ns) {
       # Proteomics only, and rendered from the server because the choices
       # depend on the layer and on which optional packages are installed.
       shiny::uiOutput(ns("ui_impute")),
+      # Raw counts only, for the mirror-image reason.
+      shiny::uiOutput(ns("ui_low_expression")),
       # Everything above is a preview. Until this is pressed the panels
       # describe what these settings would do, and the analyses keep using
       # whatever was applied last -- which for a fresh layer is the import.

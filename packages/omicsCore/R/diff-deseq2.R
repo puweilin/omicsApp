@@ -177,7 +177,7 @@ run_deseq2_group <- function(
   # rather than parsing them, so the renamed levels go in there too.
   sf <- safe_frame(target_meta, design_terms)
   group_id <- sf$ids[[match(group_col, design_terms)]]
-  design_formula <- stats::as.formula(paste("~", paste(sf$ids, collapse = " + ")))
+  design_formula <- detached_formula(paste("~", paste(sf$ids, collapse = " + ")))
   dds <- build_deseq_dataset(input, count_sub, sf$df, design_formula)
   dds[[group_id]] <- stats::relevel(dds[[group_id]],
                                     ref = safe_level(sf, group_id, control_group))
@@ -269,7 +269,7 @@ run_deseq2_continuous <- function(
   # Renamed columns, as in the group case above.
   sf <- safe_frame(meta_df, design_terms)
   cont_id <- sf$ids[[match(continuous_col, design_terms)]]
-  design_formula <- stats::as.formula(paste("~", paste(sf$ids, collapse = " + ")))
+  design_formula <- detached_formula(paste("~", paste(sf$ids, collapse = " + ")))
   dds <- build_deseq_dataset(input, count_mat, sf$df, design_formula)
   dds <- deseq_with_dispersion_fallback(dds)
 
