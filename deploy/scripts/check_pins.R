@@ -49,7 +49,17 @@ WATCH <- c(
   msigdbr = "< 10"
 )
 
-base_pkgs <- rownames(installed.packages(priority = "base"))
+# base *and* recommended. Both ship with R, so install.packages() never
+# fetches them and their absence from a snapshot means nothing.
+#
+# Missing "recommended" reported a conflict that was real as stated and
+# false as a conclusion: the 2025-03-01 snapshot's Matrix 1.7-2 declares
+# R (>= 4.5) and the image is built on 4.4.2, so available.packages()
+# filters it out of the index -- and GSVA, which needs Matrix, was
+# reported as needing something "not in any repository". It is in the
+# image, at whatever version R 4.4.2 shipped, and always was: the build
+# that produced the running image has GSVA in it.
+base_pkgs <- rownames(installed.packages(priority = c("base", "recommended")))
 
 repos_for <- function(snapshot) {
   bioc <- paste0(BIOC_MIRROR, "/packages/", BIOC_RELEASE)
