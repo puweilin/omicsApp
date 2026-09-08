@@ -275,6 +275,18 @@ RUN printf '%s\n' \
 
 USER omics
 WORKDIR /home/omics
+
+# The report check runs here, and being here is the whole point: as the
+# account that serves users, against the installed package, after
+# everything else is in place. The earlier CJK check runs as root on an
+# Rmd it wrote itself, and it passed on an image whose PDF button did not
+# work. See the header of the script.
+#
+# --chown so the script can delete itself afterwards: /tmp is sticky, and
+# a root-owned file in it cannot be removed by this user.
+COPY --chown=omics:omics deploy/docker/check_report_export.R /tmp/check_report_export.R
+RUN Rscript /tmp/check_report_export.R && rm /tmp/check_report_export.R
+
 EXPOSE 3838
 
 # host must be 0.0.0.0 for ShinyProxy to reach the container.

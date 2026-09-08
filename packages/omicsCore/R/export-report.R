@@ -101,11 +101,19 @@ export_report <- function(
   # It is rmarkdown's file, but this call is what caused it, and the window
   # is this function -- the render is synchronous, so anything that appears
   # at the top of tempdir() during it came from here.
+  #
+  # Never the report itself, though. `path` is frequently a bare
+  # `tempfile()` -- that is exactly what Shiny's downloadHandler passes its
+  # `content` function -- which puts the report in tempdir() under a name
+  # matching the very pattern below. This cleanup deleted the file it had
+  # just been asked to write, and did it on the way out, so the render
+  # succeeded, the return value was the path, and the path was empty.
   before_tmp <- list.files(tempdir(), all.files = TRUE, no.. = TRUE)
+  protected <- basename(path)
   on.exit({
     left <- setdiff(list.files(tempdir(), all.files = TRUE, no.. = TRUE),
                     before_tmp)
-    left <- left[grepl("^file[0-9a-f]+$", left)]
+    left <- setdiff(left[grepl("^file[0-9a-f]+$", left)], protected)
     for (f in left) {
       p_ <- file.path(tempdir(), f)
       if (!dir.exists(p_)) unlink(p_)
@@ -117,27 +125,101 @@ export_report <- function(
     pdf  = pdf_output_format(scratch)
   )
 
-  rmarkdown::render(
-    input = rmd_path,
-    output_file = basename(path),
-    output_dir = out_dir,
-    intermediates_dir = scratch,
-    # knitr writes figures to `fig.path`, which is relative -- and
-    # relative to the knit root, not to intermediates_dir. Unset, the
-    # report's plots landed in tempdir() and stayed there: one PNG per
-    # figure per report, for the life of the session. Rooting the knit in
-    # the scratch directory means they go where the cleanup already is.
-    knit_root_dir = scratch,
-    output_format = output_format,
-    params = list(
-      project = project,
-      project_name = project$name %||% "omics_project"
+  # Render into the scratch directory under a name whose extension matches
+  # the format, then move the result to `path`. Two reasons, and the first
+  # one is why the download buttons produced nothing.
+  #
+  # rmarkdown appends the format's extension to `output_file` when it does
+  # not already carry one, so asking it for `fileab12cd` yielded
+  # `fileab12cd.html` -- and returned without an error, because from its
+  # point of view nothing went wrong. Every test here passes
+  # `tempfile(fileext = ".html")` and so never saw it; Shiny's
+  # downloadHandler passes an extension-less temp path and saw nothing else.
+  #
+  # The second reason is XeLaTeX, and it is why the PDF button failed on
+  # the server while working here. `intermediates_dir` moves knitr's files
+  # but not LaTeX's: the engine still wrote `report.aux` and `report.log`
+  # beside the input, and the input is the template inside the installed
+  # package. On a development checkout that directory is writable, so the
+  # only trace was stray .log files appearing in inst/rmd -- two of which
+  # were committed. On the server it is /usr/local/lib/R/site-library,
+  # owned by root and read-only to the account the container runs as, and
+  # LaTeX stopped with `I can't write on file`.
+  #
+  # So the template is rendered as a copy inside the scratch directory. It
+  # references nothing outside itself, so the copy is complete.
+  render_name <- paste0("report", switch(format, html = ".html", pdf = ".pdf"))
+  local_rmd <- file.path(scratch, "report.Rmd")
+  if (!file.copy(rmd_path, local_rmd)) {
+    stop("Could not stage the report template for rendering.", call. = FALSE)
+  }
+
+  # tinytex removes its working files on failure, the log among them. That
+  # log holds the actual LaTeX error; without it the message is "LaTeX
+  # failed to compile <file>" plus a link to a web page, addressed to
+  # someone who has neither the file nor a shell on the server.
+  old_opts <- options(tinytex.clean = FALSE)
+  on.exit(options(old_opts), add = TRUE)
+
+  tryCatch(
+    rmarkdown::render(
+      input = local_rmd,
+      output_file = render_name,
+      output_dir = scratch,
+      intermediates_dir = scratch,
+      # knitr writes figures to `fig.path`, which is relative -- and
+      # relative to the knit root, not to intermediates_dir. Unset, the
+      # report's plots landed in tempdir() and stayed there: one PNG per
+      # figure per report, for the life of the session. Rooting the knit in
+      # the scratch directory means they go where the cleanup already is.
+      knit_root_dir = scratch,
+      output_format = output_format,
+      params = list(
+        project = project,
+        project_name = project$name %||% "omics_project"
+      ),
+      envir = new.env(parent = globalenv()),
+      quiet = TRUE
     ),
-    envir = new.env(parent = globalenv()),
-    quiet = TRUE
+    error = function(e) {
+      stop(render_failure_message(e, scratch), call. = FALSE)
+    }
   )
 
+  produced <- file.path(scratch, render_name)
+  if (!file.exists(produced)) {
+    stop("The report render finished but produced no file.", call. = FALSE)
+  }
+  # file.copy() rather than file.rename(): scratch is under tempdir() and
+  # `path` is wherever the caller asked, which on a server is a different
+  # filesystem -- rename() cannot cross one, and it says so by returning
+  # FALSE rather than raising. The scratch copy goes with the directory
+  # on exit.
+  if (!file.copy(produced, path, overwrite = TRUE)) {
+    stop("Could not write the report to ", path, call. = FALSE)
+  }
+
   invisible(path)
+}
+
+# The last error LaTeX reported, for a message a user will actually read.
+#
+# A .log line starting with `!` is TeX's error; the `l.<n>` line after it is
+# the source line that caused it. Both are worth carrying. Returns the
+# original message unchanged when there is no log to read -- an HTML render
+# has none, and neither does a failure that happened before LaTeX started.
+render_failure_message <- function(e, scratch) {
+  msg <- conditionMessage(e)
+  logs <- list.files(scratch, pattern = "\\.log$", full.names = TRUE,
+                     recursive = TRUE)
+  if (length(logs) == 0L) return(msg)
+  logs <- logs[order(file.info(logs)$mtime, decreasing = TRUE)]
+  txt <- tryCatch(readLines(logs[[1L]], warn = FALSE),
+                  error = function(e) character(0))
+  hits <- grep("^!", txt)
+  if (length(hits) == 0L) return(msg)
+  detail <- txt[seq(hits[[1L]], min(length(txt), hits[[1L]] + 3L))]
+  paste0(msg, "\nLaTeX said: ", paste(trimws(detail), collapse = " "))
 }
 
 

@@ -102,6 +102,86 @@ test_that("export_report errors on non-projects", {
                "omics_project")
 })
 
+# Shiny's downloadHandler hands `content` a temp path with no extension, and
+# rmarkdown appends the format's own extension to an output name that lacks
+# one -- so the report was written next to the path asked for, and the
+# handler served a file that was not there. It failed silently in both
+# formats: nothing raised, the return value was the path, and the path did
+# not exist. Every other test here passes `tempfile(fileext = ...)` and so
+# could not see it.
+test_that("export_report writes to the exact path when it has no extension", {
+  skip_if_not_installed("rmarkdown")
+  skip_on_cran()
+  if (!nzchar(Sys.which("pandoc")) && !rmarkdown::pandoc_available()) {
+    skip("pandoc unavailable")
+  }
+  x <- make_export_input()
+  p <- omics_project("export_demo", experiments = list(proteo = x))
+
+  dir <- withr::local_tempdir()
+  tmp <- file.path(dir, "fileab12cd")
+  out <- export_report(p, tmp, format = "html")
+
+  expect_identical(out, tmp)
+  expect_true(file.exists(tmp))
+  expect_gt(file.info(tmp)$size, 0L)
+  # and nothing left beside it under a name the caller never asked for
+  expect_identical(list.files(dir), "fileab12cd")
+})
+
+# The shape above is not quite the one that broke. downloadHandler passes a
+# bare `tempfile()`: no extension *and* directly inside tempdir(), under the
+# name `file<hex>`. That is the pattern this function sweeps to clear
+# rmarkdown's leftover figure copies, so the sweep deleted the report on the
+# way out -- after a render that had succeeded. A test in a subdirectory of
+# tempdir() passes either way, which is why this one is not in one.
+test_that("export_report survives its own tempdir cleanup", {
+  skip_if_not_installed("rmarkdown")
+  skip_on_cran()
+  if (!nzchar(Sys.which("pandoc")) && !rmarkdown::pandoc_available()) {
+    skip("pandoc unavailable")
+  }
+  x <- make_export_input()
+  p <- omics_project("export_demo", experiments = list(proteo = x))
+
+  tmp <- tempfile()                      # exactly what downloadHandler hands over
+  on.exit(unlink(tmp), add = TRUE)
+  expect_match(basename(tmp), "^file[0-9a-f]+$")
+
+  export_report(p, tmp, format = "html")
+  expect_true(file.exists(tmp))
+  expect_gt(file.info(tmp)$size, 0L)
+})
+
+# `intermediates_dir` relocates knitr's files but not LaTeX's, so the engine
+# wrote report.aux and report.log beside its input -- the template inside
+# the installed package. A checkout is writable, so this surfaced only as
+# stray .log files in inst/rmd (two of which reached a commit). The server
+# installs into a root-owned site-library, where the same write is refused
+# and the render stops. Asserting on the directory rather than on the error
+# because the error only appears where the tests do not run.
+test_that("export_report leaves nothing beside its template", {
+  skip_if_not_installed("rmarkdown")
+  skip_on_cran()
+  if (!nzchar(Sys.which("pandoc")) && !rmarkdown::pandoc_available()) {
+    skip("pandoc unavailable")
+  }
+  x <- make_export_input()
+  p <- omics_project("export_demo", experiments = list(proteo = x))
+
+  home <- withr::local_tempdir()
+  tpl <- file.path(home, "default-report.Rmd")
+  file.copy(system.file("rmd", "default-report.Rmd", package = "omicsCore"),
+            tpl)
+  before <- list.files(home, all.files = TRUE, no.. = TRUE)
+
+  out <- withr::local_tempfile(fileext = ".html")
+  export_report(p, out, template = tpl)
+
+  expect_true(file.exists(out))
+  expect_setequal(list.files(home, all.files = TRUE, no.. = TRUE), before)
+})
+
 test_that("export_report refuses to overwrite by default", {
   skip_if_not_installed("rmarkdown")
   skip_on_cran()
