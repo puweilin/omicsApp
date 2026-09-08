@@ -39,6 +39,13 @@ hostile_values <- list(
 # every hostile value in turn. Each answer is a success or an error
 # whose message is not one of R's own.
 sweep_contract <- function(calls, values = hostile_values) {
+  # Somewhere disposable, because `"x"` is one of the hostile values and
+  # some of these arguments are paths. `export_bundle(dir = "x")` is a
+  # perfectly reasonable call: it created ./x and wrote the bundle's TSVs
+  # into it, relative to whatever directory the tests ran in -- the source
+  # tree. The result was 35 KB of binary sitting in tests/testthat that a
+  # `git add -A` eventually committed.
+  withr::local_dir(withr::local_tempdir())
   offences <- character(0)
   for (fn_name in names(calls)) {
     fn <- get(fn_name, envir = asNamespace("omicsCore"))
