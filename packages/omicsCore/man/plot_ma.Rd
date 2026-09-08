@@ -8,6 +8,7 @@ plot_ma(
   bundle,
   top_n = 20,
   label_features = NULL,
+  max_points = 12000L,
   p_basis = c("adjusted", "raw"),
   effect_threshold = NULL,
   p_threshold = 0.05

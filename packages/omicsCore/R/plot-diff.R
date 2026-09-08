@@ -24,9 +24,11 @@ plot_volcano <- function(
   label_features = NULL,
   p_basis = c("adjusted", "raw"),
   effect_threshold = NULL,
-  p_threshold = 0.05
+  p_threshold = 0.05,
+  max_points = 12000L
 ) {
   assert_count(top_n, "top_n")
+  assert_count(max_points, "max_points", allow_null = TRUE)
   assert_character(label_features, "label_features", allow_null = TRUE)
   assert_number(effect_threshold, "effect_threshold", lower = 0, allow_null = TRUE)
   assert_number(p_threshold, "p_threshold", lower = 0, upper = 1, allow_null = TRUE)
@@ -51,6 +53,10 @@ plot_volcano <- function(
   df$.label <- ifelse(df$feature_id %in% unique(c(top_ids, forced_ids)),
                       df$feature_symbol, NA_character_)
 
+  n_all <- nrow(df)
+  df <- thin_volcano_points(df, max_points,
+                            keep = unique(c(top_ids, forced_ids)))
+
   p <- ggplot2::ggplot(df,
                        ggplot2::aes(x = .data$effect,
                                     y = .data$.neglog10p,
@@ -67,7 +73,11 @@ plot_volcano <- function(
       # it a reader has a two-coloured cloud and no way to know which
       # cut produced it -- and a screenshot outlives the session that
       # set the controls.
-      caption = threshold_caption(p_col, p_threshold, effect_threshold),
+      # Including whether the cloud was thinned. The subtitle counts every
+      # feature and the plot now draws fewer of them, and a reader who
+      # notices that deserves to be told rather than left to wonder.
+      caption = threshold_caption(p_col, p_threshold, effect_threshold,
+                                  n_all, nrow(df)),
       x = volcano_xlab(bundle),
       y = paste0("-log10(", p_col, ")")
     ) +
@@ -114,9 +124,11 @@ plot_volcano <- function(
 #' @export
 #' @family diff
 plot_ma <- function(bundle, top_n = 20, label_features = NULL,
+                    max_points = 12000L,
                     p_basis = c("adjusted", "raw"),
                     effect_threshold = NULL,
                     p_threshold = 0.05) {
+  assert_count(max_points, "max_points", allow_null = TRUE)
   assert_count(top_n, "top_n")
   assert_character(label_features, "label_features", allow_null = TRUE)
   assert_number(effect_threshold, "effect_threshold", lower = 0, allow_null = TRUE)
@@ -143,6 +155,10 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL,
   df$.label <- ifelse(df$feature_id %in% unique(c(top_ids, forced_ids)),
                       df$feature_symbol, NA_character_)
 
+  n_all <- nrow(df)
+  df <- thin_volcano_points(df, max_points,
+                            keep = unique(c(top_ids, forced_ids)))
+
   p <- ggplot2::ggplot(df,
                        ggplot2::aes(x = .data$base_mean,
                                     y = .data$effect,
@@ -156,7 +172,11 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL,
     ggplot2::labs(
       title = "MA plot",
       subtitle = volcano_subtitle(bundle),
-      caption = threshold_caption(p_col, p_threshold, effect_threshold),
+      # Including whether the cloud was thinned. The subtitle counts every
+      # feature and the plot now draws fewer of them, and a reader who
+      # notices that deserves to be told rather than left to wonder.
+      caption = threshold_caption(p_col, p_threshold, effect_threshold,
+                                  n_all, nrow(df)),
       x = ma_xlab(bundle),
       y = volcano_xlab(bundle)
     ) +
@@ -365,8 +385,54 @@ diff_significance <- function(df, p_col, p_threshold, effect_threshold) {
   sig
 }
 
-threshold_caption <- function(p_col, p_threshold, effect_threshold) {
+# Thin the over-plotted cloud, never the points that carry information.
+#
+# A volcano of 63k features is ~6.5 MB of JSON once plotly has serialised
+# it, and the browser then draws 63,000 marks. The R side takes half a
+# second, which is why this does not show up in any server-side timing
+# and reads to the user as the analysis being slow.
+#
+# What is dropped is only ever non-significant, unlabelled points, and
+# only once there are more of them than the eye can separate: at that
+# density the grey cloud is solid, so removing four in five of it changes
+# the count in the corner of nobody's eye and nothing else. Everything
+# significant, and everything labelled, is kept whatever the cap.
+#
+# Deterministic, so the same bundle always gives the same figure -- a plot
+# that reshuffles between two renders of one result is a plot nobody can
+# cite. Sampled on a fixed order rather than with a seed, so it does not
+# disturb the caller's RNG state either.
+thin_volcano_points <- function(df, max_points, keep = character(0)) {
+  # length-1 first: `||` on a zero-length condition is an error in its own
+  # right, and one that names neither the argument nor the caller.
+  if (is.null(max_points) || length(max_points) != 1L ||
+      !is.numeric(max_points) || is.na(max_points) ||
+      !is.finite(max_points) || max_points <= 0 ||
+      nrow(df) <= max_points) {
+    return(df)
+  }
+  protected <- !is.na(df$.label) | df$.sig == "significant" |
+               df$feature_id %in% keep
+  n_free <- max_points - sum(protected)
+  if (n_free <= 0L) return(df[protected, , drop = FALSE])
+
+  free_idx <- which(!protected)
+  # Every k-th, on the frame's own order: no RNG, and the retained points
+  # stay spread across the cloud rather than clustering wherever a random
+  # draw happened to land.
+  step <- length(free_idx) / n_free
+  taken <- free_idx[unique(as.integer(seq(1, length(free_idx), by = step)))]
+  df[sort(c(which(protected), taken)), , drop = FALSE]
+}
+
+threshold_caption <- function(p_col, p_threshold, effect_threshold,
+                              n_all = NULL, n_drawn = NULL) {
   bits <- character(0)
+  if (!is.null(n_all) && !is.null(n_drawn) && n_drawn < n_all) {
+    bits <- c(bits, sprintf(
+      "showing %s of %s features (non-significant points thinned)",
+      format(n_drawn, big.mark = ","), format(n_all, big.mark = ",")))
+  }
   if (!is.null(p_threshold)) {
     bits <- c(bits, sprintf("%s < %g", p_col, p_threshold))
   }

@@ -10,7 +10,8 @@ plot_volcano(
   label_features = NULL,
   p_basis = c("adjusted", "raw"),
   effect_threshold = NULL,
-  p_threshold = 0.05
+  p_threshold = 0.05,
+  max_points = 12000L
 )
 }
 \arguments{
