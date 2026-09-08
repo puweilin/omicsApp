@@ -29,7 +29,8 @@ report_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
-                               diff_thresholds = shiny::reactive(NULL)) {
+                               diff_thresholds = shiny::reactive(NULL),
+                               activation = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # One workbook of tables, not a rendered document.
@@ -109,6 +110,42 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       grid_bundle(saved)
     }, priority = -20L)
 
+    # ---- the grid, as an ExtendedTask ----------------------------------
+    #
+    # Not run_async(). A plain promise leaves the session that started the
+    # task blocked for the length of it, so the progress observer below
+    # never got a turn: measured in real Chrome against multisession(2),
+    # with the worker writing a step a second for six seconds, the browser
+    # sampled 30% six times and the poll ran once. A bar that never moves
+    # is the thing this was added to fix.
+    #
+    # ExtendedTask is Shiny's answer to exactly that: the invoking event
+    # returns immediately and the session goes on serving. The other three
+    # call sites keep run_async -- their work is seconds, and the shape
+    # change is not free.
+    #
+    # Everything the worker needs arrives as an argument. Nothing is
+    # captured from this scope, for the reason detached_call() exists.
+    grid_task <- shiny::ExtendedTask$new(function(bundle, grid_args,
+                                                  report_progress,
+                                                  progress_path) {
+      promises::future_promise({
+        on.exit(unlink(progress_path), add = TRUE)
+        do.call(omicsCore::run_enrichment_grid,
+                c(list(diff_bundle = bundle,
+                       on_progress = report_progress), grid_args))
+      }, seed = TRUE)
+    })
+
+    # What was launched, so the answer can be judged when it returns.
+    # Without these the module had no staleness contract at all: a result
+    # from a project the user had left could still be written, and a late
+    # error could overwrite the message from a newer run.
+    grid_launch <- shiny::reactiveVal(NULL)
+    grid_request <- shiny::reactiveVal(0L)
+    grid_progress <- shiny::reactiveVal(NULL)
+    grid_reader <- shiny::reactiveVal(NULL)
+
     shiny::observeEvent(input$run_grid, {
       proj <- current_project()
       diff <- proj$bundles$diff
@@ -116,21 +153,22 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         grid_error("Run a differential first: enrichment reads its results.")
         return()
       }
+      grid_request(shiny::isolate(grid_request()) + 1L)
       launch <- capture_launch(
         proj, "enrich_all",
         tags = diff$input_info$layer_tag %||% character(0),
         upstream = diff$provenance_binding$analysis_id %||% character(0),
         params = list(grid = "all"),
-        activation = NA_integer_)
+        activation = activation())
+      grid_launch(list(launch = launch,
+                       request = shiny::isolate(grid_request())))
       # The path is chosen here and handed over, not chosen in the
       # worker: under `multisession` the worker has its own tempdir(),
       # so a name it picked would be one this side could not find.
       progress_path <- tempfile("omicsApp-grid-", fileext = ".progress")
-      # The writer is built here and travels as a value. Built inside the
-      # worker instead it would have to carry progress_writer() across,
-      # and detached_call() re-parents to baseenv() -- where a package
-      # internal is not.
       report_progress <- progress_writer(progress_path)
+      grid_reader(progress_reader(progress_path))
+      grid_progress(list(value = 0, detail = "starting"))
       # The cut the Enrich view is running at, so "all of them" means all
       # of them at the settings on screen rather than at whatever the
       # defaults happen to be. `output_p_cutoff = 1` for the same reason
@@ -144,32 +182,83 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         grid_args$p_preference <- thr$p_preference
         grid_args$effect_cutoff <- thr$effect_cutoff
       }
-      run_async(
-        detached_call(
-          function() {
-            on.exit(unlink(progress_path), add = TRUE)
-            do.call(omicsCore::run_enrichment_grid,
-                    c(list(diff_bundle = bundle,
-                           on_progress = report_progress), grid_args))
-          },
-          bundle = bundle_for_worker(diff),
-          grid_args = grid_args,
-          progress_path = progress_path,
-          report_progress = report_progress),
-        on_success = function(result) {
-          unlink(progress_path)
-          grid_error(NULL)
-          grid_bundle(stamp_from_launch(result, launch))
-        },
-        on_error = function(msg) {
-          unlink(progress_path)
-          grid_bundle(NULL)
-          grid_error(msg)
-        },
-        progress_poll = progress_reader(progress_path),
-        message = "Running every enrichment..."
-      )
+      grid_task$invoke(bundle_for_worker(diff), grid_args,
+                       report_progress, progress_path)
     })
+
+    # The bar, driven from the file the worker appends to. This only runs
+    # while the task is out, and it can only run at all because the task
+    # no longer holds the session.
+    shiny::observe({
+      if (!identical(grid_task$status(), "running")) return()
+      shiny::invalidateLater(500)
+      rd <- shiny::isolate(grid_reader())
+      if (is.null(rd)) return()
+      st <- tryCatch(rd(), error = function(e) NULL)
+      if (!is.null(st)) grid_progress(st)
+    })
+
+    # The answer, judged before it is kept.
+    shiny::observe({
+      status <- grid_task$status()
+      if (!status %in% c("success", "error")) return()
+      state <- shiny::isolate(grid_launch())
+      if (is.null(state)) return()
+      grid_launch(NULL)                 # judged once
+      grid_progress(NULL)
+
+      admissible <- launch_admissible(
+        state$launch,
+        function() list(project = shiny::isolate(current_project()),
+                        activation = shiny::isolate(activation()),
+                        request_seq = shiny::isolate(grid_request())),
+        state$request)
+      verdict <- tryCatch(admissible(status),
+                          error = function(e) list(ok = FALSE,
+                                                   reason = conditionMessage(e)))
+      if (!isTRUE(verdict$ok)) {
+        # Refused, and said so. A late result that vanishes without a word
+        # is indistinguishable from one that never ran -- and a late
+        # *error* written over the current state reads as a fault in what
+        # is on screen now.
+        discard_notice()(verdict$reason)
+        return()
+      }
+      if (identical(status, "error")) {
+        msg <- tryCatch({ grid_task$result(); "the run failed" },
+                        error = function(e) conditionMessage(e))
+        grid_bundle(NULL)
+        grid_error(msg)
+        return()
+      }
+      result <- tryCatch(grid_task$result(), error = function(e) e)
+      if (inherits(result, "error")) {
+        grid_bundle(NULL)
+        grid_error(conditionMessage(result))
+        return()
+      }
+      grid_error(NULL)
+      grid_bundle(stamp_from_launch(result, state$launch))
+    })
+
+    # A different project, or a new one, leaves nothing of the last grid
+    # on screen. The restore observer above only *adds*; without this a
+    # grid computed for one project stayed visible under another.
+    # The first value is recorded, not acted on; every change after it
+    # clears. `ignoreInit` skips the first *evaluation*, which is a
+    # different thing -- whether that coincides with the first activation
+    # depends on whether a flush has happened yet.
+    last_activation <- shiny::reactiveVal(NULL)
+    shiny::observe({
+      a <- activation()
+      prev <- shiny::isolate(last_activation())
+      last_activation(a)
+      if (is.null(prev) || identical(prev, a)) return()
+      grid_bundle(NULL)
+      grid_error(NULL)
+      grid_progress(NULL)
+      grid_launch(NULL)
+    }, priority = 30L)
 
     # The sheets the workbook would hold, asked of omicsCore rather than
     # worked out again here. The header counts them, the card lists them
@@ -239,7 +328,22 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       g <- grid_bundle()
       err <- grid_error()
 
-      status <- if (!is.null(err)) {
+      prog <- grid_progress()
+      status <- if (!is.null(prog)) {
+        # Inline, beside the button that started it, rather than in the
+        # floating Progress: it is tied to this task and it is what the
+        # user is looking at while they wait.
+        htmltools::tagList(
+          htmltools::tags$div(
+            style = paste0("height:6px;border-radius:3px;background:var(--border);",
+                           "overflow:hidden;margin:8px 0 6px"),
+            htmltools::tags$div(
+              style = sprintf(paste0("height:100%%;width:%.0f%%;",
+                                     "background:var(--brand);transition:width .3s"),
+                              100 * max(0, min(1, prog$value %||% 0))))),
+          htmltools::tags$div(class = "muted", style = "font-size:12px",
+                              prog$detail %||% ""))
+      } else if (!is.null(err)) {
         htmltools::tags$div(class = "muted", style = "color:var(--danger)", err)
       } else if (!is.null(g)) {
         lg <- g$results$grid_log
@@ -256,10 +360,16 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           "finishes.")
       }
 
+      running <- identical(grid_task$status(), "running")
       btn <- shiny::actionButton(
         session$ns("run_grid"),
-        if (is.null(g)) "Run every enrichment" else "Run them again",
+        if (running) "Running\u2026"
+        else if (is.null(g)) "Run every enrichment" else "Run them again",
         class = "btn btn-sm btn-primary")
+      if (running) {
+        btn <- htmltools::tagAppendAttributes(
+          btn, disabled = NA, style = "pointer-events:none;opacity:0.55")
+      }
       if (!have_diff) {
         btn <- htmltools::tagAppendAttributes(
           btn, disabled = NA, style = "pointer-events:none;opacity:0.55",

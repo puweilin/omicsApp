@@ -183,3 +183,78 @@ test_that("the parameters sheet says what each analysis ran with", {
   # and which layer produced it
   expect_true(any(grepl("^layer: ", s$analysis)))
 })
+
+# ---- more than one layer ----------------------------------------------
+#
+# The workbook read `bundles$qc` and `bundles$diff` -- the display slots
+# -- so a project with two layers, both with QC applied and both with a
+# differential, exported one QC table and one Differential. The second
+# differential is the one run_integration() works from: computed by the
+# Integration view, registered, never displayed. The concordance was
+# offered as though both sides were in front of the reader.
+
+two_layer_project <- function() {
+  mk <- function(seed) {
+    set.seed(seed)
+    ids <- paste0("F", 1:20); sids <- paste0("s", 1:8)
+    m <- matrix(stats::rnorm(160, 20, 2), 20, dimnames = list(ids, sids))
+    omics_input(m,
+                data.frame(group = rep(c("a", "b"), each = 4), row.names = sids),
+                data.frame(feature_id = ids, feature_symbol = ids,
+                           row.names = ids),
+                omics_type = "proteomics",
+                assay_type = "normalized_intensity")
+  }
+  a <- mk(1); b <- mk(2)
+  p <- omics_project("two", experiments = list(skin = a, follicle = b))
+  da <- run_diff(a, method = "ttest", analysis_type = "group",
+                 group_col = "group", control_group = "a", case_group = "b")
+  da$input_info$layer_tag <- "skin"
+  da$provenance_binding <- list(analysis_id = "ana_skin")
+  db <- run_diff(b, method = "ttest", analysis_type = "group",
+                 group_col = "group", control_group = "a", case_group = "b")
+  db$input_info$layer_tag <- "follicle"
+  db$provenance_binding <- list(analysis_id = "ana_follicle")
+
+  p$bundles <- list(diff = da)              # only one is displayed
+  p$analyses <- list(ana_skin = da, ana_follicle = db)
+  p$preprocessing <- list(
+    skin = list(cleaned = subset_omics(a, features = paste0("F", 1:15)),
+                params = list(missing_threshold = 0.5, impute_method = "none")),
+    follicle = list(cleaned = subset_omics(b, features = paste0("F", 1:12)),
+                    params = list(missing_threshold = 0.3,
+                                  impute_method = "MinProb")))
+  p
+}
+
+test_that("a second layer's differential is in the workbook", {
+  skip_if_not_installed("openxlsx")
+  s <- workbook_sheets(two_layer_project())
+  expect_true("Differential" %in% names(s))
+  # Named by its layer: "Differential (2)" would say nothing.
+  expect_true("Differential (follicle)" %in% names(s))
+  expect_gt(nrow(s[["Differential (follicle)"]]), 0L)
+})
+
+test_that("the parameters sheet covers every layer's QC and both runs", {
+  skip_if_not_installed("openxlsx")
+  ps <- workbook_sheets(two_layer_project())[["Analysis parameters"]]
+
+  expect_true(any(ps$analysis == "QC: skin"))
+  expect_true(any(ps$analysis == "QC: follicle"))
+  # The two layers were cleaned with different settings, and the sheet
+  # has to be able to say which is which.
+  expect_true(any(ps$analysis == "QC: follicle" &
+                    ps$parameter == "impute_method" & ps$value == "MinProb"))
+
+  # As imported and as analysed are different numbers once QC ran.
+  expect_true(any(ps$parameter == "features (as imported)" & ps$value == "20"))
+  expect_true(any(ps$parameter == "features (analysed)" & ps$value == "15"))
+
+  # And the displayed result says what it was computed on.
+  expect_true(any(ps$analysis == "diff" & ps$parameter == "layer_tag" &
+                    ps$value == "skin"))
+  # The undisplayed one is accounted for rather than omitted in silence.
+  expect_true(any(grepl("^upstream: ", ps$analysis)))
+  expect_true(any(ps$value == "ana_follicle"))
+})

@@ -190,10 +190,25 @@ test_that("the export button is live exactly when it can work", {
 # grid is one press, and what it produces has to reach the workbook --
 # through the project, like every other result, not through a private
 # channel between two modules.
+# ExtendedTask, not run_async: a plain promise held the session that
+# started the task, so the progress observer never got a turn. Under
+# testServer it advances if `later` is pumped, which is what `pump()`
+# below does -- the synchronous shortcut run_async took in tests is
+# exactly the thing that stopped these paths being exercised.
+pump <- function(session, n = 60L) {
+  for (i in seq_len(n)) {
+    later::run_now(0.05)
+    session$flushReact()
+  }
+}
+
 test_that("the enrichment grid runs from the Report view and reaches the sheets", {
   skip_if_not_installed("openxlsx")
   skip_if_not_installed("clusterProfiler")
   skip_if_not_installed("msigdbr")
+  skip_if_not_installed("later")
+  old <- future::plan(future::sequential)
+  on.exit(future::plan(old), add = TRUE)
 
   proj <- sm_project()
   proj$bundles <- list(diff = example_diff_bundle())
@@ -205,34 +220,68 @@ test_that("the enrichment grid runs from the Report view and reaches the sheets"
 
     session$setInputs(run_grid = 1)
     session$flushReact()
+    expect_identical(grid_task$status(), "running")
+    pump(session)
 
     g <- grid_bundle()
     expect_false(is.null(g))
     expect_identical(g$analysis_name, "run_enrichment_grid")
-    # Both tests attempted, whatever came back
     expect_setequal(unique(g$results$grid_log$type), c("ora", "gsea"))
 
-    # And the workbook picks it up once it is on the project. app_server()
-    # does the filing; here it is done by hand to keep the test to one
-    # module.
     p2 <- proj
     p2$bundles$enrich_all <- g
-    sheets <- names(omicsCore::workbook_sheets(p2))
-    expect_true("Enrichment log" %in% sheets)
+    expect_true("Enrichment log" %in% names(omicsCore::workbook_sheets(p2)))
   })
 })
 
-test_that("the grid button is refused without a differential to enrich", {
-  proj <- sm_project()            # layers, no analyses
-  shiny::testServer(report_view_server,
-                    args = list(current_project = shiny::reactiveVal(proj)), {
-    session$flushReact()
-    expect_match(ui_html(output$grid_card), "pointer-events:none")
+# C08: the module had no staleness contract at all. A result computed for
+# a project the user has left could still be written, and a late error
+# could overwrite the message from a newer run -- which reads as a fault
+# in whatever is on screen now.
+test_that("a grid result is refused when the project has moved on", {
+  skip_if_not_installed("clusterProfiler")
+  skip_if_not_installed("msigdbr")
+  skip_if_not_installed("later")
+  old <- future::plan(future::sequential)
+  on.exit(future::plan(old), add = TRUE)
 
-    # And pressing it anyway says why rather than failing in a worker.
+  proj <- sm_project()
+  proj$bundles <- list(diff = example_diff_bundle())
+  pv <- shiny::reactiveVal(proj)
+  act <- shiny::reactiveVal(0L)
+
+  shiny::testServer(report_view_server,
+                    args = list(current_project = pv, activation = act), {
     session$setInputs(run_grid = 1)
     session$flushReact()
-    expect_match(grid_error(), "differential")
+    # The user opens another project while the grid is out.
+    act(1L)
+    session$flushReact()
+    pump(session)
+
+    expect_null(grid_bundle())
+    expect_null(grid_error())
+  })
+})
+
+test_that("activation clears a grid computed for the previous project", {
+  proj <- sm_project()
+  g <- omicsCore::new_analysis_bundle("run_enrichment_grid",
+                                      results = list(grid_log = data.frame()))
+  act <- shiny::reactiveVal(0L)
+  shiny::testServer(report_view_server,
+                    args = list(current_project = shiny::reactiveVal(proj),
+                                activation = act), {
+    # A flush first: in the running application the module is created and
+    # settled long before any activation change, and the observer records
+    # the activation it started at.
+    session$flushReact()
+    grid_bundle(g)
+    grid_error("stale message")
+    act(1L)
+    session$flushReact()
+    expect_null(grid_bundle())
+    expect_null(grid_error())
   })
 })
 

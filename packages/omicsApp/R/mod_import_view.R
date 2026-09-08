@@ -667,10 +667,20 @@ import_view_server <- function(id,
     # A new project, or a different one, leaves nothing of the last
     # import staged. Without this the view still showed a confirmed file
     # belonging to a project that is gone.
-    shiny::observeEvent(activation(), {
+    # The first value is recorded, not acted on; every change after it
+    # clears. Written this way rather than with `ignoreInit` because that
+    # skips the first *evaluation*, which is a different thing: whether it
+    # coincides with the first activation depends on whether a flush has
+    # happened yet, and that is a timing rather than a rule.
+    last_activation <- shiny::reactiveVal(NULL)
+    shiny::observe({
+      a <- activation()
+      prev <- shiny::isolate(last_activation())
+      last_activation(a)
+      if (is.null(prev) || identical(prev, a)) return()
       parsed(NULL)
       confirmed_input(NULL)
-    }, ignoreInit = TRUE, priority = 30L)
+    }, priority = 30L)
 
     # ---- module return ------------------------------------------------
     # The submission and its number. app_server() reads `$input`; the

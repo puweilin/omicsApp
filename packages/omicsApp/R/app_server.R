@@ -174,7 +174,8 @@ app_server <- function(input, output, session) {
   # nobody can compare to the single runs beside it.
   enrich_grid <- report_view_server("report",
                                     current_project = current_project,
-                                    diff_thresholds = diff_view$thresholds)
+                                    diff_thresholds = diff_view$thresholds,
+                                    activation = activation)
 
   # ---- which data the views' results belong to -------------------------
   # A layer's identity is its upload fingerprint, or its shape when it

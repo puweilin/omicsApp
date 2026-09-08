@@ -66,16 +66,52 @@ params_sheet <- function(project) {
   }
   add("project", "name", project$name %||% NA_character_)
   add("project", "exported", format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
+  pp <- project$preprocessing %||% list()
   for (tag in names(project$experiments %||% list())) {
     e <- project$experiments[[tag]]
-    add(paste0("layer: ", tag), "omics_type", e$omics_type %||% NA_character_)
-    add(paste0("layer: ", tag), "assay_type", e$assay_type %||% NA_character_)
-    add(paste0("layer: ", tag), "features", nrow(e$expr_mat))
-    add(paste0("layer: ", tag), "samples", ncol(e$expr_mat))
+    lab <- paste0("layer: ", tag)
+    add(lab, "omics_type", e$omics_type %||% NA_character_)
+    add(lab, "assay_type", e$assay_type %||% NA_character_)
+    add(lab, "features (as imported)", nrow(e$expr_mat))
+    add(lab, "samples (as imported)", ncol(e$expr_mat))
+    # As imported and as analysed are different numbers once QC has been
+    # applied, and the sheet used to give only the first -- so a reader
+    # comparing it against a differential of 26,492 features had no way to
+    # account for the other 36,749.
+    prep <- pp[[tag]]
+    if (!is.null(prep$cleaned)) {
+      add(lab, "features (analysed)", nrow(prep$cleaned$expr_mat))
+      add(lab, "samples (analysed)", ncol(prep$cleaned$expr_mat))
+      for (k in names(prep$params %||% list())) {
+        add(paste0("QC: ", tag), k, prep$params[[k]])
+      }
+    }
   }
   for (nm in names(project$bundles %||% list())) {
     b <- project$bundles[[nm]]
+    # Which layer and which run, not only the settings. A workbook whose
+    # Differential sheet does not say what it was computed on is a table
+    # of numbers, and a project with two layers of one omics type has
+    # nothing else to tell them apart.
+    add(nm, "layer_tag",
+        paste(b$input_info$layer_tag %||% NA_character_, collapse = ", "))
+    add(nm, "analysis_id", b$provenance_binding$analysis_id %||% NA_character_)
     for (k in names(b$params %||% list())) add(nm, k, b$params[[k]])
+  }
+  # The results a displayed one depends on but which no slot shows. The
+  # integration's second differential is registered and never displayed,
+  # so a two-layer workbook described one side of a comparison.
+  shown <- vapply(project$bundles %||% list(),
+                  function(b) b$provenance_binding$analysis_id %||% "",
+                  character(1))
+  for (id in names(project$analyses %||% list())) {
+    if (id %in% shown) next
+    b <- project$analyses[[id]]
+    lab <- paste0("upstream: ", b$analysis_name %||% "analysis")
+    add(lab, "analysis_id", id)
+    add(lab, "layer_tag",
+        paste(b$input_info$layer_tag %||% NA_character_, collapse = ", "))
+    for (k in names(b$params %||% list())) add(lab, k, b$params[[k]])
   }
   if (length(rows) == 0L) return(NULL)
   do.call(rbind, rows)
@@ -130,6 +166,28 @@ workbook_sheets <- function(project) {
 
   if (!is.null(bundles$diff$results$diff_result_df)) {
     sheets[["Differential"]] <- bundles$diff$results$diff_result_df
+  }
+
+  # The differentials no slot displays. run_integration() works from two,
+  # and only one of them is ever shown -- the second is computed by the
+  # Integration view and registered, never displayed. A two-layer
+  # workbook therefore described one side of a comparison and offered the
+  # concordance as though both were in front of the reader.
+  #
+  # Named by layer, because "Differential (2)" says nothing.
+  shown_ids <- vapply(bundles, function(b) {
+    b$provenance_binding$analysis_id %||% ""
+  }, character(1))
+  for (id in names(project$analyses %||% list())) {
+    if (id %in% shown_ids) next
+    b <- project$analyses[[id]]
+    df <- b$results$diff_result_df
+    if (is.null(df) || nrow(df) == 0L) next
+    tag <- (b$input_info$layer_tag %||% NA_character_)[[1L]]
+    nm <- if (is.na(tag)) "Differential (upstream)" else
+      paste0("Differential (", tag, ")")
+    if (nm %in% names(sheets)) next
+    sheets[[nm]] <- df
   }
   if (!is.null(bundles$enrich$results$enrich_result_df)) {
     sheets[["Enrichment"]] <- bundles$enrich$results$enrich_result_df
