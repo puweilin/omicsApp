@@ -2,21 +2,19 @@
 #
 #   Rscript time_pipeline.R /data/_autosave.omp [layer]
 #
-# Four segments, because they have four different fixes and guessing
+# Three segments, because they have three different fixes and guessing
 # which one is large has been wrong twice:
 #
-#   1. fit          DESeq2's per-gene GLMs. Fixed by testing fewer genes
+#   1. analysis     run_diff() end to end. Fixed by testing fewer genes
 #                   (the QC low-expression filter) or by more CPU.
-#   2. extract      results() plus omicsCore's standardisation, symbol
-#                   mapping and schema. Fixed in omicsCore.
-#   3. return       the bundle crossing back from the worker process.
+#   2. return       the bundle crossing back from the worker process.
 #                   Fixed by putting less in the bundle.
-#   4. autosave     qs_save of the whole project. Same fix as 3, and it
+#   3. autosave     qs_save of the whole project. Same fix as 2, and it
 #                   happens on every change rather than once per run.
 #
 # Read as a whole: if 1 dominates, the analysis is the cost and that is
-# arithmetic nobody can avoid. If 3 and 4 dominate, something is being
-# carried that does not need to be.
+# arithmetic nobody can avoid -- profile it if you need the split. If 2
+# and 3 dominate, something is being carried that does not need to be.
 
 suppressPackageStartupMessages({
   library(omicsCore)
@@ -86,40 +84,47 @@ method <- saved$method %||% "deseq2"
 cat(sprintf("contrast: %s  %s vs %s   method=%s\n\n",
             group_col, case, control, method))
 
-# ---- 1 + 2: fit, and everything after it -----------------------------
+# ---- 1: the analysis, in one real call --------------------------------
 #
-# run_diff() is fit + extract together. The bare DESeq2 call underneath
-# is the fit alone, so the difference is what omicsCore adds.
-whole <- secs(run_diff(input, method = method, analysis_type = "group",
-                       group_col = group_col, control_group = control,
-                       case_group = case))
-bundle <- whole$value
-
-fit_secs <- NA_real_
-if (identical(method, "deseq2") && requireNamespace("DESeq2", quietly = TRUE)) {
-  keep <- rownames(input$meta_df)[
-    input$meta_df[[group_col]] %in% c(control, case)]
-  cd <- data.frame(g = factor(input$meta_df[keep, group_col],
-                              levels = c(control, case)),
-                   row.names = keep)
-  dds <- DESeq2::DESeqDataSetFromMatrix(
-    round(input$expr_mat[, keep, drop = FALSE]), cd, design = ~ g)
-  fit <- secs(suppressMessages(DESeq2::DESeq(dds, quiet = TRUE)))
-  fit_secs <- fit$secs
-}
-
-say("1 fit", fit_secs, "DESeq2's per-gene GLMs")
-say("2 extract", whole$secs - (if (is.na(fit_secs)) 0 else fit_secs),
-    "results() + standardisation")
+# One call, timed as a whole. An earlier version split it into fit and
+# extract by running DESeq2 a second time and subtracting -- which
+# measures neither: two fits do not cost the same (BLAS caches, memory
+# pressure, the dispersion fitType falling back on one run and not the
+# other), and the difference of two noisy numbers is noisier than either.
+#
+# Instrumenting the boundary from outside was tried and did not take:
+# neither trace() nor a namespace rebind reliably reached the call from
+# inside a sourced script, and the failure printed `1 fit 0.0 s` -- a
+# failed measurement wearing the costume of a fast one. A diagnostic must
+# not do that, so the split is simply not claimed.
+#
+# What the four numbers below are for is the coarser question, which is
+# the one that has been wrong twice: is the analysis the cost, or is the
+# plumbing? For that, "run_diff took N seconds" against segments 2 and 3
+# is enough. If run_diff dominates and you then need to know *where* in
+# it, profile it: Rprof() on this call reports the split without anything
+# having to be patched.
+run <- secs(run_diff(input, method = method, analysis_type = "group",
+                     group_col = group_col, control_group = control,
+                     case_group = case,
+                     # The model the project actually used. Omitting these
+                     # timed a simpler analysis than the one that was slow.
+                     covariates = saved$covariates,
+                     paired_col = saved$paired_col))
+bundle <- run$value
+say("1 analysis", run$secs,
+    sprintf("run_diff(%s), the whole call", method))
 
 # ---- 3: back from the worker -----------------------------------------
 #
-# Serialisation is what crossing the boundary costs; the fork itself is
-# copy-on-write and nearly free. Measured on the bundle as the app sends
-# it, which is not the same object as the one above once run_diff has
-# stopped keeping the model.
+# Serialisation, which is the dominant cost of crossing the boundary --
+# the fork itself is copy-on-write and nearly free. It is not the same
+# number as a real worker round trip: that also pays for scheduling and
+# for the parent reading the result back, and it depends on load. Read it
+# as "how much has to be moved", not as "how long the worker took to
+# hand it over".
 ser <- secs(serialize(bundle, NULL))
-say("3 return", ser$secs,
+say("2 return", ser$secs,
     sprintf("%.0f MB serialised", length(ser$value) / 1024^2))
 
 # ---- 4: autosave ------------------------------------------------------
@@ -130,7 +135,7 @@ project$bundles$diff <- bundle
 tmp <- tempfile(fileext = ".omp")
 on.exit(unlink(tmp), add = TRUE)
 sav <- secs(save_project(project, tmp))
-say("4 autosave", sav$secs,
+say("3 autosave", sav$secs,
     sprintf("%.0f MB on disk", file.size(tmp) / 1024^2))
 
 cat("\n")

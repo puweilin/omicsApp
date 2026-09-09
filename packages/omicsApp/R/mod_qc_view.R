@@ -259,7 +259,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           class = "muted", style = "font-size:12px",
           sprintf(paste0("Low-expression filtering is offered on raw counts; ",
                          "this layer is %s. A count threshold means nothing ",
-                         "on a normalised scale — re-import as raw_count ",
+                         "on a normalised scale \u2014 re-import as raw_count ",
                          "to filter here."),
                   inp$assay_type %||% "unlabelled")
         ))

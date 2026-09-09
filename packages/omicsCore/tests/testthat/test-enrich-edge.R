@@ -59,19 +59,41 @@ test_that("run_enrichment ORA with 'down' direction works", {
   expect_true(is_analysis_bundle(res))
 })
 
-test_that("run_enrichment ORA with different databases works", {
-  skip_if_not_installed("clusterProfiler")
-  bundle <- make_diff_bundle_for_enrich()
-  for (db in c("kegg", "reactome", "go_bp")) {
-    has_sets <- tryCatch(
-      nrow(msigdbr::msigdbr("Homo sapiens", db)) > 0,
-      error = function(e) FALSE
-    )
-    skip_if_not(has_sets, sprintf("No %s gene sets available", db))
-    res <- run_enrichment(bundle, type = "ora", database = db)
-    expect_true(is_analysis_bundle(res))
-  }
-})
+# Asked through the same route the code under test uses.
+#
+# This was `msigdbr::msigdbr("Homo sapiens", db)`, whose second positional
+# argument is `db_species` and not a collection -- and `db` here is
+# omicsCore's own key, which is not a msigdbr collection name either. So
+# the call always errored, the tryCatch turned that into FALSE, and the
+# skip announced "No kegg gene sets available". Every database except
+# hallmark was silently not tested, under a message asserting a fact
+# about MSigDB that had not been checked.
+enrich_sets_available <- function(db) {
+  tryCatch(
+    nrow(omicsCore:::build_term_tables(database = db,
+                                       organism = "Hs")$term2gene) > 0L,
+    error = function(e) FALSE)
+}
+
+# One test per database, not a loop. A loop stops at the first skip, so a
+# database that is unavailable hides every database after it.
+for (.db in c("kegg", "reactome", "go_bp", "go_mf", "go_cc",
+              "wikipathways")) {
+  local({
+    db <- .db
+    test_that(sprintf("run_enrichment ORA works against %s", db), {
+      skip_if_not_installed("clusterProfiler")
+      skip_if_not_installed("msigdbr")
+      skip_if_not(enrich_sets_available(db),
+                  sprintf("%s gene sets are not available here", db))
+      bundle <- make_diff_bundle_for_enrich()
+      res <- run_enrichment(bundle, type = "ora", database = db)
+      expect_true(is_analysis_bundle(res))
+      expect_true(all(ENRICH_RESULT_REQUIRED_COLS %in%
+                        names(res$results$enrich_result_df)))
+    })
+  })
+}
 
 # ---- run_enrichment: GSEA ----------------------------------------------
 

@@ -349,7 +349,8 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         lg <- g$results$grid_log
         htmltools::tags$div(
           class = "muted", style = "font-size:12px",
-          sprintf("%s combinations run · %s returned rows · %s empty · %s failed",
+          sprintf(paste("%s combinations run \u00B7 %s returned rows \u00B7",
+                        "%s empty \u00B7 %s failed"),
                   nrow(lg), sum(lg$status == "ok"),
                   sum(lg$status == "empty"), sum(lg$status == "failed")))
       } else {
@@ -414,7 +415,7 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
             schema_row(
               ix    = as.character(i),
               title = names(sheets)[[i]],
-              desc  = sprintf("%s rows · %d columns",
+              desc  = sprintf("%s rows \u00B7 %d columns",
                               format(nrow(df), big.mark = ","), ncol(df)),
               role  = "sheet",
               confidence = 1.0, accent = "ok", role_kind = "ok")
