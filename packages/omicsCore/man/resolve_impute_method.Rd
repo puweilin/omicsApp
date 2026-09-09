@@ -21,6 +21,7 @@ global default is wrong for one of them whichever it is.
 \seealso{
 Other qc: 
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
+\code{\link{add_grouping_from_names}()},
 \code{\link{impute_matrix}()},
 \code{\link{plot_qc}()},
 \code{\link{qc_depth}()},
@@ -28,6 +29,7 @@ Other qc:
 \code{\link{qc_missingness}()},
 \code{\link{qc_outliers}()},
 \code{\link{run_qc}()},
+\code{\link{suggest_grouping_from_names}()},
 \code{\link{winsorize_counts}()}
 }
 \concept{qc}

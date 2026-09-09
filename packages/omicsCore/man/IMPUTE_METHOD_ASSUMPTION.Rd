@@ -23,6 +23,7 @@ them, and is what \code{\link[=impute_matrix]{impute_matrix()}} and \code{\link[
 }
 \seealso{
 Other qc: 
+\code{\link{add_grouping_from_names}()},
 \code{\link{impute_matrix}()},
 \code{\link{plot_qc}()},
 \code{\link{qc_depth}()},
@@ -31,6 +32,7 @@ Other qc:
 \code{\link{qc_outliers}()},
 \code{\link{resolve_impute_method}()},
 \code{\link{run_qc}()},
+\code{\link{suggest_grouping_from_names}()},
 \code{\link{winsorize_counts}()}
 }
 \concept{qc}

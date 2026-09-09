@@ -157,6 +157,15 @@ render_layer_steps <- function(eff, tag, var) {
                           arg_names = script_arg_names(normalize_omics),
                           assign_to = var)
       lines <- c(lines, call$lines)
+    } else if (identical(step$op, "add_grouping_from_names")) {
+      # The grouping the user confirmed. Rebuilt from the sample names
+      # rather than read from the file, because the file never had it --
+      # which is the whole reason the column exists.
+      call <- render_call("add_grouping_from_names", var, params = args,
+                          arg_names = script_arg_names(add_grouping_from_names),
+                          assign_to = var)
+      lines <- c(lines, call$lines)
+      notes <- c(notes, call$notes)
     } else if (identical(step$op, "run_qc")) {
       call <- render_call("run_qc", var, params = args,
                           arg_names = c(script_arg_names(run_qc),

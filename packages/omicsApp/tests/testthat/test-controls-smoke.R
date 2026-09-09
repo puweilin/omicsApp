@@ -941,3 +941,64 @@ test_that("a flagged sample can be kept, and a clean one dropped", {
     expect_equal(last_bundle()$params$exclude_samples, "s7")
   })
 })
+
+# ---- a design that is only in the sample names -------------------------
+#
+# Some vendors ship a matrix and a list of ids and nothing else, so the
+# metadata has one column of identifiers and Differential has nothing to
+# compare. The view said "pick a group column with at least two levels" to
+# a user who had none to pick -- and she spent an afternoon believing the
+# analysis was slow when it had never started.
+
+names_only_project <- function() {
+  ids <- c(paste0("Drug1-", 1:3), paste0("Drug11-", 1:3),
+           paste0("Ctrl-", 1:3))
+  set.seed(4)
+  m <- matrix(stats::rnorm(90, 20, 2), 10, 9,
+              dimnames = list(paste0("g", 1:10), ids))
+  omicsCore::omics_project("names-only", list(prot = omicsCore::omics_input(
+    m,
+    data.frame(sample_id = ids, row.names = ids),
+    data.frame(feature_id = rownames(m), row.names = rownames(m)),
+    omics_type = "proteomics", assay_type = "normalized_intensity")))
+}
+
+test_that("with no grouping column the view says so, and what would work", {
+  pv <- shiny::reactiveVal(names_only_project())
+  shiny::testServer(diff_view_server, args = list(current_project = pv), {
+    session$flushReact()
+    html <- ui_html(output$ui_group_col)
+
+    # Not "pick one": there is none to pick.
+    expect_no_match(html, "Pick a group column", fixed = TRUE)
+    expect_match(html, "no column that can", fixed = TRUE)
+    expect_match(html, "condition", fixed = TRUE)     # names the template's
+    # And what the sample names would give.
+    expect_match(html, "look like 3 groups", fixed = TRUE)
+    expect_match(html, "Drug1", fixed = TRUE)
+  })
+})
+
+test_that("confirming the suggestion writes a column the script can rebuild", {
+  pv <- shiny::reactiveVal(names_only_project())
+  shiny::testServer(diff_view_server, args = list(current_project = pv), {
+    session$flushReact()
+    expect_false("group" %in% names(pv()$experiments$prot$meta_df))
+
+    session$setInputs(use_name_grouping = 1)
+    session$flushReact()
+
+    meta <- pv()$experiments$prot$meta_df
+    expect_true("group" %in% names(meta))
+    expect_setequal(unique(meta$group), c("Ctrl", "Drug1", "Drug11"))
+
+    # Recorded, not just applied: a change kept only in the session is one
+    # the exported script cannot replay.
+    steps <- omicsCore::provenance_steps(pv()$experiments$prot)
+    expect_true(any(vapply(steps, function(s)
+      identical(s$op, "add_grouping_from_names"), logical(1))))
+
+    # And the view can now offer a contrast.
+    expect_true(length(default_contrast()$candidates) > 0L)
+  })
+})

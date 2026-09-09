@@ -40,6 +40,7 @@ All three methods are pure base R; no Suggests packages required.
 \seealso{
 Other qc: 
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
+\code{\link{add_grouping_from_names}()},
 \code{\link{impute_matrix}()},
 \code{\link{plot_qc}()},
 \code{\link{qc_depth}()},
@@ -47,6 +48,7 @@ Other qc:
 \code{\link{qc_missingness}()},
 \code{\link{resolve_impute_method}()},
 \code{\link{run_qc}()},
+\code{\link{suggest_grouping_from_names}()},
 \code{\link{winsorize_counts}()}
 }
 \concept{qc}

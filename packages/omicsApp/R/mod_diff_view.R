@@ -146,10 +146,16 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         return(list(group_col = NULL, control = NULL, case = NULL,
                     levels = character(0), candidates = character(0)))
       }
+      # No fallback to `names(meta)`. Offering every column when none
+      # qualifies handed a metadata sheet whose only column was
+      # `sample_id` back as a group column -- nine levels, one sample
+      # each, an analysis that cannot run -- while the view claimed a
+      # choice existed. Empty here is the truth, and ui_group_col below
+      # says so out loud.
       cands <- grouping_candidates(meta)
-      if (length(cands) == 0L) cands <- names(meta)
-      gc <- cands[1L]
-      lv <- sort(unique(as.character(stats::na.omit(meta[[gc]]))))
+      gc <- if (length(cands)) cands[1L] else NULL
+      lv <- if (is.null(gc)) character(0)
+            else sort(unique(as.character(stats::na.omit(meta[[gc]]))))
       list(
         group_col  = gc,
         control    = if (length(lv)) lv[1L] else NULL,
@@ -162,9 +168,49 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # Group column dropdown: any meta_df column with >= 2 unique
     # non-NA values (continuous columns like `age` are excluded
     # for the simple "control vs case" UI in this slice).
+    # What the sample names would give, if the metadata gives nothing.
+    #
+    # A suggestion, never applied on its own: deriving an experimental
+    # design from a naming convention and acting on it unasked is
+    # asserting what the experiment was.
+    name_grouping <- shiny::reactive({
+      a <- active()
+      if (is.null(a$input)) return(NULL)
+      if (length(default_contrast()$candidates)) return(NULL)
+      tryCatch(omicsCore::suggest_grouping_from_names(a$input),
+               error = function(e) NULL)
+    })
+
     output$ui_group_col <- shiny::renderUI({
       d <- default_contrast()
-      if (!length(d$candidates)) return(NULL)
+      if (!length(d$candidates)) {
+        # Nothing to pick, so do not ask. The view used to say "pick a
+        # group column with at least two levels" to a user who had none --
+        # a message pointing at an option that does not exist reads as
+        # "you are holding it wrong", and one user spent an afternoon
+        # believing the analysis was slow when it had never started.
+        sg <- name_grouping()
+        return(htmltools::tagList(
+          htmltools::tags$div(
+            class = "muted", style = "font-size:12px",
+            paste0("This layer's sample metadata has no column that can ",
+                   "group samples. A grouping column needs at least two ",
+                   "values, with at least two samples in each. The import ",
+                   "template calls it `condition`.")),
+          if (!is.null(sg)) htmltools::tagList(
+            htmltools::tags$div(
+              class = "muted",
+              style = "font-size:12px;margin-top:8px;color:var(--brand-600)",
+              sprintf("The sample names look like %d groups: %s.",
+                      sg$n_levels,
+                      paste(utils::head(sg$levels, 6), collapse = ", "))),
+            shiny::actionButton(
+              session$ns("use_name_grouping"),
+              "Use the sample names as groups",
+              class = "btn btn-sm btn-primary",
+              style = "margin-top:6px"))
+        ))
+      }
       # Keep what the user picked. This output re-renders whenever the
       # layer or the project changes, and re-rendering with the default
       # threw away their choice -- they selected condition / G1 / G2,
@@ -175,6 +221,33 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                          label    = "Group column",
                          choices  = d$candidates,
                          selected = sel)
+    })
+
+    # Confirmed, so it goes into the layer -- and into the layer's
+    # provenance, so the exported script rebuilds the same column rather
+    # than reading a file that never had it.
+    #
+    # Writing the project from an analysis view is unusual and deliberate:
+    # this *is* a data-preparation step, and the alternative on offer was
+    # "go back to Excel, add a column, re-import, lose your QC".
+    shiny::observeEvent(input$use_name_grouping, {
+      proj <- current_project()
+      a <- active()
+      if (is.null(proj) || is.null(a$tag)) return()
+      updated <- tryCatch(
+        omicsCore::add_grouping_from_names(a$input, column = "group"),
+        error = function(e) e)
+      if (inherits(updated, "error")) {
+        shiny::showNotification(conditionMessage(updated), type = "error",
+                                duration = 8)
+        return()
+      }
+      proj$experiments[[a$tag]] <- updated
+      current_project(proj)
+      shiny::showNotification(
+        sprintf("Added a `group` column from the sample names: %d groups.",
+                length(unique(updated$meta_df$group))),
+        type = "message", duration = 6)
     })
 
     # Reactive level set for the chosen group column.
@@ -189,6 +262,9 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     output$ui_contrast <- shiny::renderUI({
       lv <- levels_()
       if (length(lv) < 2L) {
+        # Only reachable with a column chosen: with none to choose,
+        # ui_group_col above says so and offers what it can.
+        if (!length(default_contrast()$candidates)) return(NULL)
         return(htmltools::tags$div(
           class = "muted",
           style = "font-size:12px",
@@ -333,7 +409,16 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       }
       if (is.null(group_col) || is.null(control) || is.null(case) ||
           identical(control, case)) {
-        diff_error("Pick a group column with distinct Control and Case levels.")
+        # Two different situations, and one message for both told the
+        # user with no grouping column at all to go and pick one.
+        diff_error(if (!length(d$candidates)) {
+          paste0("This layer's sample metadata has no column that can group ",
+                 "samples, so there is nothing to compare. Add one (the ",
+                 "import template calls it `condition`), or use the ",
+                 "suggestion from the sample names if the view offers it.")
+        } else {
+          "Pick a group column with distinct Control and Case levels."
+        })
         return(invisible())
       }
       # Captured before the run starts, and never re-read afterwards: the
