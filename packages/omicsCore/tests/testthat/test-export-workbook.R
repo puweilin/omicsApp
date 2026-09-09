@@ -230,9 +230,13 @@ two_layer_project <- function() {
 test_that("a second layer's differential is in the workbook", {
   skip_if_not_installed("openxlsx")
   s <- workbook_sheets(two_layer_project())
-  expect_true("Differential" %in% names(s))
-  # Named by its layer: "Differential (2)" would say nothing.
+  # Both named by their layer. Naming only the second one produced a
+  # workbook where one sheet said which layer it was and the other did
+  # not, so a reader could not tell whether the unlabelled one was the
+  # other layer or the same one.
+  expect_true("Differential (skin)" %in% names(s))
   expect_true("Differential (follicle)" %in% names(s))
+  expect_false("Differential" %in% names(s))
   expect_gt(nrow(s[["Differential (follicle)"]]), 0L)
 })
 

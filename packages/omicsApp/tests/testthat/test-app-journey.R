@@ -98,7 +98,12 @@ test_that("upload, run, enrich, download, replace: the wiring holds end to end",
   expect_true(file.exists(xlsx_path))
   expect_gt(file.info(xlsx_path)$size, 1000L)
   sheets <- openxlsx::getSheetNames(xlsx_path)
-  expect_true("Differential" %in% sheets)
+  # Named by layer, every one of them. A workbook that can hold two omics
+  # types had sheets called `Differential` and `Differential (proteomics)`
+  # -- one saying which layer it was and the other not -- and Enrichment
+  # sheets saying nothing at all.
+  expect_true(any(grepl("^Differential", sheets)))
+  expect_true(all(grepl("\\(", grep("^Differential", sheets, value = TRUE))))
 
   # ---- a different file asks before clearing --------------------------
   app$click(selector = "#nav_import")

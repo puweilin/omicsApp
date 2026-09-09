@@ -493,22 +493,31 @@ integration_view_server <- function(id,
       do_run()
     })
 
+    # The key changing means the result on screen is about data that has
+    # moved on. It is dropped -- and *not* recomputed.
+    #
+    # This used to auto-run as soon as the prerequisites were met: two
+    # layers and a differential. Concordance matches features rather than
+    # samples, so it succeeds without a pairing, and the result was then
+    # filed into the project and exported. A user who imported two files
+    # and never opened this view found an Integration sheet in her
+    # workbook, full of numbers, for an analysis she had not asked for.
+    #
+    # An integration across two omics layers is a choice, not a
+    # continuation. Every other expensive analysis here is behind a
+    # button, and this one now is too.
     shiny::observeEvent(task_key(), {
       k <- task_key()
       if (is.null(k)) {
         is_demo(TRUE)
         return()
       }
-      # Same work as last time: the project changed, this did not.
       if (identical(k, shiny::isolate(last_key()))) return()
       last_key(k)
-      do_run()
-    # Not ignoreInit: `last_key` is what stops a double run, and it does
-    # it by identity rather than by timing. The old observer skipped its
-    # first evaluation instead, which worked only because can_run() was
-    # false at session start and true a flush later -- an ordering, not a
-    # rule, and one that does not hold when the project and the
-    # differential are both present from the beginning.
+      # Whatever is held now was computed on something else.
+      integration_bundle(NULL)
+      secondary_bundle(NULL)
+      integration_error(NULL)
     }, ignoreInit = FALSE, ignoreNULL = FALSE)
 
     # Data sources shared by stats + plots. `req(b)` guards against

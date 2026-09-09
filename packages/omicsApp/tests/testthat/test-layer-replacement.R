@@ -151,11 +151,34 @@ expect_clears_on_invalidate <- function(server, args, bundle_name) {
   )
 }
 
-test_that("replacing the layer clears the QC result", {
-  expect_clears_on_invalidate(
-    qc_view_server, list(current_project = shiny::reactiveVal(NULL)),
-    "last_bundle")
+# QC is the exception, and deliberately: it has no Run button. The module
+# recomputes on every control change, so its invariant is not "goes empty"
+# but "never shows a result computed on data that is gone".
+#
+# Asserting NULL passed only while the preview declined to recompute after
+# a bump -- which is the bug acceptance found: applying QC blanked the
+# panels and they stayed blank until a control was moved.
+test_that("replacing the layer replaces the QC result rather than emptying it", {
+  gen <- shiny::reactiveVal(0L)
+  shiny::testServer(
+    qc_view_server,
+    args = list(current_project = shiny::reactiveVal(NULL), invalidate = gen),
+    {
+      session$flushReact()
+      last_bundle("PRETEND_BUNDLE")
+      expect_equal(last_bundle(), "PRETEND_BUNDLE")
+
+      gen(1L)
+      session$flushReact()
+
+      # The stale value is gone, and what replaced it was computed now.
+      expect_false(identical(last_bundle(), "PRETEND_BUNDLE"))
+      expect_false(is.null(last_bundle()))
+      expect_false(is.null(last_bundle()$results))
+    }
+  )
 })
+
 
 test_that("replacing the layer clears the differential result", {
   expect_clears_on_invalidate(

@@ -130,6 +130,11 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # leaves this module; nothing downstream sees `last_bundle`.
     preview     <- shiny::reactiveVal(NULL)
     applied     <- shiny::reactiveVal(NULL)
+    # The key of the preview last computed, so an unrelated write to the
+    # project does not recompute it. Cleared wherever the preview itself
+    # is cleared -- the guard means "this answer is still on screen", and
+    # it stops being true the moment the answer is thrown away.
+    last_preview_key <- shiny::reactiveVal(NULL)
 
     # The layer this result was computed on has been replaced, so the
     # result is no longer about anything in the project. NULL is the
@@ -146,6 +151,16 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       last_bundle(NULL)
       last_error(NULL)
       preview(NULL)
+      # And the memo of what was last computed, because this has just
+      # thrown that result away.
+      #
+      # The skip-if-unchanged guard assumes "same key means the answer is
+      # still on screen". Applying QC bumps the generation, which clears
+      # the panels here -- and the key does not change, because QC reads
+      # baseline_input() and applying does not alter the baseline. So the
+      # preview declined to recompute and the page stayed blank until a
+      # control was moved, which changed the params and therefore the key.
+      last_preview_key(NULL)
       if (isTRUE(just_applied())) {
         just_applied(FALSE)
       } else {
@@ -345,16 +360,19 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # What this preview is about: which project, which layer, which version
     # of it, and which settings. Captured when the preview runs, so applying
     # can only confirm it -- never mint a fresh identity for a stale result.
-    # The key of the preview last computed, so an unrelated project write
-    # does not recompute it.
-    last_preview_key <- shiny::reactiveVal(NULL)
-
     preview_signature <- function(a, params) {
       list(project_id = current_project()$metadata$project_id,
            tag = a$tag, base_version = a$base_version, params = params)
     }
 
     shiny::observe({
+      # An explicit dependency on the generation, because that signal is
+      # what threw the previous answer away. The observer otherwise reads
+      # only `active()` and the controls, so after an apply it re-ran only
+      # because the project happened to change too -- a coincidence of two
+      # signals rather than a rule, and the panels stayed blank whenever
+      # it did not hold.
+      invalidate()
       a <- active()
       # One list, used for the run and for the signature. Computing them
       # separately is how the preview came to be signed with the merged

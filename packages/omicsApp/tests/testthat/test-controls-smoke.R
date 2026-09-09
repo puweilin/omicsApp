@@ -620,7 +620,12 @@ test_that("an untagged result in an ambiguous project is refused, not guessed", 
 # became true, once when the result of the first run was filed. The second
 # computed the same numbers and replaced the first.
 
-test_that("filing the integration's own result does not re-run it", {
+test_that("integration runs when asked, and not before", {
+  # It used to run as soon as two layers and a differential existed.
+  # Concordance matches features rather than samples, so it succeeded
+  # without a pairing, was filed into the project, and turned up as an
+  # Integration sheet in the workbook of a user who had never opened the
+  # view. An integration across two omics layers is a choice.
   proj <- sm_project()
   pv <- shiny::reactiveVal(proj)
   b <- omicsCore::run_diff(proj$experiments$prot, method = "ttest",
@@ -633,7 +638,7 @@ test_that("filing the integration's own result does not re-run it", {
   testthat::local_mocked_bindings(
     run_async = function(func, on_success, on_error, ...) {
       runs <<- runs + 1L
-      invisible(NULL)          # never completes: counting launches only
+      invisible(NULL)
     },
     .package = "omicsApp")
 
@@ -641,19 +646,18 @@ test_that("filing the integration's own result does not re-run it", {
     integration_view_server,
     args = list(current_project = pv, diff_bundle = shiny::reactiveVal(b)), {
       session$flushReact()
-      expect_equal(runs, 1L)
+      expect_equal(runs, 0L)          # prerequisites met, still not run
 
-      # A write to the project that changes nothing this view depends on.
-      p2 <- proj
-      p2$name <- "renamed"
-      p2$bundles <- list(integration = list(dummy = TRUE))
-      pv(p2)
+      session$setInputs(rerun = 1)
       session$flushReact()
       expect_equal(runs, 1L)
     })
 })
 
-test_that("a change that does change the work does re-run it", {
+test_that("a result computed on data that has moved on is dropped", {
+  # The task key is what says the answer is about the current data. When
+  # it changes the held result is discarded -- and not recomputed, since
+  # nobody asked for the new one either.
   proj <- sm_project()
   pv <- shiny::reactiveVal(proj)
   b <- omicsCore::run_diff(proj$experiments$prot, method = "ttest",
@@ -675,16 +679,141 @@ test_that("a change that does change the work does re-run it", {
     integration_view_server,
     args = list(current_project = pv, diff_bundle = bv), {
       session$flushReact()
-      expect_equal(runs, 1L)
+      integration_bundle("PRETEND")
+      expect_equal(integration_bundle(), "PRETEND")
 
       # A different differential upstream is different work.
       b2 <- b
       b2$provenance_binding <- list(analysis_id = "ana_other")
       bv(b2)
       session$flushReact()
-      expect_equal(runs, 2L)
+
+      expect_null(integration_bundle())
+      expect_equal(runs, 0L)          # dropped, not recomputed
     })
 })
+
+test_that("an RNA-seq layer that cannot be filtered says so", {
+  logcpm <- sm_input("rnaseq")
+  logcpm$assay_type <- "logcpm"
+  proj <- shiny::reactiveVal(
+    omicsCore::omics_project("smoke", list(prot = sm_input("proteomics"),
+                                           rna = logcpm)))
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "rna")
+    session$flushReact()
+    html <- ui_html(output$ui_low_expression)
+    expect_match(html, "raw counts", fixed = TRUE)
+    expect_match(html, "logcpm", fixed = TRUE)
+    # and it is a note, not a control
+    expect_false(grepl("min_count", html, fixed = TRUE))
+
+    # proteomics says nothing: a count filter was never on offer there
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    expect_null(output$ui_low_expression)
+  })
+})
+
+# The assay type decides whether two of this page's controls appear, and it
+# was the one property of the layer the header did not show.
+test_that("the header names the assay type", {
+  proj <- shiny::reactiveVal(sm_project())
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "rna")
+    session$flushReact()
+    expect_match(ui_html(output$header), "raw_count", fixed = TRUE)
+
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    expect_match(ui_html(output$header), "raw_intensity", fixed = TRUE)
+  })
+})
+
+test_that("only methods whose packages are installed are offered", {
+  proj <- shiny::reactiveVal(sm_project())
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    # Grouped by MAR/MNAR for the dropdown, so flatten before asking
+    # what is on offer.
+    choices <- unlist(impute_choices(), use.names = FALSE)
+    expect_true("none" %in% choices)
+    expect_true("MinProb" %in% choices)
+    # An option that errors on selection is worse than one not offered.
+    needs <- c(MinProb = "imputeLCMD", QRILC = "imputeLCMD", bpca = "pcaMethods")
+    for (m in names(needs)) {
+      if (!has_pkg(needs[[m]])) {
+        expect_false(m %in% choices, info = m)
+      }
+    }
+  })
+})
+
+# ---- two layers of one omics type -------------------------------------
+#
+# The failure the review reproduced: a project with `skin` and `follicle`
+# proteomics, a differential run on follicle. Both call sites resolved the
+# primary layer by omics_type and took the first match -- skin -- so the
+# "other" layer was follicle, which is where the primary already came
+# from. Concordance compared follicle with itself and labelled it
+# skin-against-follicle, and the exported script read the wrong file.
+
+two_of_a_kind <- function() {
+  mk <- function(seed) {
+    set.seed(seed)
+    ids <- paste0("F", 1:40); sids <- paste0("s", 1:8)
+    m <- matrix(stats::rnorm(320, 20, 2), 40, dimnames = list(ids, sids))
+    omicsCore::omics_input(
+      m,
+      data.frame(condition = rep(c("G1", "G2"), each = 4),
+                 donor = paste0("D", 1:8), row.names = sids),
+      data.frame(feature_id = ids, feature_symbol = ids, row.names = ids),
+      omics_type = "proteomics", assay_type = "normalized_intensity")
+  }
+  omicsCore::omics_project("two-of-a-kind",
+                           list(skin = mk(1), follicle = mk(2)))
+}
+
+test_that("integration will not pair a layer with itself", {
+  proj <- two_of_a_kind()
+  # A differential that says which layer it ran on.
+  b <- omicsCore::run_diff(proj$experiments$follicle, method = "ttest",
+                           analysis_type = "group", group_col = "condition",
+                           control_group = "G1", case_group = "G2")
+  b$input_info$layer_tag <- "follicle"
+
+  shiny::testServer(
+    integration_view_server,
+    args = list(current_project = shiny::reactiveVal(proj),
+                diff_bundle = shiny::reactiveVal(b)), {
+      session$flushReact()
+      info <- can_run()
+      expect_true(isTRUE(info$ok))
+      expect_identical(info$primary_tag, "follicle")
+      expect_identical(info$secondary_tag, "skin")
+      expect_false(identical(info$primary_tag, info$secondary_tag))
+    })
+})
+
+test_that("an untagged result in an ambiguous project is refused, not guessed", {
+  proj <- two_of_a_kind()
+  b <- omicsCore::run_diff(proj$experiments$follicle, method = "ttest",
+                           analysis_type = "group", group_col = "condition",
+                           control_group = "G1", case_group = "G2")
+  b$input_info$layer_tag <- NULL          # an older project
+
+  shiny::testServer(
+    integration_view_server,
+    args = list(current_project = shiny::reactiveVal(proj),
+                diff_bundle = shiny::reactiveVal(b)), {
+      session$flushReact()
+      info <- can_run()
+      expect_false(isTRUE(info$ok))
+      expect_match(info$why, "more than one proteomics layer")
+    })
+})
+
 
 # This observer reads active(), which reads the project, so every write to
 # the project re-ran run_qc -- a rename, a differential being filed, an
@@ -718,5 +847,32 @@ test_that("an unrelated write to the project does not re-run QC", {
     session$setInputs(missing_threshold = 0.01)
     session$flushReact()
     expect_gt(calls, first)
+  })
+})
+
+# Applying QC bumps the layer generation, which clears the panels here.
+# The skip-if-unchanged guard assumed "same key means the answer is still
+# on screen" -- and the key does not change on apply, because QC reads
+# baseline_input() and applying does not alter the baseline. So the
+# preview declined to recompute and the page stayed blank until a control
+# was moved. Reported from acceptance: "点击 Apply 后 PCA/Missingness 都
+# 不见了,只有再动一下 Outlier detection 才出现".
+test_that("the preview comes back after the generation bumps", {
+  proj <- sm_project()
+  gen <- shiny::reactiveVal(0L)
+  shiny::testServer(qc_view_server,
+                    args = list(current_project = shiny::reactiveVal(proj),
+                                invalidate = gen), {
+    session$flushReact()
+    expect_false(is.null(last_bundle()))
+
+    # What applying does: the layer generation bumps.
+    gen(1L)
+    session$flushReact()
+
+    # Not "cleared and left cleared": the panels have to come back
+    # without the user touching a control.
+    expect_false(is.null(last_bundle()))
+    expect_false(is.null(preview()))
   })
 })

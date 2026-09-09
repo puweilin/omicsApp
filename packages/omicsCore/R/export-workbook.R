@@ -126,6 +126,33 @@ describe_param_value <- function(x) {
   paste(format(x, trim = TRUE), collapse = ", ")
 }
 
+# The layer a result was computed on, for a sheet name.
+#
+# Every analysis sheet carries it, not only the ones that needed
+# disambiguating. Naming the second differential `Differential (proteomics)`
+# and leaving the first as `Differential` produced a workbook where one
+# sheet said which layer it was and the other did not -- so a reader had
+# two tables, one labelled, and no way to tell whether the unlabelled one
+# was the other layer or the same one.
+#
+# Enrichment is the worse case: it inherits its layer from the
+# differential it ran on and carried nothing on the sheet at all, in a
+# workbook that can hold results from two omics types.
+sheet_layer <- function(bundle) {
+  tag <- bundle$input_info$layer_tag
+  tag <- tag[!is.na(tag) & nzchar(tag)]
+  if (length(tag) == 0L) return(NA_character_)
+  tag[[1L]]
+}
+
+# `Differential (rnaseq)`, or `Differential` when the layer is unknown --
+# an older result, or one built outside the app. A parenthesis with
+# nothing useful in it is worse than no parenthesis.
+sheet_named <- function(base, bundle) {
+  tag <- sheet_layer(bundle)
+  if (is.na(tag)) base else sprintf("%s (%s)", base, tag)
+}
+
 #' The sheets a project has to offer, in the order they were produced
 #'
 #' Returned as a list rather than written, so the caller can say what a
@@ -152,20 +179,21 @@ workbook_sheets <- function(project) {
   if (!is.null(qc)) {
     miss <- qc$results$qc_summary$missingness
     if (!is.null(miss$sample_metrics)) {
-      sheets[["QC samples"]] <- miss$sample_metrics
+      sheets[[sheet_named("QC samples", qc)]] <- miss$sample_metrics
     }
     if (!is.null(miss$feature_metrics)) {
-      sheets[["QC features"]] <- miss$feature_metrics
+      sheets[[sheet_named("QC features", qc)]] <- miss$feature_metrics
     }
     cleaned <- qc$results$cleaned_input
     imputed <- !identical(qc$params$impute_method %||% "none", "none")
     if (imputed && !is.null(cleaned$expr_mat)) {
-      sheets[["Imputed data"]] <- matrix_sheet(cleaned$expr_mat)
+      sheets[[sheet_named("Imputed data", qc)]] <- matrix_sheet(cleaned$expr_mat)
     }
   }
 
   if (!is.null(bundles$diff$results$diff_result_df)) {
-    sheets[["Differential"]] <- bundles$diff$results$diff_result_df
+    sheets[[sheet_named("Differential", bundles$diff)]] <-
+      bundles$diff$results$diff_result_df
   }
 
   # The differentials no slot displays. run_integration() works from two,
@@ -183,14 +211,14 @@ workbook_sheets <- function(project) {
     b <- project$analyses[[id]]
     df <- b$results$diff_result_df
     if (is.null(df) || nrow(df) == 0L) next
-    tag <- (b$input_info$layer_tag %||% NA_character_)[[1L]]
-    nm <- if (is.na(tag)) "Differential (upstream)" else
-      paste0("Differential (", tag, ")")
+    nm <- sheet_named("Differential", b)
+    if (identical(nm, "Differential")) nm <- "Differential (upstream)"
     if (nm %in% names(sheets)) next
     sheets[[nm]] <- df
   }
   if (!is.null(bundles$enrich$results$enrich_result_df)) {
-    sheets[["Enrichment"]] <- bundles$enrich$results$enrich_result_df
+    sheets[[sheet_named("Enrichment", bundles$enrich)]] <-
+      bundles$enrich$results$enrich_result_df
   }
 
   # The full grid, split by test rather than by database. ORA and GSEA
@@ -208,14 +236,14 @@ workbook_sheets <- function(project) {
       for (rt in unique(all_rows$result_type)) {
         part <- all_rows[all_rows$result_type == rt, , drop = FALSE]
         if (nrow(part) == 0L) next
-        sheets[[paste("Enrichment", toupper(rt))]] <- part
+        sheets[[sheet_named(paste("Enrichment", toupper(rt)), grid)]] <- part
       }
     } else if (nrow(all_rows) > 0L) {
-      sheets[["Enrichment (all)"]] <- all_rows
+      sheets[[sheet_named("Enrichment (all)", grid)]] <- all_rows
     }
   }
   if (!is.null(grid$results$grid_log)) {
-    sheets[["Enrichment log"]] <- grid$results$grid_log
+    sheets[[sheet_named("Enrichment log", grid)]] <- grid$results$grid_log
   }
   if (!is.null(bundles$integration$results$integration_df)) {
     sheets[["Integration"]] <- bundles$integration$results$integration_df
