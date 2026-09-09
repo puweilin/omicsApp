@@ -26,10 +26,26 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "$REPO_ROOT"
 
-if [ -n "$(git status --porcelain packages/ 2>/dev/null)" ]; then
-    echo "warning: packages/ has uncommitted changes; the image will not"
-    echo "         correspond to any commit." >&2
-fi
+# What went into the image, recorded as a digest of the sources rather
+# than as a commit.
+#
+# The commit is not knowable here. Deployment is an rsync, and
+# rsync.exclude leaves `.git/` alone -- so on the server it holds whatever
+# was cloned months ago, and `git rev-parse HEAD` answers a question about
+# that clone rather than about the files just copied in. A version check
+# that reads it is worse than none: it reports "clean" against history the
+# copied files have nothing to do with.
+#
+# A digest over the sources does answer it, and it answers the same way on
+# the machine the code came from.
+SRC_DIGEST="$(find packages -type f \( -name '*.R' -o -name '*.Rmd' \
+    -o -name 'DESCRIPTION' -o -name 'NAMESPACE' \) -print0 \
+    | LC_ALL=C sort -z \
+    | xargs -0 shasum -a 256 2>/dev/null \
+    | shasum -a 256 | cut -c1-16)"
+echo "Source digest: ${SRC_DIGEST}"
+echo "  Compare with the same command where the code came from; the"
+echo "  server's .git is not copied and cannot answer this."
 
 echo "Building ${TAG} from ${REPO_ROOT}"
 echo "Container uid: ${APP_UID}$([ "$APP_UID" = "$(id -u)" ] && echo ' (matches yours)')"
@@ -39,10 +55,14 @@ echo
 
 docker build \
   --build-arg "APP_UID=${APP_UID}" \
+  --label "org.omicsapp.source-digest=${SRC_DIGEST}" \
   -t "$TAG" -f deploy/docker/Dockerfile .
 
 echo
 echo "Built ${TAG}"
+echo "  source digest: ${SRC_DIGEST}"
+echo "  ask a built image later with:"
+echo "    docker image inspect ${TAG} --format '{{index .Config.Labels \"org.omicsapp.source-digest\"}}'"
 docker image inspect "$TAG" --format '  size: {{.Size}} bytes' 2>/dev/null || true
 echo
 echo "Smoke-test it without ShinyProxy:"
