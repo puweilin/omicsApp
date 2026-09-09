@@ -1,3 +1,29 @@
+# Sample coordinates before any sample is removed.
+#
+# The QC PCA drew `cleaned_input`, so the samples QC had just flagged were
+# absent from the only panel that could show whether flagging them was
+# right. This is the same projection over every sample, kept on the bundle
+# so the view and the exported figure draw the same thing.
+#
+# Returns NULL rather than raising when there is nothing to project: one
+# sample, or a matrix with no variance. A QC run should not fail because
+# its diagnostic picture cannot be drawn.
+qc_pca_scores <- function(input) {
+  mat <- input$expr_mat
+  if (is.null(mat) || ncol(mat) < 2L) return(NULL)
+  if (identical(input$assay_type %||% "", "raw_count")) mat <- log2(mat + 1)
+  out <- tryCatch({
+    pca <- pca_over_samples(mean_impute_rows(mat))
+    var_pct <- (pca$sdev^2) / sum(pca$sdev^2) * 100
+    df <- as.data.frame(pca$x[, 1:2, drop = FALSE])
+    df$sample_id <- rownames(df)
+    rownames(df) <- NULL
+    attr(df, "var_pct") <- var_pct[1:2]
+    df
+  }, error = function(e) NULL)
+  out
+}
+
 #' Detect sample-level outliers
 #'
 #' Outlier detection on an [omics_input()]. Three methods are supported:

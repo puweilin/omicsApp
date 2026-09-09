@@ -876,3 +876,68 @@ test_that("the preview comes back after the generation bumps", {
     expect_false(is.null(preview()))
   })
 })
+
+# ---- outliers: visible, and the analyst's to overrule ------------------
+#
+# The PCA drew the cleaned matrix, so a sample QC had just removed was
+# absent from the one panel that could show whether removing it was right.
+# Reported from acceptance: "Outlier 样本在 PCA 中没法标记, 我也不知道哪些
+# 样本被认为是 Outlier 了, 我也无法手动选择或取消".
+
+outlier_project <- function() {
+  set.seed(2)
+  ids <- paste0("s", 1:12)
+  m <- matrix(stats::rnorm(240, 20, 2), 20, 12,
+              dimnames = list(paste0("F", 1:20), ids))
+  m[, 1] <- m[, 1] + 30                     # one obvious outlier
+  omicsCore::omics_project("outliers", list(prot = omicsCore::omics_input(
+    m,
+    data.frame(condition = rep(c("G1", "G2"), 6), row.names = ids),
+    data.frame(feature_id = rownames(m), row.names = rownames(m)),
+    omics_type = "proteomics", assay_type = "normalized_intensity")))
+}
+
+test_that("the flagged samples are named, and the PCA still holds them", {
+  proj <- outlier_project()
+  shiny::testServer(qc_view_server,
+                    args = list(current_project = shiny::reactiveVal(proj)), {
+    session$setInputs(outlier_method = "pca")
+    session$flushReact()
+    b <- last_bundle()
+    removed <- b$results$qc_summary$recommended_filters$remove_samples
+    expect_gt(length(removed), 0L)
+
+    # In the picture, not taken out of it: every sample is projected.
+    scores <- b$results$qc_summary$pca_scores
+    expect_equal(nrow(scores), 12L)
+    expect_true(all(removed %in% scores$sample_id))
+
+    # And named on the page.
+    expect_match(ui_html(output$outlier_control), removed[[1L]], fixed = TRUE)
+  })
+})
+
+test_that("a flagged sample can be kept, and a clean one dropped", {
+  proj <- outlier_project()
+  shiny::testServer(qc_view_server,
+                    args = list(current_project = shiny::reactiveVal(proj)), {
+    session$setInputs(outlier_method = "pca")
+    session$flushReact()
+    flagged <- last_bundle()$results$qc_summary$recommended_filters$remove_samples
+    n_before <- last_bundle()$input_info$n_samples_out
+
+    session$setInputs(keep_samples = flagged)
+    session$flushReact()
+    expect_gt(last_bundle()$input_info$n_samples_out, n_before)
+    dec <- last_bundle()$results$qc_summary$sample_decisions
+    expect_true(any(dec$override == "kept by hand"))
+
+    session$setInputs(keep_samples = character(0), exclude_samples = "s7")
+    session$flushReact()
+    kept <- colnames(last_bundle()$results$cleaned_input$expr_mat)
+    expect_false("s7" %in% kept)
+
+    # And the decision is on the bundle, so the exported script replays it.
+    expect_equal(last_bundle()$params$exclude_samples, "s7")
+  })
+})

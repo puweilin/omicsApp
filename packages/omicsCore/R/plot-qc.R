@@ -194,7 +194,87 @@ plot_missing_by_feature <- function(feature_df, upper = 1) {
     theme_omicsCore()
 }
 
+
+# The projection over every sample, with the removed ones called out.
+#
+# Shape rather than colour for the removal, so `color_by` keeps meaning
+# the experimental group -- which is what a reader is comparing against
+# when they ask whether an outlier is really an outlier or just the other
+# arm of the study.
+plot_qc_pca_all <- function(bundle, scores, color_by = NULL) {
+  removed <- bundle$results$qc_summary$recommended_filters$remove_samples
+  decisions <- bundle$results$qc_summary$sample_decisions
+  meta <- bundle$results$cleaned_input$meta_df
+
+  scores$status <- ifelse(scores$sample_id %in% removed, "removed", "kept")
+  if (!is.null(decisions)) {
+    by_hand <- decisions$sample_id[nzchar(decisions$override %||% "")]
+    scores$status[scores$sample_id %in% by_hand] <- "by hand"
+  }
+  scores$status <- factor(scores$status,
+                          levels = c("kept", "removed", "by hand"))
+  scores$.label <- ifelse(scores$status == "kept", NA_character_,
+                          scores$sample_id)
+
+  if (!is.null(color_by)) {
+    # meta_df is the cleaned one, so a removed sample has no row in it;
+    # those come back NA, which is honest and draws in grey.
+    scores[[color_by]] <- meta[scores$sample_id, color_by]
+  }
+
+  var_pct <- attr(scores, "var_pct") %||% c(NA_real_, NA_real_)
+  mapping <- if (is.null(color_by)) {
+    ggplot2::aes(x = .data$PC1, y = .data$PC2, shape = .data$status)
+  } else {
+    ggplot2::aes(x = .data$PC1, y = .data$PC2, shape = .data$status,
+                 color = .data[[color_by]])
+  }
+
+  p <- ggplot2::ggplot(scores, mapping) +
+    ggplot2::geom_point(size = 2.8, alpha = 0.9, na.rm = TRUE) +
+    ggplot2::scale_shape_manual(
+      values = c(kept = 16, removed = 4, `by hand` = 8), drop = FALSE,
+      name = NULL) +
+    ggplot2::labs(
+      title = "PCA scores",
+      subtitle = sprintf("%d samples, %d removed",
+                         nrow(scores), length(removed)),
+      x = sprintf("PC1 (%.1f%%)", var_pct[[1L]]),
+      y = sprintf("PC2 (%.1f%%)", var_pct[[2L]])) +
+    theme_omicsCore()
+
+  if (any(!is.na(scores$.label))) {
+    p <- p + ggrepel_or_text(scores)
+  }
+  p
+}
+
+# ggrepel when it is there, plain text when it is not. The labels are the
+# point of this panel -- an unlabelled cross tells a reader that *a*
+# sample was dropped, not which -- so their absence is not acceptable, but
+# a hard dependency for label placement is not either.
+ggrepel_or_text <- function(scores) {
+  lab <- ggplot2::aes(label = .data$.label)
+  if (is_installed("ggrepel")) {
+    ggrepel::geom_text_repel(lab, size = 3, na.rm = TRUE,
+                             min.segment.length = 0, max.overlaps = Inf)
+  } else {
+    ggplot2::geom_text(lab, size = 3, vjust = -0.9, na.rm = TRUE)
+  }
+}
+
 plot_qc_pca <- function(bundle, color_by = NULL) {
+  # Every sample, with the removed ones marked -- when the bundle carries
+  # the pre-removal projection.
+  #
+  # This drew `cleaned_input`, from which QC has already taken the samples
+  # it flagged. So the one panel that could show whether a call was right
+  # was the one panel guaranteed not to contain the sample in question,
+  # and a user could see neither which samples were dropped nor why.
+  scores <- bundle$results$qc_summary$pca_scores
+  if (!is.null(scores) && nrow(scores) >= 2L) {
+    return(plot_qc_pca_all(bundle, scores, color_by))
+  }
   cleaned <- bundle$results$cleaned_input
   mat <- mean_impute_rows(cleaned$expr_mat)
   if (ncol(mat) < 2L) {

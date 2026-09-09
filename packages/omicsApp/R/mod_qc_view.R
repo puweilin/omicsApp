@@ -35,7 +35,8 @@ qc_view_ui <- function(id) {
         ),
         bslib::card_body(
           shiny::plotOutput(ns("pca"), height = "360px"),
-          shiny::uiOutput(ns("pca_legend"))
+          shiny::uiOutput(ns("pca_legend")),
+          shiny::uiOutput(ns("outlier_control"))
         )
       ),
       bslib::card(
@@ -309,6 +310,52 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     })
 
+    # ---- which samples were dropped, and the analyst's say ------------
+    #
+    # The panel showed a cleaned matrix, so the samples QC had just
+    # removed were absent from it -- a user could see neither which they
+    # were nor disagree. Detection is a suggestion about a sample; the
+    # person who ran the experiment knows which tube leaked.
+    #
+    # Both directions, and both are run_qc() arguments rather than a
+    # setting held here, so the decision is recorded in the bundle and the
+    # exported script replays it.
+    output$outlier_control <- shiny::renderUI({
+      b <- last_bundle()
+      if (is.null(b)) return(NULL)
+      dec <- b$results$qc_summary$sample_decisions
+      if (is.null(dec) || !nrow(dec)) return(NULL)
+      detected <- dec$sample_id[dec$detected]
+      removed <- dec$sample_id[dec$removed]
+
+      htmltools::tagList(
+        htmltools::tags$div(
+          class = "muted", style = "font-size:12px;margin-top:10px",
+          if (length(removed) == 0L) {
+            "No samples flagged. Drop one by hand below if you know it is bad."
+          } else {
+            sprintf("Removed: %s", paste(removed, collapse = ", "))
+          }),
+        htmltools::tags$div(
+          class = "row-grid r-6-6", style = "margin-top:6px",
+          shiny::selectizeInput(
+            session$ns("keep_samples"),
+            label = "Keep despite the flag",
+            choices = detected,
+            selected = shiny::isolate(input$keep_samples),
+            multiple = TRUE,
+            options = list(placeholder = if (length(detected)) "none" else
+                             "nothing flagged")),
+          shiny::selectizeInput(
+            session$ns("exclude_samples"),
+            label = "Drop by hand",
+            choices = dec$sample_id,
+            selected = shiny::isolate(input$exclude_samples),
+            multiple = TRUE,
+            options = list(placeholder = "none")))
+      )
+    })
+
     # The settings as run_qc() would resolve them, in one place, so the
     # preview's signature and the record kept on apply cannot disagree about
     # what was asked for.
@@ -354,6 +401,13 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         base[["min_samples"]] <- num(input$min_samples,
                                      base[["min_samples"]] %||% 3)
       }
+      # The overrides, read the same way the other controls are: the
+      # applied settings are the base, and a visible control overrides its
+      # own field. `character(0)` rather than NULL when the box is empty,
+      # so clearing a selection means "none" rather than "unchanged".
+      base[["keep_samples"]] <- as.character(input$keep_samples %||% character(0))
+      base[["exclude_samples"]] <-
+        as.character(input$exclude_samples %||% character(0))
       base
     }
 

@@ -49,6 +49,22 @@
 #'   index roughly a fifth of rows are zero in every sample.
 #'
 #'   Set both to `0` to test everything.
+#' @param exclude_samples,keep_samples The analyst's override of what
+#'   detection decided: samples to drop whatever the detectors said, and
+#'   samples to rescue from their flags. `keep_samples` is applied first,
+#'   so a sample named in both is dropped.
+#'
+#'   Arguments rather than a setting held in the interface, because the
+#'   person who ran the experiment knows things the matrix does not --
+#'   which tube leaked, which subject withdrew -- and that judgement has to
+#'   travel with the result. Recorded in `params`, so the exported script
+#'   replays the same decision; a judgement kept only in a session is one
+#'   nothing downstream can reproduce, and nothing about the result looks
+#'   wrong while that is true.
+#'
+#'   `results$qc_summary$sample_decisions` reports what was detected
+#'   beside what was removed, so an override is visible rather than
+#'   silently folded into the flags.
 #' @param ... Forwarded to the imputation backend.
 #'
 #' @return An `analysis_bundle` with the following fields under `results`:
@@ -83,8 +99,12 @@ run_qc <- function(
   outlier_sd_threshold = 3,
   min_count = NULL,
   min_samples = NULL,
+  exclude_samples = NULL,
+  keep_samples = NULL,
   ...
 ) {
+  assert_character(exclude_samples, "exclude_samples", allow_null = TRUE)
+  assert_character(keep_samples, "keep_samples", allow_null = TRUE)
   assert_number(missing_threshold, "missing_threshold", lower = 0, upper = 1)
   assert_number(sample_missing_threshold, "sample_missing_threshold",
                 lower = 0, upper = 1, allow_null = TRUE)
@@ -163,20 +183,39 @@ run_qc <- function(
     list(method = "none", stats = data.frame(), flagged_samples = character(0))
   }
 
-  remove_samples <- unique(c(
-    missingness$flagged_samples,
-    outliers$flagged_samples
-  ))
+  # Detection, then the analyst.
+  #
+  # An automatic flag is a suggestion about a sample, and the person who
+  # ran the experiment knows things the matrix does not: which tube leaked,
+  # which subject withdrew, which batch was re-run. So both directions are
+  # available -- rescue a sample the detector flagged, drop one it did not
+  # -- and both are *arguments*, recorded in the bundle's params like every
+  # other. A judgement made in the interface and kept only there is one the
+  # exported script cannot replay, which is how a result stops being
+  # reproducible without anything looking wrong.
+  detected <- unique(c(missingness$flagged_samples,
+                       outliers$flagged_samples))
+  all_samples <- colnames(input$expr_mat)
+  unknown <- setdiff(c(exclude_samples, keep_samples), all_samples)
+  if (length(unknown) > 0L) {
+    stop("No such sample(s) in this layer: ", paste(unknown, collapse = ", "),
+         call. = FALSE)
+  }
+  remove_samples <- unique(c(setdiff(detected, keep_samples),
+                             exclude_samples))
   remove_features <- unique(c(missingness$flagged_features, low_expressed))
 
   # ---- build cleaned input ----
-  keep_samples <- setdiff(colnames(input$expr_mat), remove_samples)
+  # `kept_samples`, not `keep_samples`: that name is now an argument, and
+  # a local that shadows it reads as though the caller's rescue list were
+  # being overwritten.
+  kept_samples <- setdiff(colnames(input$expr_mat), remove_samples)
   keep_features <- setdiff(rownames(input$expr_mat), remove_features)
-  if (length(keep_samples) == 0L || length(keep_features) == 0L) {
+  if (length(kept_samples) == 0L || length(keep_features) == 0L) {
     stop("QC would remove all samples or features; loosen the thresholds.")
   }
 
-  cleaned <- subset_omics(input, samples = keep_samples, features = keep_features)
+  cleaned <- subset_omics(input, samples = kept_samples, features = keep_features)
 
   # ---- imputation ----
   if (impute_method != "none" && anyNA(cleaned$expr_mat)) {
@@ -198,7 +237,9 @@ run_qc <- function(
          outlier_method = outlier_method,
          outlier_sd_threshold = outlier_sd_threshold,
          min_count = min_count,
-         min_samples = min_samples),
+         min_samples = min_samples,
+         exclude_samples = exclude_samples,
+         keep_samples = keep_samples),
     list(...)
   )
   cleaned <- record_step(cleaned, "run_qc", resolved_args)
@@ -225,6 +266,28 @@ run_qc <- function(
         recommended_filters = list(
           remove_samples = remove_samples,
           remove_features = remove_features
+        ),
+        # Where every sample sat *before* anything was removed.
+        #
+        # The PCA panel drew the cleaned matrix, so a flagged sample was
+        # not in the picture at all -- which is the one place a reader
+        # could have judged whether the call was right. Computed here
+        # rather than in the plot: the plot recomputed it on every render,
+        # this runs once, and a figure drawn from the bundle is one the
+        # exported script reproduces.
+        pca_scores = qc_pca_scores(input),
+        # What detection said, beside what was actually done. They differ
+        # exactly when the analyst overrode something, and a reader of the
+        # result should be able to see that they differ -- otherwise a
+        # rescued sample looks like one nothing ever flagged.
+        sample_decisions = data.frame(
+          sample_id = all_samples,
+          detected = all_samples %in% detected,
+          removed = all_samples %in% remove_samples,
+          override = ifelse(
+            all_samples %in% keep_samples, "kept by hand",
+            ifelse(all_samples %in% exclude_samples, "dropped by hand", "")),
+          stringsAsFactors = FALSE
         )
       ),
       cleaned_input = cleaned

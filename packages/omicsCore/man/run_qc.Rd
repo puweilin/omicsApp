@@ -13,6 +13,8 @@ run_qc(
   outlier_sd_threshold = 3,
   min_count = NULL,
   min_samples = NULL,
+  exclude_samples = NULL,
+  keep_samples = NULL,
   ...
 )
 }
@@ -52,6 +54,23 @@ testing it makes the real findings harder to reach. On a full human
 index roughly a fifth of rows are zero in every sample.
 
 Set both to \code{0} to test everything.}
+
+\item{exclude_samples, keep_samples}{The analyst's override of what
+detection decided: samples to drop whatever the detectors said, and
+samples to rescue from their flags. \code{keep_samples} is applied first,
+so a sample named in both is dropped.
+
+Arguments rather than a setting held in the interface, because the
+person who ran the experiment knows things the matrix does not --
+which tube leaked, which subject withdrew -- and that judgement has to
+travel with the result. Recorded in \code{params}, so the exported script
+replays the same decision; a judgement kept only in a session is one
+nothing downstream can reproduce, and nothing about the result looks
+wrong while that is true.
+
+\code{results$qc_summary$sample_decisions} reports what was detected
+beside what was removed, so an override is visible rather than
+silently folded into the flags.}
 
 \item{...}{Forwarded to the imputation backend.}
 }
