@@ -92,8 +92,10 @@ standardize_enrich_result <- function(
   }
   out$gene_set_size <- if ("setSize" %in% colnames(enrich_df)) {
     as.numeric(enrich_df$setSize)
-  } else if ("Count" %in% colnames(enrich_df)) {
-    as.numeric(enrich_df$Count)
+  } else if ("BgRatio" %in% colnames(enrich_df)) {
+    # ORA reports M/N: pathway genes in the effective universe / universe
+    # size. Count is the query overlap, not the pathway size.
+    vapply(enrich_df$BgRatio, parse_overlap_size, numeric(1))
   } else {
     rep(NA_real_, n)
   }
