@@ -369,7 +369,14 @@ table.tbl td.num, table.tbl th.num {
 }
 .notice-info { background: var(--brand-100); color: var(--brand-700); }
 .notice-warn { background: #FEF3C7;          color: #92400E; }
+.notice-error { background: #FDECEA;         color: #8A1C12; }
 .notice .icon { flex: none; margin-top: 1px; }
+.notice + .notice { margin-top: 8px; }
+.notice-technical { margin-top: 6px; font-size: 12px; }
+.notice-technical summary { cursor: pointer; }
+.notice-technical code { display: block; white-space: pre-wrap; word-break: break-word;
+                         margin-top: 4px; color: inherit; background: rgba(0,0,0,.04);
+                         padding: 6px 8px; border-radius: var(--r-sm, 4px); }
 
 // =============================================================
 // Param sidebar (right-rail in Diff / Enrich views)
@@ -467,3 +474,32 @@ table.tbl td.num, table.tbl th.num {
   .page-head      { flex-direction: column; align-items: flex-start; gap: 6px; }
   .page-actions   { margin-left: 0; }
 }
+
+// A single control sitting above a plot (e.g. PCA "Colour by").
+.inline-control .form-group { margin-bottom: 4px; }
+.inline-control label { font-size: 12px; color: var(--fg-muted, #6b7280); }
+
+// =============================================================
+// Getting started (Project view)
+// =============================================================
+.welcome-card .workflow-list { margin: 4px 0 12px 18px; padding: 0; font-size: 13px; }
+.welcome-card .workflow-list li { margin: 3px 0; }
+.welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.workflow-steps { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.workflow-step { display: flex; align-items: center; gap: 2px; }
+.workflow-step .step { min-width: 150px; }
+.workflow-next {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border-radius: var(--r-md); background: var(--brand-100);
+}
+@media (max-width: 720px) {
+  .workflow-next { flex-direction: column; align-items: flex-start; }
+  .workflow-step .step { min-width: 0; }
+}
+
+.info-tip { margin-left: 4px; color: var(--fg-3); cursor: help; font-size: 12px;
+            vertical-align: 1px; }
+.info-tip:focus { outline: 2px solid var(--brand-500); border-radius: 50%; }
+
+.pairing-details { margin-top: 8px; font-size: 13px; }
+.pairing-details summary { cursor: pointer; color: var(--brand-700); }

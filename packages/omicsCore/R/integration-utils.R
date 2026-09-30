@@ -36,42 +36,92 @@ resolve_experiment_pair <- function(project, experiments) {
 }
 
 # Build a sample mapping data.frame between two experiments. Returns a
-# `data.frame` with columns `<tag_a>`, `<tag_b>`, `donor_id`. If a
-# project-level `sample_link` is present it is used; otherwise direct
-# matches on `sample_id` are emitted.
+# `data.frame` with columns `donor_id`, `<tag_a>`, `<tag_b>`.
+#
+# Resolved exactly as the Integration view previews it
+# (`sample_pairing_preview()`): a saved `sample_link`, then a donor column
+# in both layers, then sample ids that match outright. A pairing that is
+# only *guessed* from the shape of the ids is never used here -- it has
+# to be accepted (saved as a `sample_link`) first. The two used to
+# disagree: the view announced "12 pairs, from the donor column" and the
+# run then failed with "No shared sample IDs", because this function only
+# knew about a saved link and identical ids.
+#
+# A donor with more than one sample in a layer (technical replicates,
+# several time points) cannot be paired one-to-one. Such donors keep
+# their first sample in each layer; the number dropped is carried on the
+# result as attribute `n_ambiguous` so the caller can report it rather
+# than silently correlating one person's samples against themselves.
 build_sample_pairs <- function(project, tag_a, tag_b) {
-  input_a <- project$experiments[[tag_a]]
-  input_b <- project$experiments[[tag_b]]
-  samp_a <- colnames(input_a$expr_mat)
-  samp_b <- colnames(input_b$expr_mat)
-
-  if (!is.null(project$sample_link) && nrow(project$sample_link) > 0L) {
-    sl <- project$sample_link
-    a <- sl[sl$tag == tag_a, c("sample_id", "donor_id"), drop = FALSE]
-    b <- sl[sl$tag == tag_b, c("sample_id", "donor_id"), drop = FALSE]
-    pairs <- merge(a, b, by = "donor_id", suffixes = c("_a", "_b"))
-    pairs <- pairs[pairs$sample_id_a %in% samp_a &
-                     pairs$sample_id_b %in% samp_b, , drop = FALSE]
-    out <- data.frame(
-      donor_id = pairs$donor_id,
-      a = pairs$sample_id_a,
-      b = pairs$sample_id_b,
-      stringsAsFactors = FALSE
-    )
-  } else {
-    shared <- intersect(samp_a, samp_b)
-    if (length(shared) == 0L) {
-      stop("No shared sample IDs between '", tag_a, "' and '", tag_b,
-           "', and no `sample_link` is set on the project.")
-    }
-    out <- data.frame(
-      donor_id = shared,
-      a = shared,
-      b = shared,
-      stringsAsFactors = FALSE
-    )
+  prev <- sample_pairing_preview(project, tag_a, tag_b)
+  if (identical(prev$source, "suggested")) {
+    stop("The samples of '", tag_a, "' and '", tag_b, "' are only paired by ",
+         "a guess from their ids. Accept the pairing (save it as the ",
+         "project's `sample_link`) or add a donor column to both layers.",
+         call. = FALSE)
   }
+  pairs <- prev$pairs
+  if (nrow(pairs) == 0L) {
+    stop("No sample pairing between '", tag_a, "' and '", tag_b, "': ",
+         "no `sample_link` covers both layers, no donor column is shared, ",
+         "and no sample ids match.", call. = FALSE)
+  }
+  ambiguous <- duplicated(pairs$donor_id) | duplicated(pairs$a) |
+    duplicated(pairs$b)
+  n_ambiguous <- sum(ambiguous)
+  pairs <- pairs[!ambiguous, , drop = FALSE]
+  out <- data.frame(
+    donor_id = pairs$donor_id,
+    a = pairs$a,
+    b = pairs$b,
+    stringsAsFactors = FALSE
+  )
   names(out)[2:3] <- c(tag_a, tag_b)
+  rownames(out) <- NULL
+  attr(out, "source") <- prev$source
+  attr(out, "n_ambiguous") <- n_ambiguous
+  out
+}
+
+# One row per join key. Where several features share a key (protein
+# isoforms, several probes or protein groups naming one gene) the one kept
+# is the most abundant -- a choice that does not look at the test result,
+# unlike "the most significant", which would inflate agreement between
+# layers by picking each gene's luckiest row. Ties, and rows without an
+# abundance, fall back to their original order.
+dedupe_by_key <- function(key, abundance = NULL) {
+  n <- length(key)
+  if (n == 0L) return(integer(0))
+  if (is.null(abundance)) abundance <- rep(NA_real_, n)
+  abundance <- suppressWarnings(as.numeric(abundance))
+  ord <- order(is.na(abundance), -abundance, seq_len(n), na.last = TRUE)
+  ord[!duplicated(key[ord])] |> sort()
+}
+
+# Case- and whitespace-insensitive join key. RNA and protein tables of one
+# study routinely disagree on nothing but case (`Tp53` / `TP53`,
+# UniProt gene names vs Ensembl symbols) or carry a trailing space from a
+# spreadsheet; neither is a different gene.
+integration_join_key <- function(x) {
+  x <- toupper(trimws(as.character(x)))
+  x[!is.na(x) & !nzchar(x)] <- NA_character_
+  x
+}
+
+# Differential backends label a group contrast `up` / `down` and a
+# continuous one `positive` / `negative`. The concordance quadrants are
+# about sign, so both vocabularies mean the same thing here; anything
+# else (`ns`, a zero effect, NA) has no sign.
+direction_sign <- function(direction, effect = NULL) {
+  d <- tolower(as.character(direction))
+  out <- rep(NA_character_, length(d))
+  out[d %in% c("up", "positive")] <- "up"
+  out[d %in% c("down", "negative")] <- "down"
+  if (!is.null(effect)) {
+    miss <- is.na(out) & !is.na(effect) & !(d %in% "ns")
+    out[miss & effect > 0] <- "up"
+    out[miss & effect < 0] <- "down"
+  }
   out
 }
 
@@ -97,17 +147,26 @@ build_feature_pairs <- function(project, tag_a, tag_b, by = "feature_symbol") {
     key = feat_b[[by]],
     stringsAsFactors = FALSE
   )
-  a <- a[!is.na(a$key) & nzchar(a$key), , drop = FALSE]
-  b <- b[!is.na(b$key) & nzchar(b$key), , drop = FALSE]
-  a <- a[!duplicated(a$key), , drop = FALSE]
-  b <- b[!duplicated(b$key), , drop = FALSE]
+  a$symbol <- a$key
+  a$key <- integration_join_key(a$key)
+  b$key <- integration_join_key(b$key)
+  abund <- function(input, ids) {
+    m <- input$expr_mat
+    if (is.null(m) || !length(ids)) return(NULL)
+    suppressWarnings(rowMeans(m[intersect(ids, rownames(m)), , drop = FALSE],
+                              na.rm = TRUE))[ids]
+  }
+  a <- a[!is.na(a$key), , drop = FALSE]
+  b <- b[!is.na(b$key), , drop = FALSE]
+  a <- a[dedupe_by_key(a$key, abund(input_a, a$feature_a)), , drop = FALSE]
+  b <- b[dedupe_by_key(b$key, abund(input_b, b$feature_b)), , drop = FALSE]
   pairs <- merge(a, b, by = "key")
   if (nrow(pairs) == 0L) {
     stop("No shared `", by, "` features between '", tag_a, "' and '", tag_b, "'.")
   }
   data.frame(
-    feature_id = pairs$key,
-    feature_symbol = pairs$key,
+    feature_id = pairs$symbol,
+    feature_symbol = pairs$symbol,
     feature_a = pairs$feature_a,
     feature_b = pairs$feature_b,
     stringsAsFactors = FALSE

@@ -18,7 +18,7 @@ plot_heatmap(
 )
 }
 \arguments{
-\item{x}{Either an \code{\link[=omics_input]{omics_input}} or an
+\item{x}{Either an \code{\link{omics_input}} or an
 \code{\link[=is_analysis_bundle]{analysis_bundle}} from \code{\link[=run_diff]{run_diff()}}.}
 
 \item{input}{Required when \code{x} is an analysis_bundle: the
@@ -72,16 +72,20 @@ plot so the function is always usable from a clean install.
 }
 }
 \seealso{
-Other diff: 
+Other diff:
 \code{\link{SUPPORTED_DIFF_METHODS}},
-\code{\link{applicable_diff_methods}()},
-\code{\link{filter_diff_results}()},
-\code{\link{make_ranked_features}()},
-\code{\link{plot_feature_expression}()},
-\code{\link{plot_ma}()},
-\code{\link{plot_pca}()},
-\code{\link{plot_volcano}()},
-\code{\link{run_diff}()},
-\code{\link{run_diff_continuous}()}
+\code{\link[=applicable_diff_methods]{applicable_diff_methods()}},
+\code{\link[=diff_comparisons]{diff_comparisons()}},
+\code{\link[=filter_diff_results]{filter_diff_results()}},
+\code{\link[=make_ranked_features]{make_ranked_features()}},
+\code{\link[=plot_diff_contrasts]{plot_diff_contrasts()}},
+\code{\link[=plot_feature_expression]{plot_feature_expression()}},
+\code{\link[=plot_ma]{plot_ma()}},
+\code{\link[=plot_pca]{plot_pca()}},
+\code{\link[=plot_volcano]{plot_volcano()}},
+\code{\link[=run_diff]{run_diff()}},
+\code{\link[=run_diff_continuous]{run_diff_continuous()}},
+\code{\link[=select_comparison]{select_comparison()}},
+\code{\link[=summarize_diff_contrasts]{summarize_diff_contrasts()}}
 }
 \concept{diff}

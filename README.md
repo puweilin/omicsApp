@@ -101,7 +101,7 @@ again.
 
 ## Status
 
-Pre-alpha. See [docs/export-manifest.md](./docs/export-manifest.md) for the planned public API and [docs/roadmap.md](./docs/roadmap.md) for the delivery plan.
+Pre-alpha. See [docs/export-manifest.md](./docs/export-manifest.md) for the planned public API and [docs/roadmap.md](./docs/roadmap.md) for the delivery plan. [docs/review-2026-09.md](./docs/review-2026-09.md) records the September 2026 review: the tutorial, UI, integration defects fixed, and how several treatment groups against one control are handled (`run_diff(case_group = c(...))`, `select_comparison()`).
 
 The legacy `omics_core` framework in the parent project's `scripts/frameworks/omics_core/` remains **frozen** as the production code path for the existing analyses. `omicsCore` is a parallel, properly-packaged rewrite that does not affect those scripts.
 

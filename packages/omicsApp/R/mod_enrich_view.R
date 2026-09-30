@@ -43,7 +43,8 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                                  p_cutoff = 0.05, p_preference = "adjusted",
                                  effect_cutoff = NULL)),
                                diff_layer = shiny::reactive(NULL),
-                               invalidate = shiny::reactiveVal(0L)) {
+                               invalidate = shiny::reactiveVal(0L),
+                               navigate = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
 
     have_cp <- has_pkg("clusterProfiler")
@@ -124,8 +125,10 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           enrich_bundle(result)
         },
         on_error = function(msg) {
+          # The error, and nothing under it: the demo's pathways beneath
+          # a failure notice read as the user's result.
           enrich_error(msg)
-          is_demo(TRUE)
+          is_demo(FALSE)
           enrich_bundle(NULL)
         },
         message = "Running pathway enrichment..."
@@ -138,6 +141,9 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       do_run()
     }, ignoreInit = TRUE)
     shiny::observeEvent(input$rerun, do_run())
+    if (is.function(navigate)) {
+      shiny::observeEvent(input$go_next, navigate("integration"))
+    }
 
     # The table powering both the dot card and the hits card. In
     # demo mode this is the static fixture; in live mode it's
@@ -169,6 +175,10 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       layer <- diff_layer_tag()
       view_header(
         title    = "Pathway enrichment",
+        actions  = if (is.function(navigate) && !demo) {
+          shiny::actionButton(session$ns("go_next"), "Next: Integration \u2192",
+                              class = "btn btn-ghost")
+        },
         subtitle = htmltools::tagList(
           omics,
           htmltools::HTML(" &middot; "),
@@ -184,7 +194,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           htmltools::HTML(" &middot; "),
           htmltools::tags$span(
             class = "muted",
-            if (demo) "demo fixture (built-in)"
+            if (demo) "demo data (built-in)"
             else "live result"
           )
         )
@@ -282,10 +292,17 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       if (!is.null(err)) {
         tagged <- htmltools::tagAppendChild(
           tagged,
-          notice(title  = if (!have_cp) "clusterProfiler unavailable"
-                          else "run_enrichment failed",
-                 detail = err,
-                 kind   = "warn")
+          if (!have_cp) {
+            notice(title = "clusterProfiler unavailable", detail = err,
+                   kind = "warn")
+          } else {
+            notice(title  = "The enrichment could not be computed",
+                   detail = if (grepl("No significant|no features|no genes", err, ignore.case = TRUE))
+                     "No differential hits pass the current thresholds; loosen them in the Differential view or try GSEA."
+                   else "See the technical details below.",
+                   kind   = "error",
+                   technical = err)
+          }
         )
       }
       if (is.null(diff_bundle()) && have_cp) {
@@ -425,6 +442,9 @@ enrich_params_card <- function(ns) {
         class = "param-row",
         param_group(
           "Test",
+          help = paste("ORA tests whether the differential hits are over-represented",
+                       "in a pathway. GSEA ranks every feature by effect and needs",
+                       "no hit threshold."),
           shiny::radioButtons(
             ns("type"), label = NULL,
             choices  = c("ORA" = "ora", "GSEA" = "gsea"),
@@ -435,14 +455,19 @@ enrich_params_card <- function(ns) {
           "Database",
           shiny::selectInput(
             ns("database"), label = NULL,
-            choices  = c("hallmark", "kegg", "reactome",
-                         "go_bp", "go_mf", "go_cc",
-                         "wikipathways"),
+            choices  = c("MSigDB Hallmark" = "hallmark",
+                         "KEGG" = "kegg",
+                         "Reactome" = "reactome",
+                         "GO Biological Process" = "go_bp",
+                         "GO Molecular Function" = "go_mf",
+                         "GO Cellular Component" = "go_cc",
+                         "WikiPathways" = "wikipathways"),
             selected = "hallmark"
           )
         ),
         param_group(
           "Direction",
+          help = "Enrich up- and down-regulated hits together, or one direction only.",
           shiny::radioButtons(
             ns("direction"), label = NULL,
             choices  = c("both", "up", "down"),

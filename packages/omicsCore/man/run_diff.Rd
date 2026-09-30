@@ -30,7 +30,12 @@ based on \code{omics_type} and installed Suggests.}
 
 \item{control_group}{Control-group label (group only).}
 
-\item{case_group}{Case-group label (group only).}
+\item{case_group}{Case-group label (group only). Several labels run
+every one of them against \code{control_group} in one call: limma, DESeq2
+and edgeR fit all the groups in a single model (so the contrasts share
+one variance / dispersion estimate), the t-test and lm backends run
+each pair in turn. The contrasts are stacked in \code{diff_result_df} under
+their \code{comparison} labels; use \code{\link[=select_comparison]{select_comparison()}} to take one out.}
 
 \item{continuous_col}{Continuous metadata column (continuous only).}
 
@@ -79,16 +84,20 @@ set \code{analysis_type = "anova"} (currently limma-backed only). The
 }
 }
 \seealso{
-Other diff: 
+Other diff:
 \code{\link{SUPPORTED_DIFF_METHODS}},
-\code{\link{applicable_diff_methods}()},
-\code{\link{filter_diff_results}()},
-\code{\link{make_ranked_features}()},
-\code{\link{plot_feature_expression}()},
-\code{\link{plot_heatmap}()},
-\code{\link{plot_ma}()},
-\code{\link{plot_pca}()},
-\code{\link{plot_volcano}()},
-\code{\link{run_diff_continuous}()}
+\code{\link[=applicable_diff_methods]{applicable_diff_methods()}},
+\code{\link[=diff_comparisons]{diff_comparisons()}},
+\code{\link[=filter_diff_results]{filter_diff_results()}},
+\code{\link[=make_ranked_features]{make_ranked_features()}},
+\code{\link[=plot_diff_contrasts]{plot_diff_contrasts()}},
+\code{\link[=plot_feature_expression]{plot_feature_expression()}},
+\code{\link[=plot_heatmap]{plot_heatmap()}},
+\code{\link[=plot_ma]{plot_ma()}},
+\code{\link[=plot_pca]{plot_pca()}},
+\code{\link[=plot_volcano]{plot_volcano()}},
+\code{\link[=run_diff_continuous]{run_diff_continuous()}},
+\code{\link[=select_comparison]{select_comparison()}},
+\code{\link[=summarize_diff_contrasts]{summarize_diff_contrasts()}}
 }
 \concept{diff}

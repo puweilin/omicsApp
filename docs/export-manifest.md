@@ -103,6 +103,19 @@ Returns `analysis_bundle` with:
 - `bundle$results$diff_object`: backend-native object (DESeqDataSet, MArrayLM, etc.)
 - `bundle$params`: full parameter record for provenance
 
+`case_group` may name several groups: they are fitted with the control in
+one model (limma / DESeq2 / edgeR) and stacked in `diff_result_df` under
+their `comparison` labels.
+
+### `diff_comparisons(bundle)`, `select_comparison(bundle, comparison)`
+
+List the contrasts of a multi-contrast bundle, and take one out as an
+ordinary single-contrast bundle that every downstream function accepts.
+
+### `summarize_diff_contrasts(bundle, p_cutoff, p_preference, effect_cutoff)`, `plot_diff_contrasts(...)`
+
+Up / down hit counts per comparison, as a table and a diverging bar chart.
+
 ### `run_diff_continuous(input, continuous_col, covariates = NULL, smooth = FALSE, ...)`
 
 Convenience wrapper for continuous-outcome differential analysis (e.g. age trajectories).

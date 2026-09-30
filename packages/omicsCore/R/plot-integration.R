@@ -5,16 +5,19 @@
 #'
 #' * `"scatter"` -- always available. For `correlation` plots the
 #'   correlation coefficient against `-log10(adj_p_value)`. For
-#'   `concordance` plots `effect_a` vs `effect_b` reconstructed from the
-#'   `effect` column (which carries `effect_a - effect_b`). For
-#'   `active_pathways` plots `-log10(adj_p_value)` against pathway rank.
+#'   `concordance` plots the effect difference (`effect_a - effect_b`)
+#'   against `-log10(adj_p_value)`. For `active_pathways` plots
+#'   `-log10(adj_p_value)` against pathway rank.
 #' * `"dual_volcano"` -- concordance-only. Plots `effect` (the difference
 #'   of effects) on the x-axis against `-log10(p)` on the y-axis and
 #'   colors by quadrant.
+#' * `"effect_pair"` -- concordance-only. `effect_a` against `effect_b`,
+#'   features that are hits in both layers coloured by quadrant.
 #' * `"quadrant"` -- concordance-only. Bar count of the four
 #'   `(direction_a, direction_b)` sign quadrants.
 #' * `"dotplot"` -- active_pathways-only. Dotplot of top pathways, with
-#'   color = adjusted p-value and shape = shared / unique evidence.
+#'   color = adjusted p-value and shape = evidence (shared by both layers,
+#'   unique to one, or found only by the combined p-value).
 #'
 #' @param bundle An [`analysis_bundle`][is_analysis_bundle()] produced by
 #'   [run_integration()].
@@ -164,6 +167,13 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
 plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_cutoff) {
   df$.neglog10p <- -log10(pmax(df$p_value, .Machine$double.xmin))
   df$.quad <- ifelse(is.na(df$quadrant), "n/a", df$quadrant)
+  # As in the effect-pair view: colour what both layers call a hit, when
+  # the result says which those are.
+  if (all(c("significant_a", "significant_b") %in% names(df))) {
+    both <- df$significant_a %in% TRUE & df$significant_b %in% TRUE
+    df$.quad[!both] <- "n/a"
+    df <- df[order(both), , drop = FALSE]
+  }
   label_ids <- pick_label_ids(df, top_n, label_features, p_col = "p_value")
   df$.label <- ifelse(df$feature_id %in% label_ids, df$feature_symbol, NA_character_)
 
@@ -200,11 +210,27 @@ plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_c
 # the off-diagonal quadrants are the ones worth reading.
 plot_integration_effect_pair <- function(df, bundle) {
   df <- integration_fill_effects(df)
-  df$.quad <- if ("quadrant" %in% names(df)) {
+  if (all(is.na(df$effect_a)) || all(is.na(df$effect_b))) {
+    return(empty_integration_plot(paste(
+      "This integration result does not carry the per-layer effects.",
+      "Re-run the integration to draw them.", sep = "\n")))
+  }
+  quad <- if ("quadrant" %in% names(df)) {
     ifelse(is.na(df$quadrant), "n/a", df$quadrant)
   } else {
     integration_derive_quadrant(df)
   }
+  # Colour only what both layers call a hit; the rest of the cloud is
+  # context. Every feature has *some* sign pair, so colouring them all
+  # painted half of an unrelated background "concordant".
+  both <- if (all(c("significant_a", "significant_b") %in% names(df))) {
+    df$significant_a %in% TRUE & df$significant_b %in% TRUE
+  } else {
+    df$is_significant %in% TRUE
+  }
+  df$.quad <- ifelse(both, quad, "not significant in both")
+  df <- df[order(both), , drop = FALSE]
+  palette <- c(quadrant_palette(), `not significant in both` = omics_colors$ns)
 
   ggplot2::ggplot(
     df,
@@ -215,7 +241,7 @@ plot_integration_effect_pair <- function(df, bundle) {
     ggplot2::geom_hline(yintercept = 0, color = omics_colors$border) +
     ggplot2::geom_vline(xintercept = 0, color = omics_colors$border) +
     ggplot2::geom_point(alpha = 0.85, size = 2, na.rm = TRUE) +
-    ggplot2::scale_color_manual(values = quadrant_palette(), name = NULL,
+    ggplot2::scale_color_manual(values = palette, name = NULL,
                                 na.value = omics_colors$ns) +
     ggplot2::labs(
       title = "Integration: effect pair",
@@ -226,14 +252,15 @@ plot_integration_effect_pair <- function(df, bundle) {
     theme_omics_labelled()
 }
 
-# The concordance schema stores `effect = effect_a - effect_b` rather
-# than the two effects themselves. Recover them where the raw columns
-# survived, and leave NA otherwise so the plot drops those points rather
-# than inventing coordinates for them.
+# The per-layer effects. Bundles written before the concordance table
+# kept `effect_a` / `effect_b` store only their difference, from which
+# the two cannot be recovered; those get NA (and the plot says so)
+# rather than coordinates invented from the difference -- which put every
+# point on the x axis at its difference and 0.
 integration_fill_effects <- function(df) {
   if (all(c("effect_a", "effect_b") %in% names(df))) return(df)
-  df$effect_a <- df$raw_a %||% df$effect %||% NA_real_
-  df$effect_b <- df$raw_b %||% (df$effect_a - (df$effect %||% 0))
+  df$effect_a <- df$raw_a %||% rep(NA_real_, nrow(df))
+  df$effect_b <- df$raw_b %||% rep(NA_real_, nrow(df))
   df
 }
 
@@ -290,7 +317,7 @@ plot_integration_dotplot <- function(df, bundle, top_n) {
     ggplot2::geom_point(size = 4, na.rm = TRUE) +
     ggplot2::scale_color_gradient(low = omics_colors$up, high = omics_colors$ns,
                                   name = "adj p") +
-    ggplot2::scale_shape_manual(values = c(shared = 16, unique = 1),
+    ggplot2::scale_shape_manual(values = c(shared = 16, unique = 1, combined = 17),
                                 na.value = 4, name = "evidence") +
     ggplot2::labs(
       title = "Integration: ActivePathways",

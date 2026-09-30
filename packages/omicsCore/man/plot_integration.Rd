@@ -38,20 +38,23 @@ available views depend on the method that produced the bundle:
 \itemize{
 \item \code{"scatter"} -- always available. For \code{correlation} plots the
 correlation coefficient against \code{-log10(adj_p_value)}. For
-\code{concordance} plots \code{effect_a} vs \code{effect_b} reconstructed from the
-\code{effect} column (which carries \code{effect_a - effect_b}). For
-\code{active_pathways} plots \code{-log10(adj_p_value)} against pathway rank.
+\code{concordance} plots the effect difference (\code{effect_a - effect_b})
+against \code{-log10(adj_p_value)}. For \code{active_pathways} plots
+\code{-log10(adj_p_value)} against pathway rank.
 \item \code{"dual_volcano"} -- concordance-only. Plots \code{effect} (the difference
 of effects) on the x-axis against \code{-log10(p)} on the y-axis and
 colors by quadrant.
+\item \code{"effect_pair"} -- concordance-only. \code{effect_a} against \code{effect_b},
+features that are hits in both layers coloured by quadrant.
 \item \code{"quadrant"} -- concordance-only. Bar count of the four
 \verb{(direction_a, direction_b)} sign quadrants.
 \item \code{"dotplot"} -- active_pathways-only. Dotplot of top pathways, with
-color = adjusted p-value and shape = shared / unique evidence.
+color = adjusted p-value and shape = evidence (shared by both layers,
+unique to one, or found only by the combined p-value).
 }
 }
 \seealso{
-Other integration: 
-\code{\link{run_integration}()}
+Other integration:
+\code{\link[=run_integration]{run_integration()}}
 }
 \concept{integration}

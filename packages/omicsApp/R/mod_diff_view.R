@@ -9,8 +9,13 @@
 #' button is gated by `bindEvent`; failures surface in a notice
 #' strip instead of Shiny's red overlay.
 #'
-#' When the project is `NULL`, the view falls back to
-#' `example_diff_bundle()` so the volcano + hits stay visible.
+#' With several treatment groups the Case control takes more than one
+#' level: every chosen group is fitted against the Control in one model
+#' (see [omicsCore::run_diff()]), a "Showing" selector picks which
+#' contrast the volcano, the hit table and everything downstream read,
+#' and a summary card compares the contrasts side by side.
+#'
+#' Nothing runs until the user presses Run.
 #'
 #' Reference markup: `omicsApp/mockup/index.html:753-915`.
 #'
@@ -28,6 +33,7 @@ diff_view_ui <- function(id) {
       class = "row-grid r-3-9",
       diff_params_card(ns),
       htmltools::tags$div(
+        shiny::uiOutput(ns("contrast_summary")),
         diff_volcano_card(ns),
         diff_hits_card(ns)
       )
@@ -41,7 +47,8 @@ diff_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
-                             invalidate = shiny::reactiveVal(0L)) {
+                             invalidate = shiny::reactiveVal(0L),
+                             navigate = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Active experiment: whichever layer the user picked, else
@@ -141,10 +148,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (length(cands) == 0L) cands <- names(meta)
       gc <- cands[1L]
       lv <- sort(unique(as.character(stats::na.omit(meta[[gc]]))))
+      ctrl <- default_control_level(lv)
       list(
         group_col  = gc,
-        control    = if (length(lv)) lv[1L] else NULL,
-        case       = if (length(lv) >= 2L) lv[2L] else NULL,
+        control    = ctrl,
+        # Every other group against the control: with one control and
+        # several treatments that is the design people mean, and with two
+        # groups it is the one contrast there is.
+        case       = if (length(lv) >= 2L) setdiff(lv, ctrl) else NULL,
         levels     = lv,
         candidates = cands
       )
@@ -188,15 +199,26 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       }
       keep <- function(current, fallback) {
         current <- shiny::isolate(current)
-        if (is.null(current) || !current %in% lv) fallback else current
+        current <- current[current %in% lv]
+        if (!length(current)) fallback else current
       }
+      ctrl <- keep(input$control, default_control_level(lv))[1L]
       htmltools::tagList(
         shiny::selectInput(session$ns("control"),
-                           label = "Control", choices = lv,
-                           selected = keep(input$control, lv[1L])),
-        shiny::selectInput(session$ns("case"),
-                           label = "Case", choices = lv,
-                           selected = keep(input$case, lv[min(2L, length(lv))]))
+                           label = "Control (reference)", choices = lv,
+                           selected = ctrl),
+        shiny::selectizeInput(
+          session$ns("case"),
+          label = if (length(lv) > 2L) "Compare against control (one or more)" else "Case",
+          choices = lv, multiple = TRUE,
+          selected = keep(input$case, setdiff(lv, ctrl)),
+          options = list(plugins = list("remove_button"))),
+        if (length(lv) > 2L) {
+          htmltools::tags$div(
+            class = "muted", style = "font-size:11.5px;margin-top:-6px",
+            paste("Several groups are fitted in one model, so each comparison",
+                  "with the control borrows strength from all samples."))
+        }
       )
     })
 
@@ -222,6 +244,47 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # changes only take effect on Re-run.
     diff_bundle <- shiny::reactiveVal(NULL)
     diff_error  <- shiny::reactiveVal(NULL)
+    running     <- shiny::reactiveVal(FALSE)
+
+    # The button says what it will do, and cannot be pressed twice while
+    # a run is in flight.
+    set_busy <- function(busy) {
+      running(busy)
+      tryCatch(
+        if (busy) shinyjs::disable("rerun") else shinyjs::enable("rerun"),
+        error = function(e) NULL)
+    }
+
+    # ---- which contrast is on screen ---------------------------------
+    comparisons <- shiny::reactive({
+      b <- diff_bundle()
+      if (!omicsCore::is_analysis_bundle(b)) return(character(0))
+      omicsCore::diff_comparisons(b)
+    })
+
+    output$ui_comparison <- shiny::renderUI({
+      cmp <- comparisons()
+      if (length(cmp) < 2L) return(NULL)
+      sel <- shiny::isolate(input$comparison)
+      if (is.null(sel) || !sel %in% cmp) sel <- cmp[[1L]]
+      shiny::selectInput(session$ns("comparison"), label = "Showing",
+                         choices = stats::setNames(cmp, gsub("_vs_", " vs ", cmp)),
+                         selected = sel)
+    })
+
+    # One contrast, shaped exactly like a single-contrast run. Everything
+    # below -- the volcano, the table, Enrichment, Integration, the
+    # report -- reads this, so none of them needs to know that several
+    # contrasts were fitted.
+    shown_bundle <- shiny::reactive({
+      b <- diff_bundle()
+      if (!omicsCore::is_analysis_bundle(b)) return(b)
+      cmp <- comparisons()
+      if (length(cmp) < 2L) return(b)
+      sel <- input$comparison
+      if (is.null(sel) || !sel %in% cmp) sel <- cmp[[1L]]
+      omicsCore::select_comparison(b, sel)
+    })
 
     # The layer this result was computed on has been replaced, so the
     # result is no longer about anything in the project. NULL is the
@@ -245,12 +308,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       group_col  <- input$group_col %||% d$group_col
       control    <- input$control   %||% d$control
       case       <- input$case      %||% d$case
+      case       <- setdiff(case, control)
       covariates <- input$covariates
-      if (is.null(group_col) || is.null(control) || is.null(case) ||
-          identical(control, case)) {
-        diff_error("Pick a group column with distinct Control and Case levels.")
+      if (is.null(group_col) || is.null(control) || !length(case)) {
+        diff_error("Pick a group column, a control group, and at least one group distinct from the control to compare with it.")
         return(invisible())
       }
+      set_busy(TRUE)
       run_async(
         # Detached, so the worker receives the input and the six
         # parameters rather than this module's whole scope. Defined
@@ -278,10 +342,12 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           covariates = if (length(covariates)) covariates else NULL
         ),
         on_success = function(bundle) {
+          set_busy(FALSE)
           diff_error(NULL)
           diff_bundle(bundle)
         },
         on_error = function(msg) {
+          set_busy(FALSE)
           diff_error(msg)
         },
         message = "Running differential analysis..."
@@ -345,8 +411,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (identical(input$p_kind %||% "adj", "raw")) "p" else "adj.P")
 
     marked <- shiny::reactive({
-      shiny::req(diff_bundle())
-      df <- diff_bundle()$results$diff_result_df
+      shiny::req(shown_bundle())
+      df <- shown_bundle()$results$diff_result_df
       pv <- df[[p_col()]]
       df$is_significant <- !is.na(pv) &
                            !is.na(df$effect) &
@@ -357,7 +423,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     output$header <- shiny::renderUI({
       a <- active()
-      b <- diff_bundle()
+      b <- shown_bundle()
       source_note <- htmltools::tags$span(
         class = "muted",
         if (a$is_demo) "demo project (built-in)"
@@ -379,14 +445,22 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         ))
       }
 
-      comparison <- b$params$comparison %||%
+      comparison <- if (length(b$params$comparison)) gsub("_vs_", " vs ", b$params$comparison) else
         sprintf("%s vs %s",
                 b$params$case_group %||% input$case %||% "case",
                 b$params$control_group %||% input$control %||% "control")
+      n_cmp <- length(comparisons())
       view_header(
         title    = "Differential",
+        actions  = if (is.function(navigate)) {
+          shiny::actionButton(session$ns("go_enrich"), "Next: Enrichment \u2192",
+                              class = "btn btn-ghost")
+        },
         subtitle = htmltools::tagList(
           diff_omics_display(b$input_info$omics_type),
+          if (n_cmp > 1L) htmltools::tagList(
+            htmltools::HTML(" &middot; "),
+            sprintf("%d comparisons", n_cmp)),
           htmltools::HTML(" &middot; "),
           comparison,
           htmltools::HTML(" &middot; "),
@@ -404,9 +478,19 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (!is.null(err)) {
         tagged <- htmltools::tagAppendChild(
           tagged,
-          notice(title  = "run_diff failed",
-                 detail = err,
-                 kind   = "warn")
+          notice(title  = "The differential analysis could not run",
+                 detail = diff_error_hint(err),
+                 kind   = "error",
+                 technical = err)
+        )
+      }
+      if (is.null(diff_bundle()) && is.null(err)) {
+        tagged <- htmltools::tagAppendChild(
+          tagged,
+          notice(title  = "No result yet",
+                 detail = paste("Check the layer, the control group and the groups to",
+                                "compare in the Parameters card, then press Run analysis."),
+                 kind   = "info")
         )
       }
       if (length(missing_engines)) {
@@ -426,8 +510,10 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     })
 
     output$stats <- shiny::renderUI({
-      b <- diff_bundle()
+      b <- shown_bundle()
       if (is.null(b)) return(NULL)
+      case_lbl <- b$params$case_group %||% "case"
+      if (length(case_lbl) > 1L) case_lbl <- "case"
       df <- marked()
       sig <- df[df$is_significant, , drop = FALSE]
       up_n   <- sum(sig$effect > 0, na.rm = TRUE)
@@ -448,14 +534,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           mono  = TRUE
         ),
         stat_card(
-          label  = sprintf("Up in %s", input$case %||% "case"),
+          label  = sprintf("Up in %s", case_lbl),
           value  = up_n,
           trend  = sprintf("effect > %.2f \u00B7 %s < %.3f",
                            fc_cut_d(), p_label(), fdr_cut_d()),
           accent = "up"
         ),
         stat_card(
-          label  = sprintf("Down in %s", input$case %||% "case"),
+          label  = sprintf("Down in %s", case_lbl),
           value  = down_n,
           trend  = sprintf("effect < -%.2f \u00B7 %s < %.3f",
                            fc_cut_d(), p_label(), fdr_cut_d()),
@@ -471,8 +557,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     })
 
     output$volcano <- plotly::renderPlotly({
-      b <- diff_bundle()
-      shiny::req(b)
+      b <- shown_bundle()
+      shiny::validate(shiny::need(b, "Press Run analysis to draw the volcano."))
       # Deliberately not given the slider values. The volcano is drawn
       # at plot_volcano()'s own defaults, which is what an exported
       # report and an exported script also produce -- so the figure a
@@ -498,11 +584,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       out <- data.frame(
         Feature   = sig$feature_symbol,
         Effect    = round(sig$effect, 3),
-        `adj.P`   = signif(sig$adj_p_value, 3),
+        p         = signif(sig[[p_col()]], 3),
         Direction = ifelse(sig$effect > 0, "up", "down"),
         check.names = FALSE,
         stringsAsFactors = FALSE
       )
+      # The column is named for the p-value the mask was read from.
+      names(out)[3] <- p_label()
       DT::datatable(
         out,
         rownames  = FALSE,
@@ -522,8 +610,71 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # different set from the hits shown here, and neither view said so.
     # A user with a hundred hits by raw p got an enrichment over however
     # many passed adj.P, which can be none.
+    # ---- several contrasts side by side ------------------------------
+    output$contrast_summary <- shiny::renderUI({
+      if (length(comparisons()) < 2L) return(NULL)
+      bslib::card(
+        bslib::card_header(
+          htmltools::tags$h3(class = "card-title", "Comparisons"),
+          htmltools::tags$span(class = "card-sub",
+                               "hits per comparison at the current thresholds")
+        ),
+        bslib::card_body(
+          htmltools::tags$div(
+            class = "row-grid r-6-6",
+            shiny::plotOutput(session$ns("contrast_plot"),
+                              height = paste0(90 + 42 * length(comparisons()), "px")),
+            DT::DTOutput(session$ns("contrast_table"))
+          )
+        )
+      )
+    })
+
+    contrast_summary_df <- shiny::reactive({
+      b <- diff_bundle()
+      shiny::req(omicsCore::is_analysis_bundle(b), length(comparisons()) > 1L)
+      omicsCore::summarize_diff_contrasts(
+        b, p_cutoff = fdr_cut_d(),
+        p_preference = if (identical(input$p_kind %||% "adj", "raw")) "raw" else "adjusted",
+        effect_cutoff = fc_cut_d())
+    })
+
+    output$contrast_plot <- shiny::renderPlot({
+      b <- diff_bundle()
+      shiny::req(omicsCore::is_analysis_bundle(b), length(comparisons()) > 1L)
+      omicsCore::plot_diff_contrasts(
+        b, p_cutoff = fdr_cut_d(),
+        p_preference = if (identical(input$p_kind %||% "adj", "raw")) "raw" else "adjusted",
+        effect_cutoff = fc_cut_d())
+    })
+
+    output$contrast_table <- DT::renderDT({
+      s <- contrast_summary_df()
+      out <- data.frame(
+        Comparison = gsub("_vs_", " vs ", s$comparison),
+        Up = s$n_up, Down = s$n_down,
+        `Also in another` = s$n_shared,
+        check.names = FALSE, stringsAsFactors = FALSE)
+      DT::datatable(out, rownames = FALSE, selection = "none",
+                    options = list(dom = "t", pageLength = 50))
+    }, server = TRUE)
+
+    output$run_button <- shiny::renderUI({
+      shiny::actionButton(
+        session$ns("rerun"),
+        if (is.null(diff_bundle())) "Run analysis" else "Re-run",
+        icon = shiny::icon("play"),
+        class = "btn btn-primary", style = "width:100%")
+    })
+
+    if (is.function(navigate)) {
+      shiny::observeEvent(input$go_enrich, navigate("enrich"))
+    }
+
     list(
-      bundle = shiny::reactive(diff_bundle()),
+      bundle = shown_bundle,
+      # Every contrast of the last run, for anything that wants them all.
+      all_bundle = shiny::reactive(diff_bundle()),
       # The layer this ran on. The bundle does not carry it -- a project
       # layer tag is an app concept, not something run_diff() knows --
       # and Enrichment needs it to say which layer its pathways came
@@ -580,6 +731,9 @@ diff_params_card <- function(ns) {
         ),
         param_group(
           "Method",
+          help = paste("auto picks limma for proteomics and log-scale RNA-seq,",
+                       "DESeq2 for raw counts. Engines that do not fit the",
+                       "layer's data are hidden."),
           # Rendered server-side: which engines are valid depends on the
           # active layer's assay, and offering an invalid one produces a
           # complete, plausible, meaningless result table.
@@ -588,15 +742,25 @@ diff_params_card <- function(ns) {
         ),
         param_group(
           "Contrast",
+          help = paste("The control is the reference every other group is compared",
+                       "with. Choose several groups to fit them in one model;",
+                       "'Showing' then picks the comparison on screen."),
           shiny::uiOutput(ns("ui_group_col")),
-          shiny::uiOutput(ns("ui_contrast"))
+          shiny::uiOutput(ns("ui_contrast")),
+          shiny::uiOutput(ns("ui_comparison"))
         ),
         param_group(
           "Covariates",
+          help = paste("Variables to adjust for (age, sex, batch). The group effect",
+                       "is then estimated holding them constant. Leave empty for",
+                       "an unadjusted comparison."),
           shiny::uiOutput(ns("ui_covariates"))
         ),
         param_group(
           "Thresholds",
+          help = paste("Which features count as hits. They filter the table and the",
+                       "counts, and are what Enrichment and Integration use; they",
+                       "do not re-run the model."),
           # Which p to threshold on is the user's call, not ours. An
           # exploratory screen on 50 proteins and a confirmatory one on
           # 20,000 genes want different answers, and forcing adj.P made
@@ -628,11 +792,7 @@ diff_params_card <- function(ns) {
         ),
         htmltools::tags$div(
           style = "margin-top:8px",
-          shiny::actionButton(
-            ns("rerun"), "Re-run",
-            class = "btn btn-primary",
-            style = "width:100%"
-          )
+          shiny::uiOutput(ns("run_button"))
         )
       )
     )
@@ -655,10 +815,7 @@ diff_volcano_card <- function(ns) {
       htmltools::tags$div(
         class = "legend",
         legend_swatch("significant", omics_colors$up),
-        legend_swatch("ns", omics_colors$ns),
-        htmltools::tags$span(class = "muted",
-                             style = "font-size:12px",
-                             "dashed lines mirror the slider thresholds")
+        legend_swatch("ns", omics_colors$ns)
       )
     )
   )
@@ -675,6 +832,46 @@ diff_hits_card <- function(ns) {
       DT::DTOutput(ns("hits"))
     )
   )
+}
+
+# The level a control group is usually called, so the default reference
+# is the control rather than whichever label sorts first ("DMSO" before
+# "Drug", but "Treated" after "Control" only by luck).
+CONTROL_LEVEL_PATTERN <- paste0(
+  "^(ctrl|control|controls|con|dmso|vehicle|veh|mock|sham|untreated|",
+  "placebo|baseline|wt|wild[ _-]?type|normal|healthy|nc|neg|negative|",
+  "blank|t0|0h|day0|d0)$")
+
+default_control_level <- function(levels) {
+  if (!length(levels)) return(NULL)
+  hit <- grepl(CONTROL_LEVEL_PATTERN, trimws(tolower(levels)))
+  if (!any(hit)) {
+    hit <- grepl("(^|[ _-])(ctrl|control|vehicle|dmso|wt)([ _-]|$)",
+                 tolower(levels))
+  }
+  levels[if (any(hit)) which(hit)[1L] else 1L]
+}
+
+# A plain-language reading of the errors a run most often ends in; the
+# message itself stays available under "Technical details".
+diff_error_hint <- function(msg) {
+  msg <- msg %||% ""
+  if (grepl("not a level of", msg, fixed = TRUE)) {
+    return("One of the chosen groups is not in this layer's group column.")
+  }
+  if (grepl("confounded", msg, fixed = TRUE)) {
+    return("A covariate cannot be separated from the groups being compared; remove it.")
+  }
+  if (grepl("missing values", msg, fixed = TRUE)) {
+    return("A covariate or pairing column has empty cells for some samples.")
+  }
+  if (grepl("paired design", msg, fixed = TRUE)) {
+    return("The pairing column does not pair the samples one-to-one across the groups.")
+  }
+  if (grepl("required|not installed", msg)) {
+    return("The chosen method needs a package that is not installed; pick another method.")
+  }
+  "See the technical details below."
 }
 
 # Which layer the view lands on when the user has not chosen one:

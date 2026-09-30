@@ -140,9 +140,11 @@ run_deseq2_group <- function(
   }
   check_paired_col(meta_df, paired_col, object_name = "meta_df")
 
-  meta_df[[group_col]] <- factor(meta_df[[group_col]])
-  target_meta <- meta_df[meta_df[[group_col]] %in% c(control_group, case_group), , drop = FALSE]
-  target_meta[[group_col]] <- factor(target_meta[[group_col]], levels = c(control_group, case_group))
+  group_levels <- c(control_group, case_group)
+  meta_df[[group_col]] <- as.character(meta_df[[group_col]])
+  target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
+                           meta_df[[group_col]] %in% group_levels, , drop = FALSE]
+  target_meta[[group_col]] <- factor(target_meta[[group_col]], levels = group_levels)
   validate_two_group_pairing(
     target_meta,
     group_col = group_col,
@@ -173,20 +175,32 @@ run_deseq2_group <- function(
 
   design_formula <- stats::as.formula(paste("~", paste(design_terms, collapse = " + ")))
   dds <- build_deseq_dataset(input, count_sub, target_meta, design_formula)
-  dds[[group_col]] <- stats::relevel(dds[[group_col]], ref = control_group)
+  dds[[group_col]] <- stats::relevel(dds[[group_col]], ref = as.character(control_group))
   dds <- deseq_with_dispersion_fallback(dds)
 
-  res <- DESeq2::results(dds, contrast = c(group_col, case_group, control_group))
-  raw_df <- as.data.frame(res) |>
-    tibble::rownames_to_column("feature_id")
-
-  comparison <- paste0(case_group, "_vs_", control_group)
-  results_std <- standardize_deseq2_group_results(
-    raw_df = raw_df,
-    feature_df = feature_df,
-    comparison = comparison,
-    omics_type = input$omics_type
-  )
+  # One fit, one dispersion estimate over every group in the model; each
+  # case is then read off it as its own contrast against the control.
+  comparisons <- paste0(case_group, "_vs_", control_group)
+  per <- lapply(seq_along(case_group), function(i) {
+    res <- DESeq2::results(dds, contrast = c(group_col, as.character(case_group[[i]]),
+                                             as.character(control_group)))
+    raw_df <- as.data.frame(res) |>
+      tibble::rownames_to_column("feature_id")
+    std <- standardize_deseq2_group_results(
+      raw_df = raw_df,
+      feature_df = feature_df,
+      comparison = comparisons[[i]],
+      omics_type = input$omics_type
+    )
+    raw_df$comparison <- comparisons[[i]]
+    list(raw = raw_df, std = std)
+  })
+  raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
+  if (length(case_group) == 1L) raw_df$comparison <- NULL
+  results_std <- do.call(rbind, lapply(per, `[[`, "std"))
+  rownames(raw_df) <- NULL
+  rownames(results_std) <- NULL
+  comparison <- comparisons
 
   list(
     results_raw = raw_df,

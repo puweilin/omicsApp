@@ -288,8 +288,21 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     emit("qc", "Quality control", "run_qc", run_qc, input_for("qc"), "qc")
   }
   if (!is.null(bundles$diff)) {
+    # One contrast taken out of a shared fit is reproduced as that fit
+    # followed by the selection. Re-running only its two groups would
+    # give different p-values: the shared fit pools the variance of every
+    # group in the model.
+    all_cases <- bundles$diff$params$all_case_groups
+    shown <- bundles$diff$params$comparison
+    if (length(all_cases) > 1L && length(shown) == 1L) {
+      bundles$diff$params$case_group <- all_cases
+    }
     emit("diff", "Differential analysis", "run_diff", run_diff,
          input_for("diff"), "diff")
+    if (length(all_cases) > 1L && length(shown) == 1L) {
+      lines <- c(lines, sprintf("diff <- select_comparison(diff, %s)",
+                                render_value(shown)))
+    }
   }
   if (!is.null(bundles$gsva)) {
     emit("gsva", "Gene-set variation", "run_gsva", run_gsva,

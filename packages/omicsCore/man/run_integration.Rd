@@ -69,10 +69,22 @@ follows the schema documented in \code{\link[=check_integration_result_schema]{c
 \section{Concordance arguments}{
 
 \itemize{
-\item \code{p_preference} -- \code{"adjusted"} (default) or \code{"raw"}.
+\item \code{p_preference} -- \code{"adjusted"} (default) or \code{"raw"}: which p-value of
+each layer is held to \code{p_cutoff} when deciding whether a feature is a
+hit in that layer. The combined (Fisher) p-value is always built from
+the raw p-values and corrected once across features.
 \item \code{p_cutoff} -- significance cutoff (default \code{0.05}).
+\item \code{effect_cutoff} -- minimum absolute effect in each layer for a
+feature to count as a hit there (default \code{0}, no bound).
 \item \code{p_adjust_method} -- defaults to \code{"BH"}.
 }
+
+Besides the schema columns, the concordance table keeps what each layer
+said on its own: \code{effect_a}, \code{effect_b}, \code{p_value_a}, \code{p_value_b},
+\code{adj_p_value_a}, \code{adj_p_value_b}, \code{significant_a}, \code{significant_b},
+\code{feature_id_a}, \code{feature_id_b}. Features are matched on \code{by}
+ignoring case and surrounding whitespace; where several features of
+one layer share a symbol the most abundant (\code{base_mean}) is kept.
 }
 
 \section{ActivePathways arguments}{
@@ -108,7 +120,7 @@ correction across pathways.
 }
 }
 \seealso{
-Other integration: 
-\code{\link{plot_integration}()}
+Other integration:
+\code{\link[=plot_integration]{plot_integration()}}
 }
 \concept{integration}

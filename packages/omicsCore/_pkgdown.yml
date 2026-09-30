@@ -94,6 +94,9 @@ reference:
   - is_analysis_bundle
   - new_analysis_bundle
   - filter_diff_results
+  - diff_comparisons
+  - select_comparison
+  - summarize_diff_contrasts
   - filter_enrich_results
   - make_ranked_features
 
@@ -113,6 +116,7 @@ reference:
   - plot_pca
   - plot_heatmap
   - plot_volcano
+  - plot_diff_contrasts
   - plot_ma
   - plot_feature_expression
   - plot_enrichment

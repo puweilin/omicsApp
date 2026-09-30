@@ -289,24 +289,38 @@ schema_row <- function(ix, title, desc = NULL, role, confidence,
 #'
 #' @param title Bold lead line.
 #' @param detail Optional secondary line rendered in `.muted`.
-#' @param kind One of `"info"`, `"warn"`. Picks the background colour
-#'   and the leading icon (`info-circle` vs `exclamation-triangle`).
+#' @param kind One of `"info"`, `"warn"`, `"error"`. Picks the background
+#'   colour and the leading icon.
+#' @param technical Optional raw message (an R condition message, say).
+#'   Folded away under "Technical details" so the notice leads with what
+#'   happened in words a user can act on, and the message a developer
+#'   needs is still one click away.
 #'
 #' @return A `<div class="notice ...">` tag.
 #'
 #' @keywords internal
 #' @noRd
-notice <- function(title, detail = NULL, kind = c("info", "warn")) {
+notice <- function(title, detail = NULL, kind = c("info", "warn", "error"),
+                   technical = NULL) {
   kind <- match.arg(kind)
   icon_name <- switch(kind,
-                      info = "info-circle",
-                      warn = "exclamation-triangle")
+                      info  = "info-circle",
+                      warn  = "exclamation-triangle",
+                      error = "x-octagon")
   htmltools::tags$div(
     class = paste0("notice notice-", kind),
+    role = if (kind == "error") "alert" else NULL,
     bsicons::bs_icon(icon_name, class = "icon"),
     htmltools::tags$div(
       htmltools::tags$strong(title),
-      if (!is.null(detail)) htmltools::tags$div(class = "muted", detail)
+      if (!is.null(detail)) htmltools::tags$div(class = "muted", detail),
+      if (!is.null(technical) && length(technical) && nzchar(technical[[1L]])) {
+        htmltools::tags$details(
+          class = "notice-technical",
+          htmltools::tags$summary("Technical details"),
+          htmltools::tags$code(technical)
+        )
+      }
     )
   )
 }
@@ -363,11 +377,33 @@ file_row <- function(name, meta = NULL, size = NULL,
 #'
 #' @keywords internal
 #' @noRd
-param_group <- function(title, ...) {
+param_group <- function(title, ..., help = NULL) {
   htmltools::tags$div(
     class = "param-group",
-    htmltools::tags$h4(title),
+    htmltools::tags$h4(title, if (!is.null(help)) info_tip(help)),
     ...
+  )
+}
+
+#' A question-mark icon that explains a control on hover or focus
+#'
+#' For the statistical choices a user cannot be expected to know the
+#' meaning of (what "auto" picks, what a covariate does, ORA vs GSEA).
+#' Keyboard-reachable: the icon takes focus and the tooltip opens on it.
+#'
+#' @param text The explanation, one or two sentences.
+#' @return A tag.
+#' @keywords internal
+#' @noRd
+info_tip <- function(text) {
+  bslib::tooltip(
+    htmltools::tags$span(
+      class = "info-tip", tabindex = "0", role = "img",
+      `aria-label` = text,
+      bsicons::bs_icon("question-circle")
+    ),
+    text,
+    placement = "right"
   )
 }
 

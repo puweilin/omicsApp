@@ -19,6 +19,10 @@ project_view_ui <- function(id) {
   ns <- shiny::NS(id)
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
+    # First thing on the first page: what this app does, the order to do
+    # it in, and a project to try it on. Replaced by a progress checklist
+    # once a project is loaded.
+    shiny::uiOutput(ns("guide")),
     shiny::uiOutput(ns("stats")),
     shiny::uiOutput(ns("body")),
     shiny::uiOutput(ns("storage"))
@@ -35,7 +39,8 @@ project_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
-                                on_view_layer = function(tag) NULL) {
+                                on_view_layer = function(tag) NULL,
+                                navigate = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # Render against the live project when present, otherwise the
@@ -59,7 +64,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           htmltools::HTML(" &middot; "),
           htmltools::tags$span(
             class = "muted",
-            if (r$is_demo) "demo project (built-in)"
+            if (r$is_demo) "demo data (built-in)"
             else sprintf("%d layer%s loaded",
                          length(r$project$experiments),
                          if (length(r$project$experiments) == 1L) "" else "s")
@@ -104,9 +109,12 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         ),
         stat_card(
           label = "Samples",
-          value = unname(n_samples_per_exp[1L]),
-          trend = sprintf("%d per omics layer",
-                          unname(n_samples_per_exp[1L])),
+          value = sum(n_samples_per_exp),
+          trend = paste(sprintf("%s: %d",
+                                vapply(experiments, project_omics_label,
+                                       character(1)),
+                                n_samples_per_exp),
+                        collapse = " \u00B7 "),
           mono  = TRUE
         ),
         stat_card(
@@ -121,11 +129,13 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           mono  = TRUE
         ),
         stat_card(
-          label  = "Analyses cached",
-          value  = if (r$is_demo) 1L else 0L,
-          trend  = if (r$is_demo) "1 diff (limma, G2 vs G1)"
-                   else "run from the Differential view",
-          accent = if (r$is_demo) "ok" else "brand"
+          label  = "Analyses",
+          value  = if (r$is_demo) 0L else length(r$project$bundles),
+          trend  = if (r$is_demo) "load a project to run them"
+                   else if (length(r$project$bundles))
+                     paste(names(r$project$bundles), collapse = " \u00B7 ")
+                   else "none yet \u2014 start with Quality control",
+          accent = if (!r$is_demo && length(r$project$bundles)) "ok" else "brand"
         )
       )
     })
@@ -137,6 +147,58 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         project_experiments_card(r$project$experiments, ns = session$ns),
         project_activity_card(r$project, is_demo = r$is_demo)
       )
+    })
+
+    # ---- getting started ---------------------------------------------
+    output$guide <- shiny::renderUI({
+      proj <- current_project()
+      if (is.null(proj)) return(welcome_card(session$ns))
+      workflow_card(proj, session$ns, can_navigate = is.function(navigate))
+    })
+
+    shiny::observeEvent(input$load_tutorial, {
+      proj <- current_project()
+      if (!is.null(proj) && length(proj$experiments)) {
+        # Replacing a user's project is not something a tutorial button
+        # does without asking.
+        shiny::showModal(shiny::modalDialog(
+          title = "Replace the current project with the example?",
+          htmltools::tags$p("The example project replaces what is loaded now. ",
+                            "Save your project first if you want to keep it."),
+          footer = htmltools::tagList(
+            shiny::modalButton("Cancel"),
+            shiny::actionButton(session$ns("confirm_tutorial"), "Load example",
+                                class = "btn btn-primary")),
+          easyClose = TRUE))
+        return()
+      }
+      current_project(tutorial_project())
+      shiny::showNotification(
+        "Example project loaded: proteomics + RNA-seq, Control vs TreatA / TreatB.",
+        type = "message")
+    })
+
+    shiny::observeEvent(input$confirm_tutorial, {
+      shiny::removeModal()
+      current_project(tutorial_project())
+    })
+
+    shiny::observeEvent(input$go_next, {
+      proj <- current_project()
+      if (is.null(proj) || !is.function(navigate)) return()
+      navigate(WORKFLOW_STEPS$id[workflow_progress(proj)$next_step])
+    })
+
+    # The welcome card's button and the checklist's Import row share this id.
+    shiny::observeEvent(input$go_import, {
+      if (is.function(navigate)) navigate("import")
+    })
+
+    for (step in setdiff(WORKFLOW_STEPS$id, "import")) local({
+      target <- step
+      shiny::observeEvent(input[[paste0("go_", target)]], {
+        if (is.function(navigate)) navigate(target)
+      }, ignoreInit = TRUE)
     })
 
     # One observer per experiment row, registered the first time a row
@@ -287,7 +349,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
             if (!have_project) {
               htmltools::tags$div(
                 class = "muted", style = "font-size:12px;padding-top:8px",
-                "The built-in demo cannot be saved \u2014 import a file first."
+                "The built-in demo cannot be saved \u2014 import a file or load the example project first."
               )
             },
             if (!is.null(stamp)) {
@@ -321,21 +383,41 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         overwrite = isTRUE(input$save_overwrite)
       )
       shiny::showNotification(res$message,
-                              type = if (isTRUE(res$ok)) "message" else "error")
+                              type = if (isTRUE(res$ok)) "message" else "error",
+                              duration = if (isTRUE(res$ok)) 5 else NULL)
       if (isTRUE(res$ok)) bump_store()
     })
 
     shiny::observeEvent(input$open_project, {
       res <- store_load_project(input$saved_pick %||% NA_character_)
       shiny::showNotification(res$message,
-                              type = if (isTRUE(res$ok)) "message" else "error")
+                              type = if (isTRUE(res$ok)) "message" else "error",
+                              duration = if (isTRUE(res$ok)) 5 else NULL)
       if (isTRUE(res$ok)) current_project(res$project)
     })
 
+    # Confirmed, as removing a layer is: a deleted project file does not
+    # come back.
     shiny::observeEvent(input$delete_project, {
+      slug <- input$saved_pick %||% NA_character_
+      if (is.na(slug) || !nzchar(slug)) return()
+      shiny::showModal(shiny::modalDialog(
+        title = sprintf("Delete saved project '%s'?", slug),
+        htmltools::tags$p("The saved file is removed from the server. ",
+                          "This cannot be undone."),
+        footer = htmltools::tagList(
+          shiny::modalButton("Cancel"),
+          shiny::actionButton(session$ns("confirm_delete_project"), "Delete",
+                              class = "btn btn-danger")),
+        easyClose = TRUE))
+    })
+
+    shiny::observeEvent(input$confirm_delete_project, {
+      shiny::removeModal()
       res <- store_delete_project(input$saved_pick %||% NA_character_)
       shiny::showNotification(res$message,
-                              type = if (isTRUE(res$ok)) "message" else "error")
+                              type = if (isTRUE(res$ok)) "message" else "error",
+                              duration = if (isTRUE(res$ok)) 5 else NULL)
       if (isTRUE(res$ok)) bump_store()
     })
 
@@ -372,6 +454,143 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 }
 
 # ---- internal helpers ------------------------------------------------
+
+# The order the views are meant to be used in, and what each is for, in
+# one place so the welcome card and the checklist cannot disagree.
+WORKFLOW_STEPS <- data.frame(
+  id = c("import", "qc", "diff", "enrich", "integration", "report"),
+  label = c("Import", "Quality control", "Differential", "Enrichment",
+            "Integration", "Report"),
+  desc = c(
+    "Upload a workbook or CSV per omics layer; confirm the detected matrix, metadata and features.",
+    "Look for missing values, outlier samples and batch structure before testing anything.",
+    "Compare groups: one control against one or more treatments, with optional covariates.",
+    "Ask which pathways the differential hits fall in (ORA / GSEA, MSigDB).",
+    "Put two layers side by side: do RNA and protein change together?",
+    "Download the report, the result tables and an R script that reproduces them."
+  ),
+  bundle = c(NA, "qc", "diff", "enrich", "integration", NA),
+  tip = c(
+    "The example is already imported: two layers, 12 samples each, sample ids differ but a donor column pairs them.",
+    "Colour the PCA by 'group' \u2014 TreatA and TreatB separate from Control along PC1/PC2.",
+    "Leave Control as the reference and keep both treatments selected, then press Run analysis. Switch between the two comparisons with 'Showing'.",
+    "With 'TreatA vs Control' shown, ORA on Hallmark should find INFLAMMATORY_RESPONSE at the top.",
+    "Concordance repeats the contrast on RNA-seq. Try 'Sample-level correlation' too \u2014 the donor column pairs the samples.",
+    "Everything run so far is in the report and the script."
+  ),
+  stringsAsFactors = FALSE
+)
+
+is_tutorial_project <- function(proj) {
+  isTRUE(startsWith(proj$name %||% "", "Tutorial"))
+}
+
+welcome_card <- function(ns) {
+  steps <- WORKFLOW_STEPS
+  bslib::card(
+    class = "welcome-card",
+    bslib::card_header(
+      htmltools::tags$h3(class = "card-title", "Welcome to omicsApp"),
+      htmltools::tags$span(class = "card-sub",
+                           "proteomics + transcriptomics, from upload to report")
+    ),
+    bslib::card_body(
+      htmltools::tags$p(
+        "omicsApp takes one or more omics layers from the same study through ",
+        "quality control, differential analysis, pathway enrichment and ",
+        "RNA\u2013protein integration. The pages show built-in demo data ",
+        "until you load a project."
+      ),
+      htmltools::tags$ol(
+        class = "workflow-list",
+        lapply(seq_len(nrow(steps)), function(i) {
+          htmltools::tags$li(
+            htmltools::tags$strong(steps$label[i]), " \u2014 ", steps$desc[i])
+        })
+      ),
+      htmltools::tags$div(
+        class = "welcome-actions",
+        shiny::actionButton(ns("load_tutorial"), "Try the example project",
+                            icon = shiny::icon("graduation-cap"),
+                            class = "btn btn-primary"),
+        shiny::actionButton(ns("go_import"), "Import my own data",
+                            icon = shiny::icon("upload"),
+                            class = "btn btn-outline-primary")
+      ),
+      htmltools::tags$div(
+        class = "muted", style = "font-size:12px;margin-top:8px",
+        "The example is small and synthetic (two layers, 252 genes, a control ",
+        "and two treatments), and every step of the workflow finds something in it. ",
+        "Templates for your own files are on the Import page."
+      )
+    )
+  )
+}
+
+# Which steps a project has been through, and which comes next: the
+# first not done, skipping Integration when there is only one layer.
+workflow_progress <- function(proj) {
+  steps <- WORKFLOW_STEPS
+  have <- names(proj$bundles %||% list())
+  n_layers <- length(proj$experiments)
+  done <- vapply(seq_len(nrow(steps)), function(i) {
+    if (steps$id[i] == "import") return(n_layers > 0L)
+    if (steps$id[i] == "report") return(FALSE)
+    !is.na(steps$bundle[i]) && steps$bundle[i] %in% have
+  }, logical(1))
+  skip <- steps$id == "integration" & n_layers < 2L
+  nxt <- which(!done & !skip)[1L]
+  if (is.na(nxt)) nxt <- nrow(steps)
+  list(done = done, skip = skip, next_step = nxt)
+}
+
+workflow_card <- function(proj, ns, can_navigate = TRUE) {
+  steps <- WORKFLOW_STEPS
+  prog <- workflow_progress(proj)
+  done <- prog$done
+  skip <- prog$skip
+  nxt <- prog$next_step
+  tutorial <- is_tutorial_project(proj)
+
+  items <- lapply(seq_len(nrow(steps)), function(i) {
+    state <- if (done[i]) "done" else if (i == nxt) "active" else "pending"
+    desc <- if (skip[i]) "needs a second layer" else NULL
+    htmltools::tags$div(
+      class = "workflow-step",
+      step_item(i, steps$label[i], desc, state = state),
+      if (can_navigate) {
+        htmltools::tags$button(
+          id = ns(paste0("go_", steps$id[i])), type = "button",
+          class = "btn btn-sm btn-link action-button", "Open")
+      }
+    )
+  })
+  bslib::card(
+    class = "workflow-card",
+    bslib::card_header(
+      htmltools::tags$h3(class = "card-title",
+                         if (tutorial) "Tutorial" else "Workflow"),
+      htmltools::tags$span(class = "card-sub",
+                           sprintf("next: %s", steps$label[nxt]))
+    ),
+    bslib::card_body(
+      htmltools::tags$div(class = "workflow-steps", items),
+      htmltools::tags$div(
+        class = "workflow-next",
+        htmltools::tags$div(
+          htmltools::tags$strong(sprintf("Step %d \u00B7 %s", nxt, steps$label[nxt])),
+          htmltools::tags$div(class = "muted",
+                              if (tutorial) steps$tip[nxt] else steps$desc[nxt])
+        ),
+        if (can_navigate) {
+          shiny::actionButton(ns("go_next"),
+                              sprintf("Go to %s \u2192", steps$label[nxt]),
+                              class = "btn btn-primary btn-sm")
+        }
+      )
+    )
+  )
+}
 
 # Compact listing under the project picker: size and last-modified for
 # each saved `.omp`, so a user can tell two similarly-named projects
@@ -510,17 +729,13 @@ project_activity_card <- function(project, is_demo = TRUE) {
     bslib::card_body(
       style = "padding-top:8px",
       if (isTRUE(is_demo)) {
-        htmltools::tagList(
-          bullet("--brand-500", "Differential \u00B7 Proteomics \u00B7 limma",
-                 "G2 vs G1, age-adjusted \u00B7 just now"),
-          bullet("--ok",        "Imported RNA-seq experiment",
-                 sprintf("%d samples \u00B7 just now",
-                         ncol(example_input("rnaseq")$expr_mat))),
-          bullet("--ok",        "Imported Proteomics experiment",
-                 sprintf("%d samples \u00B7 just now",
-                         ncol(example_proteomics_input()$expr_mat))),
-          bullet("--accent-500","Created demo project",
-                 "Cheek \u00B7 G2 vs G1 \u00B7 just now")
+        # Nothing has happened yet, and the card says so. It used to list
+        # a limma run "just now" that no view had performed -- the
+        # Differential page then opened empty, contradicting it.
+        htmltools::tags$div(
+          class = "muted", style = "font-size:12px",
+          "Nothing yet. Load the example project or import a file, and the ",
+          "layers and analyses appear here."
         )
       } else {
         experiments <- project$experiments
@@ -541,6 +756,17 @@ project_activity_card <- function(project, is_demo = TRUE) {
                 sprintf("tag = %s \u00B7 %d samples \u00B7 %d features",
                         tag, ncol(exp$expr_mat), nrow(exp$expr_mat))
               )
+            }),
+            lapply(names(project$bundles %||% list()), function(nm) {
+              b <- project$bundles[[nm]]
+              what <- switch(nm, qc = "Quality control", diff = "Differential",
+                             enrich = "Enrichment", integration = "Integration", nm)
+              prm <- if (is.list(b)) b$params else NULL
+              detail <- paste(c(prm$method, prm$comparison, prm$type,
+                                prm$database),
+                              collapse = " \u00B7 ")
+              bullet("--accent-500", what,
+                     gsub("_vs_", " vs ", if (nzchar(detail)) detail else "done"))
             })
           )
         }

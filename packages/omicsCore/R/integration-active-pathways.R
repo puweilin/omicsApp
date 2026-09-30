@@ -56,14 +56,27 @@ run_integration_active_pathways <- function(
     stop("`", by, "` must be a column in both diff_result_df's.")
   }
 
+  for (side in list(list(res_a, tag_a), list(res_b, tag_b))) {
+    n_cmp <- length(unique(stats::na.omit(side[[1L]]$comparison)))
+    if (n_cmp > 1L) {
+      stop("The diff result for '", side[[2L]], "' holds ", n_cmp,
+           " comparisons; pick one with `select_comparison()` before ",
+           "integrating.", call. = FALSE)
+    }
+  }
+
   p_col <- if (p_preference == "adjusted") "adj_p_value" else "p_value"
 
+  # Same key rules as concordance: case-insensitive symbols, one row per
+  # gene (the most abundant), so the two methods integrate the same genes.
   build_score <- function(df) {
-    sub <- df[, c(by, p_col), drop = FALSE]
-    names(sub) <- c("key", "p")
-    sub <- sub[!is.na(sub$key) & nzchar(sub$key), , drop = FALSE]
-    sub <- sub[!duplicated(sub$key), , drop = FALSE]
-    sub
+    key <- integration_join_key(df[[by]])
+    keep <- !is.na(key)
+    df <- df[keep, , drop = FALSE]
+    key <- key[keep]
+    idx <- dedupe_by_key(key, df$base_mean)
+    data.frame(key = key[idx], p = as.numeric(df[[p_col]][idx]),
+               stringsAsFactors = FALSE)
   }
   s_a <- build_score(res_a)
   s_b <- build_score(res_b)
@@ -122,8 +135,22 @@ run_integration_active_pathways <- function(
     if (is.null(x) || length(x) == 0L) return(NA_character_)
     paste(as.character(unlist(x)), collapse = ",")
   }, character(1))
-  shared <- !is.na(evidence_str) & vapply(strsplit(evidence_str, ","),
-                                          function(x) length(x) >= 2L, logical(1))
+  # `evidence` names the layers whose own p-values found the pathway, or
+  # "combined" when only the merged p-value did. Two layers is "shared";
+  # one layer is "unique"; "combined" alone is its own class -- the
+  # pathway exists only because the layers were merged, which is the
+  # finding ActivePathways is for, and it used to be filed as "unique".
+  ev_sets <- strsplit(ifelse(is.na(evidence_str), "", evidence_str), ",")
+  evidence_class <- vapply(ev_sets, function(x) {
+    x <- trimws(x)
+    x <- x[nzchar(x)]
+    if (!length(x)) return(NA_character_)
+    layers <- intersect(x, c(tag_a, tag_b))
+    if (length(layers) >= 2L) "shared"
+    else if (length(layers) == 1L) "unique"
+    else if ("combined" %in% x) "combined"
+    else NA_character_
+  }, character(1))
 
   out <- data.frame(
     feature_id = as.character(ap_df$term_id),
@@ -141,7 +168,7 @@ run_integration_active_pathways <- function(
     statistic_type = "adjusted_p_val",
     p_value = as.numeric(ap_df$adjusted_p_val),
     adj_p_value = as.numeric(ap_df$adjusted_p_val),
-    direction = ifelse(shared, "shared", "unique"),
+    direction = evidence_class,
     quadrant = evidence_str,
     is_significant = !is.na(ap_df$adjusted_p_val) & ap_df$adjusted_p_val < significant,
     source_label = paste0("integration_active_pathways_", tag_a, "_", tag_b),

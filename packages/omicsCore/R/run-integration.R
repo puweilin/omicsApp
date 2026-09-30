@@ -47,9 +47,21 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #' * `p_cutoff` -- significance cutoff (default `0.05`).
 #'
 #' @section Concordance arguments:
-#' * `p_preference` -- `"adjusted"` (default) or `"raw"`.
+#' * `p_preference` -- `"adjusted"` (default) or `"raw"`: which p-value of
+#'   each layer is held to `p_cutoff` when deciding whether a feature is a
+#'   hit in that layer. The combined (Fisher) p-value is always built from
+#'   the raw p-values and corrected once across features.
 #' * `p_cutoff` -- significance cutoff (default `0.05`).
+#' * `effect_cutoff` -- minimum absolute effect in each layer for a
+#'   feature to count as a hit there (default `0`, no bound).
 #' * `p_adjust_method` -- defaults to `"BH"`.
+#'
+#' Besides the schema columns, the concordance table keeps what each layer
+#' said on its own: `effect_a`, `effect_b`, `p_value_a`, `p_value_b`,
+#' `adj_p_value_a`, `adj_p_value_b`, `significant_a`, `significant_b`,
+#' `feature_id_a`, `feature_id_b`. Features are matched on `by`
+#' ignoring case and surrounding whitespace; where several features of
+#' one layer share a symbol the most abundant (`base_mean`) is kept.
 #'
 #' @section ActivePathways arguments:
 #' * `database` -- MSigDB shorthand (default `"hallmark"`).
@@ -132,6 +144,8 @@ run_integration <- function(
     p_preference <- dots$p_preference %||% "adjusted"
     p_cutoff <- dots$p_cutoff %||% 0.05
     p_adjust_method <- dots$p_adjust_method %||% "BH"
+    effect_cutoff <- dots$effect_cutoff %||% 0
+    assert_number(effect_cutoff, "effect_cutoff", lower = 0)
 
     backend <- run_integration_concordance(
       project = project,
@@ -140,7 +154,8 @@ run_integration <- function(
       by = by,
       p_preference = p_preference,
       p_cutoff = p_cutoff,
-      p_adjust_method = p_adjust_method
+      p_adjust_method = p_adjust_method,
+      effect_cutoff = effect_cutoff
     )
     integration_df <- backend$std
     integration_raw <- NULL
@@ -148,6 +163,7 @@ run_integration <- function(
     method_params <- list(
       p_preference = p_preference,
       p_cutoff = p_cutoff,
+      effect_cutoff = effect_cutoff,
       p_adjust_method = p_adjust_method
     )
   } else {
@@ -220,10 +236,19 @@ run_integration <- function(
     results$integration_raw <- integration_raw
   }
 
+  warns <- character(0)
+  n_amb <- method_info$n_ambiguous_samples %||% 0L
+  if (n_amb > 0L) {
+    warns <- c(warns, sprintf(
+      "%d sample(s) share a donor with another sample of the same layer and were left out of the pairing; only one sample per donor and layer is correlated.",
+      n_amb))
+  }
+
   new_analysis_bundle(
     analysis_name = "run_integration",
     input_info = input_info,
     params = params,
-    results = results
+    results = results,
+    warnings = warns
   )
 }

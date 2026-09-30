@@ -34,8 +34,8 @@ qc_view_ui <- function(id) {
           )
         ),
         bslib::card_body(
-          shiny::plotOutput(ns("pca"), height = "360px"),
-          shiny::uiOutput(ns("pca_legend"))
+          shiny::uiOutput(ns("pca_color_picker")),
+          shiny::plotOutput(ns("pca"), height = "360px")
         )
       ),
       bslib::card(
@@ -59,8 +59,12 @@ qc_view_ui <- function(id) {
 #' @noRd
 qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                            invalidate = shiny::reactiveVal(0L),
-                           requested_layer = shiny::reactiveVal(NULL)) {
+                           requested_layer = shiny::reactiveVal(NULL),
+                           navigate = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
+    if (is.function(navigate)) {
+      shiny::observeEvent(input$go_next, navigate("diff"))
+    }
 
     # Active experiment selection. A tag asked for from elsewhere (the
     # Project view's "View" link) wins, provided it still names a layer
@@ -251,6 +255,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       omics <- if (is.null(bundle)) "\u2014" else omics_display(bundle$input_info$omics_type)
       view_header(
         title    = "Quality control",
+        actions  = if (is.function(navigate) && !a$is_demo) {
+          shiny::actionButton(session$ns("go_next"), "Next: Differential \u2192",
+                              class = "btn btn-ghost")
+        },
         subtitle = htmltools::tagList(
           omics,
           htmltools::HTML(" &middot; "),
@@ -260,7 +268,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           htmltools::HTML(" &middot; "),
           htmltools::tags$span(
             class = "muted",
-            if (a$is_demo) "demo project (built-in)"
+            if (a$is_demo) "demo data (built-in)"
             else sprintf("layer = %s", a$tag)
           )
         )
@@ -321,28 +329,49 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       )
     })
 
-    output$pca <- shiny::renderPlot({
-      bundle <- last_bundle()
-      shiny::req(bundle)
-      color_by <- if ("group" %in% names(bundle$results$cleaned_input$meta_df))
-        "group" else NULL
-      omicsCore::plot_qc(bundle, view = "pca", color_by = color_by)
-    })
-
-    output$pca_legend <- shiny::renderUI({
+    # Which metadata column colours the samples. It used to be a column
+    # literally called `group` or nothing -- so the app's own template,
+    # whose column is `condition`, drew an uncoloured PCA -- and the
+    # legend under the plot was four fixed CSS colours that stopped
+    # matching the points from the fifth group on. Now the column is the
+    # user's choice (the Differential view's best guess by default) and
+    # the legend is the plot's own.
+    pca_color_choices <- shiny::reactive({
       bundle <- last_bundle()
       shiny::req(bundle)
       meta <- bundle$results$cleaned_input$meta_df
-      if (!"group" %in% names(meta)) return(NULL)
-      groups <- sort(unique(as.character(meta$group)))
-      colors <- c("var(--brand-600)", "var(--omics-down)",
-                  "var(--accent-500)", "var(--ok)")
+      if (is.null(meta) || !ncol(meta)) return(character(0))
+      cands <- grouping_candidates(meta)
+      extra <- setdiff(names(meta)[vapply(meta, function(x) {
+        n <- length(unique(stats::na.omit(x)))
+        n >= 2L && n < nrow(meta)
+      }, logical(1))], cands)
+      c(cands, extra)
+    })
+
+    output$pca_color_picker <- shiny::renderUI({
+      ch <- pca_color_choices()
+      if (!length(ch)) return(NULL)
+      sel <- shiny::isolate(input$pca_color_by)
+      if (is.null(sel) || !sel %in% c(ch, "(none)")) sel <- ch[[1L]]
       htmltools::tags$div(
-        class = "legend",
-        lapply(seq_along(groups), function(i) {
-          legend_swatch(groups[i], colors[((i - 1L) %% length(colors)) + 1L])
-        })
-      )
+        class = "inline-control",
+        shiny::selectInput(session$ns("pca_color_by"), label = "Colour by",
+                           choices = c(ch, "(none)"), selected = sel,
+                           width = "220px"))
+    })
+
+    output$pca <- shiny::renderPlot({
+      bundle <- last_bundle()
+      shiny::req(bundle)
+      ch <- pca_color_choices()
+      color_by <- input$pca_color_by
+      if (is.null(color_by) || !color_by %in% ch) {
+        color_by <- if (length(ch)) ch[[1L]] else NULL
+      }
+      if (identical(input$pca_color_by, "(none)")) color_by <- NULL
+      p <- omicsCore::plot_qc(bundle, view = "pca", color_by = color_by)
+      p + ggplot2::theme(legend.position = "bottom")
     })
 
     # Which quality panel this modality is actually asking about.
@@ -455,7 +484,9 @@ qc_controls_card <- function(ns) {
         class = "row-grid r-6-6",
         shiny::sliderInput(
           ns("missing_threshold"),
-          label = "Feature missing-rate cutoff",
+          label = htmltools::tagList(
+            "Feature missing-rate cutoff",
+            info_tip("Features missing in more than this fraction of samples are filtered out of the QC view.")),
           min   = 0,
           max   = 1,
           value = 0.5,
@@ -463,7 +494,9 @@ qc_controls_card <- function(ns) {
         ),
         shiny::radioButtons(
           ns("outlier_method"),
-          label   = "Outlier detection",
+          label   = htmltools::tagList(
+            "Outlier detection",
+            info_tip("How samples are flagged: IQR of per-sample summaries, distance in PCA space, or low connectivity (correlation) to the other samples.")),
           choices = c("IQR" = "iqr",
                       "PCA" = "pca",
                       "Connectivity" = "connectivity"),
@@ -473,7 +506,17 @@ qc_controls_card <- function(ns) {
       ),
       # Proteomics only, and rendered from the server because the choices
       # depend on the layer and on which optional packages are installed.
-      shiny::uiOutput(ns("ui_impute"))
+      shiny::uiOutput(ns("ui_impute")),
+      # Said here because the controls look as though they reach the
+      # analysis: they do not. Differential and Integration read the
+      # imported matrix, and a user who filtered here and then read a
+      # volcano would otherwise assume the filter was applied.
+      htmltools::tags$div(
+        class = "muted", style = "font-size:11.5px;margin-top:6px",
+        bsicons::bs_icon("info-circle"),
+        " These settings shape the QC view only. The Differential and",
+        " Integration views analyse the imported matrix."
+      )
     )
   )
 }

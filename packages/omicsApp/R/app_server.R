@@ -88,14 +88,18 @@ app_server <- function(input, output, session) {
                       on_view_layer = function(tag) {
                         requested_layer(tag)
                         set_view("qc")
-                      })
+                      },
+                      navigate = set_view)
   imported_input <- import_view_server("import",
-                        current_project = current_project)
+                        current_project = current_project,
+                        navigate = set_view)
   qc_bundle <- qc_view_server("qc", current_project = current_project,
                               invalidate = layer_generation,
-                              requested_layer = requested_layer)
+                              requested_layer = requested_layer,
+                              navigate = set_view)
   diff_view <- diff_view_server("diff", current_project = current_project,
-                                invalidate = layer_generation)
+                                invalidate = layer_generation,
+                                navigate = set_view)
   diff_bundle <- diff_view$bundle
   # Enrichment reads the same thresholds the hit table is read at.
   # Without this it applied its own -- adjusted p at 0.05, no
@@ -104,11 +108,17 @@ app_server <- function(input, output, session) {
   enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
                                       diff_thresholds = diff_view$thresholds,
                                       diff_layer = diff_view$layer,
-                                      invalidate = layer_generation)
+                                      invalidate = layer_generation,
+                                      navigate = set_view)
+  # Integration repeats the diff's contrast on the partner layer, on the
+  # layer the diff actually ran on, at the thresholds its hits are read at.
   integration_bundle <- integration_view_server("integration",
                           current_project = current_project,
                           diff_bundle     = diff_bundle,
-                          invalidate      = layer_generation)
+                          invalidate      = layer_generation,
+                          diff_layer      = diff_view$layer,
+                          diff_thresholds = diff_view$thresholds,
+                          navigate        = set_view)
   report_view_server("report", current_project = current_project)
 
   # ---- which data the views' results belong to -------------------------

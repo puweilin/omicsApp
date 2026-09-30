@@ -118,6 +118,24 @@ validate_two_group_pairing <- function(
   pair_df <- pair_df[!is.na(pair_df$pair_id) & !is.na(pair_df$group_id), , drop = FALSE]
 
   pair_levels <- split(pair_df$group_id, pair_df$pair_id)
+  if (length(case_group) > 1L) {
+    # Several case groups against one control: a block (a donor, a
+    # litter) needs its control sample and at least one case, and no
+    # group twice -- it need not have been given every treatment.
+    bad_pairs <- names(Filter(function(x) {
+      x <- as.character(x)
+      anyDuplicated(x) > 0L || !(as.character(control_group) %in% x) ||
+        length(x) < 2L
+    }, pair_levels))
+    if (length(bad_pairs) > 0) {
+      stop(
+        "Invalid paired design in `", object_name, "` for `paired_col = '", paired_col, "'`. ",
+        "Each block must contain one `", control_group, "` sample and at least one case sample, ",
+        "with no group repeated. Problematic blocks: ", paste(bad_pairs, collapse = ", ")
+      )
+    }
+    return(invisible(TRUE))
+  }
   bad_pairs <- names(Filter(function(x) {
     length(x) != 2L ||
       !setequal(as.character(x), c(control_group, case_group))
@@ -217,6 +235,16 @@ assert_label <- function(x, arg, allow_null = FALSE) {
   ok <- (is.character(x) || is.numeric(x) || is.factor(x)) &&
     length(x) == 1L && !is.na(x)
   if (!ok) arg_stop(arg, "a single value (a string or a number)", x)
+  invisible(x)
+}
+
+# One or more labels (strings or numbers), none missing, no repeats.
+assert_labels <- function(x, arg, allow_null = FALSE) {
+  if (is.null(x) && allow_null) return(invisible(NULL))
+  if (is.factor(x)) x <- as.character(x)
+  ok <- (is.character(x) || is.numeric(x)) && length(x) >= 1L &&
+    !anyNA(x) && !anyDuplicated(x)
+  if (!ok) arg_stop(arg, "one or more distinct values (strings or numbers)", x)
   invisible(x)
 }
 

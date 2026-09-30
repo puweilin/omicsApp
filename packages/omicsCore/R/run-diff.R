@@ -70,7 +70,11 @@ auto_select_diff_method <- function(input, analysis_type) {
   prefer <- if (input$omics_type == "rnaseq" &&
                 identical(input$assay_type, "raw_count")) {
     "deseq2"
-  } else if (input$omics_type == "proteomics") {
+  } else if (input$omics_type == "proteomics" ||
+             isTRUE(input$assay_type %in% LOG_SCALE_ASSAY_TYPES)) {
+    # Log-scale RNA-seq (vst, logCPM) is what limma is for. It used to
+    # fall through to the t-test, which has no covariates: a user who
+    # asked for an age-adjusted comparison got an unadjusted one.
     "limma"
   } else {
     NA_character_
@@ -119,10 +123,10 @@ dispatch_diff_backend <- function(input, method, analysis_type, args) {
     return(call_backend(run_edger_group, args))
   }
   if (method == "ttest" && analysis_type == "group") {
-    return(call_backend(run_ttest_group, args))
+    return(loop_case_groups(run_ttest_group, input, args))
   }
   if (method == "lm" && analysis_type == "group") {
-    return(call_backend(run_lm_group, args))
+    return(loop_case_groups(run_lm_group, input, args))
   }
   if (method == "lm" && analysis_type == "continuous") {
     return(call_backend(run_lm_continuous, args))
@@ -131,6 +135,36 @@ dispatch_diff_backend <- function(input, method, analysis_type, args) {
   stop(
     "Unsupported combination: omics_type = ", input$omics_type,
     ", method = ", method, ", analysis_type = ", analysis_type
+  )
+}
+
+# The t-test and per-feature lm have no shared model to fit several
+# groups into, so several case groups are several two-group runs, stacked
+# into one table under their `comparison` labels.
+loop_case_groups <- function(fun, input, args) {
+  cases <- args$case_group
+  if (length(cases) <= 1L) return(do.call(fun, c(list(input = input), args)))
+  runs <- lapply(cases, function(cg) {
+    a <- args
+    a$case_group <- cg
+    do.call(fun, c(list(input = input), a))
+  })
+  raw <- lapply(seq_along(runs), function(i) {
+    r <- runs[[i]]$results_raw
+    if (is.data.frame(r)) r$comparison <- runs[[i]]$analysis_info$comparison
+    r
+  })
+  info <- runs[[1L]]$analysis_info
+  info$comparison <- vapply(runs, function(r) r$analysis_info$comparison,
+                            character(1))
+  std <- do.call(rbind, lapply(runs, `[[`, "results_std"))
+  rownames(std) <- NULL
+  raw <- if (all(vapply(raw, is.data.frame, logical(1)))) do.call(rbind, raw) else raw
+  list(
+    results_raw = raw,
+    results_std = std,
+    model_object = lapply(runs, `[[`, "model_object"),
+    analysis_info = info
   )
 }
 
@@ -159,7 +193,12 @@ dispatch_diff_backend <- function(input, method, analysis_type, args) {
 #' @param analysis_type One of `"group"`, `"continuous"`, or `"anova"`.
 #' @param group_col Group column in sample metadata (group/anova).
 #' @param control_group Control-group label (group only).
-#' @param case_group Case-group label (group only).
+#' @param case_group Case-group label (group only). Several labels run
+#'   every one of them against `control_group` in one call: limma, DESeq2
+#'   and edgeR fit all the groups in a single model (so the contrasts share
+#'   one variance / dispersion estimate), the t-test and lm backends run
+#'   each pair in turn. The contrasts are stacked in `diff_result_df` under
+#'   their `comparison` labels; use [select_comparison()] to take one out.
 #' @param continuous_col Continuous metadata column (continuous only).
 #' @param covariates Optional character vector of covariate column names.
 #' @param paired_col Optional pairing/block column.
@@ -204,7 +243,7 @@ run_diff <- function(
   if (length(selected_groups) == 0L) selected_groups <- NULL
   assert_string(group_col, "group_col", allow_null = TRUE)
   assert_label(control_group, "control_group", allow_null = TRUE)
-  assert_label(case_group, "case_group", allow_null = TRUE)
+  assert_labels(case_group, "case_group", allow_null = TRUE)
   assert_string(continuous_col, "continuous_col", allow_null = TRUE)
   assert_names(covariates, "covariates", allow_null = TRUE)
   assert_string(paired_col, "paired_col", allow_null = TRUE)
@@ -243,7 +282,17 @@ run_diff <- function(
 
   # Drop arguments the chosen backend doesn't accept (e.g. ttest has no
   # `covariates`, lm/ttest have no `paired_col`-via-limma corfit, ...).
+  # Said out loud: an adjustment that was asked for and not made is a
+  # different analysis from the one the label on the result describes.
+  pruned <- setdiff(names(Filter(Negate(is.null), backend_args)),
+                    names(prune_backend_args(method, analysis_type, backend_args)))
   backend_args <- prune_backend_args(method, analysis_type, backend_args)
+  if (length(pruned)) {
+    note <- sprintf("method = '%s' does not support %s; it was ignored.",
+                    method, paste(sprintf("`%s`", pruned), collapse = ", "))
+    warning(note, call. = FALSE)
+    pre$warnings <- c(pre$warnings, note)
+  }
 
   extra_args <- list(...)
   backend_result <- dispatch_diff_backend(
@@ -333,22 +382,24 @@ validate_diff_design <- function(input, analysis_type, args) {
     levels_present <- unique(as.character(meta[[group_col]]))
     levels_present <- levels_present[!is.na(levels_present)]
     for (nm in c("control_group", "case_group")) {
-      if (!args[[nm]] %in% levels_present) {
-        stop(sprintf(
-          "`%s` '%s' is not a level of `%s`. Levels present: %s.",
-          nm, args[[nm]], group_col,
-          paste(sprintf("'%s'", levels_present), collapse = ", ")
-        ), call. = FALSE)
+      for (lv in args[[nm]]) {
+        if (!lv %in% levels_present) {
+          stop(sprintf(
+            "`%s` '%s' is not a level of `%s`. Levels present: %s.",
+            nm, lv, group_col,
+            paste(sprintf("'%s'", levels_present), collapse = ", ")
+          ), call. = FALSE)
+        }
       }
     }
-    if (identical(args$control_group, args$case_group)) {
+    if (as.character(args$control_group) %in% as.character(args$case_group)) {
       stop("`control_group` and `case_group` must be distinct.", call. = FALSE)
     }
     keep <- !is.na(meta[[group_col]]) &
       meta[[group_col]] %in% c(args$control_group, args$case_group)
     sub <- meta[keep, , drop = FALSE]
     primary <- factor(sub[[group_col]],
-                      levels = c(args$control_group, args$case_group))
+                      levels = as.character(c(args$control_group, args$case_group)))
   } else {
     cont <- args$continuous_col
     if (!cont %in% colnames(meta)) {

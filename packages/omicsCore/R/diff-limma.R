@@ -48,9 +48,15 @@ run_limma_group <- function(
   }
   check_paired_col(meta_df, paired_col, object_name = "meta_df")
 
-  meta_df[[group_col]] <- factor(meta_df[[group_col]])
-  target_meta <- meta_df[meta_df[[group_col]] %in% c(control_group, case_group), , drop = FALSE]
-  target_meta[[group_col]] <- factor(target_meta[[group_col]], levels = c(control_group, case_group))
+  # `case_group` may name several groups. They are fitted together with
+  # the control in one model, so every contrast shares one residual
+  # variance and one eBayes prior -- which is the point of fitting them
+  # together rather than as separate two-group runs.
+  group_levels <- c(control_group, case_group)
+  meta_df[[group_col]] <- as.character(meta_df[[group_col]])
+  target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
+                           meta_df[[group_col]] %in% group_levels, , drop = FALSE]
+  target_meta[[group_col]] <- factor(target_meta[[group_col]], levels = group_levels)
   validate_two_group_pairing(
     target_meta,
     group_col = group_col,
@@ -63,16 +69,24 @@ run_limma_group <- function(
   keep_samples <- rownames(target_meta)
   expr_sub <- expr_mat[, keep_samples, drop = FALSE]
 
-  formula_str <- paste0("~ 0 + ", group_col)
+  formula_str <- paste0("~ 0 + `", group_col, "`")
   if (!is.null(covariates)) {
     missing_cov <- setdiff(covariates, colnames(target_meta))
     if (length(missing_cov) > 0L) {
       stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
     }
-    formula_str <- paste0(formula_str, " + ", paste(covariates, collapse = " + "))
+    formula_str <- paste0(formula_str, " + ",
+                          paste0("`", covariates, "`", collapse = " + "))
   }
   design <- stats::model.matrix(stats::as.formula(formula_str), data = target_meta)
-  colnames(design) <- gsub(paste0("^", group_col), "", colnames(design))
+  # The group columns come first, one per level in `group_levels` order.
+  # They are renamed to placeholders rather than to the level names:
+  # makeContrasts() only accepts syntactic names, and group labels such
+  # as "24h", "Drug A" or "KO-1" are not -- that used to stop the run.
+  n_lv <- length(group_levels)
+  grp_names <- paste0(".grp", seq_len(n_lv))
+  colnames(design)[seq_len(n_lv)] <- grp_names
+  colnames(design) <- make.names(colnames(design), unique = TRUE)
 
   if (!is.null(paired_col)) {
     if (any(is.na(target_meta[[paired_col]]))) {
@@ -85,20 +99,28 @@ run_limma_group <- function(
     fit <- limma::lmFit(expr_sub, design)
   }
 
-  contrast_str <- paste0(make.names(case_group), " - ", make.names(control_group))
+  contrast_str <- paste0(grp_names[-1L], " - ", grp_names[[1L]])
   contrast_matrix <- limma::makeContrasts(contrasts = contrast_str, levels = design)
   fit2 <- limma::eBayes(limma::contrasts.fit(fit, contrast_matrix))
 
-  raw_df <- limma::topTable(fit2, number = Inf, sort.by = "none")
-  raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
-
-  comparison <- paste0(case_group, "_vs_", control_group)
-  results_std <- standardize_limma_group_results(
-    raw_df = raw_df,
-    feature_df = feature_df,
-    comparison = comparison,
-    omics_type = input$omics_type
-  )
+  comparisons <- paste0(case_group, "_vs_", control_group)
+  per <- lapply(seq_along(case_group), function(i) {
+    raw_df <- limma::topTable(fit2, coef = i, number = Inf, sort.by = "none")
+    raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
+    std <- standardize_limma_group_results(
+      raw_df = raw_df,
+      feature_df = feature_df,
+      comparison = comparisons[[i]],
+      omics_type = input$omics_type
+    )
+    raw_df$comparison <- comparisons[[i]]
+    list(raw = raw_df, std = std)
+  })
+  raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
+  if (length(case_group) == 1L) raw_df$comparison <- NULL
+  results_std <- do.call(rbind, lapply(per, `[[`, "std"))
+  rownames(raw_df) <- NULL
+  rownames(results_std) <- NULL
 
   list(
     results_raw = raw_df,
@@ -108,7 +130,7 @@ run_limma_group <- function(
       omics_type = input$omics_type,
       method = "limma",
       analysis_type = "group",
-      comparison = comparison,
+      comparison = comparisons,
       covariates = covariates,
       paired_col = paired_col
     )
@@ -300,18 +322,30 @@ run_limma_anova <- function(
   if (!is.null(selected_groups)) {
     target_meta <- target_meta[target_meta[[group_col]] %in% selected_groups, , drop = FALSE]
   }
+  target_meta <- target_meta[!is.na(target_meta[[group_col]]), , drop = FALSE]
   target_meta[[group_col]] <- factor(target_meta[[group_col]])
 
   keep_samples <- rownames(target_meta)
   expr_sub <- expr_mat[, keep_samples, drop = FALSE]
 
-  formula_str <- paste0("~ 0 + ", group_col)
+  if (nlevels(target_meta[[group_col]]) < 2L) {
+    stop("ANOVA needs at least two groups in `", group_col, "`.", call. = FALSE)
+  }
+
+  # Intercept + treatment coding: the group coefficients are then the
+  # differences from the first level, and the F-test on all of them
+  # together asks "do the group means differ?". The cell-means design
+  # (`~ 0 + group`) this used to fit made the same F-test ask "are all
+  # group means zero?" -- true of almost nothing on a log-intensity
+  # scale, so nearly every feature came out significant.
+  formula_str <- paste0("~ `", group_col, "`")
   if (!is.null(covariates)) {
     missing_cov <- setdiff(covariates, colnames(target_meta))
     if (length(missing_cov) > 0L) {
       stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
     }
-    formula_str <- paste0(formula_str, " + ", paste(covariates, collapse = " + "))
+    formula_str <- paste0(formula_str, " + ",
+                          paste0("`", covariates, "`", collapse = " + "))
   }
   design <- stats::model.matrix(stats::as.formula(formula_str), data = target_meta)
 
@@ -328,7 +362,7 @@ run_limma_anova <- function(
     fit <- limma::eBayes(limma::lmFit(expr_sub, design))
   }
 
-  coef_idx <- seq_len(nlevels(target_meta[[group_col]]))
+  coef_idx <- 1L + seq_len(nlevels(target_meta[[group_col]]) - 1L)
   raw_df <- limma::topTable(fit, coef = coef_idx, number = Inf, sort.by = "none")
   raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
 
@@ -351,7 +385,7 @@ run_limma_anova <- function(
       direction = "ns",
       base_mean = if ("AveExpr" %in% colnames(raw_df)) .data$AveExpr else NA_real_,
       model_fit = NA_real_,
-      is_significant = FALSE
+      is_significant = NA
     )
   check_diff_result_schema(results_std)
 

@@ -48,9 +48,13 @@ import_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 import_view_server <- function(id,
-                               current_project = shiny::reactiveVal(NULL)) {
+                               current_project = shiny::reactiveVal(NULL),
+                               navigate = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    if (is.function(navigate)) {
+      shiny::observeEvent(input$go_qc, navigate("qc"))
+    }
 
     # ---- reactive state -----------------------------------------------
     # `parsed` holds the most recent successful read_omics() return.
@@ -107,7 +111,7 @@ import_view_server <- function(id,
           list(
             input = NULL,
             report = omicsCore::new_import_report(
-              warnings = paste0("read_omics() failed: ",
+              warnings = paste0("The file could not be read: ",
                                 conditionMessage(e)),
               source = f$name
             )
@@ -392,8 +396,8 @@ import_view_server <- function(id,
       } else {
         "auto-detect roles"
       }
-      desc3 <- if (is_confirmed()) "omics_input ready"
-               else if (parse_ok()) "click Confirm"
+      desc3 <- if (is_confirmed()) "layer imported"
+               else if (parse_ok()) "click Import this layer"
                else "pending"
 
       htmltools::tags$div(
@@ -488,13 +492,19 @@ import_view_server <- function(id,
       if (is_confirmed()) {
         return(htmltools::tags$div(
           style = "display:flex;align-items:center;gap:8px;justify-content:flex-end",
-          pill("omics_input ready", kind = "ok"),
+          pill("layer imported", kind = "ok"),
           htmltools::tags$span(
             class = "muted", style = "font-size:12px",
             sprintf("%d features \u00D7 %d samples",
                     nrow(confirmed_input()$expr_mat),
                     ncol(confirmed_input()$expr_mat))
-          )
+          ),
+          # The import is done; say what comes next rather than leaving
+          # the user to find it in the sidebar.
+          if (is.function(navigate)) {
+            shiny::actionButton(ns("go_qc"), "Next: Quality control \u2192",
+                                class = "btn btn-sm btn-primary")
+          }
         ))
       }
       if (!parse_ok()) {
@@ -795,7 +805,7 @@ import_schema_card <- function(ns) {
         shiny::uiOutput(ns("confirm_state"), inline = TRUE),
         shiny::actionButton(
           ns("confirm"),
-          "Confirm & build omics_input",
+          "Import this layer",
           class = "btn btn-primary"
         )
       )
