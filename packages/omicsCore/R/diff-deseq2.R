@@ -110,6 +110,8 @@ deseq_with_dispersion_fallback <- function(dds) {
 #' @param case_group Case-group label.
 #' @param covariates Optional covariate column names.
 #' @param paired_col Optional pairing column.
+#' @param contrasts Parsed contrast specs (from `run_diff(contrasts = )`); when
+#'   given, every group they name is fitted and each contrast read off the fit.
 #'
 #' @return List with `results_raw`, `results_std`, `model_object` (`DESeqDataSet`),
 #'   and `analysis_info`.
@@ -120,7 +122,8 @@ run_deseq2_group <- function(
   control_group,
   case_group,
   covariates = NULL,
-  paired_col = NULL
+  paired_col = NULL,
+  contrasts = NULL
 ) {
   validate_omics_input(input)
   if (input$omics_type != "rnaseq") {
@@ -140,7 +143,8 @@ run_deseq2_group <- function(
   }
   check_paired_col(meta_df, paired_col, object_name = "meta_df")
 
-  group_levels <- c(control_group, case_group)
+  specs <- contrasts %||% case_control_contrasts(control_group, case_group)
+  group_levels <- contrast_levels(specs, order = control_group)
   meta_df[[group_col]] <- as.character(meta_df[[group_col]])
   target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
                            meta_df[[group_col]] %in% group_levels, , drop = FALSE]
@@ -149,8 +153,8 @@ run_deseq2_group <- function(
     target_meta,
     group_col = group_col,
     paired_col = paired_col,
-    control_group = control_group,
-    case_group = case_group,
+    control_group = if (is.null(contrasts)) control_group,
+    case_group = if (is.null(contrasts)) case_group else group_levels,
     object_name = "target_meta"
   )
 
@@ -175,15 +179,22 @@ run_deseq2_group <- function(
 
   design_formula <- stats::as.formula(paste("~", paste(design_terms, collapse = " + ")))
   dds <- build_deseq_dataset(input, count_sub, target_meta, design_formula)
-  dds[[group_col]] <- stats::relevel(dds[[group_col]], ref = as.character(control_group))
+  ref <- group_levels[[1L]]
+  dds[[group_col]] <- stats::relevel(dds[[group_col]], ref = ref)
   dds <- deseq_with_dispersion_fallback(dds)
 
   # One fit, one dispersion estimate over every group in the model; each
-  # case is then read off it as its own contrast against the control.
-  comparisons <- paste0(case_group, "_vs_", control_group)
-  per <- lapply(seq_along(case_group), function(i) {
-    res <- DESeq2::results(dds, contrast = c(group_col, as.character(case_group[[i]]),
-                                             as.character(control_group)))
+  # contrast is then read off it. A pair goes in by name, which DESeq2
+  # resolves for any two levels; a weighted contrast goes in as a numeric
+  # vector over the model's coefficients.
+  comparisons <- vapply(specs, `[[`, character(1), "label")
+  per <- lapply(seq_along(specs), function(i) {
+    s <- specs[[i]]
+    res <- if (!is.null(s$case)) {
+      DESeq2::results(dds, contrast = c(group_col, s$case, s$control))
+    } else {
+      DESeq2::results(dds, contrast = deseq2_contrast_vector(dds, group_col, s$weights, ref))
+    }
     raw_df <- as.data.frame(res) |>
       tibble::rownames_to_column("feature_id")
     std <- standardize_deseq2_group_results(
@@ -196,7 +207,7 @@ run_deseq2_group <- function(
     list(raw = raw_df, std = std)
   })
   raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
-  if (length(case_group) == 1L) raw_df$comparison <- NULL
+  if (length(specs) == 1L) raw_df$comparison <- NULL
   results_std <- do.call(rbind, lapply(per, `[[`, "std"))
   rownames(raw_df) <- NULL
   rownames(results_std) <- NULL
@@ -215,6 +226,33 @@ run_deseq2_group <- function(
       paired_col = paired_col
     )
   )
+}
+
+# A contrast's weights as DESeq2's numeric contrast. The model is in
+# treatment coding against `ref`, so each other level's coefficient is its
+# difference from the reference and the reference's own weight drops out
+# (the weights sum to zero). DESeq2 renames levels that are not plain
+# words ("Drug A" -> "Drug.A"), so the coefficient is found by matching
+# either spelling.
+deseq2_contrast_vector <- function(dds, group_col, weights, ref) {
+  rn <- DESeq2::resultsNames(dds)
+  clean <- function(x) gsub("[^[:alnum:]_.]", ".", x)
+  v <- stats::setNames(rep(0, length(rn)), rn)
+  for (lv in setdiff(names(weights), ref)) {
+    if (abs(weights[[lv]]) < 1e-12) next
+    cand <- unique(c(
+      paste0(group_col, "_", lv, "_vs_", ref),
+      paste0(clean(group_col), "_", clean(lv), "_vs_", clean(ref)),
+      paste0(make.names(group_col), "_", make.names(lv), "_vs_", make.names(ref))
+    ))
+    hit <- intersect(cand, rn)
+    if (!length(hit)) {
+      stop("Could not find the DESeq2 coefficient for group '", lv, "'.",
+           call. = FALSE)
+    }
+    v[[hit[[1L]]]] <- weights[[lv]]
+  }
+  unname(v)
 }
 
 #' DESeq2 continuous-variable differential test

@@ -51,7 +51,7 @@ subset_omics_samples <- function(omics_input, sample_ids) {
   } else NULL
   meta_df <- omics_input$meta_df[sample_ids, , drop = FALSE]
 
-  new_omics_input(
+  out <- new_omics_input(
     omics_type = omics_input$omics_type,
     assay_type = omics_input$assay_type,
     expr_mat = expr_mat,
@@ -61,6 +61,9 @@ subset_omics_samples <- function(omics_input, sample_ids) {
     feature_df = omics_input$feature_df,
     raw_object = omics_input$raw_object
   )
+  # The study design names a column, which a subset keeps.
+  out$design <- omics_input$design
+  out
 }
 
 #' Subset an `omics_input` by feature IDs
@@ -92,7 +95,7 @@ subset_omics_features <- function(omics_input, feature_ids) {
   ]
   rownames(feature_df) <- feature_df$feature_id
 
-  new_omics_input(
+  out <- new_omics_input(
     omics_type = omics_input$omics_type,
     assay_type = omics_input$assay_type,
     expr_mat = expr_mat,
@@ -102,6 +105,9 @@ subset_omics_features <- function(omics_input, feature_ids) {
     feature_df = feature_df,
     raw_object = omics_input$raw_object
   )
+  # The study design names a column, which a subset keeps.
+  out$design <- omics_input$design
+  out
 }
 
 #' Drop samples with missing metadata

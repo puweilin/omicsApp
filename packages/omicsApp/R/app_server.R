@@ -105,11 +105,13 @@ app_server <- function(input, output, session) {
   # Without this it applied its own -- adjusted p at 0.05, no
   # fold-change bound -- and enriched a different set of genes from the
   # ones on screen, silently.
-  enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
+  enrich_view <- enrich_view_server("enrich", diff_bundle = diff_bundle,
+                                      diff_all = diff_view$all_bundle,
                                       diff_thresholds = diff_view$thresholds,
                                       diff_layer = diff_view$layer,
                                       invalidate = layer_generation,
                                       navigate = set_view)
+  enrich_bundle <- enrich_view$bundle
   # Integration repeats the diff's contrast on the partner layer, on the
   # layer the diff actually ran on, at the thresholds its hits are read at.
   integration_bundle <- integration_view_server("integration",
@@ -183,8 +185,11 @@ app_server <- function(input, output, session) {
     gen <- layer_generation()
     views <- list(
       qc          = qc_bundle(),
-      diff        = diff_bundle(),
+      # Every comparison of the run; the views downstream get the one on
+      # screen through `diff_bundle`.
+      diff        = diff_view$project_bundle(),
       enrich      = enrich_bundle(),
+      enrich_compare = enrich_view$compare(),
       integration = integration_bundle()
     )
     b <- proj$bundles %||% list()

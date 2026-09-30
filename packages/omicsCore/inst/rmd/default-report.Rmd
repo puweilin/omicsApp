@@ -84,6 +84,44 @@ if (length(bundles) == 0L) {
         print(knitr::kable(esc_df(utils::head(obj, 10L))))
       }
     }
+    if (identical(b$analysis_name, "compare_enrichment")) {
+      cat("\n#### Pathways across comparisons\n\n")
+      print(omicsCore::plot_enrichment_comparison(b))
+      cat("\n\n")
+    }
+    # A differential result: what was compared, and for each comparison
+    # its strongest hits. With several comparisons (one control against
+    # several treatments, all pairs, custom contrasts) every one of them
+    # is reported, not only the one that was on screen.
+    if (identical(b$analysis_name, "run_diff") &&
+        is.data.frame(b$results$diff_result_df)) {
+      comps <- tryCatch(omicsCore::diff_comparisons(b), error = function(e) character(0))
+      if (length(comps) > 1L) {
+        cat("\n#### Comparisons\n\n")
+        cat("Fitted together in one model (", esc(b$params$method %||% ""),
+            "). Hits at adjusted p < 0.05.\n\n", sep = "")
+        s <- omicsCore::summarize_diff_contrasts(b)
+        print(knitr::kable(esc_df(s)))
+        cat("\n\n")
+        print(omicsCore::plot_diff_contrasts(b))
+        cat("\n\n")
+        if (length(comps) <= 8L) {
+          ov <- tryCatch(omicsCore::plot_diff_overlap(b), error = function(e) NULL)
+          if (!is.null(ov)) { print(ov); cat("\n\n") }
+        }
+      }
+      for (cmp in comps) {
+        one <- if (length(comps) > 1L) omicsCore::select_comparison(b, cmp) else b
+        df <- one$results$diff_result_df
+        df <- df[order(df$adj_p_value, na.last = TRUE), , drop = FALSE]
+        cat("\n#### Top hits: ", esc(gsub("_vs_", " vs ", cmp)), "\n\n", sep = "")
+        keep <- intersect(c("feature_symbol", "feature_id", "effect", "p_value",
+                            "adj_p_value"), names(df))
+        print(knitr::kable(esc_df(utils::head(df[, keep, drop = FALSE], 10L)),
+                           digits = 4))
+        cat("\n\n")
+      }
+    }
   }
 }
 ```

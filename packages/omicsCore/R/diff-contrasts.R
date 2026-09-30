@@ -78,7 +78,16 @@ select_comparison <- function(bundle, comparison = NULL) {
   }
   out$params$comparison <- comparison
   cases <- bundle$params$case_group
-  if (length(cases) == length(available)) {
+  ct <- bundle$params$contrast_table
+  if (is.data.frame(ct) && comparison %in% ct$comparison) {
+    # Contrasts given as expressions: a pair still has a case and a
+    # control; a weighted contrast has neither, and says so.
+    row <- ct[match(comparison, ct$comparison), , drop = FALSE]
+    out$params$contrasts <- row$spec
+    out$params$all_contrasts <- ct$spec
+    out$params$case_group <- if (is.na(row$case)) NULL else row$case
+    out$params$control_group <- if (is.na(row$control)) NULL else row$control
+  } else if (length(cases) == length(available)) {
     out$params$case_group <- cases[[idx]]
   }
   # What the contrast was fitted alongside. Repeating it on another layer
@@ -208,4 +217,141 @@ plot_diff_contrasts <- function(
       x = "features (down ← → up)", y = NULL
     ) +
     theme_omics_labelled()
+}
+
+#' The hits of every comparison, as sets
+#'
+#' @inheritParams summarize_diff_contrasts
+#' @param direction `"any"` (default), `"up"` or `"down"`: which hits.
+#' @return A named list of character vectors of `feature_id`, one per
+#'   comparison, in [diff_comparisons()] order.
+#' @export
+#' @family diff
+diff_hit_sets <- function(
+  bundle,
+  p_cutoff = 0.05,
+  p_preference = c("adjusted", "raw"),
+  effect_cutoff = NULL,
+  direction = c("any", "up", "down")
+) {
+  assert_diff_bundle(bundle)
+  p_preference <- match.arg(p_preference)
+  direction <- match.arg(direction)
+  df <- bundle$results$diff_result_df
+  comps <- diff_comparisons(bundle)
+  out <- lapply(comps, function(cmp) {
+    sig <- filter_diff_results(df[df$comparison %in% cmp, , drop = FALSE],
+                               p_cutoff = p_cutoff, p_preference = p_preference,
+                               effect_cutoff = effect_cutoff)
+    if (direction == "up") sig <- sig[sig$direction %in% c("up", "positive"), , drop = FALSE]
+    if (direction == "down") sig <- sig[sig$direction %in% c("down", "negative"), , drop = FALSE]
+    unique(as.character(sig$feature_id))
+  })
+  stats::setNames(out, comps)
+}
+
+#' Which comparisons share their hits (an UpSet plot)
+#'
+#' One column per combination of comparisons, its bar the number of
+#' features that are hits in exactly those comparisons and no others; the
+#' dots under it say which comparisons the combination is; each row label
+#' carries that comparison's total. Read left to right: the tallest columns
+#' are the patterns the data actually has -- "shared by every treatment",
+#' "specific to TreatB" -- which a Venn diagram of more than three sets
+#' cannot show legibly.
+#'
+#' @inheritParams diff_hit_sets
+#' @param max_combinations Largest number of combinations drawn (the most
+#'   populated ones).
+#' @return A `patchwork` / `ggplot` object.
+#' @export
+#' @family diff
+plot_diff_overlap <- function(
+  bundle,
+  p_cutoff = 0.05,
+  p_preference = c("adjusted", "raw"),
+  effect_cutoff = NULL,
+  direction = c("any", "up", "down"),
+  max_combinations = 20L
+) {
+  assert_count(max_combinations, "max_combinations")
+  p_preference <- match.arg(p_preference)
+  direction <- match.arg(direction)
+  sets <- diff_hit_sets(bundle, p_cutoff = p_cutoff, p_preference = p_preference,
+                        effect_cutoff = effect_cutoff, direction = direction)
+  names(sets) <- gsub("_vs_", " vs ", names(sets), fixed = TRUE)
+  empty <- function(msg) {
+    ggplot2::ggplot() + ggplot2::theme_void() +
+      ggplot2::annotate("text", x = 0.5, y = 0.5, label = msg,
+                        color = "#4D4D4D", size = 4) +
+      ggplot2::xlim(0, 1) + ggplot2::ylim(0, 1)
+  }
+  if (length(sets) < 2L) return(empty("Overlap needs two or more comparisons."))
+  all_ids <- unique(unlist(sets))
+  if (!length(all_ids)) return(empty("No comparison has hits at these thresholds."))
+
+  member <- vapply(sets, function(s) all_ids %in% s, logical(length(all_ids)))
+  member <- matrix(member, nrow = length(all_ids), dimnames = list(all_ids, names(sets)))
+  key <- apply(member, 1L, function(r) paste(as.integer(r), collapse = ""))
+  counts <- sort(table(key), decreasing = TRUE)
+  counts <- utils::head(counts, max_combinations)
+  combos <- names(counts)
+  set_names <- names(sets)
+
+  bars <- data.frame(combo = factor(combos, levels = combos),
+                     n = as.integer(counts), stringsAsFactors = FALSE)
+  grid <- expand.grid(combo = combos, set = set_names, stringsAsFactors = FALSE)
+  grid$on <- mapply(function(cb, st) substr(cb, match(st, set_names),
+                                            match(st, set_names)) == "1",
+                    grid$combo, grid$set)
+  grid$combo <- factor(grid$combo, levels = combos)
+  grid$set <- factor(grid$set, levels = rev(set_names))
+  lines <- do.call(rbind, lapply(combos, function(cb) {
+    on <- grid[grid$combo == cb & grid$on, , drop = FALSE]
+    if (nrow(on) < 2L) return(NULL)
+    data.frame(combo = factor(cb, levels = combos),
+               lo = min(as.integer(on$set)), hi = max(as.integer(on$set)))
+  }))
+
+  top <- ggplot2::ggplot(bars, ggplot2::aes(x = .data$combo, y = .data$n)) +
+    ggplot2::geom_col(fill = omics_colors$fg_dark %||% "#333333", width = 0.7) +
+    ggplot2::geom_text(ggplot2::aes(label = .data$n), vjust = -0.4, size = 3.2) +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.15))) +
+    ggplot2::labs(
+      title = "Shared hits between comparisons",
+      subtitle = sprintf("%s hits, %s p < %s%s",
+                         switch(direction, any = "all", up = "up-regulated",
+                                down = "down-regulated"),
+                         if (p_preference == "adjusted") "adjusted" else "raw",
+                         format(p_cutoff),
+                         if (is.null(effect_cutoff)) "" else
+                           sprintf(", |effect| ≥ %s", format(effect_cutoff))),
+      x = NULL, y = "features in exactly\nthis combination") +
+    theme_omics_labelled() +
+    ggplot2::theme(axis.text.x = ggplot2::element_blank(),
+                   axis.ticks.x = ggplot2::element_blank(),
+                   panel.grid.major.x = ggplot2::element_blank())
+
+  dots <- ggplot2::ggplot(grid, ggplot2::aes(x = .data$combo, y = .data$set))
+  if (!is.null(lines) && nrow(lines)) {
+    dots <- dots + ggplot2::geom_segment(
+      data = lines,
+      ggplot2::aes(x = .data$combo, xend = .data$combo, y = .data$lo, yend = .data$hi),
+      inherit.aes = FALSE, color = "#333333", linewidth = 0.8)
+  }
+  dots <- dots +
+    ggplot2::geom_point(ggplot2::aes(color = .data$on), size = 3.2,
+                        show.legend = FALSE) +
+    ggplot2::scale_color_manual(values = c(`TRUE` = "#333333", `FALSE` = "#DADADA")) +
+    ggplot2::scale_y_discrete(labels = function(x) {
+      sprintf("%s (%d)", x, lengths(sets)[x])
+    }) +
+    ggplot2::labs(x = NULL, y = NULL) +
+    theme_omics_labelled() +
+    ggplot2::theme(axis.text.x = ggplot2::element_blank(),
+                   axis.ticks.x = ggplot2::element_blank(),
+                   panel.grid = ggplot2::element_blank())
+
+  patchwork::wrap_plots(top, dots, ncol = 1L,
+                        heights = c(2, max(1, 0.35 * length(set_names))))
 }

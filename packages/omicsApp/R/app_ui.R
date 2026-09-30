@@ -29,6 +29,10 @@ app_ui <- function() {
       gap = 2,
       app_sidebar_content()
     ),
+    # A spinner on any output that is recomputing and a pulse along the
+    # top while the server is busy: a plot being redrawn no longer looks
+    # like a plot that has stopped.
+    shiny::useBusyIndicators(spinners = TRUE, pulse = TRUE),
     shiny::tabsetPanel(
       id = "view",
       type = "hidden",

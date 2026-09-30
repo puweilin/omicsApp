@@ -25,16 +25,18 @@ pathway in a GSEA enrichment bundle. Requires the \code{enrichplot}
 Bioconductor package.
 }
 \seealso{
-Other enrich: 
-\code{\link{filter_enrich_results}()},
-\code{\link{geneset_cache_status}()},
-\code{\link{hgnc_map_provenance}()},
-\code{\link{list_gene_sets}()},
-\code{\link{map_ensembl_symbols}()},
-\code{\link{plot_enrichment}()},
-\code{\link{plot_gsva_heatmap}()},
-\code{\link{refresh_geneset_cache}()},
-\code{\link{run_enrichment}()},
-\code{\link{run_gsva}()}
+Other enrich:
+\code{\link[=compare_enrichment]{compare_enrichment()}},
+\code{\link[=filter_enrich_results]{filter_enrich_results()}},
+\code{\link[=geneset_cache_status]{geneset_cache_status()}},
+\code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}},
+\code{\link[=list_gene_sets]{list_gene_sets()}},
+\code{\link[=map_ensembl_symbols]{map_ensembl_symbols()}},
+\code{\link[=plot_enrichment]{plot_enrichment()}},
+\code{\link[=plot_enrichment_comparison]{plot_enrichment_comparison()}},
+\code{\link[=plot_gsva_heatmap]{plot_gsva_heatmap()}},
+\code{\link[=refresh_geneset_cache]{refresh_geneset_cache()}},
+\code{\link[=run_enrichment]{run_enrichment()}},
+\code{\link[=run_gsva]{run_gsva()}}
 }
 \concept{enrich}

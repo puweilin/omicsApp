@@ -116,6 +116,46 @@ integration_view_server <- function(id,
       gc <- params$group_col
       ctrl <- params$control_group
       case <- params$case_group
+      spec <- params$contrasts
+      if (!is.null(gc) && length(spec) == 1L) {
+        # A contrast written as an expression (a pair from "all pairs", or
+        # a weighted one): repeated on the partner as the same expressions.
+        if (!gc %in% names(sec$meta_df)) {
+          return(list(ok = FALSE, reason = "design", detail = sprintf(
+            "Layer '%s' has no '%s' column in its sample metadata, so the comparison %s cannot be repeated on it.",
+            l$partner, gc, params$comparison)))
+        }
+        lv <- unique(as.character(stats::na.omit(sec$meta_df[[gc]])))
+        ok_spec <- tryCatch({
+          omicsCore::contrast_labels(spec, lv)
+          TRUE
+        }, error = function(e) conditionMessage(e))
+        if (!isTRUE(ok_spec)) {
+          return(list(ok = FALSE, reason = "design", detail = sprintf(
+            "The comparison %s cannot be repeated on '%s': %s",
+            params$comparison, l$partner, ok_spec)))
+        }
+        # The rest of the run's contrasts, where the partner has their
+        # groups, so the partner's model holds the same groups.
+        all_specs <- Filter(function(s) isTRUE(tryCatch({
+          omicsCore::contrast_labels(s, lv); TRUE
+        }, error = function(e) FALSE)), params$all_contrasts %||% spec)
+        return(c(list(
+          ok             = TRUE,
+          group_col      = gc,
+          control        = ctrl,
+          case           = case,
+          contrasts      = {
+            keep <- unlist(all_specs)
+            if (spec %in% keep) keep else c(keep, spec)
+          },
+          comparison     = params$comparison,
+          covariates     = setdiff(params$covariates, setdiff(params$covariates, names(sec$meta_df))),
+          dropped_covs   = setdiff(params$covariates, names(sec$meta_df)),
+          primary_method = params$method %||% "auto",
+          primary_omics  = bundle$input_info$omics_type
+        ), base))
+      }
       if (is.null(gc) || is.null(ctrl) || is.null(case)) {
         return(list(ok = FALSE, reason = "design",
                     detail = "The differential result is not a group comparison."))
@@ -337,6 +377,7 @@ integration_view_server <- function(id,
               info$secondary$source_fingerprint %||% paste(dim(info$secondary$expr_mat), collapse = "x"),
               info$group_col, info$control, paste(info$all_cases, collapse = ","),
               paste(info$covariates, collapse = ","), info$primary_method,
+              paste(info$contrasts, collapse = ";"),
               sep = "|")
       }
       cached <- sec_cache()
@@ -362,18 +403,30 @@ integration_view_server <- function(id,
               return(list(result = res, sec_diff = NULL))
             }
             if (is.null(sec_diff)) {
-              sec_full <- omicsCore::run_diff(
-                input         = info$secondary,
-                method        = sec_method,
-                analysis_type = "group",
-                group_col     = info$group_col,
-                control_group = info$control,
-                case_group    = info$all_cases,
-                covariates    = if (length(info$covariates)) info$covariates else NULL
-              )
+              sec_full <- if (length(info$contrasts)) {
+                omicsCore::run_diff(
+                  input         = info$secondary,
+                  method        = sec_method,
+                  analysis_type = "group",
+                  group_col     = info$group_col,
+                  contrasts     = info$contrasts,
+                  covariates    = if (length(info$covariates)) info$covariates else NULL
+                )
+              } else {
+                omicsCore::run_diff(
+                  input         = info$secondary,
+                  method        = sec_method,
+                  analysis_type = "group",
+                  group_col     = info$group_col,
+                  control_group = info$control,
+                  case_group    = info$all_cases,
+                  covariates    = if (length(info$covariates)) info$covariates else NULL
+                )
+              }
               sec_diff <- omicsCore::select_comparison(
                 sec_full,
-                paste0(info$case, "_vs_", info$control))
+                if (length(info$contrasts)) info$comparison
+                else paste0(info$case, "_vs_", info$control))
             }
             diff_bundles <- stats::setNames(list(primary, sec_diff), tags)
             args <- list(project = proj, method = m, experiments = tags,
@@ -453,7 +506,8 @@ integration_view_server <- function(id,
         what <- switch(method(),
                        correlation = "sample-level correlation",
                        active_pathways = "ActivePathways",
-                       paste(info$case, "vs", info$control))
+                       gsub("_vs_", " vs ", info$comparison %||%
+                              paste0(info$case, "_vs_", info$control)))
         sprintf("%s × %s · %s", info$primary_tag,
                 info$secondary_tag, what)
       } else {
@@ -474,7 +528,10 @@ integration_view_server <- function(id,
     output$notices <- shiny::renderUI({
       tagged <- htmltools::tagList()
       err <- integration_error()
-      if (!is.null(err)) {
+      if (identical(err, CANCELLED_MESSAGE)) {
+        tagged <- htmltools::tagAppendChild(tagged, notice(
+          "Cancelled", "Press Run integration to start again.", kind = "info"))
+      } else if (!is.null(err)) {
         tagged <- htmltools::tagAppendChild(
           tagged,
           notice(title  = "The integration could not be computed",

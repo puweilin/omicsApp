@@ -20,6 +20,8 @@ ensure_edger <- function() {
 #' @param case_group Case-group label.
 #' @param covariates Optional covariate column names.
 #' @param paired_col Optional pairing column.
+#' @param contrasts Parsed contrast specs (from `run_diff(contrasts = )`); when
+#'   given, every group they name is fitted and each contrast read off the fit.
 #'
 #' @return List with `results_raw`, `results_std`, `model_object`
 #'   (`DGEGLM`), and `analysis_info`.
@@ -30,7 +32,8 @@ run_edger_group <- function(
   control_group,
   case_group,
   covariates = NULL,
-  paired_col = NULL
+  paired_col = NULL,
+  contrasts = NULL
 ) {
   validate_omics_input(input)
   if (input$omics_type != "rnaseq") {
@@ -50,7 +53,8 @@ run_edger_group <- function(
   }
   check_paired_col(meta_df, paired_col, object_name = "meta_df")
 
-  group_levels <- c(control_group, case_group)
+  specs <- contrasts %||% case_control_contrasts(control_group, case_group)
+  group_levels <- contrast_levels(specs, order = control_group)
   meta_df[[group_col]] <- as.character(meta_df[[group_col]])
   target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
                            meta_df[[group_col]] %in% group_levels, , drop = FALSE]
@@ -59,8 +63,8 @@ run_edger_group <- function(
     target_meta,
     group_col = group_col,
     paired_col = paired_col,
-    control_group = control_group,
-    case_group = case_group,
+    control_group = if (is.null(contrasts)) control_group,
+    case_group = if (is.null(contrasts)) case_group else group_levels,
     object_name = "target_meta"
   )
 
@@ -108,16 +112,25 @@ run_edger_group <- function(
   fit <- edgeR::glmQLFit(y, design = design_mat)
 
   # model.matrix() names a factor's columns `<column><level>` verbatim,
-  # so the coefficient is found by exact name. It used to be found by
+  # so the coefficients are found by exact name. They used to be found by
   # substring, which picked "B" out of "groupAB" when both were present.
-  comparisons <- paste0(case_group, "_vs_", control_group)
-  per <- lapply(seq_along(case_group), function(i) {
-    group_coef <- paste0(group_col, case_group[[i]])
-    if (!group_coef %in% colnames(design_mat)) {
-      stop("Could not locate group coefficient in design matrix for: ",
-           case_group[[i]])
+  # The design is treatment coding against the first level, so each
+  # other level's column is its difference from it and a contrast is its
+  # weights placed on those columns.
+  ref <- group_levels[[1L]]
+  comparisons <- vapply(specs, `[[`, character(1), "label")
+  per <- lapply(seq_along(specs), function(i) {
+    w <- specs[[i]]$weights
+    cvec <- stats::setNames(rep(0, ncol(design_mat)), colnames(design_mat))
+    for (lv in setdiff(names(w), ref)) {
+      if (abs(w[[lv]]) < 1e-12) next
+      group_coef <- paste0(group_col, lv)
+      if (!group_coef %in% colnames(design_mat)) {
+        stop("Could not locate group coefficient in design matrix for: ", lv)
+      }
+      cvec[[group_coef]] <- w[[lv]]
     }
-    qlf <- edgeR::glmQLFTest(fit, coef = group_coef)
+    qlf <- edgeR::glmQLFTest(fit, contrast = unname(cvec))
     tt <- edgeR::topTags(qlf, n = Inf, sort.by = "none")
     raw_df <- as.data.frame(tt$table) |>
       tibble::rownames_to_column("feature_id")
@@ -131,7 +144,7 @@ run_edger_group <- function(
     list(raw = raw_df, std = std)
   })
   raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
-  if (length(case_group) == 1L) raw_df$comparison <- NULL
+  if (length(specs) == 1L) raw_df$comparison <- NULL
   results_std <- do.call(rbind, lapply(per, `[[`, "std"))
   rownames(raw_df) <- NULL
   rownames(results_std) <- NULL

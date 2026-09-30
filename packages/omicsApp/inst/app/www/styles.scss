@@ -503,3 +503,15 @@ table.tbl td.num, table.tbl th.num {
 
 .pairing-details { margin-top: 8px; font-size: 13px; }
 .pairing-details summary { cursor: pointer; color: var(--brand-700); }
+
+.design-picker { margin: 8px 0 14px; padding: 10px 12px; border: 1px dashed var(--border);
+                 border-radius: var(--r-md); }
+.design-picker h5 { margin-bottom: 6px; }
+
+// Long runs: what is running, for how long, and a way to stop it.
+.async-progress { min-width: 240px; }
+.async-progress-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.async-progress-track { height: 4px; background: var(--brand-100); border-radius: 2px;
+                        margin: 8px 0 4px; overflow: hidden; }
+.async-progress-bar { height: 100%; background: var(--brand-600); transition: width 1s linear; }
+.async-cancel { padding: 0; font-size: 12px; }

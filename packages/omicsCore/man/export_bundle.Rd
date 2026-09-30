@@ -30,7 +30,12 @@ multiple bundles to the same directory.}
 tables (e.g. \code{list(volcano = plot_volcano(bundle))}). Both \code{ggplot}
 and \code{ComplexHeatmap} objects are supported.}
 
-\item{width, height}{Plot dimensions in inches. Defaults \verb{7 x 5}.}
+\item{width, height}{Plot dimensions in inches. Defaults \verb{7 x 5}.
+
+A \code{\link[=run_diff]{run_diff()}} bundle holding several comparisons additionally gets one
+table per comparison (\verb{<prefix>run_diff_<comparison>_diff_result_df})
+and a hit-count summary (\verb{<prefix>run_diff_contrast_summary}), so each
+comparison can be opened on its own.}
 }
 \value{
 A \code{data.frame} artifact registry (one row per written file).
@@ -64,10 +69,10 @@ code can keep tracking every file from one entry point.
 }
 }
 \seealso{
-Other persistence: 
-\code{\link{export_report}()},
-\code{\link{export_script}()},
-\code{\link{load_project}()},
-\code{\link{save_project}()}
+Other persistence:
+\code{\link[=export_report]{export_report()}},
+\code{\link[=export_script]{export_script()}},
+\code{\link[=load_project]{load_project()}},
+\code{\link[=save_project]{save_project()}}
 }
 \concept{persistence}

@@ -88,3 +88,36 @@ test_that("a normal run still succeeds and still closes its progress", {
   }))
   expect_identical(got, 42L)
 })
+
+test_that("a running task can be cancelled, and its late result is dropped", {
+  skip_if_not_installed("later")
+  old <- future::plan(future::sequential)
+  on.exit(future::plan(old), add = TRUE)
+  got <- character(0)
+  session <- shiny::MockShinySession$new()
+  shiny::withReactiveDomain(session, {
+    task <- run_async(detached_call(function() 1L),
+                      on_success = function(x) got <<- c(got, "success"),
+                      on_error   = function(msg) got <<- c(got, msg))
+    # Cancelled before the promise settles: the caller hears "cancelled"
+    # once, and the finished result that arrives afterwards is ignored.
+    async_cancel(task)
+    while (!later::loop_empty()) later::run_now()
+  })
+  expect_identical(got, CANCELLED_MESSAGE)
+  expect_true(task$done)
+})
+
+test_that("the progress notification says how long, and offers Cancel", {
+  html <- paste(as.character(async_progress_ui("Running limma", 75, "async-task-3")),
+                collapse = "")
+  expect_match(html, "1 min 15 s", fixed = TRUE)
+  expect_match(html, "Cancel", fixed = TRUE)
+  expect_match(html, "omics_async_cancel", fixed = TRUE)
+  expect_match(html, "async-task-3", fixed = TRUE)
+  # Moves with time, never claims completion.
+  w <- function(s) as.numeric(sub(".*width:([0-9]+)%.*", "\\1",
+                                  paste(as.character(async_progress_ui("x", s, "i")), collapse = "")))
+  expect_lt(w(1), w(30))
+  expect_lt(w(3600), 100)
+})

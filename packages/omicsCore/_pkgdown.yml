@@ -68,6 +68,8 @@ reference:
   - subset_omics
   - subset_omics_features
   - subset_omics_samples
+  - study_design
+  - set_study_design
   - summarize_omics
 
 - title: Quality control
@@ -97,6 +99,10 @@ reference:
   - diff_comparisons
   - select_comparison
   - summarize_diff_contrasts
+  - diff_hit_sets
+  - pairwise_contrasts
+  - contrast_labels
+  - compare_enrichment
   - filter_enrich_results
   - make_ranked_features
 
@@ -117,6 +123,8 @@ reference:
   - plot_heatmap
   - plot_volcano
   - plot_diff_contrasts
+  - plot_diff_overlap
+  - plot_enrichment_comparison
   - plot_ma
   - plot_feature_expression
   - plot_enrichment

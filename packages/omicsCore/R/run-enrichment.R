@@ -74,6 +74,17 @@ run_enrichment <- function(
     stop("`diff_bundle` must be an analysis_bundle from run_diff().")
   }
 
+  # A run with several comparisons stacks them in one table; enriching
+  # that table would pool the genes of every comparison (ORA) or keep
+  # each gene's largest effect across them (GSEA) -- a gene list that
+  # belongs to no comparison at all.
+  n_cmp <- length(unique(stats::na.omit(diff_bundle$results$diff_result_df$comparison)))
+  if (n_cmp > 1L) {
+    stop("`diff_bundle` holds ", n_cmp, " comparisons. Take one out with ",
+         "select_comparison(), or enrich them all side by side with ",
+         "compare_enrichment().", call. = FALSE)
+  }
+
   type <- match.arg(type)
   direction <- match.arg(direction)
   p_preference <- match.arg(p_preference)

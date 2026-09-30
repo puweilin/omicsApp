@@ -116,6 +116,24 @@ ordinary single-contrast bundle that every downstream function accepts.
 
 Up / down hit counts per comparison, as a table and a diverging bar chart.
 
+### `run_diff(..., contrasts = )`, `pairwise_contrasts(levels)`, `contrast_labels(contrasts, levels)`
+
+Any comparisons between groups: `"pairwise"`, or expressions such as
+`"TreatB - TreatA"` and `"(TreatA + TreatB)/2 - Control"`, all read off one
+fit (limma / edgeR / DESeq2).
+
+### `diff_hit_sets(bundle, ...)`, `plot_diff_overlap(bundle, ...)`
+
+The hits of every comparison as sets, and their overlap as an UpSet plot.
+
+### `run_diff(..., analysis_type = "anova")`
+
+A global test across all groups: limma F-test, edgeR QL F-test or DESeq2 LRT.
+
+### `study_design(input)`, `set_study_design(input, group_col, reference)`
+
+The group column and reference level recorded on a layer at import.
+
 ### `run_diff_continuous(input, continuous_col, covariates = NULL, smooth = FALSE, ...)`
 
 Convenience wrapper for continuous-outcome differential analysis (e.g. age trajectories).
@@ -135,6 +153,11 @@ Returns `analysis_bundle` with:
 Returns `analysis_bundle` with:
 - `bundle$results$gsva_matrix`: pathways × samples
 - `bundle$results$gsva_diff`: per-pathway diff result if a contrast was provided
+
+### `compare_enrichment(diff_bundle, comparisons = NULL, ...)`, `plot_enrichment_comparison(bundle, ...)`
+
+Every comparison enriched with the same settings, and a pathway x comparison
+dot plot (compareCluster-style).
 
 ### `list_gene_sets(database, organism = "Hs")`
 

@@ -148,6 +148,9 @@ tutorial_project <- function() {
     omics_type = "rnaseq",
     assay_type = "raw_count"
   )
+  # As the import view would record it: the groups, and the control.
+  proteomics <- omicsCore::set_study_design(proteomics, "group", "Control")
+  rnaseq <- omicsCore::set_study_design(rnaseq, "group", "Control")
   proj <- omicsCore::omics_project(
     name = "Tutorial \u00B7 two treatments vs control",
     experiments = list(proteomics = proteomics, rnaseq = rnaseq)

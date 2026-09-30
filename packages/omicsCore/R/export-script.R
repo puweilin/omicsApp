@@ -287,21 +287,41 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
   if (!is.null(bundles$qc)) {
     emit("qc", "Quality control", "run_qc", run_qc, input_for("qc"), "qc")
   }
+  diff_var_for_enrich <- "diff"
   if (!is.null(bundles$diff)) {
     # One contrast taken out of a shared fit is reproduced as that fit
     # followed by the selection. Re-running only its two groups would
     # give different p-values: the shared fit pools the variance of every
     # group in the model.
     all_cases <- bundles$diff$params$all_case_groups
+    all_specs <- bundles$diff$params$all_contrasts
     shown <- bundles$diff$params$comparison
-    if (length(all_cases) > 1L && length(shown) == 1L) {
+    selected <- FALSE
+    if (length(shown) == 1L && length(all_specs) > 1L) {
+      bundles$diff$params$contrasts <- all_specs
+      bundles$diff$params$case_group <- NULL
+      selected <- TRUE
+    } else if (length(shown) == 1L && length(all_cases) > 1L) {
       bundles$diff$params$case_group <- all_cases
+      selected <- TRUE
     }
     emit("diff", "Differential analysis", "run_diff", run_diff,
          input_for("diff"), "diff")
-    if (length(all_cases) > 1L && length(shown) == 1L) {
+    if (selected) {
       lines <- c(lines, sprintf("diff <- select_comparison(diff, %s)",
                                 render_value(shown)))
+    }
+    # A bundle holding every contrast of a run: the downstream steps each
+    # ran on one of them, so that one is taken out for them by name.
+    if (length(shown) > 1L &&
+        (!is.null(bundles$enrich) || !is.null(bundles$integration))) {
+      pick <- bundles$enrich$params$comparison %||%
+        bundles$diff$params$shown_comparison %||% shown[[1L]]
+      lines <- c(lines,
+                 "# The steps below ran on one of these comparisons:",
+                 sprintf("diff_shown <- select_comparison(diff, %s)",
+                         render_value(pick[[1L]])))
+      diff_var_for_enrich <- "diff_shown"
     }
   }
   if (!is.null(bundles$gsva)) {
@@ -310,11 +330,22 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
   }
   if (!is.null(bundles$enrich)) {
     emit("enrich", "Pathway enrichment", "run_enrichment", run_enrichment,
-         "diff", "enrich")
+         diff_var_for_enrich, "enrich")
     if (is.null(bundles$diff)) {
       notes <- c(notes,
                  "enrichment ran on a differential result the project no longer holds.")
     }
+  }
+  if (!is.null(bundles$enrich_compare)) {
+    # compare_enrichment() hands its settings to run_enrichment() through
+    # `...`, so the arguments rendered are run_enrichment()'s.
+    call <- render_call("compare_enrichment", "diff",
+                        bundles$enrich_compare$params[
+                          setdiff(names(bundles$enrich_compare$params), "comparison")],
+                        script_arg_names(run_enrichment),
+                        assign_to = "enrich_compare")
+    lines <- c(lines, section("Enrichment across comparisons"), call$lines)
+    notes <- c(notes, call$notes)
   }
   if (!is.null(bundles$integration)) {
     lines <- c(lines, section("Multi-omics integration"))

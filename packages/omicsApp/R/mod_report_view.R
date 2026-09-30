@@ -36,9 +36,9 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     output$header <- shiny::renderUI({
       proj <- current_project()
       subtitle <- if (is.null(proj)) {
-        "Demo fixture \u00B7 rmarkdown"
+        "Demo data \u00B7 rmarkdown"
       } else {
-        sprintf("%s \u00B7 %d experiment(s)",
+        sprintf("%s \u00B7 %d layer(s)",
                 proj$name %||% "Project",
                 length(proj$experiments))
       }
@@ -110,7 +110,7 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
           tagged <- htmltools::tagAppendChild(
             tagged,
             notice(
-              title  = "No analysis bundles yet",
+              title  = "No results yet",
               detail = paste0(
                 "Run QC, differential, enrichment, or integration ",
                 "before generating a report."
@@ -173,10 +173,16 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         } else "Not yet run"
 
         diff_desc <- if (diff_ready) {
-          sprintf("%d features \u00B7 %s vs %s",
-                  nrow(bnd$diff$results$diff_result_df),
-                  bnd$diff$params$case_group %||% "case",
-                  bnd$diff$params$control_group %||% "control")
+          cmps <- tryCatch(omicsCore::diff_comparisons(bnd$diff),
+                           error = function(e) character(0))
+          if (length(cmps) > 1L) {
+            sprintf("%d comparisons: %s", length(cmps),
+                    paste(gsub("_vs_", " vs ", cmps), collapse = ", "))
+          } else {
+            sprintf("%d features \u00B7 %s",
+                    nrow(bnd$diff$results$diff_result_df),
+                    gsub("_vs_", " vs ", bnd$diff$params$comparison %||% "case vs control"))
+          }
         } else "Not yet run"
 
         enrich_desc <- if (enrich_ready) {
@@ -200,14 +206,14 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
                    if (enrich_ready) toupper(bnd$enrich$params$type %||% "ora") else "pending",
                    enrich_ready),
           make_row("4", "Integration", int_desc,
-                   if (int_ready) "concordance" else "pending",
+                   if (int_ready) bnd$integration$params$method %||% "integration" else "pending",
                    int_ready)
         )
       }
 
       bslib::card(
         bslib::card_header(
-          htmltools::tags$h3(class = "card-title", "Bundles available"),
+          htmltools::tags$h3(class = "card-title", "Results in the report"),
           htmltools::tags$span(class = "card-sub",
                                "ready for the report template")
         ),

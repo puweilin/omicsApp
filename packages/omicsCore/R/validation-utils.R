@@ -118,6 +118,22 @@ validate_two_group_pairing <- function(
   pair_df <- pair_df[!is.na(pair_df$pair_id) & !is.na(pair_df$group_id), , drop = FALSE]
 
   pair_levels <- split(pair_df$group_id, pair_df$pair_id)
+  if (is.null(control_group)) {
+    # Arbitrary contrasts: no group is the control, so a block only has
+    # to hold two or more different groups, none twice.
+    bad_pairs <- names(Filter(function(x) {
+      x <- as.character(x)
+      anyDuplicated(x) > 0L || length(x) < 2L
+    }, pair_levels))
+    if (length(bad_pairs) > 0) {
+      stop(
+        "Invalid paired design in `", object_name, "` for `paired_col = '", paired_col, "'`. ",
+        "Each block must hold samples from at least two of the compared groups, ",
+        "with no group repeated. Problematic blocks: ", paste(bad_pairs, collapse = ", ")
+      )
+    }
+    return(invisible(TRUE))
+  }
   if (length(case_group) > 1L) {
     # Several case groups against one control: a block (a donor, a
     # litter) needs its control sample and at least one case, and no

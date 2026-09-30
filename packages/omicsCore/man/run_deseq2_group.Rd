@@ -10,7 +10,8 @@ run_deseq2_group(
   control_group,
   case_group,
   covariates = NULL,
-  paired_col = NULL
+  paired_col = NULL,
+  contrasts = NULL
 )
 }
 \arguments{
@@ -25,6 +26,9 @@ run_deseq2_group(
 \item{covariates}{Optional covariate column names.}
 
 \item{paired_col}{Optional pairing column.}
+
+\item{contrasts}{Parsed contrast specs (from \code{run_diff(contrasts = )}); when
+given, every group they name is fitted and each contrast read off the fit.}
 }
 \value{
 List with \code{results_raw}, \code{results_std}, \code{model_object} (\code{DESeqDataSet}),

@@ -212,3 +212,178 @@ test_that("the exported script reproduces a shared fit, then takes the same cont
   expect_match(txt, 'case_group    = c("A", "B")', fixed = TRUE)
   expect_match(txt, 'diff <- select_comparison(diff, "B_vs_ctrl")', fixed = TRUE)
 })
+
+# ---- contrasts beyond "each vs control" ----------------------------------
+
+test_that("pairwise_contrasts lists every pair, later against earlier", {
+  expect_identical(pairwise_contrasts(c("ctrl", "A", "B")),
+                   c("A - ctrl", "B - ctrl", "B - A"))
+  expect_identical(pairwise_contrasts(c("Control", "Drug A")),
+                   "`Drug A` - Control")
+  expect_error(pairwise_contrasts("A"), "two groups")
+})
+
+test_that("contrast expressions become zero-sum weights, and nothing else is accepted", {
+  expect_identical(contrast_labels(c("B - A", "(B + C)/2 - A"), c("A", "B", "C")),
+                   c("B_vs_A", "(B + C)/2 - A"))
+  w <- contrast_weights("(B + C)/2 - A", c("A", "B", "C"))
+  expect_equal(unname(w), c(-1, 0.5, 0.5))
+  expect_identical(contrast_labels("`Drug A` - `24h`", c("24h", "Drug A")), "Drug A_vs_24h")
+  expect_error(contrast_labels("B + A", c("A", "B")), "sum to")
+  expect_error(contrast_labels("D - A", c("A", "B")), "not a group")
+  expect_error(contrast_labels("B * A", c("A", "B")), "multiplies")
+  expect_error(contrast_labels("B - A + 1", c("A", "B")), "adds a number")
+  expect_error(contrast_labels("B / 0 - A", c("A", "B")), "divides")
+  expect_error(contrast_labels("unlink('x') - A", c("A", "B")), "something other")
+  expect_error(contrast_labels(c("B - A", "B - A"), c("A", "B")), "twice")
+})
+
+test_that("run_diff(contrasts = 'pairwise') fits every pair in one model, control first", {
+  inp <- mc_input()
+  b <- run_diff(inp, method = "limma", group_col = "group",
+                control_group = "ctrl", contrasts = "pairwise")
+  expect_identical(diff_comparisons(b), c("A_vs_ctrl", "B_vs_ctrl", "B_vs_A"))
+  # The two "vs control" contrasts are exactly the each-vs-control run.
+  each <- run_diff(inp, method = "limma", group_col = "group",
+                   control_group = "ctrl", case_group = c("A", "B"))
+  expect_equal(select_comparison(b, "B_vs_ctrl")$results$diff_result_df$p_value,
+               select_comparison(each, "B_vs_ctrl")$results$diff_result_df$p_value)
+  s <- select_comparison(b, "B_vs_A")
+  expect_identical(s$params$case_group, "B")
+  expect_identical(s$params$control_group, "A")
+  expect_identical(s$params$contrasts, "B - A")
+})
+
+test_that("a weighted contrast is read off the same fit in limma, edgeR and DESeq2", {
+  inp <- mc_input()
+  b <- run_diff(inp, method = "limma", group_col = "group",
+                contrasts = c("(A + B)/2 - ctrl"))
+  df <- b$results$diff_result_df
+  expect_identical(unique(df$comparison), "(A + B)/2 - ctrl")
+  # Features 1-5 are +3 in A only, so half of that on the average.
+  expect_equal(mean(df$effect[1:5]), 1.5, tolerance = 0.3)
+  expect_null(b$params$case_group)
+
+  skip_if_not_installed("edgeR")
+  skip_if_not_installed("DESeq2")
+  cnt <- mc_input(omics = "rnaseq")
+  for (m in c("edger", "deseq2")) {
+    r <- suppressWarnings(suppressMessages(
+      run_diff(cnt, method = m, group_col = "group",
+               contrasts = c("(A + B)/2 - ctrl", "B - A"))))
+    expect_identical(diff_comparisons(r), c("(A + B)/2 - ctrl", "B_vs_A"))
+    avg <- select_comparison(r, "(A + B)/2 - ctrl")$results$diff_result_df
+    # log2(6) / 2 ~ 1.3 on the A-only genes.
+    expect_true(all(avg$effect[1:5] > 0.8 & avg$effect[1:5] < 1.8), info = m)
+    ba <- select_comparison(r, "B_vs_A")$results$diff_result_df
+    expect_true(all(ba$effect[1:5] < -1.5), info = m)
+  }
+})
+
+test_that("the per-pair engines take pairs but refuse weighted contrasts", {
+  inp <- mc_input()
+  b <- run_diff(inp, method = "ttest", group_col = "group", contrasts = "B - A")
+  expect_identical(diff_comparisons(b), "B_vs_A")
+  expect_error(run_diff(inp, method = "ttest", group_col = "group",
+                        contrasts = "(A + B)/2 - ctrl"),
+               "needs limma")
+})
+
+test_that("the exported script repeats a contrast run and takes the same comparison", {
+  inp <- mc_input()
+  b <- run_diff(inp, method = "limma", group_col = "group",
+                control_group = "ctrl", contrasts = "pairwise")
+  proj <- omics_project("p", list(proteomics = inp))
+  proj$bundles <- list(diff = select_comparison(b, "B_vs_A"))
+  txt <- paste(export_script(proj, include_plots = FALSE), collapse = "\n")
+  expect_match(txt, 'contrasts     = c("A - ctrl", "B - ctrl", "B - A")', fixed = TRUE)
+  expect_match(txt, 'diff <- select_comparison(diff, "B_vs_A")', fixed = TRUE)
+})
+
+# ---- overlap -----------------------------------------------------------
+
+test_that("hit sets and the overlap plot follow the thresholds", {
+  inp <- mc_input(levels = c("ctrl", "A", "B"))
+  # Features 1-5 up in A, 6-10 down in B; add 11-15 up in both.
+  inp$expr_mat[11:15, inp$meta_df$group != "ctrl"] <-
+    inp$expr_mat[11:15, inp$meta_df$group != "ctrl"] + 3
+  b <- run_diff(inp, method = "limma", group_col = "group",
+                control_group = "ctrl", case_group = c("A", "B"))
+  sets <- diff_hit_sets(b, effect_cutoff = 1)
+  expect_identical(names(sets), c("A_vs_ctrl", "B_vs_ctrl"))
+  expect_true(all(paste0("F", 11:15) %in% intersect(sets[[1]], sets[[2]])))
+  expect_true(all(paste0("F", 1:5) %in% setdiff(sets[[1]], sets[[2]])))
+  up <- diff_hit_sets(b, effect_cutoff = 1, direction = "up")
+  expect_false(any(paste0("F", 6:10) %in% up$B_vs_ctrl))
+  expect_s3_class(plot_diff_overlap(b, effect_cutoff = 1), "ggplot")
+  # One comparison, or no hits: a message, not an error.
+  one <- run_diff(inp, method = "limma", group_col = "group",
+                  control_group = "ctrl", case_group = "A")
+  expect_s3_class(plot_diff_overlap(one), "ggplot")
+  expect_s3_class(plot_diff_overlap(b, p_cutoff = 1e-300), "ggplot")
+})
+
+test_that("a multi-contrast run is exported one table per comparison", {
+  inp <- mc_input()
+  b <- run_diff(inp, method = "limma", group_col = "group",
+                contrasts = c("A - ctrl", "(A + B)/2 - ctrl"))
+  dir <- withr::local_tempdir()
+  reg <- export_bundle(b, dir, formats = "tsv")
+  files <- basename(reg$path)
+  expect_true("run_diff_A_vs_ctrl_diff_result_df.tsv" %in% files)
+  expect_true("run_diff_A_B_2_ctrl_diff_result_df.tsv" %in% files)
+  expect_true("run_diff_contrast_summary.tsv" %in% files)
+  one <- utils::read.delim(file.path(dir, "run_diff_A_vs_ctrl_diff_result_df.tsv"))
+  expect_identical(unique(one$comparison), "A_vs_ctrl")
+})
+
+test_that("the report covers every comparison, with its own top hits", {
+  skip_if_not_installed("rmarkdown")
+  skip_if_not(rmarkdown::pandoc_available(), "pandoc is not available")
+  inp <- mc_input()
+  b <- run_diff(inp, method = "limma", group_col = "group",
+                control_group = "ctrl", case_group = c("A", "B"))
+  proj <- omics_project("Multi", list(proteomics = inp))
+  proj$bundles <- list(diff = b)
+  out <- withr::local_tempfile(fileext = ".html")
+  export_report(proj, out)
+  html <- paste(readLines(out, warn = FALSE), collapse = "\n")
+  expect_match(html, "Top hits: A vs ctrl", fixed = TRUE)
+  expect_match(html, "Top hits: B vs ctrl", fixed = TRUE)
+  expect_match(html, "Comparisons", fixed = TRUE)
+})
+
+test_that("the script takes the comparison enrichment ran on out of a full run", {
+  inp <- mc_input()
+  b <- run_diff(inp, method = "limma", group_col = "group",
+                control_group = "ctrl", case_group = c("A", "B"))
+  proj <- omics_project("p", list(proteomics = inp))
+  enrich <- new_analysis_bundle("run_enrichment",
+                                params = list(type = "ora", database = "hallmark",
+                                              comparison = "B_vs_ctrl"))
+  proj$bundles <- list(diff = b, enrich = enrich)
+  txt <- paste(export_script(proj, include_plots = FALSE), collapse = "\n")
+  expect_match(txt, 'diff_shown <- select_comparison(diff, "B_vs_ctrl")', fixed = TRUE)
+  expect_match(txt, "run_enrichment(\n  diff_shown", fixed = TRUE)
+})
+
+# ---- global test across groups ------------------------------------------
+
+test_that("counts get a global test from edgeR and DESeq2 too", {
+  skip_if_not_installed("edgeR")
+  skip_if_not_installed("DESeq2")
+  cnt <- mc_input(omics = "rnaseq")
+  for (m in c("edger", "deseq2")) {
+    b <- suppressWarnings(suppressMessages(
+      run_diff(cnt, method = m, analysis_type = "anova", group_col = "group")))
+    df <- b$results$diff_result_df
+    check_diff_result_schema(df)
+    expect_identical(unique(df$analysis_type), "anova")
+    # The seeded genes (1-10) differ between groups; most others do not.
+    expect_true(all(df$adj_p_value[1:10] < 0.05), info = m)
+    expect_lt(mean(df$adj_p_value[11:40] < 0.05), 0.2)
+    expect_true(all(is.na(df$is_significant)))
+  }
+  expect_error(run_diff(cnt, method = "ttest", analysis_type = "anova",
+                        group_col = "group"), "ANOVA")
+})

@@ -313,6 +313,56 @@ import_view_server <- function(id,
       preview_matrix(cand$input$expr_mat)
     }, striped = TRUE, spacing = "xs", width = "100%", digits = 2)
 
+    # ---- study design ---------------------------------------------------
+    output$confirm_design <- shiny::renderUI({
+      cand <- parsed()
+      shiny::req(cand, cand$input)
+      meta <- cand$input$meta_df
+      cands <- grouping_candidates(meta)
+      if (!length(cands)) {
+        return(htmltools::tags$div(
+          class = "muted", style = "font-size:12px;margin:6px 0 10px",
+          "No metadata column has at least two samples in every group, so no ",
+          "grouping is recorded; the Differential view can still be pointed ",
+          "at any column."))
+      }
+      sel <- shiny::isolate(input$design_group)
+      if (is.null(sel) || !sel %in% c(cands, "")) sel <- cands[[1L]]
+      htmltools::tags$div(
+        class = "design-picker",
+        htmltools::tags$h5("Study design",
+                           info_tip(paste("Which column holds the groups, and which group",
+                                          "is the control. QC colours by it and the",
+                                          "Differential view compares against the control",
+                                          "by default; both can still be changed there."))),
+        htmltools::tags$div(
+          class = "row-grid r-6-6",
+          shiny::selectInput(ns("design_group"), "Group column",
+                             choices = c(cands, "(none)" = ""), selected = sel),
+          shiny::uiOutput(ns("design_reference_ui"))
+        )
+      )
+    })
+
+    output$design_reference_ui <- shiny::renderUI({
+      cand <- parsed()
+      gc <- input$design_group
+      shiny::req(cand, cand$input, gc, nzchar(gc), gc %in% names(cand$input$meta_df))
+      lv <- sort(unique(as.character(stats::na.omit(cand$input$meta_df[[gc]]))))
+      shiny::selectInput(ns("design_reference"), "Control (reference) group",
+                         choices = lv, selected = default_control_level(lv))
+    })
+
+    # The design as chosen, checked against the metadata it names.
+    apply_design <- function(inp) {
+      gc <- input$design_group
+      if (is.null(gc) || !nzchar(gc) || !gc %in% names(inp$meta_df)) return(inp)
+      ref <- input$design_reference
+      lv <- unique(as.character(stats::na.omit(inp$meta_df[[gc]])))
+      if (is.null(ref) || !ref %in% lv) ref <- default_control_level(sort(lv))
+      tryCatch(omicsCore::set_study_design(inp, gc, ref), error = function(e) inp)
+    }
+
     output$confirm_meta_preview <- shiny::renderTable({
       cand <- parsed()
       shiny::req(cand, cand$input)
@@ -488,6 +538,15 @@ import_view_server <- function(id,
     })
 
     # ---- confirm button gating ----------------------------------------
+    # Disabled until there is something to import. It used to be live
+    # from the start and do nothing when pressed before a parse had
+    # succeeded -- req() stopped it silently -- which read as broken.
+    shiny::observe({
+      ok <- isTRUE(parse_ok())
+      tryCatch(shinyjs::toggleState("confirm", condition = ok),
+               error = function(e) NULL)
+    })
+
     output$confirm_state <- shiny::renderUI({
       if (is_confirmed()) {
         return(htmltools::tags$div(
@@ -594,6 +653,8 @@ import_view_server <- function(id,
           )
         }
       }
+
+      cand <- apply_design(cand)
 
       if (!is.null(f)) {
         res <- store_raw_upload(f$datapath, f$name, cand$source_fingerprint)
@@ -834,6 +895,9 @@ import_confirm_card <- function(ns) {
       shiny::uiOutput(ns("confirm_shape")),
       shiny::uiOutput(ns("confirm_roles")),
       shiny::uiOutput(ns("confirm_symbol_source")),
+      # The groups and the control, stated once here by the person who
+      # knows the study, and read by QC, Differential and Integration.
+      shiny::uiOutput(ns("confirm_design")),
       htmltools::tags$div(
         class = "row-grid r-6-6",
         htmltools::tags$div(

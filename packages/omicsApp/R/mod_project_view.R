@@ -82,7 +82,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         return(htmltools::tags$div(
           class = "stat-grid",
           stat_card(
-            label  = "Experiments",
+            label  = "Layers",
             value  = 0L,
             trend  = "import a file to populate",
             accent = "brand"
@@ -99,7 +99,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       htmltools::tags$div(
         class = "stat-grid",
         stat_card(
-          label  = "Experiments",
+          label  = "Layers",
           value  = n_experiments,
           trend  = paste(vapply(experiments,
                                 project_omics_label,
@@ -640,7 +640,7 @@ project_omics_label <- function(x) {
 project_experiments_card <- function(experiments, ns = NULL) {
   bslib::card(
     bslib::card_header(
-      htmltools::tags$h3(class = "card-title", "Experiments"),
+      htmltools::tags$h3(class = "card-title", "Omics layers"),
       htmltools::tags$span(
         class = "card-sub",
         sprintf("%d layer%s loaded", length(experiments),
@@ -652,14 +652,14 @@ project_experiments_card <- function(experiments, ns = NULL) {
         htmltools::tags$div(
           class = "muted",
           style = "font-size:13px;padding:8px 0",
-          "No experiments yet. Use the Import view to upload a file."
+          "No layers yet. Use the Import view to upload a file."
         )
       } else {
         htmltools::tags$table(
           class = "tbl",
           htmltools::tags$thead(
             htmltools::tags$tr(
-              htmltools::tags$th("Tag"),
+              htmltools::tags$th("Layer"),
               htmltools::tags$th("Omics"),
               htmltools::tags$th(class = "num", "Samples"),
               htmltools::tags$th(class = "num", "Features"),
@@ -751,7 +751,7 @@ project_activity_card <- function(project, is_demo = TRUE) {
               exp <- experiments[[tag]]
               bullet(
                 if (exp$omics_type == "rnaseq") "--brand-500" else "--ok",
-                sprintf("Imported %s experiment",
+                sprintf("Imported %s layer",
                         project_omics_label(exp)),
                 sprintf("tag = %s \u00B7 %d samples \u00B7 %d features",
                         tag, ncol(exp$expr_mat), nrow(exp$expr_mat))

@@ -116,6 +116,12 @@ dispatch_diff_backend <- function(input, method, analysis_type, args) {
   if (method == "deseq2" && analysis_type == "group") {
     return(call_backend(run_deseq2_group, args))
   }
+  if (method == "edger" && analysis_type == "anova") {
+    return(call_backend(run_edger_anova, args))
+  }
+  if (method == "deseq2" && analysis_type == "anova") {
+    return(call_backend(run_deseq2_anova, args))
+  }
   if (method == "deseq2" && analysis_type == "continuous") {
     return(call_backend(run_deseq2_continuous, args))
   }
@@ -142,11 +148,24 @@ dispatch_diff_backend <- function(input, method, analysis_type, args) {
 # groups into, so several case groups are several two-group runs, stacked
 # into one table under their `comparison` labels.
 loop_case_groups <- function(fun, input, args) {
-  cases <- args$case_group
-  if (length(cases) <= 1L) return(do.call(fun, c(list(input = input), args)))
-  runs <- lapply(cases, function(cg) {
+  specs <- args$contrasts
+  args$contrasts <- NULL
+  if (is.null(specs)) {
+    if (length(args$case_group) <= 1L) {
+      return(do.call(fun, c(list(input = input), args)))
+    }
+    specs <- case_control_contrasts(args$control_group, args$case_group)
+  }
+  not_pair <- vapply(specs, function(s) is.null(s$case), logical(1))
+  if (any(not_pair)) {
+    stop("The t-test and lm backends compare two groups at a time; ",
+         "the contrast \"", specs[not_pair][[1L]]$spec, "\" needs limma, ",
+         "DESeq2 or edgeR.", call. = FALSE)
+  }
+  runs <- lapply(specs, function(s) {
     a <- args
-    a$case_group <- cg
+    a$control_group <- s$control
+    a$case_group <- s$case
     do.call(fun, c(list(input = input), a))
   })
   raw <- lapply(seq_along(runs), function(i) {
@@ -183,7 +202,7 @@ loop_case_groups <- function(fun, input, args) {
 #' invoked first.
 #'
 #' For paired designs supply `paired_col`; for ANOVA-style multi-group tests
-#' set `analysis_type = "anova"` (currently limma-backed only). The
+#' set `analysis_type = "anova"` (limma for continuous data, edgeR's QL F-test or DESeq2's LRT for raw counts). The
 #' `continuous` analysis type requires `continuous_col` instead of
 #' `group_col` + `control_group` + `case_group`.
 #'
@@ -199,6 +218,13 @@ loop_case_groups <- function(fun, input, args) {
 #'   one variance / dispersion estimate), the t-test and lm backends run
 #'   each pair in turn. The contrasts are stacked in `diff_result_df` under
 #'   their `comparison` labels; use [select_comparison()] to take one out.
+#' @param contrasts Optional comparisons between groups, instead of
+#'   `control_group` / `case_group`: a character vector of expressions over
+#'   the levels of `group_col` (`"B - A"`, `"(B + C)/2 - A"`; a level that
+#'   is not a plain word goes in backticks, `` "`Drug A` - Control" ``), or
+#'   `"pairwise"` for every pair of groups (see [pairwise_contrasts()]).
+#'   All groups named are fitted in one model. Weighted contrasts need
+#'   limma, DESeq2 or edgeR.
 #' @param continuous_col Continuous metadata column (continuous only).
 #' @param covariates Optional character vector of covariate column names.
 #' @param paired_col Optional pairing/block column.
@@ -232,6 +258,7 @@ run_diff <- function(
   covariates = NULL,
   paired_col = NULL,
   selected_groups = NULL,
+  contrasts = NULL,
   ...
 ) {
   validate_omics_input(input)
@@ -248,6 +275,11 @@ run_diff <- function(
   assert_names(covariates, "covariates", allow_null = TRUE)
   assert_string(paired_col, "paired_col", allow_null = TRUE)
   assert_names(selected_groups, "selected_groups", allow_null = TRUE)
+  assert_character(contrasts, "contrasts", allow_null = TRUE)
+  if (length(contrasts) == 0L) contrasts <- NULL
+  if (!is.null(contrasts) && analysis_type != "group") {
+    stop("`contrasts` applies to analysis_type = 'group' only.", call. = FALSE)
+  }
 
   if (method == "auto") {
     method <- auto_select_diff_method(input, analysis_type)
@@ -260,7 +292,8 @@ run_diff <- function(
       control_group = control_group,
       case_group = case_group,
       covariates = covariates,
-      paired_col = paired_col
+      paired_col = paired_col,
+      contrasts = contrasts
     ),
     continuous = list(
       continuous_col = continuous_col,
@@ -276,8 +309,26 @@ run_diff <- function(
   )
 
   validate_diff_args(analysis_type, method, backend_args)
-  validate_diff_design(input, analysis_type, backend_args)
-  pre <- preflight_diff_matrix(input, method, analysis_type, backend_args)
+  # Contrasts are parsed against the levels actually in the column, and
+  # recorded in params as written (so a script can repeat the call); the
+  # parsed weights travel to the backend alongside.
+  specs <- NULL
+  if (!is.null(contrasts)) {
+    if (!group_col %in% colnames(input$meta_df)) {
+      stop("`group_col` not found in `meta_df`: ", group_col, call. = FALSE)
+    }
+    present <- sort(unique(as.character(stats::na.omit(input$meta_df[[group_col]]))))
+    if (identical(contrasts, "pairwise")) {
+      # The control first, so every comparison with it reads "X vs control".
+      ctrl <- intersect(as.character(control_group), present)
+      contrasts <- pairwise_contrasts(c(ctrl, setdiff(present, ctrl)))
+    }
+    specs <- parse_diff_contrasts(contrasts, present)
+    backend_args$contrasts <- vapply(specs, `[[`, character(1), "spec")
+  }
+  validate_diff_design(input, analysis_type, backend_args, specs = specs)
+  pre <- preflight_diff_matrix(input, method, analysis_type, backend_args,
+                               specs = specs)
   input <- pre$input
 
   # Drop arguments the chosen backend doesn't accept (e.g. ttest has no
@@ -295,11 +346,13 @@ run_diff <- function(
   }
 
   extra_args <- list(...)
+  dispatch_args <- backend_args
+  dispatch_args$contrasts <- specs
   backend_result <- dispatch_diff_backend(
     input = input,
     method = method,
     analysis_type = analysis_type,
-    args = c(backend_args, extra_args)
+    args = c(dispatch_args, extra_args)
   )
 
   new_analysis_bundle(
@@ -317,7 +370,16 @@ run_diff <- function(
         comparison = backend_result$analysis_info$comparison
       ),
       backend_args,
-      extra_args
+      extra_args,
+      # Which groups each comparison sets against which, so one can be
+      # taken out and repeated elsewhere (select_comparison(), and the
+      # Integration view repeating it on another layer).
+      if (!is.null(specs)) list(contrast_table = data.frame(
+        comparison = vapply(specs, `[[`, character(1), "label"),
+        spec = vapply(specs, `[[`, character(1), "spec"),
+        case = vapply(specs, function(s) s$case %||% NA_character_, character(1)),
+        control = vapply(specs, function(s) s$control %||% NA_character_, character(1)),
+        stringsAsFactors = FALSE))
     ),
     results = list(
       diff_result_df = backend_result$results_std,
@@ -370,11 +432,16 @@ run_diff_continuous <- function(
 # contrast of non-estimable coefficient". DESeq2 and edgeR refuse
 # outright, which is the right answer, so it is now the answer
 # everywhere, in words that name the column.
-validate_diff_design <- function(input, analysis_type, args) {
+validate_diff_design <- function(input, analysis_type, args, specs = NULL) {
   meta <- input$meta_df
   if (analysis_type == "anova") return(invisible(TRUE))
 
-  if (analysis_type == "group") {
+  if (analysis_type == "group" && !is.null(specs)) {
+    used <- contrast_levels(specs)
+    keep <- !is.na(meta[[args$group_col]]) & meta[[args$group_col]] %in% used
+    sub <- meta[keep, , drop = FALSE]
+    primary <- factor(sub[[args$group_col]], levels = used)
+  } else if (analysis_type == "group") {
     group_col <- args$group_col
     if (!group_col %in% colnames(meta)) {
       stop("`group_col` not found in `meta_df`: ", group_col, call. = FALSE)
@@ -467,13 +534,15 @@ validate_diff_design <- function(input, analysis_type, args) {
 # the sample or the value. The intensity engines take an infinite value
 # as it comes and hand back an infinite effect with no p-value for the
 # feature; here it becomes a missing value, and the bundle says so.
-preflight_diff_matrix <- function(input, method, analysis_type, args) {
+preflight_diff_matrix <- function(input, method, analysis_type, args,
+                                  specs = NULL) {
   mat <- input$expr_mat
   samples <- colnames(mat)
   if (analysis_type == "group") {
     g <- input$meta_df[[args$group_col]]
-    in_contrast <- rownames(input$meta_df)[!is.na(g) &
-                                            g %in% c(args$control_group, args$case_group)]
+    groups <- if (!is.null(specs)) contrast_levels(specs)
+              else c(args$control_group, args$case_group)
+    in_contrast <- rownames(input$meta_df)[!is.na(g) & g %in% groups]
     samples <- intersect(samples, in_contrast)
   }
   sub <- mat[, samples, drop = FALSE]
@@ -522,9 +591,9 @@ validate_diff_args <- function(analysis_type, method, args) {
       stop("`group_col` is required for analysis_type = '", analysis_type, "'.")
     }
   }
-  if (analysis_type == "group") {
+  if (analysis_type == "group" && is.null(args$contrasts)) {
     if (is.null(args$control_group) || is.null(args$case_group)) {
-      stop("`control_group` and `case_group` are required for analysis_type = 'group'.")
+      stop("`control_group` and `case_group` (or `contrasts`) are required for analysis_type = 'group'.")
     }
   }
   if (analysis_type == "continuous") {
@@ -532,11 +601,12 @@ validate_diff_args <- function(analysis_type, method, args) {
       stop("`continuous_col` is required for analysis_type = 'continuous'.")
     }
   }
-  if (analysis_type == "anova" && method != "limma") {
-    stop("ANOVA analysis_type currently only supports method = 'limma'.")
+  if (analysis_type == "anova" && !method %in% c("limma", "edger", "deseq2")) {
+    stop("ANOVA analysis_type needs method = 'limma' (continuous data) or ",
+         "'edger' / 'deseq2' (raw counts).")
   }
-  if (method == "edger" && analysis_type != "group") {
-    stop("edgeR backend currently only supports analysis_type = 'group'.")
+  if (method == "edger" && !analysis_type %in% c("group", "anova")) {
+    stop("edgeR backend currently only supports analysis_type = 'group' or 'anova'.")
   }
   invisible(TRUE)
 }

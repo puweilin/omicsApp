@@ -114,7 +114,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (is.null(sel) || !sel %in% tags_avail) {
         sel <- tags_avail[[qc_default_layer_idx(proj$experiments)]]
       }
-      shiny::selectInput(session$ns("layer"), label = "Experiment layer",
+      shiny::selectInput(session$ns("layer"), label = "Omics layer",
                          choices = tags_avail, selected = sel)
     })
 
@@ -342,6 +342,15 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       meta <- bundle$results$cleaned_input$meta_df
       if (is.null(meta) || !ncol(meta)) return(character(0))
       cands <- grouping_candidates(meta)
+      design <- tryCatch(omicsCore::study_design(bundle$results$cleaned_input),
+                         error = function(e) NULL)
+      if (is.null(design)) {
+        design <- tryCatch(omicsCore::study_design(active()$input),
+                           error = function(e) NULL)
+      }
+      if (!is.null(design) && design$group_col %in% names(meta)) {
+        cands <- c(design$group_col, setdiff(cands, design$group_col))
+      }
       extra <- setdiff(names(meta)[vapply(meta, function(x) {
         n <- length(unique(stats::na.omit(x)))
         n >= 2L && n < nrow(meta)

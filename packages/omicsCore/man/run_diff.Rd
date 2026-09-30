@@ -15,6 +15,7 @@ run_diff(
   covariates = NULL,
   paired_col = NULL,
   selected_groups = NULL,
+  contrasts = NULL,
   ...
 )
 }
@@ -45,6 +46,14 @@ their \code{comparison} labels; use \code{\link[=select_comparison]{select_compa
 
 \item{selected_groups}{Optional subset of groups to retain (anova only).}
 
+\item{contrasts}{Optional comparisons between groups, instead of
+\code{control_group} / \code{case_group}: a character vector of expressions over
+the levels of \code{group_col} (\code{"B - A"}, \code{"(B + C)/2 - A"}; a level that
+is not a plain word goes in backticks, \code{"`Drug A` - Control"}), or
+\code{"pairwise"} for every pair of groups (see \code{\link[=pairwise_contrasts]{pairwise_contrasts()}}).
+All groups named are fitted in one model. Weighted contrasts need
+limma, DESeq2 or edgeR.}
+
 \item{...}{Extra arguments forwarded to the backend, e.g. \code{var_equal} for
 t-test or \code{df = 3} for limma spline.}
 }
@@ -69,7 +78,7 @@ in restricted environments without \code{omicsCore::install_optional()} being
 invoked first.
 
 For paired designs supply \code{paired_col}; for ANOVA-style multi-group tests
-set \code{analysis_type = "anova"} (currently limma-backed only). The
+set \code{analysis_type = "anova"} (limma for continuous data, edgeR's QL F-test or DESeq2's LRT for raw counts). The
 \code{continuous} analysis type requires \code{continuous_col} instead of
 \code{group_col} + \code{control_group} + \code{case_group}.
 }
@@ -87,10 +96,14 @@ set \code{analysis_type = "anova"} (currently limma-backed only). The
 Other diff:
 \code{\link{SUPPORTED_DIFF_METHODS}},
 \code{\link[=applicable_diff_methods]{applicable_diff_methods()}},
+\code{\link[=contrast_labels]{contrast_labels()}},
 \code{\link[=diff_comparisons]{diff_comparisons()}},
+\code{\link[=diff_hit_sets]{diff_hit_sets()}},
 \code{\link[=filter_diff_results]{filter_diff_results()}},
 \code{\link[=make_ranked_features]{make_ranked_features()}},
+\code{\link[=pairwise_contrasts]{pairwise_contrasts()}},
 \code{\link[=plot_diff_contrasts]{plot_diff_contrasts()}},
+\code{\link[=plot_diff_overlap]{plot_diff_overlap()}},
 \code{\link[=plot_feature_expression]{plot_feature_expression()}},
 \code{\link[=plot_heatmap]{plot_heatmap()}},
 \code{\link[=plot_ma]{plot_ma()}},

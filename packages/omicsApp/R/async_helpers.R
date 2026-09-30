@@ -23,7 +23,8 @@
 #' @keywords internal
 #' @noRd
 run_async <- function(func, on_success, on_error, message = "Running...",
-                      .future = future::future) {
+                      .future = future::future,
+                      on_cancel = function() on_error(CANCELLED_MESSAGE)) {
   # testServer does not have a real event loop; run synchronously
   # so that existing testServer tests continue to pass.
   if (isTRUE(getOption("shiny.allowoutputreads", FALSE))) {
@@ -33,27 +34,11 @@ run_async <- function(func, on_success, on_error, message = "Running...",
     } else {
       on_success(result)
     }
-    return()
+    return(invisible(NULL))
   }
 
-  progress <- shiny::Progress$new()
-  progress$set(message = message, value = 0.3)
-
-  # Closed at most once. Progress$close() warns rather than errors on a
-  # second call, so a tryCatch(error=) around it does not stop the
-  # warning reaching the log -- five of them arrived with the failure
-  # this guard was added for.
-  closed <- FALSE
-  close_progress <- function() {
-    if (closed) return(invisible(NULL))
-    closed <<- TRUE
-    tryCatch(progress$close(), error = function(e) NULL,
-             warning = function(w) NULL)
-  }
   session <- shiny::getDefaultReactiveDomain()
-  if (!is.null(session)) {
-    session$onSessionEnded(close_progress)
-  }
+  task <- async_task_new(session, message)
 
   # future() can throw before anything is submitted -- most reliably by
   # refusing to export globals over future.globals.maxSize. Thrown from
@@ -64,27 +49,149 @@ run_async <- function(func, on_success, on_error, message = "Running...",
     error = function(e) e
   )
   if (inherits(f, "error")) {
-    close_progress()
+    task$finish()
     on_error(conditionMessage(f))
     return(invisible(NULL))
   }
+  task$future <- f
+  task$on_cancel <- on_cancel
 
   p <- promises::as.promise(f)
   promises::then(
     p,
     onFulfilled = function(result) {
+      # A cancelled run has already told its caller; whatever the worker
+      # finished with afterwards is not wanted.
+      if (task$cancelled) return(invisible(NULL))
+      task$finish()
       if (inherits(result, "error")) {
         on_error(conditionMessage(result))
       } else {
         on_success(result)
       }
-      close_progress()
     },
     onRejected = function(err) {
+      if (task$cancelled) return(invisible(NULL))
+      task$finish()
       on_error(conditionMessage(err))
-      close_progress()
     }
   )
+  invisible(task)
+}
+
+CANCELLED_MESSAGE <- "The run was cancelled."
+
+# ---- progress and cancel -----------------------------------------------
+# What a long run shows while it runs. It used to be a progress bar set
+# to 30% and left there, with no way to stop the run: a DESeq2 fit on a
+# big matrix looked exactly like a hung page. Now it is a notification
+# that says what is running and for how long, with a bar that keeps
+# moving (it cannot know the true fraction -- the engines do not report
+# one -- so it approaches the end without claiming it), and a Cancel
+# button that interrupts the worker where the future backend supports
+# it and, either way, stops the result from being used.
+
+async_task_new <- function(session, message) {
+  task <- new.env(parent = emptyenv())
+  task$cancelled <- FALSE
+  task$done <- FALSE
+  task$future <- NULL
+  task$on_cancel <- NULL
+  task$finish <- function() {
+    if (task$done) return(invisible(NULL))
+    task$done <- TRUE
+    if (!is.null(task$ticker)) task$ticker$destroy()
+    if (!is.null(session)) {
+      tryCatch(shiny::removeNotification(task$id, session = session),
+               error = function(e) NULL)
+    }
+    invisible(NULL)
+  }
+  if (is.null(session)) return(task)
+
+  registry <- async_registry(session)
+  registry$n <- registry$n + 1L
+  task$id <- sprintf("async-task-%d", registry$n)
+  registry$tasks[[task$id]] <- task
+  started <- Sys.time()
+
+  show <- function() {
+    secs <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+    shiny::showNotification(
+      async_progress_ui(message, secs, task$id),
+      id = task$id, duration = NULL, closeButton = FALSE,
+      type = "message", session = session)
+  }
+  show()
+  task$ticker <- shiny::observe({
+    shiny::invalidateLater(1000, session)
+    if (!task$done) show()
+  }, domain = session)
+  session$onSessionEnded(function() {
+    task$done <- TRUE
+    if (!is.null(task$ticker)) task$ticker$destroy()
+  })
+  task
+}
+
+# One per session: the tasks it has running, and the observer that hears
+# their Cancel buttons (a notification lives outside every module, so
+# the click arrives as a top-level input).
+async_registry <- function(session) {
+  root <- session$rootScope()
+  reg <- root$userData$async_registry
+  if (!is.null(reg)) return(reg)
+  reg <- new.env(parent = emptyenv())
+  reg$n <- 0L
+  reg$tasks <- list()
+  root$userData$async_registry <- reg
+  shiny::observeEvent(root$input$omics_async_cancel, {
+    id <- root$input$omics_async_cancel
+    task <- reg$tasks[[id]]
+    if (is.null(task) || task$done) return()
+    async_cancel(task)
+  }, domain = root)
+  reg
+}
+
+async_cancel <- function(task) {
+  task$cancelled <- TRUE
+  if (!is.null(task$future) && "cancel" %in% getNamespaceExports("future")) {
+    tryCatch(future::cancel(task$future), error = function(e) NULL,
+             warning = function(w) NULL)
+  }
+  task$finish()
+  if (is.function(task$on_cancel)) task$on_cancel()
+  invisible(TRUE)
+}
+
+async_progress_ui <- function(message, secs, id) {
+  # 1 - exp(-t / 20): half-way at ~14 s, 90% at ~46 s, never 100%.
+  frac <- 0.05 + 0.9 * (1 - exp(-secs / 20))
+  htmltools::tags$div(
+    class = "async-progress",
+    htmltools::tags$div(
+      class = "async-progress-head",
+      htmltools::tags$strong(message),
+      htmltools::tags$span(class = "muted", format_elapsed(secs))
+    ),
+    htmltools::tags$div(
+      class = "async-progress-track",
+      htmltools::tags$div(class = "async-progress-bar",
+                          style = sprintf("width:%.0f%%", 100 * frac))
+    ),
+    htmltools::tags$button(
+      type = "button", class = "btn btn-sm btn-link async-cancel",
+      onclick = sprintf(
+        "Shiny.setInputValue('omics_async_cancel', '%s', {priority: 'event'});",
+        id),
+      "Cancel")
+  )
+}
+
+format_elapsed <- function(secs) {
+  secs <- max(0, round(secs))
+  if (secs < 60) sprintf("%d s", secs) else sprintf("%d min %02d s", secs %/% 60, secs %% 60)
 }
 
 #' Build a zero-argument function that carries only what it is given

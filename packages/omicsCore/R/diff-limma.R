@@ -24,6 +24,8 @@ ensure_limma <- function() {
 #' @param case_group Case-group label.
 #' @param covariates Optional covariate column names.
 #' @param paired_col Optional pairing/block column.
+#' @param contrasts Parsed contrast specs (from `run_diff(contrasts = )`); when
+#'   given, every group they name is fitted and each contrast read off the fit.
 #'
 #' @return List with `results_raw`, `results_std`, `model_object`, and
 #'   `analysis_info`.
@@ -34,7 +36,8 @@ run_limma_group <- function(
   control_group,
   case_group,
   covariates = NULL,
-  paired_col = NULL
+  paired_col = NULL,
+  contrasts = NULL
 ) {
   validate_omics_input(input)
   ensure_limma()
@@ -48,11 +51,13 @@ run_limma_group <- function(
   }
   check_paired_col(meta_df, paired_col, object_name = "meta_df")
 
-  # `case_group` may name several groups. They are fitted together with
-  # the control in one model, so every contrast shares one residual
-  # variance and one eBayes prior -- which is the point of fitting them
-  # together rather than as separate two-group runs.
-  group_levels <- c(control_group, case_group)
+  # `case_group` may name several groups, or `contrasts` any comparisons
+  # between groups. Every group involved is fitted in one model, so every
+  # contrast shares one residual variance and one eBayes prior -- which
+  # is the point of fitting them together rather than as separate
+  # two-group runs.
+  specs <- contrasts %||% case_control_contrasts(control_group, case_group)
+  group_levels <- contrast_levels(specs, order = control_group)
   meta_df[[group_col]] <- as.character(meta_df[[group_col]])
   target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
                            meta_df[[group_col]] %in% group_levels, , drop = FALSE]
@@ -61,8 +66,8 @@ run_limma_group <- function(
     target_meta,
     group_col = group_col,
     paired_col = paired_col,
-    control_group = control_group,
-    case_group = case_group,
+    control_group = if (is.null(contrasts)) control_group,
+    case_group = if (is.null(contrasts)) case_group else group_levels,
     object_name = "target_meta"
   )
 
@@ -99,12 +104,16 @@ run_limma_group <- function(
     fit <- limma::lmFit(expr_sub, design)
   }
 
-  contrast_str <- paste0(grp_names[-1L], " - ", grp_names[[1L]])
-  contrast_matrix <- limma::makeContrasts(contrasts = contrast_str, levels = design)
+  # The contrast matrix is built from the weights directly, one row per
+  # design column (zero for covariates), rather than parsed from strings.
+  cw <- contrast_matrix_from_specs(specs, group_levels)
+  contrast_matrix <- matrix(0, nrow = ncol(design), ncol = ncol(cw),
+                            dimnames = list(colnames(design), colnames(cw)))
+  contrast_matrix[grp_names, ] <- cw
   fit2 <- limma::eBayes(limma::contrasts.fit(fit, contrast_matrix))
 
-  comparisons <- paste0(case_group, "_vs_", control_group)
-  per <- lapply(seq_along(case_group), function(i) {
+  comparisons <- vapply(specs, `[[`, character(1), "label")
+  per <- lapply(seq_along(specs), function(i) {
     raw_df <- limma::topTable(fit2, coef = i, number = Inf, sort.by = "none")
     raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
     std <- standardize_limma_group_results(
@@ -117,7 +126,7 @@ run_limma_group <- function(
     list(raw = raw_df, std = std)
   })
   raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
-  if (length(case_group) == 1L) raw_df$comparison <- NULL
+  if (length(specs) == 1L) raw_df$comparison <- NULL
   results_std <- do.call(rbind, lapply(per, `[[`, "std"))
   rownames(raw_df) <- NULL
   rownames(results_std) <- NULL

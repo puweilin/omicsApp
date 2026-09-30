@@ -37,6 +37,11 @@
 #'   and `ComplexHeatmap` objects are supported.
 #' @param width,height Plot dimensions in inches. Defaults `7 x 5`.
 #'
+#' A [run_diff()] bundle holding several comparisons additionally gets one
+#' table per comparison (`<prefix>run_diff_<comparison>_diff_result_df`)
+#' and a hit-count summary (`<prefix>run_diff_contrast_summary`), so each
+#' comparison can be opened on its own.
+#'
 #' @return A `data.frame` artifact registry (one row per written file).
 #' @export
 #' @family persistence
@@ -86,6 +91,24 @@ export_bundle <- function(
     # via save_project() instead.
   }
 
+  # ---- one table per comparison ---------------------------------------
+  if (identical(bundle$analysis_name, "run_diff") &&
+      is.data.frame(bundle$results$diff_result_df)) {
+    comps <- diff_comparisons(bundle)
+    if (length(comps) > 1L) {
+      df <- bundle$results$diff_result_df
+      for (cmp in comps) {
+        registry <- write_table(
+          df[df$comparison %in% cmp, , drop = FALSE],
+          paste0(base, "_", file_safe(cmp), "_diff_result_df"),
+          formats, registry, label = paste0("diff_result_df:", cmp))
+      }
+      registry <- write_table(summarize_diff_contrasts(bundle),
+                              paste0(base, "_contrast_summary"),
+                              formats, registry, label = "contrast_summary")
+    }
+  }
+
   # ---- provenance ----------------------------------------------------
   params_path <- paste0(base, "_params.json")
   json_payload <- list(
@@ -126,6 +149,12 @@ export_bundle <- function(
 }
 
 # ---- internal helpers --------------------------------------------------
+
+# A comparison label as part of a file name: "(A + B)/2 - C" has a slash.
+file_safe <- function(x) {
+  x <- gsub("[^A-Za-z0-9._]+", "_", x)
+  gsub("^_+|_+$", "", x)
+}
 
 write_table <- function(df, base, formats, registry, label) {
   if ("xlsx" %in% formats) {
