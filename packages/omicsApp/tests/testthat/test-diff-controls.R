@@ -151,7 +151,7 @@ test_that("a project with no experiments says so rather than blaming the contras
     args = list(current_project = shiny::reactiveVal(empty)),
     {
       session$setInputs(rerun = 1)
-      expect_match(diff_error() %||% "", "no experiments", ignore.case = TRUE)
+      expect_match(diff_error() %||% "", "no layers", ignore.case = TRUE)
     }
   )
 })
