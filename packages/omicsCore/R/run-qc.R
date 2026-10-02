@@ -20,6 +20,18 @@
 #'
 #' Pass explicit arguments to override the defaults.
 #'
+#' Samples flagged as outliers are reported, not removed, unless
+#' `remove_outliers = TRUE`: dropping a sample changes the design -- a
+#' group of three becomes a group of two -- and that is the analyst's
+#' call, made after looking at the PCA. Samples above an explicit
+#' `sample_missing_threshold` are removed, since that threshold was asked
+#' for.
+#'
+#' Imputation on a linear scale (raw intensities) runs on log2 values and
+#' is transformed back: the left-censored methods draw from a normal
+#' distribution, which only fits intensities after logging, and on the
+#' raw scale they returned negative intensities.
+#'
 #' @param input An `omics_input`.
 #' @param missing_threshold Feature missing-rate cutoff in `[0, 1]`. Features
 #'   above this are flagged and removed from `cleaned_input`. Default `0.5`.
@@ -34,16 +46,23 @@
 #'   or a vector of those (other than `"none"`) to union their flags.
 #' @param outlier_sd_threshold Z-score / IQR multiplier passed to
 #'   [qc_outliers()]. Default `3`.
+#' @param remove_outliers Remove the samples [qc_outliers()] flags from
+#'   `cleaned_input`. Default `FALSE`: they are listed in
+#'   `recommended_filters$remove_samples` and kept.
 #' @param ... Forwarded to the imputation backend.
 #'
 #' @return An `analysis_bundle` with the following fields under `results`:
 #'   \describe{
-#'     \item{`qc_summary`}{List with `missingness`, `outliers`, and
-#'       `recommended_filters` (sample/feature IDs to remove).}
-#'     \item{`cleaned_input`}{`omics_input` with flagged samples/features
-#'       removed and (optionally) imputed expression matrix. `raw_mat` carries
-#'       the pre-imputation matrix when imputation occurred.}
+#'     \item{`qc_summary`}{List with `missingness`, `depth`, `outliers`,
+#'       `recommended_filters` (sample/feature IDs to remove), and, when
+#'       values were imputed, `imputation` (the method and the positions of
+#'       the imputed cells in `cleaned_input$expr_mat`).}
+#'     \item{`cleaned_input`}{`omics_input` with flagged features (and
+#'       samples, see above) removed and an (optionally) imputed expression
+#'       matrix. `raw_mat` carries the pre-imputation matrix when
+#'       imputation occurred and the input had none.}
 #'   }
+#'   Notes about what was done to the data are in `warnings`.
 #' @export
 #' @family qc
 #' @examples
@@ -66,6 +85,7 @@ run_qc <- function(
   impute_method = NULL,
   outlier_method = NULL,
   outlier_sd_threshold = 3,
+  remove_outliers = FALSE,
   ...
 ) {
   assert_number(missing_threshold, "missing_threshold", lower = 0, upper = 1)
@@ -74,6 +94,7 @@ run_qc <- function(
   assert_subset(outlier_method, "outlier_method",
                 c("none", "pca", "connectivity", "iqr"), allow_null = TRUE)
   assert_number(outlier_sd_threshold, "outlier_sd_threshold", lower = 0)
+  assert_flag(remove_outliers, "remove_outliers")
   validate_omics_input(input)
 
   # NULL rather than a fixed default, resolved per modality like
@@ -127,9 +148,19 @@ run_qc <- function(
     outliers$flagged_samples
   ))
   remove_features <- unique(missingness$flagged_features)
+  notes <- outliers$note
 
   # ---- build cleaned input ----
-  keep_samples <- setdiff(colnames(input$expr_mat), remove_samples)
+  drop_samples <- unique(c(missingness$flagged_samples,
+                           if (remove_outliers) outliers$flagged_samples))
+  kept_outliers <- setdiff(outliers$flagged_samples, drop_samples)
+  if (length(kept_outliers)) {
+    notes <- c(notes, sprintf(
+      "Flagged as outlier%s and kept: %s. Look at the PCA, then exclude with remove_outliers = TRUE or subset_omics() if it is not biology.",
+      if (length(kept_outliers) > 1L) "s" else "",
+      paste(kept_outliers, collapse = ", ")))
+  }
+  keep_samples <- setdiff(colnames(input$expr_mat), drop_samples)
   keep_features <- setdiff(rownames(input$expr_mat), remove_features)
   if (length(keep_samples) == 0L || length(keep_features) == 0L) {
     stop("QC would remove all samples or features; loosen the thresholds.")
@@ -138,9 +169,34 @@ run_qc <- function(
   cleaned <- subset_omics(input, samples = keep_samples, features = keep_features)
 
   # ---- imputation ----
+  imputation <- NULL
   if (impute_method != "none" && anyNA(cleaned$expr_mat)) {
+    na_cells <- which(is.na(cleaned$expr_mat))
     cleaned$raw_mat <- cleaned$raw_mat %||% cleaned$expr_mat
-    cleaned$expr_mat <- impute_matrix(cleaned$expr_mat, method = impute_method, ...)
+    linear <- !is.null(cleaned$assay_type) &&
+      !cleaned$assay_type %in% LOG_SCALE_ASSAY_TYPES &&
+      !impute_method %in% c("zero", "min")
+    if (linear) {
+      m <- cleaned$expr_mat
+      m[m <= 0] <- NA_real_
+      imputed <- 2^impute_matrix(log2(m), method = impute_method, ...)
+      # Only the cells that were missing take the imputed value; a zero
+      # that was observed stays zero.
+      out <- cleaned$expr_mat
+      out[na_cells] <- imputed[na_cells]
+      cleaned$expr_mat <- out
+      notes <- c(notes, sprintf(
+        "`%s` values were imputed on a log2 scale and transformed back.",
+        cleaned$assay_type))
+    } else {
+      cleaned$expr_mat <- impute_matrix(cleaned$expr_mat, method = impute_method, ...)
+      if (identical(cleaned$omics_type, "proteomics") &&
+          isTRUE(cleaned$assay_type %in% c("normalized_intensity", "filtered_intensity"))) {
+        cleaned$assay_type <- "imputed_intensity"
+      }
+    }
+    imputation <- list(method = impute_method, imputed_cells = na_cells,
+                       n_imputed = length(na_cells))
   }
 
   bundle <- new_analysis_bundle(
@@ -158,7 +214,8 @@ run_qc <- function(
       sample_missing_threshold = sample_missing_threshold,
       impute_method = impute_method,
       outlier_method = outlier_method,
-      outlier_sd_threshold = outlier_sd_threshold
+      outlier_sd_threshold = outlier_sd_threshold,
+      remove_outliers = remove_outliers
     ),
     results = list(
       qc_summary = list(
@@ -168,10 +225,12 @@ run_qc <- function(
         recommended_filters = list(
           remove_samples = remove_samples,
           remove_features = remove_features
-        )
+        ),
+        imputation = imputation
       ),
       cleaned_input = cleaned
-    )
+    ),
+    warnings = as.character(notes)
   )
   bundle
 }

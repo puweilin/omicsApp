@@ -19,8 +19,12 @@ run_gsea_database <- function(
 
   ranked_features <- ranked_features[!is.na(ranked_features)]
   if (length(ranked_features) == 0L) return(NULL)
-  ranked_features <- sort(ranked_features, decreasing = TRUE)
+  # One value per gene: the strongest, whichever its sign. Keeping the
+  # first after a decreasing sort kept the most positive, so a gene
+  # measured twice leaned "up".
+  ranked_features <- ranked_features[order(abs(ranked_features), decreasing = TRUE)]
   ranked_features <- ranked_features[!duplicated(names(ranked_features))]
+  ranked_features <- sort(ranked_features, decreasing = TRUE)
 
   terms <- build_term_tables(database = database, organism = organism)
 
@@ -67,11 +71,7 @@ run_gsea_from_bundle <- function(
 
   result_df <- diff_result_from_bundle(diff_bundle)
   feature_col <- if ("feature_symbol" %in% colnames(result_df)) "feature_symbol" else "feature_id"
-  ranked <- make_ranked_features(
-    result_df = result_df,
-    feature_col = feature_col,
-    rank_col = "effect"
-  )
+  ranked <- gsea_rank_vector(result_df, feature_col)
   comparison <- diff_bundle$params$comparison %||% "comparison"
 
   obj <- run_gsea_database(
@@ -98,4 +98,41 @@ run_gsea_from_bundle <- function(
   }
 
   list(object = obj, std = std)
+}
+
+# The ranking GSEA walks: the test statistic with the sign of the
+# effect, not the raw effect. A fold change of 3 from a gene seen in two
+# samples out-ranked a fold change of 1.5 seen cleanly in every sample,
+# and genes with no p-value (not tested, filtered) still took part.
+# The metric used is kept as the vector's "metric" attribute.
+gsea_rank_vector <- function(result_df, feature_col) {
+  st <- unique(stats::na.omit(result_df$statistic_type))
+  stat <- result_df$statistic
+  eff <- result_df$effect
+  if (length(st) == 1L && st %in% c("t", "wald") && any(is.finite(stat))) {
+    metric <- sign(eff) * abs(stat)
+    label <- "signed test statistic"
+  } else if (length(st) == 1L && st == "F" && any(is.finite(stat))) {
+    # A one-degree-of-freedom F (edgeR's QL test) is a squared t.
+    metric <- sign(eff) * sqrt(abs(stat))
+    label <- "signed sqrt(F)"
+  } else {
+    metric <- sign(eff) * -log10(pmax(result_df$p_value, .Machine$double.xmin))
+    label <- "sign(effect) * -log10(p)"
+  }
+  keep <- !is.na(result_df$p_value) & is.finite(metric) &
+    !is.na(result_df[[feature_col]]) & nzchar(result_df[[feature_col]])
+  out <- metric[keep]
+  names(out) <- result_df[[feature_col]][keep]
+  out <- out[order(abs(out), decreasing = TRUE)]
+  out <- out[!duplicated(names(out))]
+  out <- sort(out, decreasing = TRUE)
+  attr(out, "metric") <- label
+  out
+}
+
+gsea_rank_metric <- function(diff_bundle) {
+  df <- diff_result_from_bundle(diff_bundle)
+  col <- if ("feature_symbol" %in% colnames(df)) "feature_symbol" else "feature_id"
+  attr(gsea_rank_vector(df, col), "metric")
 }

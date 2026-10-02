@@ -138,6 +138,9 @@ light_calls <- list(
 )
 
 test_that("no public function answers a wrong argument with an internal error", {
+  # export_script() and friends write to `path = "x"`; keep that out of
+  # the test directory.
+  withr::local_dir(withr::local_tempdir())
   offences <- sweep_contract(light_calls)
   expect_identical(offences, character(0))
 })
@@ -145,6 +148,11 @@ test_that("no public function answers a wrong argument with an internal error", 
 test_that("the file-writing functions hold the same line", {
   skip_if_not_installed("openxlsx")
   dir <- withr::local_tempdir()
+  # The sweep hands `path` and `dir` the string "x" among its wrong
+  # values, and a writer that accepts it writes there. In the temp dir,
+  # not the test directory: the run used to leave `x` files behind that
+  # were then committed.
+  withr::local_dir(dir)
   xlsx <- file.path(dir, "prot.xlsx")
   openxlsx::write.xlsx(list(
     expression = data.frame(feature_id = rownames(prot$expr_mat), prot$expr_mat,

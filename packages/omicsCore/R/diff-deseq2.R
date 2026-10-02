@@ -94,6 +94,11 @@ deseq_with_dispersion_fallback <- function(dds) {
       msg <- conditionMessage(e)
       if (!grepl("dispersion", msg, ignore.case = TRUE)) stop(e)
       # Toy / tiny datasets occasionally fail the default dispersion fit.
+      # Gene-wise dispersions without shrinkage are anti-conservative, so
+      # the fallback is said out loud rather than taken quietly.
+      warning("DESeq2's dispersion trend could not be fitted (", msg,
+              "); gene-wise dispersion estimates were used, which makes ",
+              "p-values optimistic.", call. = FALSE)
       dds_fb <- DESeq2::estimateSizeFactors(dds)
       dds_fb <- DESeq2::estimateDispersionsGeneEst(dds_fb, quiet = TRUE)
       DESeq2::dispersions(dds_fb) <- S4Vectors::mcols(dds_fb)$dispGeneEst
@@ -177,10 +182,11 @@ run_deseq2_group <- function(
     design_terms <- c(design_terms, covariates)
   }
 
-  design_formula <- stats::as.formula(paste("~", paste(design_terms, collapse = " + ")))
-  dds <- build_deseq_dataset(input, count_sub, target_meta, design_formula)
+  safe <- deseq2_safe_coldata(target_meta, design_terms)
+  dds <- build_deseq_dataset(input, count_sub, safe$col_data, safe$formula)
   ref <- group_levels[[1L]]
-  dds[[group_col]] <- stats::relevel(dds[[group_col]], ref = ref)
+  gvar <- safe$map[[group_col]]
+  dds[[gvar]] <- stats::relevel(dds[[gvar]], ref = ref)
   dds <- deseq_with_dispersion_fallback(dds)
 
   # One fit, one dispersion estimate over every group in the model; each
@@ -191,9 +197,9 @@ run_deseq2_group <- function(
   per <- lapply(seq_along(specs), function(i) {
     s <- specs[[i]]
     res <- if (!is.null(s$case)) {
-      DESeq2::results(dds, contrast = c(group_col, s$case, s$control))
+      DESeq2::results(dds, contrast = c(gvar, s$case, s$control))
     } else {
-      DESeq2::results(dds, contrast = deseq2_contrast_vector(dds, group_col, s$weights, ref))
+      DESeq2::results(dds, contrast = deseq2_contrast_vector(dds, gvar, s$weights, ref))
     }
     raw_df <- as.data.frame(res) |>
       tibble::rownames_to_column("feature_id")
@@ -226,6 +232,18 @@ run_deseq2_group <- function(
       paired_col = paired_col
     )
   )
+}
+
+# The design columns under placeholder names. DESeq2 rewrites colData
+# names that are not R names ("Treatment Group" -> "Treatment.Group"), so
+# a design formula naming the original column could not find it.
+deseq2_safe_coldata <- function(meta, terms) {
+  map <- stats::setNames(paste0("v", seq_along(terms)), terms)
+  col_data <- meta[, terms, drop = FALSE]
+  names(col_data) <- unname(map)
+  rownames(col_data) <- rownames(meta)
+  list(col_data = col_data, map = as.list(map),
+       formula = stats::as.formula(paste("~", paste(map, collapse = " + "))))
 }
 
 # A contrast's weights as DESeq2's numeric contrast. The model is in
@@ -309,12 +327,13 @@ run_deseq2_continuous <- function(
     design_terms <- c(design_terms, covariates)
   }
 
-  design_formula <- stats::as.formula(paste("~", paste(design_terms, collapse = " + ")))
-  dds <- build_deseq_dataset(input, count_mat, meta_df, design_formula)
+  safe <- deseq2_safe_coldata(meta_df, design_terms)
+  dds <- build_deseq_dataset(input, count_mat, safe$col_data, safe$formula)
   dds <- deseq_with_dispersion_fallback(dds)
 
   coef_names <- DESeq2::resultsNames(dds)
-  if (!continuous_col %in% coef_names) {
+  cvar <- safe$map[[continuous_col]]
+  if (!cvar %in% coef_names) {
     stop(
       "Failed to resolve DESeq2 coefficient for `continuous_col = '",
       continuous_col, "'`. Available coefficients: ",
@@ -322,7 +341,7 @@ run_deseq2_continuous <- function(
     )
   }
 
-  res <- DESeq2::results(dds, name = continuous_col)
+  res <- DESeq2::results(dds, name = cvar)
   raw_df <- as.data.frame(res) |>
     tibble::rownames_to_column("feature_id")
 

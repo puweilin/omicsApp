@@ -47,7 +47,7 @@ anova_counts_design <- function(input, group_col, covariates, selected_groups,
   reduced <- stats::as.formula(paste("~", if (length(red_terms))
     paste(red_terms, collapse = " + ") else "1"))
   list(target = target, counts = as.matrix(input$expr_mat)[, rownames(target), drop = FALSE],
-       full = full, reduced = reduced)
+       full = full, reduced = reduced, terms = c(block, group_col, covariates))
 }
 
 standardize_anova_counts <- function(raw_df, feature_df, method, stat, stat_type,
@@ -93,14 +93,20 @@ run_edger_anova <- function(input, group_col, covariates = NULL,
   d <- anova_counts_design(input, group_col, covariates, selected_groups,
                            paired_col, "run_edger_anova")
   design <- stats::model.matrix(d$full, data = d$target)
-  grp_cols <- grep(paste0("^`?", group_col, "`?"), colnames(design))
-  grp_cols <- setdiff(grp_cols, 1L)
-  y <- edgeR::calcNormFactors(edgeR::DGEList(counts = d$counts))
+  # The group's columns by term, not by a name pattern: a covariate
+  # called "group_batch" matched "^group" and was tested along with the
+  # groups.
+  term <- match(group_col, d$terms)
+  grp_cols <- which(attr(design, "assign") == term)
+  y <- edger_filter(edgeR::DGEList(counts = d$counts), design)
+  filter_note <- attr(y, "filter_note")
+  y <- edgeR::calcNormFactors(y)
   y <- edgeR::estimateDisp(y, design = design)
   fit <- edgeR::glmQLFit(y, design = design)
   qlf <- edgeR::glmQLFTest(fit, coef = grp_cols)
   raw_df <- as.data.frame(edgeR::topTags(qlf, n = Inf, sort.by = "none")$table) |>
     tibble::rownames_to_column("feature_id")
+  raw_df <- pad_untested(raw_df, rownames(d$counts))
   std <- standardize_anova_counts(raw_df, input$feature_df, "edger", "F", "F",
                                   "PValue", "FDR", "logCPM", group_col,
                                   input$omics_type)
@@ -109,7 +115,8 @@ run_edger_anova <- function(input, group_col, covariates = NULL,
                             analysis_type = "anova", comparison = group_col,
                             covariates = covariates,
                             selected_groups = selected_groups,
-                            paired_col = paired_col))
+                            paired_col = paired_col,
+                            warnings = filter_note))
 }
 
 #' DESeq2 global test across groups
@@ -127,8 +134,11 @@ run_deseq2_anova <- function(input, group_col, covariates = NULL,
   ensure_deseq2()
   d <- anova_counts_design(input, group_col, covariates, selected_groups,
                            paired_col, "run_deseq2_anova")
-  dds <- build_deseq_dataset(input, d$counts, d$target, d$full)
-  dds <- with_fixed_seed(1L, DESeq2::DESeq(dds, test = "LRT", reduced = d$reduced,
+  safe <- deseq2_safe_coldata(d$target, d$terms)
+  red <- setdiff(unlist(safe$map), safe$map[[group_col]])
+  reduced <- stats::as.formula(paste("~", if (length(red)) paste(red, collapse = " + ") else "1"))
+  dds <- build_deseq_dataset(input, d$counts, safe$col_data, safe$formula)
+  dds <- with_fixed_seed(1L, DESeq2::DESeq(dds, test = "LRT", reduced = reduced,
                                            quiet = TRUE))
   raw_df <- as.data.frame(DESeq2::results(dds)) |>
     tibble::rownames_to_column("feature_id")

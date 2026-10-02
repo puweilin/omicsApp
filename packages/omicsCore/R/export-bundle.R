@@ -156,7 +156,26 @@ file_safe <- function(x) {
   gsub("^_+|_+$", "", x)
 }
 
+# A table as plain cells. A list column (ActivePathways' `evidence` and
+# `Genes_*`) failed write.table() outright, and a tab or newline inside
+# a text cell, written unquoted, shifted every column after it.
+flatten_for_export <- function(df) {
+  df <- as.data.frame(df, stringsAsFactors = FALSE)
+  df[] <- lapply(df, function(col) {
+    if (is.list(col)) {
+      col <- vapply(col, function(x) {
+        x <- unlist(x, use.names = FALSE)
+        if (!length(x)) NA_character_ else paste(as.character(x), collapse = ";")
+      }, character(1))
+    }
+    if (is.character(col)) col <- gsub("[\t\r\n]+", " ", col)
+    col
+  })
+  df
+}
+
 write_table <- function(df, base, formats, registry, label) {
+  df <- flatten_for_export(df)
   if ("xlsx" %in% formats) {
     path <- paste0(base, ".xlsx")
     wb <- openxlsx::createWorkbook()

@@ -87,7 +87,7 @@ integration_view_server <- function(id,
       if (length(l$others) < 2L) {
         return(htmltools::tags$div(
           class = "muted", style = "font-size:12.5px;padding-top:6px",
-          sprintf("%s × %s", l$primary, l$partner)))
+          sprintf("%s \u00D7 %s", l$primary, l$partner)))
       }
       shiny::selectInput(session$ns("partner"),
                          label = sprintf("Integrate %s with", l$primary),
@@ -239,7 +239,7 @@ integration_view_server <- function(id,
             "Sample-level integration needs to know which sample in each ",
             "layer came from the same person. Add a `donor` column to ",
             "each layer's sample metadata and re-import those layers, or ",
-            "rename the samples so they share a leading id — RD001-C ",
+            "rename the samples so they share a leading id \u2014 RD001-C ",
             "and RD001_Folli both give RD001. Nothing already computed ",
             "has to be re-run: donor is read by Integration and by ",
             "nothing else. Fold-change concordance does not need a pairing."),
@@ -260,7 +260,7 @@ integration_view_server <- function(id,
         sample_id = notice(sprintf("%d pairs, from sample ids that match outright.", n),
                            kind = "info"),
         suggested = notice(
-          sprintf("%d pairs, guessed from the sample ids — check them", n),
+          sprintf("%d pairs, guessed from the sample ids \u2014 check them", n),
           paste0("Nothing states that these are the same person; the ids ",
                  "merely share a leading part. Accept the pairing to keep ",
                  "it with the project (sample-level correlation will not ",
@@ -501,14 +501,14 @@ integration_view_server <- function(id,
     output$header <- shiny::renderUI({
       info <- can_run()
       subtitle <- if (isTRUE(is_demo())) {
-        "Proteomics × RNA-seq · demo data · 60 paired features"
+        "Proteomics \u00D7 RNA-seq \u00B7 demo data \u00B7 60 paired features"
       } else if (isTRUE(info$ok)) {
         what <- switch(method(),
                        correlation = "sample-level correlation",
                        active_pathways = "ActivePathways",
                        gsub("_vs_", " vs ", info$comparison %||%
                               paste0(info$case, "_vs_", info$control)))
-        sprintf("%s × %s · %s", info$primary_tag,
+        sprintf("%s \u00D7 %s \u00B7 %s", info$primary_tag,
                 info$secondary_tag, what)
       } else {
         "not run yet"
@@ -542,7 +542,7 @@ integration_view_server <- function(id,
       }
       if (isTRUE(running())) {
         tagged <- htmltools::tagAppendChild(
-          tagged, notice("Running…", kind = "info"))
+          tagged, notice("Running\u2026", kind = "info"))
       }
       info <- can_run()
       if (isTRUE(is_demo())) {
@@ -562,7 +562,7 @@ integration_view_server <- function(id,
         if (identical(info$reason, "diff") && is.function(navigate)) {
           tagged <- htmltools::tagAppendChild(tagged, htmltools::tags$div(
             style = "margin:6px 0 10px",
-            shiny::actionButton(session$ns("go_diff"), "Go to Differential →",
+            shiny::actionButton(session$ns("go_diff"), "Go to Differential \u2192",
                                 class = "btn btn-sm btn-ghost")))
         }
       } else if (length(info$dropped_covs)) {
@@ -603,7 +603,7 @@ integration_view_server <- function(id,
           htmltools::tags$div(class = "row-grid r-6-6",
             integration_plot_card(ns("cor_scatter"),
                                   "Correlation per gene",
-                                  "r across paired samples · y = -log10 adj. p"),
+                                  "r across paired samples \u00B7 y = -log10 adj. p"),
             integration_table_card(ns("top_table"), "Top features",
                                    "ranked by adjusted p")))
       } else if (identical(m, "active_pathways")) {
@@ -617,9 +617,9 @@ integration_view_server <- function(id,
         htmltools::tagList(
           htmltools::tags$div(class = "row-grid r-6-6",
             integration_plot_card(ns("dual"), "Mirrored volcano",
-                                  "x = effect(A) - effect(B) · y = combined p"),
+                                  "x = effect(A) - effect(B) \u00B7 y = combined p"),
             integration_plot_card(ns("scatter"), "Fold-change concordance",
-                                  "A vs B · dashed = y=x · coloured = hit in both")),
+                                  "A vs B \u00B7 dashed = y=x \u00B7 coloured = hit in both")),
           htmltools::tags$div(class = "row-grid r-6-6",
             integration_table_card(ns("top_table"), "Features",
                                    "hits in both layers first"),
@@ -728,11 +728,11 @@ integration_stat_cards <- function(df, bundle) {
     return(htmltools::tags$div(
       class = "stat-grid",
       stat_card("Genes correlated", format(nrow(df), big.mark = ","),
-                trend = sprintf("%s ↔ %s", exps[1], exps[2]),
+                trend = sprintf("%s \u2194 %s", exps[1], exps[2]),
                 accent = "brand", mono = TRUE),
-      stat_card("Paired samples", bundle$params$method_info$n_samples %||% "—",
+      stat_card("Paired samples", bundle$params$method_info$n_samples %||% "\u2014",
                 trend = sprintf("pairing: %s",
-                                bundle$params$method_info$pairing_source %||% "—"),
+                                bundle$params$method_info$pairing_source %||% "\u2014"),
                 mono = TRUE),
       stat_card("Positive (sig)", sum(sig & df$effect > 0, na.rm = TRUE),
                 trend = "RNA and protein rise together", accent = "up", mono = TRUE),
@@ -773,18 +773,18 @@ integration_stat_cards <- function(df, bundle) {
     stat_card(
       label  = "Paired features",
       value  = format(nrow(df), big.mark = ","),
-      trend  = sprintf("%s ↔ %s · %d hits in both", exps[1], exps[2], sum(both)),
+      trend  = sprintf("%s \u2194 %s \u00B7 %d hits in both", exps[1], exps[2], sum(both)),
       accent = "brand", mono = TRUE
     ),
-    stat_card(label = "Concordant ↑", value = up_n,
+    stat_card(label = "Concordant \u2191", value = up_n,
               trend = "hit and up in both layers", accent = "up", mono = TRUE),
-    stat_card(label = "Concordant ↓", value = down_n,
+    stat_card(label = "Concordant \u2193", value = down_n,
               trend = "hit and down in both layers", accent = "down", mono = TRUE),
     stat_card(
       label = "Discordant",
       value = disc_n,
       trend = if (is.na(rho)) "hit in both, opposite signs"
-              else sprintf("opposite signs · Spearman ρ of hits %.2f", rho),
+              else sprintf("opposite signs \u00B7 Spearman \u03C1 of hits %.2f", rho),
       accent = if (disc_n > 0L) "warn" else "ok",
       mono = TRUE
     )
@@ -900,9 +900,9 @@ integration_ap_card <- function(ns) {
   bslib::card(
     bslib::card_header(
       htmltools::tags$h3(class = "card-title",
-                         "ActivePathways · combined p"),
+                         "ActivePathways \u00B7 combined p"),
       htmltools::tags$span(class = "card-sub",
-                           "Brown's method · demo data")
+                           "Brown's method \u00B7 demo data")
     ),
     bslib::card_body(
       DT::DTOutput(ns("ap_table"))

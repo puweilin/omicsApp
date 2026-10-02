@@ -62,7 +62,11 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       if (!omicsCore::is_analysis_bundle(b)) return(character(0))
       omicsCore::diff_comparisons(b)
     })
+    # A result that arrives after the comparisons it was asked about
+    # were replaced is dropped (see run_epoch()).
+    compare_epoch <- run_epoch()
     shiny::observeEvent(diff_all(), {
+      compare_epoch$bump()
       compare_bundle(NULL)
       compare_error(NULL)
     }, ignoreNULL = FALSE, ignoreInit = TRUE)
@@ -117,6 +121,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                              p_preference = thr$p_preference,
                              effect_cutoff = thr$effect_cutoff))
       }
+      my_run <- compare_epoch$start()
       run_async(
         detached_call(
           function() do.call(omicsCore::compare_enrichment,
@@ -124,10 +129,13 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           bundle = b, args = args
         ),
         on_success = function(res) {
+          if (!compare_epoch$is_current(my_run)) return(invisible())
           compare_error(NULL)
           compare_bundle(res)
         },
-        on_error = function(msg) compare_error(msg),
+        on_error = function(msg) {
+          if (compare_epoch$is_current(my_run)) compare_error(msg)
+        },
         message = "Enriching every comparison..."
       )
     })
@@ -148,13 +156,18 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     # The layer the upstream diff was computed on has been replaced, so
     # this enrichment is no longer about anything in the project. Back
     # to the module's own start-up state.
+    enrich_epoch <- run_epoch()
     shiny::observeEvent(invalidate(), {
+      enrich_epoch$bump()
+      compare_epoch$bump()
       enrich_bundle(NULL)
       enrich_error(NULL)
       is_demo(TRUE)
+      compare_bundle(NULL)
     }, ignoreInit = TRUE)
 
     do_run <- function() {
+      my_run <- enrich_epoch$start()
       db_arg <- input$database %||% "hallmark"
       type   <- input$type %||% "ora"
       dir_   <- input$direction %||% "both"
@@ -212,11 +225,13 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           thr = thr
         ),
         on_success = function(result) {
+          if (!enrich_epoch$is_current(my_run)) return(invisible())
           enrich_error(NULL)
           is_demo(FALSE)
           enrich_bundle(result)
         },
         on_error = function(msg) {
+          if (!enrich_epoch$is_current(my_run)) return(invisible())
           # The error, and nothing under it: the demo's pathways beneath
           # a failure notice read as the user's result.
           enrich_error(msg)
@@ -229,9 +244,12 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
 
     # Auto-run once on first diff_bundle change so the view lands
     # populated; subsequent updates require Re-run.
+    # Also when the upstream result goes away (a layer change clears it):
+    # with ignoreNULL the old enrichment stayed on screen, now labelled
+    # with the new layer, and went into the project without its diff.
     shiny::observeEvent(diff_bundle(), {
       do_run()
-    }, ignoreInit = TRUE)
+    }, ignoreInit = TRUE, ignoreNULL = FALSE)
     shiny::observeEvent(input$rerun, do_run())
     if (is.function(navigate)) {
       shiny::observeEvent(input$go_next, navigate("integration"))
@@ -314,6 +332,15 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       df <- b$results$diff_result_df
       if (is.null(df)) return(NULL)
       thr <- diff_thresholds()
+      # Once an ORA has run, the thresholds it ran at: the live ones may
+      # have moved since, and the line describes the result below it.
+      eb <- enrich_bundle()
+      if (!is.null(eb) && identical(eb$params$type, "ora") &&
+          identical(input$type %||% "ora", "ora")) {
+        thr <- list(p_cutoff = eb$params$p_cutoff,
+                    p_preference = eb$params$p_preference,
+                    effect_cutoff = eb$params$effect_cutoff)
+      }
       # GSEA ranks every feature it can place, so there is no selection
       # to report -- only how many made it into the ranking. Saying "N
       # of M selected" here would describe a step the method does not
@@ -327,7 +354,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       pv <- df[[pcol]]
       keep <- !is.na(pv) & pv < (thr$p_cutoff %||% 0.05)
       if (!is.null(thr$effect_cutoff) && is.finite(thr$effect_cutoff)) {
-        keep <- keep & !is.na(df$effect) & abs(df$effect) > thr$effect_cutoff
+        keep <- keep & !is.na(df$effect) & abs(df$effect) >= thr$effect_cutoff
       }
       list(gsea = FALSE, n = sum(keep), total = nrow(df), p_col = pcol,
            p_cutoff = thr$p_cutoff %||% 0.05,
@@ -356,7 +383,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       }
       bits <- sprintf("%s < %s", s$p_col, format(s$p_cutoff))
       if (!is.null(s$effect_cutoff) && is.finite(s$effect_cutoff)) {
-        bits <- paste0(bits, sprintf(", |effect| > %.3f", s$effect_cutoff))
+        bits <- paste0(bits, sprintf(", |effect| \u2265 %.3f", s$effect_cutoff))
       }
       htmltools::tags$div(
         class = "muted", style = "font-size:12.5px;margin:2px 0 10px",
@@ -633,3 +660,7 @@ enrich_hits_card <- function(ns) {
     )
   )
 }
+
+# Supplied to the worker function's environment by detached_call(), which
+# codetools cannot see.
+utils::globalVariables("bundle")

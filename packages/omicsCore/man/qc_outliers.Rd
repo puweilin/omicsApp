@@ -18,8 +18,10 @@ flagged sets.}
 }
 \value{
 When \code{method} is length 1, a list with \code{method}, \code{stats},
-\code{flagged_samples}. When length > 1, the same shape with \code{stats} row-bound
-across methods and a \code{by_method} field holding per-method results.
+\code{flagged_samples}, and, when the data were transformed or the
+threshold cannot be reached, \code{note}. When length > 1, the same shape
+with \code{stats} row-bound across methods and a \code{by_method} field holding
+per-method results.
 }
 \description{
 Outlier detection on an \code{\link[=omics_input]{omics_input()}}. Three methods are supported:
@@ -36,17 +38,27 @@ is more than \code{sd_threshold} standard deviations below the cohort mean
 }
 
 All three methods are pure base R; no Suggests packages required.
+
+They run on a log scale whatever the layer holds: raw counts become
+log2-CPM and linear intensities, TPM or FPKM become log2(x + 1), the
+same conversion \code{\link[=run_diff]{run_diff()}} makes for limma. On the raw scale a
+correlation or a PCA is driven by the handful of most abundant
+features, and the deepest library looks like the odd one out.
+
+A z-score over \code{n} samples cannot exceed \code{(n - 1) / sqrt(n)}, so with
+ten or fewer samples a threshold of 3 can never be reached. The result
+then carries a \code{note} saying so; look at the PCA plot instead.
 }
 \seealso{
-Other qc: 
+Other qc:
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
-\code{\link{impute_matrix}()},
-\code{\link{plot_qc}()},
-\code{\link{qc_depth}()},
-\code{\link{qc_depth_outliers}()},
-\code{\link{qc_missingness}()},
-\code{\link{resolve_impute_method}()},
-\code{\link{run_qc}()},
-\code{\link{winsorize_counts}()}
+\code{\link[=impute_matrix]{impute_matrix()}},
+\code{\link[=plot_qc]{plot_qc()}},
+\code{\link[=qc_depth]{qc_depth()}},
+\code{\link[=qc_depth_outliers]{qc_depth_outliers()}},
+\code{\link[=qc_missingness]{qc_missingness()}},
+\code{\link[=resolve_impute_method]{resolve_impute_method()}},
+\code{\link[=run_qc]{run_qc()}},
+\code{\link[=winsorize_counts]{winsorize_counts()}}
 }
 \concept{qc}

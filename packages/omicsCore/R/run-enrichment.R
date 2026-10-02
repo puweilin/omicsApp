@@ -36,7 +36,7 @@ SUPPORTED_ENRICH_TYPES <- c("ora", "gsea")
 #'   `"raw"`.
 #' @param effect_cutoff Optional |effect| cutoff for ORA feature selection.
 #' @param p_adjust_method Multiple-testing correction method.
-#' @param min_size,max_size GSEA min/max gene-set sizes.
+#' @param min_size,max_size Min/max gene-set sizes, for ORA and GSEA alike.
 #' @param ... Reserved for backend-specific extensions.
 #'
 #' @return An [`analysis_bundle`][is_analysis_bundle()] with
@@ -117,7 +117,9 @@ run_enrichment <- function(
         output_p_cutoff = output_p_cutoff,
         p_preference = p_preference,
         effect_cutoff = effect_cutoff,
-        p_adjust_method = p_adjust_method
+        p_adjust_method = p_adjust_method,
+        min_size = min_size,
+        max_size = max_size
       )
     } else {
       run_gsea_from_bundle(
@@ -168,11 +170,13 @@ run_enrichment <- function(
       organism = organism,
       direction = direction,
       p_cutoff = p_cutoff,
+      output_p_cutoff = output_p_cutoff,
       p_preference = p_preference,
       effect_cutoff = effect_cutoff,
       p_adjust_method = p_adjust_method,
       min_size = min_size,
       max_size = max_size,
+      rank_metric = if (type == "gsea") gsea_rank_metric(diff_bundle),
       geneset_sources = geneset_sources,
       comparison = diff_bundle$params$comparison
     ),

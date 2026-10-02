@@ -1,5 +1,8 @@
 # Roadmap
 
+> 当前进度与下一版本（v0.2–v0.4）的详细建议见 [next-release-plan.md](./next-release-plan.md)；
+> 第三轮系统 debug 结果见 [review-2026-10.md](./review-2026-10.md)。
+
 | Phase | Goal | Estimated effort |
 |---|---|---|
 | **0** | Repo skeleton, API contract, CI placeholder | 1 week |

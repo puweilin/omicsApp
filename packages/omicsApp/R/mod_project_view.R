@@ -40,8 +40,19 @@ project_view_ui <- function(id) {
 #' @noRd
 project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                                 on_view_layer = function(tag) NULL,
-                                navigate = NULL) {
+                                navigate = NULL,
+                                replace_project = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
+
+    # A whole new project (Open, Restore, the example): through the
+    # caller, which tells the analysis views to let go of what they
+    # hold. Setting current_project() alone left them holding the
+    # previous project's results whenever the new one was built from the
+    # same files, and those results then replaced the ones it was saved
+    # with.
+    set_project <- function(p) {
+      if (is.function(replace_project)) replace_project(p) else current_project(p)
+    }
 
     # Render against the live project when present, otherwise the
     # built-in demo. We keep a single source of truth (resolved())
@@ -172,7 +183,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           easyClose = TRUE))
         return()
       }
-      current_project(tutorial_project())
+      set_project(tutorial_project())
       shiny::showNotification(
         "Example project loaded: proteomics + RNA-seq, Control vs TreatA / TreatB.",
         type = "message")
@@ -180,7 +191,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     shiny::observeEvent(input$confirm_tutorial, {
       shiny::removeModal()
-      current_project(tutorial_project())
+      set_project(tutorial_project())
     })
 
     shiny::observeEvent(input$go_next, {
@@ -268,6 +279,9 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         return()
       }
       proj$experiments[[tag]] <- NULL
+      # And the results computed on it: the report and the script
+      # carried them as if the layer were still there.
+      proj$bundles <- drop_layer_bundles(proj$bundles, tag)
       # A link naming a layer that is gone would pair samples to nothing.
       if (!is.null(proj$sample_link) && nrow(proj$sample_link) > 0L) {
         proj$sample_link <- proj$sample_link[proj$sample_link$tag != tag, ,
@@ -377,6 +391,13 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           "Nothing to save yet \u2014 import a file first.", type = "warning")
         return()
       }
+      # The project takes the name it is saved under; it stayed "User
+      # project" in the header, the report and the script.
+      nm <- trimws(input$save_name %||% "")
+      if (nzchar(nm) && !identical(proj$name, nm)) {
+        proj$name <- nm
+        current_project(proj)
+      }
       res <- store_save_project(
         proj,
         slug      = project_slug(input$save_name %||% ""),
@@ -393,7 +414,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       shiny::showNotification(res$message,
                               type = if (isTRUE(res$ok)) "message" else "error",
                               duration = if (isTRUE(res$ok)) 5 else NULL)
-      if (isTRUE(res$ok)) current_project(res$project)
+      if (isTRUE(res$ok)) set_project(res$project)
     })
 
     # Confirmed, as removing a layer is: a deleted project file does not
@@ -427,7 +448,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         shiny::showNotification("No readable autosave found.", type = "error")
         return()
       }
-      current_project(proj)
+      set_project(proj)
       shiny::showNotification("Restored the last autosaved session.",
                               type = "message")
     })
@@ -773,4 +794,17 @@ project_activity_card <- function(project, is_demo = TRUE) {
       }
     )
   )
+}
+
+# The bundles computed on a layer: by the omics type they record (the
+# app tags a layer by its omics type), and for integration by the pair
+# of layers it names.
+drop_layer_bundles <- function(bundles, tag) {
+  if (!length(bundles)) return(bundles)
+  keep <- vapply(bundles, function(b) {
+    if (!omicsCore::is_analysis_bundle(b)) return(TRUE)
+    if (tag %in% (b$params$experiments %||% character(0))) return(FALSE)
+    !identical(b$input_info$omics_type %||% "", tag)
+  }, logical(1))
+  bundles[keep]
 }

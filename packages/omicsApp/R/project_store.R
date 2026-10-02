@@ -320,7 +320,7 @@ list_saved_projects <- function(dir = omicsapp_data_dir()) {
 store_save_project <- function(project, slug, dir = omicsapp_data_dir(),
                                overwrite = FALSE) {
   fail <- function(msg) list(ok = FALSE, path = NA_character_, message = msg)
-  if (is.na(slug)) {
+  if (!is_stored_slug(slug)) {
     return(fail("Please enter a project name using letters, digits, or spaces."))
   }
   if (!omicsCore::is_omics_project(project)) {
@@ -351,6 +351,15 @@ store_save_project <- function(project, slug, dir = omicsapp_data_dir(),
   result
 }
 
+# A slug is only ever used as a file name inside the store if it is one
+# project_slug() would have produced. The Open and Delete buttons take
+# the slug from the browser (`input$saved_pick`), which a user can set to
+# anything -- "../../etc/x" opened and deleted files outside the store.
+is_stored_slug <- function(slug) {
+  is.character(slug) && length(slug) == 1L && !is.na(slug) && nzchar(slug) &&
+    identical(project_slug(slug), slug)
+}
+
 #' Delete a saved project
 #'
 #' @param slug Slug to remove.
@@ -360,7 +369,7 @@ store_save_project <- function(project, slug, dir = omicsapp_data_dir(),
 #' @keywords internal
 #' @noRd
 store_delete_project <- function(slug, dir = omicsapp_data_dir()) {
-  if (is.na(slug) || !nzchar(slug)) {
+  if (!is_stored_slug(slug)) {
     return(list(ok = FALSE, message = "No project selected."))
   }
   path <- project_path(slug, dir)
@@ -446,7 +455,7 @@ prune_orphan_uploads <- function(digests, dir = omicsapp_data_dir()) {
 #' @noRd
 store_load_project <- function(slug, dir = omicsapp_data_dir()) {
   fail <- function(msg) list(ok = FALSE, project = NULL, message = msg)
-  if (is.na(slug) || !nzchar(slug)) return(fail("No project selected."))
+  if (!is_stored_slug(slug)) return(fail("No project selected."))
   path <- project_path(slug, dir)
   if (!file.exists(path)) {
     return(fail(sprintf("'%s' no longer exists.", slug)))

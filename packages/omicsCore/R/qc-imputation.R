@@ -126,7 +126,7 @@ impute_matrix <- function(mat, method = IMPUTE_METHODS, ...) {
     MinProb = lcmd_call("impute.MinProb", mat, ...),
     MinDet  = lcmd_call("impute.MinDet", mat, ...),
     QRILC   = lcmd_qrilc(mat, ...),
-    knn     = lcmd_call("impute.wrapper.KNN", mat, K = 10, ...),
+    knn     = impute_knn(mat, ...),
     MLE     = lcmd_call("impute.wrapper.MLE", mat, ...),
     bpca    = impute_bpca(mat, ...),
     mixed   = impute_mixed(mat, ...)
@@ -206,6 +206,16 @@ impute_mixed <- function(mat, mar = "KNN", mnar = "MinProb", ...) {
       out <- f(mat, sel, method.MAR = mar, method.MNAR = mnar))
     as.matrix(out)
   })
+}
+
+# K = 10 unless the caller says otherwise -- passing `K` used to fail
+# with "formal argument matched by multiple actual arguments", and `k`
+# (the spelling in impute::impute.knn) was passed on and rejected. Never
+# more neighbours than there are other features.
+impute_knn <- function(mat, K = NULL, k = NULL, ...) {
+  K <- K %||% k %||% 10L
+  K <- max(1L, min(as.integer(K), nrow(mat) - 1L))
+  lcmd_call("impute.wrapper.KNN", mat, K = K, ...)
 }
 
 impute_row_min <- function(mat) {

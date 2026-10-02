@@ -324,6 +324,14 @@ diff_result_from_bundle <- function(bundle) {
     stop("Bundle is missing `results$diff_result_df`.")
   }
   check_diff_result_schema(result_df)
+  # One figure, one comparison. A bundle holding several drew every
+  # feature once per comparison -- 400 points for 200 genes, labels
+  # repeated -- under a subtitle naming all of them.
+  n_cmp <- length(unique(stats::na.omit(result_df$comparison)))
+  if (n_cmp > 1L) {
+    stop("The bundle holds ", n_cmp, " comparisons; plot one at a time with ",
+         "select_comparison(bundle, \"...\").", call. = FALSE)
+  }
   result_df
 }
 
@@ -359,7 +367,9 @@ diff_significance <- function(df, p_col, p_threshold, effect_threshold) {
     sig <- sig & df[[p_col]] < p_threshold
   }
   if (!is.null(effect_threshold)) {
-    sig <- sig & abs(df$effect) > effect_threshold
+    # >=, as filter_diff_results() has it: the figure and the hit table
+    # used to disagree about a feature exactly at the cutoff.
+    sig <- sig & abs(df$effect) >= effect_threshold
   }
   sig[is.na(sig)] <- FALSE
   sig
@@ -403,8 +413,13 @@ volcano_xlab <- function(bundle) {
 }
 
 ma_xlab <- function(bundle) {
-  omics_type <- first_or_na(bundle$results$diff_result_df$omics_type)
-  if (identical(omics_type, "rnaseq")) "log CPM (base_mean)" else "mean expression"
+  # What base_mean is depends on the engine: DESeq2 reports the mean of
+  # normalized counts (linear), edgeR log-CPM, limma the average log value.
+  switch(first_or_na(bundle$results$diff_result_df$method) %||% "",
+         deseq2 = "mean of normalized counts (base_mean)",
+         edger = "average log CPM (base_mean)",
+         limma = "average log expression (base_mean)",
+         "mean expression (base_mean)")
 }
 
 add_repel_layer <- function(df, x, y, label_col) {

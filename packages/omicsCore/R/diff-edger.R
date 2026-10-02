@@ -87,12 +87,29 @@ run_edger_group <- function(
     design_terms <- c(design_terms, covariates)
   }
 
-  design_formula <- stats::as.formula(paste("~", paste(design_terms, collapse = " + ")))
+  # Backticked: a column called "Treatment Group" was an "unexpected
+  # symbol" in the formula.
+  design_formula <- stats::as.formula(paste("~", paste0("`", design_terms, "`", collapse = " + ")))
   design_mat <- stats::model.matrix(design_formula, data = target_meta)
+  # The group's columns, found by which term they belong to rather than
+  # by name: a non-syntactic column name puts backticks into the column
+  # names, and a covariate whose name starts with the group column's
+  # matched the old pattern.
+  grp_term <- match(group_col, design_terms)
+  grp_cols <- which(attr(design_mat, "assign") == grp_term)
+  names(grp_cols) <- levels(target_meta[[group_col]])[-1L]
 
+  all_features <- rownames(count_sub)
   y <- edgeR::DGEList(counts = count_sub)
+  y <- edger_filter(y, design_mat)
+  filter_note <- attr(y, "filter_note")
+  count_sub <- count_sub[rownames(y), , drop = FALSE]
   txi_info <- get_tximport_info(input)
-  if (!is.null(txi_info$length)) {
+  # Length offsets only for counts that still carry the length bias.
+  # Counts from abundance ("scaledTPM", "lengthScaledTPM") have it
+  # removed already, and offsetting them again corrected twice.
+  if (!is.null(txi_info$length) &&
+      identical(txi_info$counts_from_abundance %||% "no", "no")) {
     length_sub <- txi_info$length[rownames(count_sub), colnames(count_sub), drop = FALSE]
     lib_sizes <- colSums(count_sub)
     log_length <- log(length_sub + 1)
@@ -124,16 +141,16 @@ run_edger_group <- function(
     cvec <- stats::setNames(rep(0, ncol(design_mat)), colnames(design_mat))
     for (lv in setdiff(names(w), ref)) {
       if (abs(w[[lv]]) < 1e-12) next
-      group_coef <- paste0(group_col, lv)
-      if (!group_coef %in% colnames(design_mat)) {
+      if (!lv %in% names(grp_cols)) {
         stop("Could not locate group coefficient in design matrix for: ", lv)
       }
-      cvec[[group_coef]] <- w[[lv]]
+      cvec[[grp_cols[[lv]]]] <- w[[lv]]
     }
     qlf <- edgeR::glmQLFTest(fit, contrast = unname(cvec))
     tt <- edgeR::topTags(qlf, n = Inf, sort.by = "none")
     raw_df <- as.data.frame(tt$table) |>
       tibble::rownames_to_column("feature_id")
+    raw_df <- pad_untested(raw_df, all_features)
     std <- standardize_edger_group_results(
       raw_df = raw_df,
       feature_df = feature_df,
@@ -160,7 +177,40 @@ run_edger_group <- function(
       analysis_type = "group",
       comparison = comparison,
       covariates = covariates,
-      paired_col = paired_col
+      paired_col = paired_col,
+      warnings = filter_note
     )
   )
+}
+
+
+# Low-count genes out before the model sees them (edgeR's own
+# filterByExpr()). Without it thousands of near-zero genes flattened the
+# dispersion trend and widened the multiple-testing burden: on a
+# simulated 3-vs-3 set with 100 true changes, edgeR found 1 of them
+# unfiltered and 24 filtered. The number removed is recorded; a filter
+# that would leave fewer than two genes is not applied.
+edger_filter <- function(y, design) {
+  keep <- tryCatch(edgeR::filterByExpr(y, design = design),
+                   error = function(e) rep(TRUE, nrow(y)))
+  if (sum(keep) < 2L || all(keep)) return(y)
+  out <- y[keep, , keep.lib.sizes = FALSE]
+  attr(out, "filter_note") <- sprintf(
+    "%d of %d genes with too few counts to test were set aside (edgeR::filterByExpr).",
+    sum(!keep), length(keep))
+  out
+}
+
+# The genes set aside by the filter, back in the table as untested rows
+# (no effect, no p-value) in the matrix's order -- every feature keeps a
+# row, as it does from every other engine.
+pad_untested <- function(raw_df, all_features) {
+  missing <- setdiff(all_features, raw_df$feature_id)
+  if (!length(missing)) return(raw_df)
+  pad <- raw_df[rep(NA_integer_, length(missing)), , drop = FALSE]
+  pad$feature_id <- missing
+  out <- rbind(raw_df, pad)
+  out <- out[match(all_features, out$feature_id), , drop = FALSE]
+  rownames(out) <- NULL
+  out
 }

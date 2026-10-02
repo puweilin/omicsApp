@@ -48,11 +48,13 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       # message is indistinguishable from a broken one, and that is what
       # it looked like.
       ready <- have_rmd && !is.null(proj)
-      dl <- function(id, label, primary) {
+      dl <- function(id, label, primary, extra_ok = TRUE,
+                     extra_why = NULL) {
+        ok <- ready && extra_ok
         btn <- shiny::downloadButton(
           ns(id), label,
-          class = paste("btn", if (ready && primary) "btn-primary" else "btn-ghost"))
-        if (ready) return(btn)
+          class = paste("btn", if (ok && primary) "btn-primary" else "btn-ghost"))
+        if (ok) return(btn)
         # `disabled` on the anchor, plus the pointer-events guard,
         # because a download link is an <a> and browsers do not honour
         # the attribute on its own.
@@ -60,14 +62,18 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
           btn, disabled = NA,
           style = "pointer-events:none;opacity:0.55",
           title = if (!have_rmd) "rmarkdown is not installed"
-                  else "Import a project first")
+                  else if (is.null(proj)) "Import a project first"
+                  else extra_why)
       }
       view_header(
         title    = "Report",
         subtitle = subtitle,
         actions  = htmltools::tagList(
           dl("download_html", "Generate HTML", TRUE),
-          dl("download_pdf", "Generate PDF", FALSE)
+          # PDF needs LaTeX, which most servers do not have; the button
+          # used to be live and fail after a long render.
+          dl("download_pdf", "Generate PDF", FALSE, extra_ok = have_latex(),
+             extra_why = "PDF needs a LaTeX installation (e.g. tinytex::install_tinytex())")
         )
       )
     })
@@ -329,4 +335,12 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       }
     )
   })
+}
+
+# Whether a PDF report can be built here.
+have_latex <- function() {
+  nzchar(Sys.which("pdflatex")) || nzchar(Sys.which("xelatex")) ||
+    # Looked up rather than called with `::`: tinytex is not a dependency.
+    (has_pkg("tinytex") && isTRUE(tryCatch(
+      getExportedValue("tinytex", "is_tinytex")(), error = function(e) FALSE)))
 }

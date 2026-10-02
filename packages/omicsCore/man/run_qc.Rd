@@ -11,6 +11,7 @@ run_qc(
   impute_method = NULL,
   outlier_method = NULL,
   outlier_sd_threshold = 3,
+  remove_outliers = FALSE,
   ...
 )
 }
@@ -35,17 +36,25 @@ or a vector of those (other than \code{"none"}) to union their flags.}
 \item{outlier_sd_threshold}{Z-score / IQR multiplier passed to
 \code{\link[=qc_outliers]{qc_outliers()}}. Default \code{3}.}
 
+\item{remove_outliers}{Remove the samples \code{\link[=qc_outliers]{qc_outliers()}} flags from
+\code{cleaned_input}. Default \code{FALSE}: they are listed in
+\code{recommended_filters$remove_samples} and kept.}
+
 \item{...}{Forwarded to the imputation backend.}
 }
 \value{
 An \code{analysis_bundle} with the following fields under \code{results}:
 \describe{
-\item{\code{qc_summary}}{List with \code{missingness}, \code{outliers}, and
-\code{recommended_filters} (sample/feature IDs to remove).}
-\item{\code{cleaned_input}}{\code{omics_input} with flagged samples/features
-removed and (optionally) imputed expression matrix. \code{raw_mat} carries
-the pre-imputation matrix when imputation occurred.}
+\item{\code{qc_summary}}{List with \code{missingness}, \code{depth}, \code{outliers},
+\code{recommended_filters} (sample/feature IDs to remove), and, when
+values were imputed, \code{imputation} (the method and the positions of
+the imputed cells in \code{cleaned_input$expr_mat}).}
+\item{\code{cleaned_input}}{\code{omics_input} with flagged features (and
+samples, see above) removed and an (optionally) imputed expression
+matrix. \code{raw_mat} carries the pre-imputation matrix when
+imputation occurred and the input had none.}
 }
+Notes about what was done to the data are in \code{warnings}.
 }
 \description{
 End-to-end QC for an \code{\link[=omics_input]{omics_input()}}. Computes missingness, detects
@@ -69,6 +78,18 @@ imputing it feeds a negative-binomial model numbers it never saw.
 }
 
 Pass explicit arguments to override the defaults.
+
+Samples flagged as outliers are reported, not removed, unless
+\code{remove_outliers = TRUE}: dropping a sample changes the design -- a
+group of three becomes a group of two -- and that is the analyst's
+call, made after looking at the PCA. Samples above an explicit
+\code{sample_missing_threshold} are removed, since that threshold was asked
+for.
+
+Imputation on a linear scale (raw intensities) runs on log2 values and
+is transformed back: the left-censored methods draw from a normal
+distribution, which only fits intensities after logging, and on the
+raw scale they returned negative intensities.
 }
 \examples{
 set.seed(1)
@@ -85,15 +106,15 @@ bundle <- run_qc(input, sample_missing_threshold = 0.9,
 bundle
 }
 \seealso{
-Other qc: 
+Other qc:
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
-\code{\link{impute_matrix}()},
-\code{\link{plot_qc}()},
-\code{\link{qc_depth}()},
-\code{\link{qc_depth_outliers}()},
-\code{\link{qc_missingness}()},
-\code{\link{qc_outliers}()},
-\code{\link{resolve_impute_method}()},
-\code{\link{winsorize_counts}()}
+\code{\link[=impute_matrix]{impute_matrix()}},
+\code{\link[=plot_qc]{plot_qc()}},
+\code{\link[=qc_depth]{qc_depth()}},
+\code{\link[=qc_depth_outliers]{qc_depth_outliers()}},
+\code{\link[=qc_missingness]{qc_missingness()}},
+\code{\link[=qc_outliers]{qc_outliers()}},
+\code{\link[=resolve_impute_method]{resolve_impute_method()}},
+\code{\link[=winsorize_counts]{winsorize_counts()}}
 }
 \concept{qc}

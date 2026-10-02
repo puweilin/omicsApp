@@ -215,3 +215,33 @@ detached_call <- function(fn, ...) {
   environment(fn) <- list2env(list(...), parent = baseenv())
   fn
 }
+
+#' A counter that tells a current async result from a stale one
+#'
+#' `start()` takes a number for a new run; `bump()` takes one for a reset
+#' (a layer or project change) with no run behind it. A callback asks
+#' `is_current(id)` before writing its result, so a run that finishes
+#' after the user moved on does not land on the new state.
+#' `is_last_started(id)` says whether no newer run has begun, which is
+#' when the busy state may be cleared.
+#'
+#' @return A list of closures.
+#' @keywords internal
+#' @noRd
+run_epoch <- function() {
+  current <- 0L
+  last_started <- 0L
+  list(
+    start = function() {
+      current <<- current + 1L
+      last_started <<- current
+      current
+    },
+    bump = function() {
+      current <<- current + 1L
+      invisible(current)
+    },
+    is_current = function(id) identical(id, current),
+    is_last_started = function(id) identical(id, last_started)
+  )
+}

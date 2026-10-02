@@ -61,6 +61,23 @@ omics_input <- function(
 ) {
   assay_type <- canonical_assay_type(assay_type)
 
+  # Metadata in the matrix's sample order, annotation in its feature
+  # order. Matched by name: every analysis reads metadata by position,
+  # so rows in another order paired samples with the wrong values.
+  if (is.data.frame(meta_df) && !is.null(colnames(expr_mat)) &&
+      !is.null(rownames(meta_df)) &&
+      setequal(colnames(expr_mat), rownames(meta_df)) &&
+      !identical(rownames(meta_df), colnames(expr_mat))) {
+    meta_df <- meta_df[colnames(expr_mat), , drop = FALSE]
+  }
+  if (is.data.frame(feature_df) && !is.null(rownames(expr_mat)) &&
+      "feature_id" %in% names(feature_df) &&
+      setequal(as.character(feature_df$feature_id), rownames(expr_mat)) &&
+      !anyDuplicated(feature_df$feature_id) &&
+      !identical(as.character(feature_df$feature_id), rownames(expr_mat))) {
+    feature_df <- feature_df[match(rownames(expr_mat), feature_df$feature_id), , drop = FALSE]
+  }
+
   x <- new_omics_input(
     omics_type = omics_type,
     assay_type = assay_type,
@@ -384,9 +401,28 @@ validate_omics_input <- function(x) {
   if (!all(colnames(expr_mat) %in% rownames(meta_df))) {
     stop("All `expr_mat` columns must be present in `rownames(meta_df)`.")
   }
+  if (anyDuplicated(colnames(expr_mat))) {
+    stop("`expr_mat` has duplicated sample names: ",
+         paste(utils::head(unique(colnames(expr_mat)[duplicated(colnames(expr_mat))]), 5L),
+               collapse = ", "), ".")
+  }
+  # The rows must be in the matrix's order, not merely present: every
+  # analysis reads metadata by position. omics_input() puts them in
+  # order; an object assembled by hand has to arrive that way.
+  if (!identical(rownames(meta_df), colnames(expr_mat))) {
+    stop("`meta_df` rows are not in the order of the `expr_mat` columns. ",
+         "Rebuild the input with omics_input(), which reorders them.")
+  }
+  if (!is.numeric(expr_mat)) {
+    stop("`expr_mat` must be numeric, not ", typeof(expr_mat), ".")
+  }
 
   if (!"feature_id" %in% colnames(feature_df)) {
     stop("`feature_df` must contain `feature_id`.")
+  }
+  if (!identical(as.character(feature_df$feature_id), rownames(expr_mat)) &&
+      !identical(rownames(feature_df), rownames(expr_mat))) {
+    stop("`feature_df$feature_id` does not match the rows of `expr_mat`.")
   }
 
   invisible(TRUE)

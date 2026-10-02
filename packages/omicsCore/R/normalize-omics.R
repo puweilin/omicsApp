@@ -71,7 +71,7 @@ normalize_omics <- function(
   # Refusing here is the point of the whole contract: normalizing twice
   # compresses the dynamic range and shrinks every fold change, without
   # erroring anywhere downstream.
-  if (input$assay_type %in% LOG_SCALE_ASSAY_TYPES) {
+  if (isTRUE(input$assay_type %in% LOG_SCALE_ASSAY_TYPES)) {
     stop(
       "`assay_type` is already '", input$assay_type, "', so these values have ",
       "been normalized. Normalizing again would compress the dynamic range ",
@@ -120,6 +120,10 @@ normalize_omics <- function(
   out$raw_mat <- input$raw_mat %||% input$expr_mat
   out$normalized_mat <- normalized
   out$assay_type <- "normalized_intensity"
+  # What was done, so export_script() can do it again: the file on disk
+  # holds the values from before this call.
+  out$normalization <- list(method = method, offset = offset,
+                            from_assay_type = input$assay_type)
 
   validate_omics_input(out)
   out

@@ -8,7 +8,9 @@ run_ora_database <- function(
   database,
   organism = "Hs",
   p_cutoff = 0.05,
-  p_adjust_method = "BH"
+  p_adjust_method = "BH",
+  min_size = 10L,
+  max_size = 500L
 ) {
   ensure_enrichment_deps()
   database <- normalize_enrich_database(database)
@@ -28,7 +30,9 @@ run_ora_database <- function(
       TERM2NAME = terms$term2name,
       pvalueCutoff = p_cutoff,
       pAdjustMethod = p_adjust_method,
-      qvalueCutoff = 1
+      qvalueCutoff = 1,
+      minGSSize = min_size,
+      maxGSSize = max_size
     ),
     error = function(e) {
       warning("ORA failed for database '", database, "': ", conditionMessage(e),
@@ -55,15 +59,22 @@ run_ora_from_bundle <- function(
   output_p_cutoff = NULL,
   effect_cutoff = NULL,
   p_preference = c("adjusted", "raw"),
-  p_adjust_method = "BH"
+  p_adjust_method = "BH",
+  min_size = 10L,
+  max_size = 500L
 ) {
   direction <- match.arg(direction)
   p_preference <- match.arg(p_preference)
 
   result_df <- diff_result_from_bundle(diff_bundle)
-  universe <- unique(stats::na.omit(result_df$feature_symbol))
+  # The universe is what was tested. A gene edgeR set aside as too low
+  # to test, or one with no p-value, could never have been a hit, and
+  # counting it in the background makes every set look enriched.
+  tested <- result_df[!is.na(result_df$p_value), , drop = FALSE]
+  if (nrow(tested) == 0L) tested <- result_df
+  universe <- unique(stats::na.omit(tested$feature_symbol))
   if (length(universe) == 0L) {
-    universe <- unique(stats::na.omit(result_df$feature_id))
+    universe <- unique(stats::na.omit(tested$feature_id))
   }
 
   sig_df <- filter_diff_results(
@@ -91,7 +102,9 @@ run_ora_from_bundle <- function(
       database = database,
       organism = organism,
       p_cutoff = output_p_cutoff %||% p_cutoff,
-      p_adjust_method = p_adjust_method
+      p_adjust_method = p_adjust_method,
+      min_size = min_size,
+      max_size = max_size
     )
     std <- standardize_enrich_result(
       enrich_obj = obj,

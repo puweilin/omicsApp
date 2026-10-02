@@ -110,14 +110,21 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     output$ui_method <- shiny::renderUI({
       a <- active()
       inp <- a$input
+      shiny::req(inp)   # a project with no layers has no methods to offer
       choices <- omicsCore::applicable_diff_methods(inp)
+      # Keep the user's pick. active() changes whenever the project does
+      # -- including when a finished run is attached to it -- so the
+      # control re-rendered after every run and snapped back to "auto".
+      sel <- shiny::isolate(input$method)
+      if (is.null(sel) || !sel %in% choices) sel <- "auto"
       shiny::selectInput(session$ns("method"), label = NULL,
-                         choices = choices, selected = "auto")
+                         choices = choices, selected = sel)
     })
 
     output$method_note <- shiny::renderUI({
       a <- active()
       inp <- a$input
+      shiny::req(inp)
       dropped <- setdiff(omicsCore::SUPPORTED_DIFF_METHODS,
                          omicsCore::applicable_diff_methods(inp))
       if (length(dropped) == 0L) return(NULL)
@@ -146,7 +153,11 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                     levels = character(0), candidates = character(0)))
       }
       cands <- grouping_candidates(meta)
-      if (length(cands) == 0L) cands <- names(meta)
+      # No column with two replicated groups. Offer the columns that at
+      # least repeat a value -- never one that names each sample once,
+      # which is the sample ID and cannot be compared.
+      if (length(cands) == 0L) cands <- grouping_candidates(meta, min_per_level = 1L,
+                                                            replicated = TRUE)
       # What was stated at import comes first; the guess is the fallback.
       design <- tryCatch(omicsCore::study_design(active()$input), error = function(e) NULL)
       if (!is.null(design)) cands <- c(design$group_col, setdiff(cands, design$group_col))
@@ -269,12 +280,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       meta <- a$input$meta_df
       gc <- input$group_col %||% ""
       cands <- setdiff(names(meta), c(gc, "sample_id"))
+      # Kept across re-renders, for the reason given at ui_method.
+      sel <- intersect(shiny::isolate(input$covariates), cands)
       shiny::selectizeInput(
         session$ns("covariates"),
         label    = NULL,
         choices  = cands,
         multiple = TRUE,
-        selected = NULL,
+        selected = if (length(sel)) sel,
         options  = list(placeholder = "optional, e.g. age")
       )
     })
@@ -287,6 +300,11 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     diff_bundle <- shiny::reactiveVal(NULL)
     diff_error  <- shiny::reactiveVal(NULL)
     running     <- shiny::reactiveVal(FALSE)
+    # Every run and every reset takes a new number. A result that comes
+    # back under an older number is about a layer or a project that is
+    # no longer on screen, and is dropped instead of shown as current.
+    diff_epoch  <- run_epoch()
+    anova_epoch <- run_epoch()
 
     # The button says what it will do, and cannot be pressed twice while
     # a run is in flight.
@@ -332,6 +350,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # result is no longer about anything in the project. NULL is the
     # module's own start-up state, so this only rewinds it.
     shiny::observeEvent(invalidate(), {
+      diff_epoch$bump()
+      anova_epoch$bump()
       diff_bundle(NULL)
       diff_error(NULL)
       anova_bundle(NULL)
@@ -366,12 +386,19 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         diff_error("Write at least one comparison, e.g. \"TreatB - TreatA\".")
         return(invisible())
       }
+      if (is.null(group_col) && !length(d$candidates)) {
+        diff_error(paste("No column of the sample metadata splits the samples",
+                         "into groups. Add one (e.g. 'group' = Control / Treated)",
+                         "to the sample sheet and import again."))
+        return(invisible())
+      }
       if (is.null(contrasts) &&
           (is.null(group_col) || is.null(control) || !length(case))) {
         diff_error("Pick a group column, a control group, and at least one group distinct from the control to compare with it.")
         return(invisible())
       }
       set_busy(TRUE)
+      my_run <- diff_epoch$start()
       run_async(
         # Detached, so the worker receives the input and the six
         # parameters rather than this module's whole scope. Defined
@@ -401,12 +428,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           contrasts  = contrasts
         ),
         on_success = function(bundle) {
-          set_busy(FALSE)
+          if (diff_epoch$is_last_started(my_run)) set_busy(FALSE)
+          if (!diff_epoch$is_current(my_run)) return(invisible())
           diff_error(NULL)
           diff_bundle(bundle)
         },
         on_error = function(msg) {
-          set_busy(FALSE)
+          if (diff_epoch$is_last_started(my_run)) set_busy(FALSE)
+          if (!diff_epoch$is_current(my_run)) return(invisible())
           diff_error(msg)
         },
         message = "Running differential analysis..."
@@ -437,6 +466,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # screen would say so. Keyed on input$layer rather than on active(),
     # which also invalidates when the control below it re-renders.
     shiny::observeEvent(input$layer, {
+      diff_epoch$bump()
+      anova_epoch$bump()
       diff_bundle(NULL)
       diff_error(NULL)
       anova_bundle(NULL)
@@ -477,7 +508,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       df$is_significant <- !is.na(pv) &
                            !is.na(df$effect) &
                            pv < fdr_cut_d() &
-                           abs(df$effect) > fc_cut_d()
+                           abs(df$effect) >= fc_cut_d()
       df
     })
 
@@ -791,6 +822,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       method <- input$method %||% "auto"
       if (!method %in% c("limma", "edger", "deseq2")) method <- "auto"
       covariates <- input$covariates
+      my_run <- anova_epoch$start()
       run_async(
         detached_call(
           function() {
@@ -802,10 +834,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           covariates = if (length(covariates)) covariates else NULL
         ),
         on_success = function(bundle) {
+          if (!anova_epoch$is_current(my_run)) return(invisible())
           anova_error(NULL)
           anova_bundle(bundle)
         },
-        on_error = function(msg) anova_error(msg),
+        on_error = function(msg) {
+          if (anova_epoch$is_current(my_run)) anova_error(msg)
+        },
         message = "Running the global test..."
       )
     })
@@ -841,11 +876,16 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     }, server = TRUE)
 
     output$run_button <- shiny::renderUI({
-      shiny::actionButton(
+      btn <- shiny::actionButton(
         session$ns("rerun"),
         if (is.null(diff_bundle())) "Run analysis" else "Re-run",
         icon = shiny::icon("play"),
         class = "btn btn-primary", style = "width:100%")
+      # Re-rendered enabled while a run was still going (the label
+      # changes when a result lands or is cleared), which let a second
+      # run start alongside the first.
+      if (shiny::isolate(running())) btn <- htmltools::tagAppendAttributes(btn, disabled = NA)
+      btn
     })
 
     if (is.function(navigate)) {
@@ -1095,13 +1135,14 @@ default_layer_tag <- function(experiments) {
 # excludes identifiers exactly, without having to guess from names.
 GROUP_COL_HINTS <- c("group", "condition", "treatment", "arm", "status")
 
-grouping_candidates <- function(meta, min_per_level = 2L) {
+grouping_candidates <- function(meta, min_per_level = 2L, replicated = FALSE) {
   if (is.null(meta) || !ncol(meta)) return(character(0))
   usable <- vapply(names(meta), function(nm) {
     col <- meta[[nm]]
     if (is.numeric(col)) return(FALSE)
     counts <- table(as.character(col), useNA = "no")
-    length(counts) >= 2L && min(counts) >= min_per_level
+    length(counts) >= 2L && min(counts) >= min_per_level &&
+      (!replicated || max(counts) >= 2L)
   }, logical(1))
   cands <- names(meta)[usable]
   if (!length(cands)) return(character(0))

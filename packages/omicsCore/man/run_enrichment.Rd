@@ -48,7 +48,7 @@ raw or adjusted p at display time without re-running.}
 
 \item{p_adjust_method}{Multiple-testing correction method.}
 
-\item{min_size, max_size}{GSEA min/max gene-set sizes.}
+\item{min_size, max_size}{Min/max gene-set sizes, for ORA and GSEA alike.}
 
 \item{...}{Reserved for backend-specific extensions.}
 }

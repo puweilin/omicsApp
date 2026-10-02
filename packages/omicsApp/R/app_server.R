@@ -89,7 +89,13 @@ app_server <- function(input, output, session) {
                         requested_layer(tag)
                         set_view("qc")
                       },
-                      navigate = set_view)
+                      navigate = set_view,
+                      # A new project replaces everything the views hold,
+                      # even when its layers come from the same files.
+                      replace_project = function(p) {
+                        layer_generation(shiny::isolate(layer_generation()) + 1L)
+                        current_project(p)
+                      })
   imported_input <- import_view_server("import",
                         current_project = current_project,
                         navigate = set_view)

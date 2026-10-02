@@ -196,7 +196,9 @@ plot_missing_by_feature <- function(feature_df, upper = 1) {
 
 plot_qc_pca <- function(bundle, color_by = NULL) {
   cleaned <- bundle$results$cleaned_input
-  mat <- mean_impute_rows(cleaned$expr_mat)
+  # On the scale qc_outliers() used, so the plot shows what was tested:
+  # a PCA of raw counts is a plot of library size and a few huge genes.
+  mat <- mean_impute_rows(qc_log_scale(cleaned)$mat)
   if (ncol(mat) < 2L) {
     stop("Need at least 2 samples to draw a PCA scatter.")
   }
@@ -253,7 +255,7 @@ plot_qc_connectivity <- function(bundle) {
     # outlier_method was something else; recompute connectivity on the
     # cleaned input so users always see this view.
     cleaned <- bundle$results$cleaned_input
-    qc_outliers_connectivity(cleaned$expr_mat,
+    qc_outliers_connectivity(qc_log_scale(cleaned)$mat,
                              sd_threshold = bundle$params$outlier_sd_threshold)$stats
   }
   stats_df <- stats_df[order(stats_df$mean_correlation), , drop = FALSE]
@@ -277,14 +279,29 @@ plot_qc_connectivity <- function(bundle) {
 
 plot_qc_imputation <- function(bundle) {
   cleaned <- bundle$results$cleaned_input
-  if (is.null(cleaned$raw_mat)) {
+  imp <- bundle$results$qc_summary$imputation
+  if (is.null(imp) && is.null(cleaned$raw_mat)) {
     stop("This bundle has no imputation step (run_qc was called with impute_method='none').")
   }
-  before <- as.numeric(cleaned$raw_mat)
-  after <- as.numeric(cleaned$expr_mat)
+  if (!is.null(imp)) {
+    # Observed against imputed values, both from the matrix that goes
+    # downstream. `raw_mat` was the wrong "before": after
+    # normalize_omics() it holds the linear values, so the two curves
+    # were on different scales.
+    mat <- cleaned$expr_mat
+    if (!cleaned$assay_type %in% LOG_SCALE_ASSAY_TYPES) mat <- log2(mat)
+    before <- as.numeric(mat[-imp$imputed_cells])
+    after <- as.numeric(mat[imp$imputed_cells])
+    labels <- c("observed", "imputed")
+  } else {
+    # Bundles from before the imputation record.
+    before <- as.numeric(cleaned$raw_mat)
+    after <- as.numeric(cleaned$expr_mat)
+    labels <- c("raw", "imputed")
+  }
   df <- data.frame(
     value = c(before, after),
-    type  = c(rep("raw", length(before)), rep("imputed", length(after))),
+    type  = c(rep(labels[1L], length(before)), rep("imputed", length(after))),
     stringsAsFactors = FALSE
   )
   df <- df[is.finite(df$value), , drop = FALSE]
@@ -292,8 +309,10 @@ plot_qc_imputation <- function(bundle) {
   ggplot2::ggplot(df,
                   ggplot2::aes(x = .data$value, fill = .data$type, color = .data$type)) +
     ggplot2::geom_density(alpha = 0.35) +
-    ggplot2::scale_fill_manual(values = c(raw = "#9AA3AE", imputed = "#1FBF9E")) +
-    ggplot2::scale_color_manual(values = c(raw = "#9AA3AE", imputed = "#1FBF9E")) +
+    ggplot2::scale_fill_manual(values = c(raw = "#9AA3AE", observed = "#9AA3AE",
+                                          imputed = "#1FBF9E")) +
+    ggplot2::scale_color_manual(values = c(raw = "#9AA3AE", observed = "#9AA3AE",
+                                           imputed = "#1FBF9E")) +
     ggplot2::labs(
       title = "Imputation effect on intensity distribution",
       x = "Value",

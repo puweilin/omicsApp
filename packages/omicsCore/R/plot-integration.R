@@ -274,9 +274,15 @@ integration_derive_quadrant <- function(df) {
 }
 
 plot_integration_quadrant <- function(df, bundle) {
-  quads <- df$quadrant
-  quads[is.na(quads)] <- "n/a"
-  levels_order <- c("up_up", "down_down", "up_down", "down_up", "n/a")
+  # Among the features that are hits in both layers. Counted over every
+  # feature, the bars reflected each backend's own direction labels at
+  # its own thresholds, not the cutoffs this integration was run at.
+  both <- if (all(c("significant_a", "significant_b") %in% names(df))) {
+    df$significant_a %in% TRUE & df$significant_b %in% TRUE
+  } else rep(TRUE, nrow(df))
+  quads <- df$quadrant[both]
+  quads <- quads[!is.na(quads)]
+  levels_order <- c("up_up", "down_down", "up_down", "down_up")
   counts <- as.data.frame(table(factor(quads, levels = levels_order)),
                           stringsAsFactors = FALSE)
   names(counts) <- c("quadrant", "n")
@@ -293,7 +299,8 @@ plot_integration_quadrant <- function(df, bundle) {
     ggplot2::scale_fill_manual(values = quadrant_colors, guide = "none") +
     ggplot2::labs(
       title = "Integration: concordance quadrants",
-      subtitle = paste(bundle$params$experiments, collapse = " vs "),
+      subtitle = sprintf("%s; features significant in both layers",
+                         paste(bundle$params$experiments, collapse = " vs ")),
       x = NULL, y = "features"
     ) +
     theme_omics_labelled()

@@ -277,11 +277,21 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
     output$notices <- shiny::renderUI({
       err <- last_error()
-      if (is.null(err)) return(NULL)
+      if (!is.null(err)) {
+        return(notice(
+          title  = "QC could not run",
+          detail = err,
+          kind   = "warn"
+        ))
+      }
+      # What run_qc() did to the data on the way (a log scale for the
+      # outlier tests, imputation on log2, samples flagged and kept).
+      notes <- last_bundle()$warnings
+      if (!length(notes)) return(NULL)
       notice(
-        title  = "QC could not run",
-        detail = err,
-        kind   = "warn"
+        title  = "About these QC results",
+        detail = htmltools::tags$ul(lapply(notes, htmltools::tags$li)),
+        kind   = "info"
       )
     })
 
@@ -296,12 +306,15 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       htmltools::tags$div(
         class = "stat-grid",
         stat_card(
-          label  = "Samples passing",
+          label  = "Samples kept",
           value  = sprintf("%d / %d", info$n_samples_out, info$n_samples_in),
+          # Flagged samples are kept (run_qc(remove_outliers = FALSE)):
+          # dropping one changes the design, so the card asks for a look
+          # rather than reporting a removal that did not happen.
           trend  = if (n_flagged_samp == 0L) "no outliers flagged"
-                   else sprintf("%d flagged (%s)",
+                   else sprintf("%d flagged (%s) \u2014 kept; check the PCA",
                                 n_flagged_samp,
-                                summary$outliers$method),
+                                paste(summary$outliers$method, collapse = " + ")),
           accent = if (n_flagged_samp == 0L) "ok" else "warn",
           mono   = TRUE
         ),

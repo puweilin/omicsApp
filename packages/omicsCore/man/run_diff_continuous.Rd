@@ -26,7 +26,7 @@ based on \code{omics_type} and installed Suggests.}
 \item{paired_col}{Optional pairing/block column.}
 
 \item{...}{Extra arguments forwarded to the backend, e.g. \code{var_equal} for
-t-test or \code{df = 3} for limma spline.}
+t-test, or \verb{model = "spline", df = 3} for a limma spline fit.}
 }
 \value{
 An \code{\link[=is_analysis_bundle]{analysis_bundle}}.

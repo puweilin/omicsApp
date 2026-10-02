@@ -230,7 +230,7 @@ loop_case_groups <- function(fun, input, args) {
 #' @param paired_col Optional pairing/block column.
 #' @param selected_groups Optional subset of groups to retain (anova only).
 #' @param ... Extra arguments forwarded to the backend, e.g. `var_equal` for
-#'   t-test or `df = 3` for limma spline.
+#'   t-test, or `model = "spline", df = 3` for a limma spline fit.
 #'
 #' @return An [`analysis_bundle`][is_analysis_bundle()] with
 #'   `results$diff_result_df` (standardized schema), `results$diff_raw_df`
@@ -326,10 +326,15 @@ run_diff <- function(
     specs <- parse_diff_contrasts(contrasts, present)
     backend_args$contrasts <- vapply(specs, `[[`, character(1), "spec")
   }
-  validate_diff_design(input, analysis_type, backend_args, specs = specs)
+  validate_diff_design(input, analysis_type, backend_args, specs = specs,
+                       method = method)
   pre <- preflight_diff_matrix(input, method, analysis_type, backend_args,
                                specs = specs)
   input <- pre$input
+  original_assay <- input$assay_type
+  scale <- prepare_diff_scale(input, method)
+  input <- scale$input
+  if (!is.null(scale$note)) pre$warnings <- c(pre$warnings, scale$note)
 
   # Drop arguments the chosen backend doesn't accept (e.g. ttest has no
   # `covariates`, lm/ttest have no `paired_col`-via-limma corfit, ...).
@@ -359,7 +364,8 @@ run_diff <- function(
     analysis_name = "run_diff",
     input_info = list(
       omics_type = input$omics_type,
-      assay_type = input$assay_type,
+      assay_type = original_assay,
+      analysed_scale = input$assay_type,
       n_samples = ncol(input$expr_mat),
       n_features = nrow(input$expr_mat)
     ),
@@ -386,7 +392,7 @@ run_diff <- function(
       diff_raw_df = backend_result$results_raw,
       diff_object = backend_result$model_object
     ),
-    warnings = pre$warnings
+    warnings = c(pre$warnings, backend_result$analysis_info$warnings)
   )
 }
 
@@ -432,14 +438,38 @@ run_diff_continuous <- function(
 # contrast of non-estimable coefficient". DESeq2 and edgeR refuse
 # outright, which is the right answer, so it is now the answer
 # everywhere, in words that name the column.
-validate_diff_design <- function(input, analysis_type, args, specs = NULL) {
+validate_diff_design <- function(input, analysis_type, args, specs = NULL,
+                                 method = NULL) {
   meta <- input$meta_df
-  if (analysis_type == "anova") return(invisible(TRUE))
 
-  if (analysis_type == "group" && !is.null(specs)) {
+  if (analysis_type == "anova") {
+    # The global test used to skip every check below, so a covariate with
+    # a missing value reached the engines as "row dimension of design
+    # doesn't match" (limma) or "nrow(design) disagrees with ncol(y)"
+    # (edgeR), and a misspelt selected group was dropped without a word.
+    group_col <- args$group_col
+    if (!group_col %in% colnames(meta)) {
+      stop("`group_col` not found in `meta_df`: ", group_col, call. = FALSE)
+    }
+    present <- unique(as.character(stats::na.omit(meta[[group_col]])))
+    sel <- args$selected_groups
+    unknown <- setdiff(as.character(sel), present)
+    if (length(unknown)) {
+      stop(sprintf("`selected_groups` names groups that are not in `%s`: %s. Levels present: %s.",
+                   group_col, paste(sprintf("'%s'", unknown), collapse = ", "),
+                   paste(sprintf("'%s'", present), collapse = ", ")), call. = FALSE)
+    }
+    keep <- !is.na(meta[[group_col]]) &
+      (is.null(sel) | meta[[group_col]] %in% sel)
+    sub <- droplevels(meta[keep, , drop = FALSE])
+    primary <- factor(as.character(sub[[group_col]]))
+    if (nlevels(primary) < 2L) {
+      stop("ANOVA needs at least two groups in `", group_col, "`.", call. = FALSE)
+    }
+  } else if (analysis_type == "group" && !is.null(specs)) {
     used <- contrast_levels(specs)
     keep <- !is.na(meta[[args$group_col]]) & meta[[args$group_col]] %in% used
-    sub <- meta[keep, , drop = FALSE]
+    sub <- droplevels(meta[keep, , drop = FALSE])
     primary <- factor(sub[[args$group_col]], levels = used)
   } else if (analysis_type == "group") {
     group_col <- args$group_col
@@ -464,7 +494,10 @@ validate_diff_design <- function(input, analysis_type, args, specs = NULL) {
     }
     keep <- !is.na(meta[[group_col]]) &
       meta[[group_col]] %in% c(args$control_group, args$case_group)
-    sub <- meta[keep, , drop = FALSE]
+    # droplevels(): a factor covariate level that only occurs in a group
+    # outside the comparison is an all-zero column, which the rank check
+    # below read as "confounded" on a perfectly balanced design.
+    sub <- droplevels(meta[keep, , drop = FALSE])
     primary <- factor(sub[[group_col]],
                       levels = as.character(c(args$control_group, args$case_group)))
   } else {
@@ -490,6 +523,14 @@ validate_diff_design <- function(input, analysis_type, args, specs = NULL) {
 
   covariates <- args$covariates
   if (is.null(covariates) || length(covariates) == 0L) return(invisible(TRUE))
+  # A pairing block absorbs anything constant within a block (a subject's
+  # sex, say). limma fits the block as a correlation and is unaffected;
+  # DESeq2 and edgeR fit it as fixed effects, and a covariate it absorbs
+  # stopped them with "the model matrix is not full rank" /
+  # "coefficients not estimable".
+  block <- args$paired_col
+  block_fixed <- !is.null(block) && isTRUE(method %in% c("deseq2", "edger", "lm")) &&
+    block %in% colnames(sub)
   missing_cov <- setdiff(covariates, colnames(sub))
   if (length(missing_cov) > 0L) {
     stop("Missing covariates: ", paste(missing_cov, collapse = ", "), call. = FALSE)
@@ -516,13 +557,64 @@ validate_diff_design <- function(input, analysis_type, args, specs = NULL) {
     with_cov <- stats::model.matrix(
       stats::as.formula(paste0("~ .primary + `", cov, "`")), data = design_df)
     if (qr(with_cov)$rank < ncol(with_cov)) {
-      what <- if (analysis_type == "group") args$group_col else args$continuous_col
+      what <- if (analysis_type %in% c("group", "anova")) args$group_col else args$continuous_col
       stop(sprintf(
         "Covariate `%s` is confounded with `%s`: the two cannot be separated, so the effect of `%s` is not estimable with it in the model.",
         cov, what, what), call. = FALSE)
     }
+    if (block_fixed) {
+      bdf <- data.frame(.primary = primary, .block = factor(sub[[block]]),
+                        sub[, cov, drop = FALSE], check.names = FALSE)
+      with_block <- stats::model.matrix(
+        stats::as.formula(paste0("~ .block + .primary + `", cov, "`")), data = bdf)
+      if (qr(with_block)$rank < ncol(with_block)) {
+        stop(sprintf(
+          "Covariate `%s` does not vary within the blocks of `%s` (e.g. a subject's sex in a paired design), so the pairing already accounts for it. Remove the covariate, or use method = 'limma', which models the pairing as a correlation.",
+          cov, block), call. = FALSE)
+      }
+    }
   }
   invisible(TRUE)
+}
+
+# The scale the continuous engines need, made so rather than assumed.
+#
+# limma, the t-test and lm model values as they come. Handed linear
+# intensities, TPM or raw counts they used to report the raw difference
+# of means as "log2FC" -- a median effect of 1,102,463 for a true 2-fold
+# change -- and on counts the t-test and lm compared log2(count + 1)
+# without any library-size step, so a deeper-sequenced group came out
+# "up" in 347 of 500 null genes. Linear assays are now log2-transformed
+# and counts become log2-CPM (TMM-scaled when edgeR is available) before
+# such an engine sees them, and the bundle says so.
+prepare_diff_scale <- function(input, method) {
+  if (!method %in% c("limma", "ttest", "lm")) return(list(input = input, note = NULL))
+  at <- input$assay_type
+  if (identical(at, "raw_count")) {
+    m <- input$expr_mat
+    lib <- colSums(m, na.rm = TRUE)
+    nf <- rep(1, ncol(m))
+    if (is_installed("edgeR")) {
+      nf <- tryCatch(edgeR::calcNormFactors(edgeR::DGEList(counts = m))$samples$norm.factors,
+                     error = function(e) rep(1, ncol(m)))
+    }
+    eff <- lib * nf
+    eff[!is.finite(eff) | eff <= 0] <- NA_real_
+    input$expr_mat <- log2(sweep(m, 2L, eff / 1e6, "/") + 0.5)
+    input$assay_type <- "logcpm"
+    return(list(input = input, note = sprintf(
+      "Raw counts were converted to log2-CPM%s for method = '%s'; DESeq2 or edgeR model counts directly.",
+      if (any(nf != 1)) " (TMM-scaled)" else "", method)))
+  }
+  if (isTRUE(at %in% c("raw_intensity", "tpm", "fpkm"))) {
+    input$expr_mat <- log2(pmax(input$expr_mat, 0) + 1)
+    input$assay_type <- if (identical(input$omics_type, "rnaseq")) "logcpm"
+                        else "normalized_intensity"
+    return(list(input = input, note = sprintf(
+      "`%s` values were log2-transformed for method = '%s', so effects are log2 fold changes.",
+      at, method)))
+  }
+  list(input = input, note = NULL)
 }
 
 # The values, checked before any engine sees them.

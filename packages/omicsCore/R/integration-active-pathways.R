@@ -89,8 +89,11 @@ run_integration_active_pathways <- function(
     1, nrow = length(all_keys), ncol = 2L,
     dimnames = list(all_keys, c(tag_a, tag_b))
   )
-  scores[s_a$key, tag_a] <- pmax(s_a$p, .Machine$double.xmin)
-  scores[s_b$key, tag_b] <- pmax(s_b$p, .Machine$double.xmin)
+  # A gene that was not tested in a layer (no p-value) carries no
+  # evidence there, the same as one that was not measured.
+  na_to_1 <- function(p) ifelse(is.na(p), 1, pmax(p, .Machine$double.xmin))
+  scores[s_a$key, tag_a] <- na_to_1(s_a$p)
+  scores[s_b$key, tag_b] <- na_to_1(s_b$p)
 
   gene_sets <- get_gene_set_list(
     database = database,
@@ -101,11 +104,26 @@ run_integration_active_pathways <- function(
   if (length(gene_sets) == 0L) {
     stop("No gene sets available for ActivePathways after size filter.")
   }
+  # The gene sets in the same key space as the scores. The scores are
+  # upper-cased (integration_join_key()), the GMT was not, so a mouse
+  # gene set ("Trp53") matched nothing.
+  gene_sets <- lapply(gene_sets, function(g) unique(stats::na.omit(integration_join_key(g))))
   gmt <- to_active_pathways_gmt(gene_sets)
+  # The background is what was measured, not every gene in the GMT:
+  # ActivePathways' default background is the GMT's genes, which counts
+  # unmeasured genes as tested-and-null and inflates every pathway.
+  background <- intersect(rownames(scores), unique(unlist(gene_sets, use.names = FALSE)))
+  if (length(background) < 2L) {
+    stop("Too few measured genes are in the '", database, "' gene sets for ",
+         "ActivePathways. Check the organism and that features carry gene symbols.",
+         call. = FALSE)
+  }
+  scores <- scores[background, , drop = FALSE]
 
   ap_raw <- ActivePathways::ActivePathways(
     scores = scores,
     gmt = gmt,
+    background = background,
     geneset_filter = geneset_filter,
     significant = significant,
     merge_method = merge_method,

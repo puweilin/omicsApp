@@ -149,7 +149,12 @@ run_integration_concordance <- function(
       n_features = nrow(out),
       p_preference = p_preference,
       effect_cutoff = effect_cutoff,
-      quadrant_counts = as.list(table(quadrant, useNA = "no")),
+      # Among the features significant in both layers -- the ones whose
+      # agreement means anything. `quadrant_counts_all` keeps the count
+      # over every feature with a sign in both.
+      quadrant_counts = as.list(table(factor(quadrant[both],
+        levels = c("up_up", "down_down", "up_down", "down_up")))),
+      quadrant_counts_all = as.list(table(quadrant, useNA = "no")),
       n_significant_a = sum(sig_a),
       n_significant_b = sum(sig_b),
       n_significant_both = sum(both),

@@ -162,7 +162,10 @@ test_that("the report view lists every comparison of a run", {
 })
 
 test_that("the import button is disabled until a file parses", {
-  src <- paste(readLines(test_path("..", "..", "R", "mod_import_view.R")), collapse = "\n")
+  # Package sources are not there under R CMD check.
+  src_file <- test_path("..", "..", "R", "mod_import_view.R")
+  skip_if_not(file.exists(src_file), "package sources not beside the tests")
+  src <- paste(readLines(src_file), collapse = "\n")
   expect_match(src, 'shinyjs::toggleState("confirm", condition = ok)', fixed = TRUE)
 })
 

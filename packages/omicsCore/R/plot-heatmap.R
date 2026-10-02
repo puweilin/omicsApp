@@ -118,7 +118,7 @@ resolve_heatmap_selection <- function(x, input, n_top, features) {
     if (is.null(input) || !inherits(input, "omics_input")) {
       stop("`input` (an omics_input) is required when `x` is a diff bundle.")
     }
-    res <- x$results$diff_result_df
+    res <- diff_result_from_bundle(x)
     if (is.null(res) || nrow(res) == 0L) {
       stop("Diff bundle does not contain a non-empty `results$diff_result_df`.")
     }

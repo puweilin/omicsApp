@@ -48,9 +48,17 @@ run_lm_group <- function(
   keep_samples <- rownames(target_meta)
   expr_sub <- expr_mat[, keep_samples, drop = FALSE]
 
-  rhs <- if (is.null(covariates)) group_col else paste(c(group_col, covariates), collapse = " + ")
+  # The model sees placeholder column names, so a column called
+  # "Treatment Group" or "Body mass" cannot break the formula.
+  cov_names <- if (length(covariates)) paste0(".cov", seq_along(covariates)) else character(0)
+  design_df <- stats::setNames(
+    data.frame(target_meta[, c(group_col, covariates), drop = FALSE],
+               check.names = FALSE, stringsAsFactors = FALSE),
+    c(".grp", cov_names))
+  design_df <- droplevels(design_df)
+  rhs <- paste(c(".grp", cov_names), collapse = " + ")
   formula_obj <- stats::as.formula(paste("y ~", rhs))
-  coef_name <- paste0(group_col, case_group)
+  coef_name <- paste0(".grp", case_group)
 
   feature_ids <- rownames(expr_sub)
   n_features <- length(feature_ids)
@@ -62,10 +70,8 @@ run_lm_group <- function(
   base_mean <- numeric(n_features)
 
   for (i in seq_len(n_features)) {
-    model_df <- data.frame(
-      y = as.numeric(expr_sub[i, ]),
-      target_meta[, c(group_col, covariates), drop = FALSE]
-    )
+    model_df <- data.frame(y = as.numeric(expr_sub[i, ]), design_df,
+                           check.names = FALSE)
     fit <- tryCatch(stats::lm(formula_obj, data = model_df), error = function(e) NULL)
     base_mean[i] <- mean(model_df$y, na.rm = TRUE)
 
@@ -165,9 +171,14 @@ run_lm_continuous <- function(
     }
   }
 
-  rhs <- if (is.null(covariates)) continuous_col else paste(c(continuous_col, covariates), collapse = " + ")
+  cov_names <- if (length(covariates)) paste0(".cov", seq_along(covariates)) else character(0)
+  design_df <- stats::setNames(
+    data.frame(meta_df[, c(continuous_col, covariates), drop = FALSE],
+               check.names = FALSE, stringsAsFactors = FALSE),
+    c(".cont", cov_names))
+  rhs <- paste(c(".cont", cov_names), collapse = " + ")
   formula_obj <- stats::as.formula(paste("y ~", rhs))
-  adjustment_terms <- if (!is.null(covariates)) covariates else character(0)
+  adjustment_terms <- cov_names
 
   feature_ids <- rownames(expr_mat)
   n_features <- length(feature_ids)
@@ -181,20 +192,17 @@ run_lm_continuous <- function(
 
   for (i in seq_len(n_features)) {
     y <- as.numeric(expr_mat[i, ])
-    model_df <- data.frame(
-      y = y,
-      meta_df[, c(continuous_col, covariates), drop = FALSE]
-    )
+    model_df <- data.frame(y = y, design_df, check.names = FALSE)
     fit <- tryCatch(stats::lm(formula_obj, data = model_df), error = function(e) NULL)
     base_mean[i] <- mean(y, na.rm = TRUE)
 
     if (!is.null(fit)) {
       s <- summary(fit)
       coefs <- s$coefficients
-      if (continuous_col %in% rownames(coefs)) {
-        beta[i] <- coefs[continuous_col, "Estimate"]
-        t_stat[i] <- coefs[continuous_col, "t value"]
-        p_value[i] <- coefs[continuous_col, "Pr(>|t|)"]
+      if (".cont" %in% rownames(coefs)) {
+        beta[i] <- coefs[".cont", "Estimate"]
+        t_stat[i] <- coefs[".cont", "t value"]
+        p_value[i] <- coefs[".cont", "Pr(>|t|)"]
       } else {
         beta[i] <- NA_real_
         t_stat[i] <- NA_real_
@@ -220,7 +228,7 @@ run_lm_continuous <- function(
           data = model_df
         ))
         cont_resid <- stats::residuals(stats::lm(
-          stats::as.formula(paste(continuous_col, "~", paste(adjustment_terms, collapse = " + "))),
+          stats::as.formula(paste(".cont ~", paste(adjustment_terms, collapse = " + "))),
           data = model_df
         ))
         suppressWarnings(stats::cor.test(y_resid, cont_resid, method = "spearman", exact = FALSE)$estimate)

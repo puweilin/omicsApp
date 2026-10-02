@@ -154,7 +154,10 @@ run_limma_group <- function(
 #'
 #' @param input A validated `omics_input`.
 #' @param continuous_col Continuous metadata column.
-#' @param method Either `"linear"` or `"spline"`.
+#' @param model Either `"linear"` or `"spline"`. (Called `model` rather
+#'   than `method` because [run_diff()] has a `method` of its own, and the
+#'   clash made the spline unreachable: `run_diff_continuous(...,
+#'   method = "spline")` failed, and `df = 3` alone ran a linear fit.)
 #' @param df Degrees of freedom for spline fits.
 #' @param covariates Optional covariate column names.
 #' @param paired_col Optional pairing/block column.
@@ -165,14 +168,14 @@ run_limma_group <- function(
 run_limma_continuous <- function(
   input,
   continuous_col,
-  method = c("linear", "spline"),
+  model = c("linear", "spline"),
   df = 3,
   covariates = NULL,
   paired_col = NULL
 ) {
   validate_omics_input(input)
   ensure_limma()
-  method <- match.arg(method)
+  method <- match.arg(model)
 
   expr_mat <- input$expr_mat
   meta_df <- input$meta_df
@@ -227,10 +230,18 @@ run_limma_continuous <- function(
   }
   raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
 
-  adjustment_terms <- unique(c(if (!is.null(paired_col)) paired_col, covariates))
+  # The adjustment terms under placeholder names, with the pairing column
+  # as a factor: numeric subject ids 1..6 used to enter lm() as a slope,
+  # which gave adjusted R^2 = 0.245 where the blocked fit gives -0.242,
+  # and a covariate called "Body mass" broke the formula outright.
+  adj_cols <- unique(c(if (!is.null(paired_col)) paired_col, covariates))
+  adj_df <- meta_df[, adj_cols, drop = FALSE]
+  if (!is.null(paired_col)) adj_df[[paired_col]] <- factor(adj_df[[paired_col]])
+  adjustment_terms <- if (length(adj_cols)) paste0(".adj", seq_along(adj_cols)) else character(0)
+  names(adj_df) <- adjustment_terms
 
   adj_r2 <- apply(expr_mat, 1L, function(y) {
-    model_df <- data.frame(y = y, cont = cont_vals, meta_df[, adjustment_terms, drop = FALSE])
+    model_df <- data.frame(y = y, cont = cont_vals, adj_df, check.names = FALSE)
     if (method == "spline") {
       f <- if (length(adjustment_terms) > 0L) {
         stats::as.formula(paste(
@@ -256,7 +267,7 @@ run_limma_continuous <- function(
         stats::cor.test(y, cont_vals, method = "spearman", exact = FALSE)$estimate
       ))
     }
-    model_df <- data.frame(y = y, cont = cont_vals, meta_df[, adjustment_terms, drop = FALSE])
+    model_df <- data.frame(y = y, cont = cont_vals, adj_df, check.names = FALSE)
     y_resid <- stats::residuals(stats::lm(
       stats::as.formula(paste("y ~", paste(adjustment_terms, collapse = " + "))),
       data = model_df

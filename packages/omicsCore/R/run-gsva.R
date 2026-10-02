@@ -59,10 +59,12 @@ run_gsva <- function(
     )
   }
 
-  expr_mat <- as.matrix(input$expr_mat)
-  if (identical(input$assay_type, "raw_count")) {
-    expr_mat <- log2(expr_mat + 1)
-  }
+  supplied <- !is.null(gene_sets)
+  # On a log scale by the rule run_diff() uses for limma: counts become
+  # log2-CPM (library size matters; log2(x + 1) of raw counts made the
+  # deepest library the most "active" in every set), linear intensities
+  # log2(x + 1).
+  expr_mat <- as.matrix(prepare_diff_scale(input, "limma")$input$expr_mat)
 
   # Replace expression rownames with feature_symbol so the gene-set lookup
   # works against HGNC symbols (the space msigdbr returns).
@@ -79,6 +81,10 @@ run_gsva <- function(
     valid <- !is.na(syms) & nzchar(syms)
     expr_mat <- expr_mat[valid, , drop = FALSE]
     syms <- syms[valid]
+    # One row per symbol: the most abundant, not whichever came first.
+    ord <- order(-rowMeans(expr_mat, na.rm = TRUE))
+    expr_mat <- expr_mat[ord, , drop = FALSE]
+    syms <- syms[ord]
     expr_mat <- expr_mat[!duplicated(syms), , drop = FALSE]
     rownames(expr_mat) <- syms[!duplicated(syms)]
   }
@@ -87,11 +93,14 @@ run_gsva <- function(
   if (is.null(gene_sets)) {
     ensure_enrichment_deps()
     resolved_database <- normalize_enrich_database(database)
+    # Unfiltered here: the size that matters is the size among the
+    # measured genes, which GSVA's own minSize/maxSize test. Filtering on
+    # the full set first kept a 600-gene set with 40 measured genes out.
     gene_sets <- get_gene_set_list(
       database = resolved_database,
       organism = organism,
-      min_size = min_size,
-      max_size = max_size
+      min_size = 1L,
+      max_size = .Machine$integer.max
     )
   } else {
     if (!is.list(gene_sets) || is.null(names(gene_sets))) {
@@ -99,9 +108,14 @@ run_gsva <- function(
     }
   }
 
+  # The sets as they are scored: the measured genes, within the limits.
+  gene_sets <- lapply(gene_sets, function(g) intersect(as.character(g), rownames(expr_mat)))
+  lens <- lengths(gene_sets)
+  gene_sets <- gene_sets[lens >= min_size & lens <= max_size]
   if (length(gene_sets) == 0L) {
-    stop("No gene sets available after filtering (min_size=", min_size,
-         ", max_size=", max_size, ").")
+    stop("No gene sets have between ", min_size, " and ", max_size,
+         " measured genes. Check that features carry gene symbols of the ",
+         "right organism, or lower `min_size`.", call. = FALSE)
   }
 
   if (is.null(kcdf)) {
@@ -143,7 +157,7 @@ run_gsva <- function(
       min_size = min_size,
       max_size = max_size,
       kcdf = kcdf,
-      gene_sets_supplied = !is.null(database) && is.na(resolved_database) == FALSE
+      gene_sets_supplied = supplied
     ),
     results = list(
       gsva_matrix = gsva_mat,

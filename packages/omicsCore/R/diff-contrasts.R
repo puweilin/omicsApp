@@ -213,8 +213,8 @@ plot_diff_contrasts <- function(
                          if (p_preference == "adjusted") "adjusted" else "raw",
                          format(p_cutoff),
                          if (is.null(effect_cutoff)) "" else
-                           sprintf(", |effect| ≥ %s", format(effect_cutoff))),
-      x = "features (down ← → up)", y = NULL
+                           sprintf(", |effect| \u2265 %s", format(effect_cutoff))),
+      x = "features (down \u2190 \u2192 up)", y = NULL
     ) +
     theme_omics_labelled()
 }
@@ -325,7 +325,7 @@ plot_diff_overlap <- function(
                          if (p_preference == "adjusted") "adjusted" else "raw",
                          format(p_cutoff),
                          if (is.null(effect_cutoff)) "" else
-                           sprintf(", |effect| ≥ %s", format(effect_cutoff))),
+                           sprintf(", |effect| \u2265 %s", format(effect_cutoff))),
       x = NULL, y = "features in exactly\nthis combination") +
     theme_omics_labelled() +
     ggplot2::theme(axis.text.x = ggplot2::element_blank(),

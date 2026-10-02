@@ -232,10 +232,22 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
       } else {
         src <- file.path("raw", basename(src))
       }
+      # A layer normalized in the app is read as the file holds it and
+      # normalized again here. Reading it with the normalized label
+      # skipped the transform and ran every step on linear values.
+      norm <- exp$normalization
+      file_assay <- if (!is.null(norm)) norm$from_assay_type %||% "raw_intensity"
+                    else exp$assay_type
+      if (is.null(norm) && !is.null(exp$normalized_mat)) {
+        notes <- c(notes, sprintf(paste(
+          "'%s' was normalized in the app before the normalization was",
+          "recorded; add the normalize_omics() call it used after reading."), tag))
+      }
       call <- render_call(
         "read_omics", render_value(src),
         params = list(omics_type = exp$omics_type,
-                      assay_type = exp$assay_type),
+                      assay_type = file_assay,
+                      sheet_roles = exp$sheet_roles),
         arg_names = script_arg_names(read_omics),
         assign_to = var
       )
@@ -249,6 +261,22 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
                  "# read_omics() returns the parsed input and its import report.",
                  call$lines)
       notes <- c(notes, call$notes)
+      if (!is.null(norm)) {
+        nc <- render_call("normalize_omics", var,
+                          params = norm[c("method", "offset")],
+                          arg_names = script_arg_names(normalize_omics),
+                          assign_to = var)
+        lines <- c(lines, nc$lines)
+        notes <- c(notes, nc$notes)
+      }
+      if (!is.null(exp$design$group_col)) {
+        dc <- render_call("set_study_design", var,
+                          params = exp$design[c("group_col", "reference")],
+                          arg_names = script_arg_names(set_study_design),
+                          assign_to = var)
+        lines <- c(lines, dc$lines)
+        notes <- c(notes, dc$notes)
+      }
     }
   }
 
@@ -325,6 +353,14 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     }
   }
   if (!is.null(bundles$gsva)) {
+    if (isTRUE(bundles$gsva$params$gene_sets_supplied)) {
+      # The sets were the caller's own; they are in the bundle, not in
+      # any database the script could name.
+      bundles$gsva$params$database <- NULL
+      notes <- c(notes, paste(
+        "run_gsva() ran on gene sets supplied by hand; pass them as",
+        "`gene_sets =` (they are in the bundle's results$gsva_gene_sets)."))
+    }
     emit("gsva", "Gene-set variation", "run_gsva", run_gsva,
          input_for("gsva"), "gsva")
   }

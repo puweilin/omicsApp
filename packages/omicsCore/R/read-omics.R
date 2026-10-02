@@ -56,7 +56,7 @@ read_omics <- function(
   if (type == "auto") {
     type <- detect_file_type(path)
   }
-  switch(type,
+  out <- switch(type,
     excel = read_omics_excel(path, omics_type = omics_type,
                              assay_type = assay_type,
                              sheet_roles = sheet_roles, ...),
@@ -68,6 +68,11 @@ read_omics <- function(
                          sheet_roles = sheet_roles, ...),
     stop("Unsupported type: ", type)
   )
+  # Kept on the input so export_script() can read the file the same way.
+  if (!is.null(sheet_roles) && is_omics_input(out$input)) {
+    out$input$sheet_roles <- sheet_roles
+  }
+  out
 }
 
 # Roles the caller may assign, checked before any file is opened so a typo
@@ -150,7 +155,10 @@ read_omics_excel <- function(path, omics_type, assay_type,
   rows <- list()
   for (nm in sheet_names) {
     df <- tryCatch(
-      as.data.frame(readxl::read_excel(path, sheet = nm, ...),
+      # guess_max: readxl types a column from its first 1000 rows, so a
+      # sample whose values start further down was read as logical and
+      # vanished.
+      as.data.frame(read_excel_sheet(path, nm, ...),
                     stringsAsFactors = FALSE),
       error = function(e) NULL
     )
@@ -231,6 +239,11 @@ read_omics_csv <- function(path, omics_type, assay_type,
 
   args <- list(path, header = TRUE, sep = sep, skip = skip,
                check.names = FALSE, stringsAsFactors = FALSE, ...)
+  # A ";"-separated file is what a spreadsheet writes where the comma is
+  # the decimal mark. "12,345" there is twelve point three, and stripping
+  # the comma as a thousands separator made it 1000 times too large.
+  if (identical(sep, ";") && is.null(list(...)$dec)) args$dec <- ","
+
   # The first column is the identifiers, whatever they look like, and
   # they are text: an Entrez id is a number that must not be summed, and
   # a probe id "0001" read as a number comes back "1". Only the first
@@ -418,6 +431,8 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   meta <- materialize_metadata(if (is.null(metadata_sheet)) NULL
                                else sheets[[metadata_sheet]],
                                sample_ids = colnames(mat))
+  for (note in attr(meta, "notes")) report <- add_import_warning(report, note)
+  attr(meta, "notes") <- NULL
   # A separate annotation sheet wins; failing that, the annotation
   # columns the matrix sheet itself carried.
   feat_source <- if (!is.null(feature_sheet)) sheets[[feature_sheet]] else cols$annotation
@@ -558,9 +573,11 @@ first_column_is_id <- function(df) {
   # numbers. Without this the column became a sample, and with the
   # sheet now mostly "samples in rows" the whole matrix came out
   # transposed, with no warning anywhere.
+  # A duplicate or a missing id used to demote the column to a sample
+  # (an "EntrezID" sample, features named "1".."40"); the name says what
+  # it is, and duplicates are made unique downstream.
   is.numeric(first) && ncol(df) > 1L &&
-    grepl(ID_COLUMN_NAME_RE, tolower(colnames(df)[1L])) &&
-    !anyNA(first) && !anyDuplicated(first)
+    grepl(ID_COLUMN_NAME_RE, tolower(colnames(df)[1L]))
 }
 
 # Rows a spreadsheet adds under the data and a pipeline never would.
@@ -578,10 +595,38 @@ materialize_matrix <- function(df, orientation) {
   # Text columns are read as numbers where every cell is a number or a
   # way of writing "missing". Drop the rest.
   df[] <- lapply(df, function(c) if (is.numeric(c)) c else clean_numeric_text(c))
+  # A column of numbers with a few spreadsheet error cells ("#DIV/0!",
+  # "<LOD", "n.q.") is a sample with missing values, not text: one such
+  # cell used to drop the whole sample without a word.
+  bad_cells <- 0L
   numeric_cols <- vapply(df, function(c) {
-    is.numeric(c) || all(is.na(suppressWarnings(as.numeric(as.character(c)))) ==
-                         is.na(c))
+    if (is.numeric(c)) return(TRUE)
+    v <- suppressWarnings(as.numeric(as.character(c)))
+    odd <- !is.na(c) & is.na(v)
+    # Empty columns go through, to be dropped below with their own note.
+    if (all(is.na(c))) return(TRUE)
+    if (!any(!is.na(v))) return(FALSE)
+    if (!any(odd)) return(TRUE)
+    all(grepl(CELL_ERROR_RE, trimws(as.character(c[odd])), ignore.case = TRUE))
   }, logical(1))
+  for (nm in names(df)[numeric_cols]) {
+    c <- df[[nm]]
+    if (is.numeric(c)) next
+    v <- suppressWarnings(as.numeric(as.character(c)))
+    bad_cells <- bad_cells + sum(!is.na(c) & is.na(v))
+    df[[nm]] <- v
+  }
+  if (bad_cells > 0L) {
+    notes <- c(notes, sprintf(
+      "%d cell(s) holding spreadsheet errors or limit markers (e.g. '#DIV/0!', '<LOD') were read as missing values.",
+      bad_cells))
+  }
+  dropped <- names(df)[!numeric_cols]
+  if (length(dropped) && any(numeric_cols)) {
+    notes <- c(notes, sprintf(
+      "Left out %d non-numeric column(s) as annotation, not samples: %s.",
+      length(dropped), paste(utils::head(dropped, 8L), collapse = ", ")))
+  }
   df <- df[, numeric_cols, drop = FALSE]
   if (ncol(df) == 0L) return(NULL)
   mat <- as.matrix(as.data.frame(lapply(df, function(c) {
@@ -621,6 +666,11 @@ materialize_matrix <- function(df, orientation) {
 # exports "#N/A", people write "n.d."; read as text, any one of them
 # turned a whole sample column non-numeric, and the column was dropped
 # without a word -- a missing sample rather than a missing value.
+# Cells a spreadsheet or an instrument writes in place of a number.
+CELL_ERROR_RE <- paste0(
+  "^(#.*|<.*|>.*|n\\.?q\\.?|n\\.?d\\.?|nan|inf|-inf|null|none|na|n/a|",
+  "below.*|above.*|lod|loq|bdl|nf|not found|error)$")
+
 MISSING_TOKENS <- c("", "na", "n/a", "#n/a", "#na", "nan", "null", "none",
                     "filtered", "n.d.", "nd", "-", "--", "?")
 
@@ -727,37 +777,103 @@ select_sample_columns <- function(df) {
   list(df = df, notes = notes, annotation = annotation)
 }
 
+# Metadata rows, one per matrix column, in the matrix's order.
+#
+# Matched by sample id, never by position. This used to name the rows
+# and leave them in the sheet's order, so a metadata sheet listing S6..S1
+# against a matrix S1..S6 paired every sample with the wrong row for the
+# analyses that read metadata by position (a continuous fit's p-value
+# went from 2.9e-7 to 0.057 on reordering alone); and when no column
+# matched it assigned rows by position outright, which reversed the
+# groups of a file whose ids differed only by "-" vs "_". Now:
+#   * the column whose values cover most sample ids is the id column;
+#     ids are compared as text, with numbers written out in full
+#     (100000, not 1e+05);
+#   * failing an exact match, ids that agree ignoring case and
+#     punctuation are matched, and the report says so;
+#   * samples without a metadata row get NA metadata, extra rows are
+#     dropped, duplicated ids keep their first row -- each said in the
+#     report;
+#   * with no match at all, no metadata is attached and the report says
+#     why, rather than guessing.
+# The notes travel on attribute "notes".
 materialize_metadata <- function(df, sample_ids) {
-  if (is.null(df)) {
-    # Build a minimal metadata frame so validate_omics_input() passes.
-    return(data.frame(
-      sample_id = sample_ids,
-      row.names = sample_ids,
-      stringsAsFactors = FALSE
-    ))
+  minimal <- function() {
+    data.frame(sample_id = sample_ids, row.names = sample_ids,
+               stringsAsFactors = FALSE)
   }
+  if (is.null(df)) return(minimal())
   df <- as.data.frame(df, stringsAsFactors = FALSE)
-  # Find a column that overlaps with sample IDs.
-  match_col <- NULL
-  best_overlap <- 0L
-  for (col in colnames(df)) {
-    vals <- as.character(df[[col]])
-    overlap <- sum(vals %in% sample_ids)
-    if (overlap > best_overlap) {
-      best_overlap <- overlap
-      match_col <- col
+  notes <- character(0)
+  as_id <- function(x) {
+    if (is.numeric(x)) {
+      out <- format(x, scientific = FALSE, trim = TRUE, digits = 15)
+      out[is.na(x)] <- NA_character_
+      out
+    } else {
+      trimws(as.character(x))
     }
   }
-  if (!is.null(match_col) && best_overlap > 0L) {
-    rownames(df) <- make_unique_labels(df[[match_col]])
-  } else if (nrow(df) == length(sample_ids)) {
-    rownames(df) <- sample_ids
-  } else {
-    # Fall back: align by truncation/padding to keep validate_omics_input() honest.
-    df <- data.frame(sample_id = sample_ids,
-                     row.names = sample_ids, stringsAsFactors = FALSE)
+  loose <- function(x) gsub("[^[:alnum:]]", "", tolower(x))
+
+  best <- function(key) {
+    match_col <- NULL
+    best_overlap <- 0L
+    for (col in colnames(df)) {
+      overlap <- sum(unique(key(as_id(df[[col]]))) %in% key(sample_ids))
+      if (overlap > best_overlap) {
+        best_overlap <- overlap
+        match_col <- col
+      }
+    }
+    list(col = match_col, n = best_overlap)
   }
-  df
+  hit <- best(identity)
+  key <- identity
+  if (is.null(hit$col) || hit$n < length(sample_ids)) {
+    loose_hit <- best(loose)
+    if (!is.null(loose_hit$col) && loose_hit$n > hit$n &&
+        !anyDuplicated(loose(sample_ids))) {
+      hit <- loose_hit
+      key <- loose
+      notes <- c(notes, sprintf(
+        "Metadata column '%s' was matched to the sample names ignoring case and punctuation (e.g. '%s').",
+        hit$col, as_id(df[[hit$col]])[1L]))
+    }
+  }
+  if (is.null(hit$col)) {
+    notes <- c(notes, paste0(
+      "No metadata column matches the sample names, so no metadata was attached. ",
+      "Add a column holding exactly the matrix's sample names (e.g. 'sample_id')."))
+    out <- minimal()
+    attr(out, "notes") <- notes
+    return(out)
+  }
+
+  ids <- key(as_id(df[[hit$col]]))
+  dup <- duplicated(ids) & !is.na(ids)
+  if (any(dup)) {
+    notes <- c(notes, sprintf(
+      "%d sample id(s) appear more than once in the metadata; the first row of each was used: %s.",
+      sum(dup), paste(utils::head(unique(as_id(df[[hit$col]])[dup]), 5L), collapse = ", ")))
+  }
+  idx <- match(key(sample_ids), ids)
+  missing <- sample_ids[is.na(idx)]
+  extra <- setdiff(ids[!is.na(ids)], key(sample_ids))
+  if (length(missing)) {
+    notes <- c(notes, sprintf(
+      "%d sample(s) have no metadata row and get missing values: %s.",
+      length(missing), paste(utils::head(missing, 5L), collapse = ", ")))
+  }
+  if (length(extra)) {
+    notes <- c(notes, sprintf(
+      "%d metadata row(s) name samples that are not in the matrix and were left out: %s.",
+      length(extra), paste(utils::head(extra, 5L), collapse = ", ")))
+  }
+  out <- df[idx, , drop = FALSE]
+  rownames(out) <- sample_ids
+  attr(out, "notes") <- notes
+  out
 }
 
 materialize_feature_annot <- function(df, feature_ids) {
@@ -802,6 +918,14 @@ materialize_feature_annot <- function(df, feature_ids) {
     df <- rbind(df, pad[, colnames(df), drop = FALSE])
   }
   df <- df[feature_ids, , drop = FALSE]
+  # feature_id is the matrix's row name, de-duplicated label included. It
+  # used to keep the sheet's raw id, so two rows of P04637 were
+  # "P04637" and "P04637" here and P04637 / P04637_1 in the matrix, and
+  # anything matching on feature_id (QC, subsetting) produced NA rows.
+  if (!identical(as.character(df$feature_id), feature_ids)) {
+    df$source_feature_id <- df$feature_id
+    df$feature_id <- feature_ids
+  }
   attr(df, "id_column") <- id_col
   sym_col <- pick_symbol_column(df, exclude = id_col)
   if (!is.null(sym_col)) {
@@ -872,4 +996,11 @@ make_unique_labels <- function(x) {
   x <- as.character(x)
   x[is.na(x) | !nzchar(x)] <- "._missing"
   make.unique(x, sep = "_")
+}
+
+# One sheet, typed from every row rather than the first thousand.
+read_excel_sheet <- function(path, sheet, ...) {
+  args <- list(path, sheet = sheet, ...)
+  if (is.null(args$guess_max)) args$guess_max <- 1e6
+  suppressWarnings(do.call(readxl::read_excel, args))
 }

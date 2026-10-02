@@ -54,7 +54,8 @@ test_that("qc_outliers iqr method flags extreme samples", {
 test_that("qc_outliers pca runs and returns z-scores", {
   x <- make_qc_input(missing_frac = 0)
   res <- qc_outliers(x, method = "pca", sd_threshold = 3)
-  expect_named(res, c("method", "stats", "flagged_samples"))
+  # Plus a `note`: with this few samples a z of 3 is out of reach.
+  expect_true(all(c("method", "stats", "flagged_samples") %in% names(res)))
   expect_true(all(c("PC1", "PC2", "z_pc1", "z_pc2", "is_outlier") %in%
                   colnames(res$stats)))
 })
@@ -119,12 +120,13 @@ test_that("run_qc returns an analysis_bundle with the expected slots", {
   expect_true(is_omics_input(b$results$cleaned_input))
 })
 
-test_that("run_qc removes flagged samples and features", {
+test_that("run_qc removes flagged samples, when asked, and features", {
   x <- make_qc_input(missing_frac = 0)
   x$expr_mat[1, ] <- NA              # feature -> 100% missing
   x$expr_mat[, 1] <- x$expr_mat[, 1] + 100  # sample -> extreme
   b <- run_qc(x, missing_threshold = 0.5,
-              outlier_method = "iqr", outlier_sd_threshold = 1.5)
+              outlier_method = "iqr", outlier_sd_threshold = 1.5,
+              remove_outliers = TRUE)
   cleaned <- b$results$cleaned_input
   expect_false("g1" %in% rownames(cleaned$expr_mat))
   expect_false("s1" %in% colnames(cleaned$expr_mat))
