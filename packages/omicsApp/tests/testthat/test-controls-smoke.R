@@ -158,7 +158,12 @@ test_that("the report buttons are live exactly when they can work", {
   shiny::testServer(report_view_server,
                     args = list(current_project = shiny::reactiveVal(sm_project())), {
     html <- paste(as.character(output$header), collapse = "")
-    expect_no_match(html, "pointer-events:none")
+    # HTML is live; PDF only where LaTeX is installed.
+    btns <- regmatches(html, gregexpr("<a [^>]*>", html))[[1L]]
+    expect_no_match(grep("download_html", btns, value = TRUE), "pointer-events:none")
+    pdf <- grep("download_pdf", btns, value = TRUE)
+    if (have_latex()) expect_no_match(pdf, "pointer-events:none")
+    else expect_match(pdf, "LaTeX")
   })
 })
 

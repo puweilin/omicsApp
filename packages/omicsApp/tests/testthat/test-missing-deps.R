@@ -83,5 +83,6 @@ test_that("every optional-package question in the app goes through has_pkg()", {
     code <- lines[!grepl("^\\s*#", lines)]
     if (any(grepl("requireNamespace(", code, fixed = TRUE))) basename(f)
   }))
-  expect_identical(hits, "deps.R")
+  # deps.R itself now asks system.file(), so nothing calls it at all.
+  expect_true(all(hits %in% "deps.R"))
 })
