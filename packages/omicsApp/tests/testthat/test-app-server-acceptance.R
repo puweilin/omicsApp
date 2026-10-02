@@ -53,7 +53,7 @@ run_diff_in_app <- function(session, click) {
 # renders of the same figure differ only there.
 strip_ids <- function(json) gsub("file[0-9a-f]{6,}", "ID", as.character(json))
 
-autosaved <- function(dir) omicsCore::load_project(file.path(dir, "_autosave.omp"))
+autosaved <- function(dir) omicsCore::load_project(autosave_file(dir))
 
 # ---- rows 1-3: import, re-import, replace --------------------------------
 
@@ -63,7 +63,7 @@ test_that("upload and confirm: the project appears, and is on disk before anythi
   file_a <- workbook(1)
   shiny::testServer(app_server, {
     expect_null(current_project())
-    expect_false(file.exists(file.path(store, "_autosave.omp")))
+    expect_false(file.exists(autosave_file(store)))
 
     upload(session, file_a, "cohort_a.xlsx")
     session$setInputs(`import-confirm` = 1)
@@ -74,7 +74,7 @@ test_that("upload and confirm: the project appears, and is on disk before anythi
     expect_identical(dim(proj$experiments$proteomics$expr_mat), c(40L, 8L))
 
     # Row 9 of the table: the store carries the snapshot and the upload
-    expect_true(file.exists(file.path(store, "_autosave.omp")))
+    expect_true(file.exists(autosave_file(store)))
     expect_identical(names(autosaved(store)$experiments), "proteomics")
     raw <- list.files(file.path(store, "raw"))
     expect_length(raw, 1L)

@@ -72,3 +72,44 @@ test_that("a project with no layers does not error in the Differential view", {
     expect_error(output$ui_method, class = "shiny.silent.error")
   })
 })
+
+test_that("two sessions keep two autosaves, and the oldest beyond the limit are pruned", {
+  dir <- aa_store()
+  p <- tutorial_project()
+  p$name <- "tab one"
+  expect_true(store_autosave(p, dir = dir, id = "aaaa1111"))
+  Sys.sleep(1.1)
+  p$name <- "tab two"
+  expect_true(store_autosave(p, dir = dir, id = "bbbb2222"))
+  snaps <- list_autosaves(dir)
+  expect_identical(nrow(snaps), 2L)
+  expect_identical(snaps$name, c("tab two", "tab one"))       # newest first
+  expect_identical(store_read_autosave(dir)$name, "tab two")
+  expect_identical(store_read_autosave(dir, path = basename(snaps$path[[2L]]))$name, "tab one")
+  # A path from the browser that is not one of the snapshots reads nothing.
+  expect_null(store_read_autosave(dir, path = "../elsewhere.omp"))
+  # Autosaves are not listed as saved projects.
+  expect_identical(nrow(list_saved_projects(dir)), 0L)
+
+  for (i in 1:5) store_autosave(p, dir = dir, id = paste0("cccc", i))
+  expect_lte(nrow(list_autosaves(dir)), MAX_AUTOSAVES + 1L)
+})
+
+test_that("a session writes its autosave under its own id", {
+  dir <- aa_store()
+  shiny::testServer(app_server, {
+    id <- session_autosave_id(session)
+    expect_match(id, "^[A-Za-z0-9]+$")
+    session$setInputs(`project-load_tutorial` = 1)
+    session$flushReact()
+    expect_true(file.exists(autosave_path(dir, id)))
+  })
+})
+
+test_that("an import parse that lands after a newer one is dropped", {
+  ep <- run_epoch()
+  old <- ep$start()
+  new <- ep$start()
+  expect_false(ep$is_current(old))
+  expect_true(ep$is_current(new))
+})

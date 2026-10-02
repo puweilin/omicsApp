@@ -44,3 +44,6 @@ deploy/host.env
 deploy/nginx/omicsapp.conf
 deploy/keycloak/docker-compose.yml
 deploy/keycloak/omicsapp-realm.json
+
+# Backup settings name another machine and an alert channel.
+deploy/backup.env

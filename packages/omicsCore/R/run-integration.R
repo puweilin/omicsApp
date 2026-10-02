@@ -228,7 +228,14 @@ run_integration <- function(
       by = by
     ),
     method_params,
-    list(method_info = method_info)
+    list(method_info = method_info),
+    # How each layer's differential result was made, so export_script()
+    # can make them again: the partner layer's run happens inside the
+    # app and exists nowhere else.
+    if (!is.null(diff_bundles)) {
+      list(diff_params = lapply(diff_bundles[intersect(experiments, names(diff_bundles))],
+                                function(b) b$params))
+    }
   )
 
   results <- list(integration_df = integration_df)

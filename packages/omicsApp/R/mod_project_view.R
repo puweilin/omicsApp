@@ -442,8 +442,8 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (isTRUE(res$ok)) bump_store()
     })
 
-    shiny::observeEvent(input$restore_autosave, {
-      proj <- store_read_autosave()
+    restore_from <- function(path = NULL) {
+      proj <- store_read_autosave(path = path)
       if (is.null(proj)) {
         shiny::showNotification("No readable autosave found.", type = "error")
         return()
@@ -451,6 +451,34 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       set_project(proj)
       shiny::showNotification("Restored the last autosaved session.",
                               type = "message")
+    }
+
+    # One snapshot per browser session, so with two tabs open there are
+    # two to choose from; the newest is not necessarily the one wanted.
+    shiny::observeEvent(input$restore_autosave, {
+      snaps <- list_autosaves()
+      if (nrow(snaps) <= 1L) return(restore_from())
+      labels <- sprintf("%s \u00B7 %s layer(s) \u00B7 saved %s",
+                        ifelse(is.na(snaps$name), "(unnamed)", snaps$name),
+                        ifelse(is.na(snaps$n_layers), "?", snaps$n_layers),
+                        format(snaps$modified, "%Y-%m-%d %H:%M"))
+      shiny::showModal(shiny::modalDialog(
+        title = "Restore which session?",
+        shiny::radioButtons(session$ns("autosave_pick"), label = NULL,
+                            choices = stats::setNames(basename(snaps$path), labels),
+                            selected = basename(snaps$path)[[1L]]),
+        htmltools::tags$p(class = "muted",
+                          "Each browser tab keeps its own snapshot. Restoring replaces what is loaded now."),
+        footer = htmltools::tagList(
+          shiny::modalButton("Cancel"),
+          shiny::actionButton(session$ns("confirm_restore_autosave"), "Restore",
+                              class = "btn btn-primary")),
+        easyClose = TRUE))
+    })
+
+    shiny::observeEvent(input$confirm_restore_autosave, {
+      shiny::removeModal()
+      restore_from(input$autosave_pick)
     })
 
     # Restore on arrival rather than on a click. The autosave is the

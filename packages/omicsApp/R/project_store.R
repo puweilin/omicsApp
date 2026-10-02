@@ -8,12 +8,22 @@
 #
 # Two kinds of file live in the store:
 #   * `<slug>.omp`   -- projects the user explicitly saved
-#   * `_autosave.omp` -- the rolling snapshot written by app_server()
+#   * `_autosave-<id>.omp` -- the rolling snapshot of one browser
+#     session, written by app_server() (`_autosave.omp` is the slot used
+#     before snapshots were per session, and by callers that name none)
 #
-# The autosave slot is reserved: `project_slug()` refuses to produce it
-# so an explicit save can never clobber the crash-recovery copy.
+# The autosave slots are reserved: `project_slug()` refuses to produce
+# them so an explicit save can never clobber a crash-recovery copy.
+#
+# One snapshot per session because two tabs used to share one file and
+# overwrite each other on every change: whichever tab moved last was the
+# only work that survived.
 
 AUTOSAVE_SLUG <- "_autosave"
+AUTOSAVE_RE <- "^_autosave(-[A-Za-z0-9]+)?\\.omp$"
+# Snapshots kept besides the current session's. Each is a whole project,
+# so they are few: enough to get back the other tab's work, not a history.
+MAX_AUTOSAVES <- 3L
 
 #' Resolve the per-user project directory
 #'
@@ -263,8 +273,59 @@ project_path <- function(slug, dir = omicsapp_data_dir()) {
 #' @return Absolute file path.
 #' @keywords internal
 #' @noRd
-autosave_path <- function(dir = omicsapp_data_dir()) {
-  file.path(dir, paste0(AUTOSAVE_SLUG, ".omp"))
+autosave_path <- function(dir = omicsapp_data_dir(), id = NULL) {
+  stem <- if (is.null(id)) AUTOSAVE_SLUG else paste0(AUTOSAVE_SLUG, "-", autosave_id(id))
+  file.path(dir, paste0(stem, ".omp"))
+}
+
+# A session's autosave id: letters and digits only, so it can never
+# carry a path.
+autosave_id <- function(x) {
+  id <- substr(gsub("[^A-Za-z0-9]", "", as.character(x %||% "")), 1L, 16L)
+  if (!nzchar(id)) id <- paste(sample(c(letters, 0:9), 12L, TRUE), collapse = "")
+  id
+}
+
+# The id a Shiny session writes its autosave under.
+session_autosave_id <- function(session = shiny::getDefaultReactiveDomain()) {
+  autosave_id(tryCatch(session$token, error = function(e) NULL))
+}
+
+#' Every autosave snapshot in the store, newest first
+#'
+#' @param dir Project directory.
+#'
+#' @return A `data.frame` with `path`, `id` (`NA` for the shared legacy
+#'   slot), `modified`, and, from the sidecar written beside each
+#'   snapshot, `name` and `n_layers` (`NA` when there is none).
+#' @keywords internal
+#' @noRd
+list_autosaves <- function(dir = omicsapp_data_dir()) {
+  empty <- data.frame(path = character(0), id = character(0),
+                      modified = as.POSIXct(character(0)), name = character(0),
+                      n_layers = integer(0), stringsAsFactors = FALSE)
+  if (!dir.exists(dir)) return(empty)
+  files <- list.files(dir, pattern = AUTOSAVE_RE, full.names = TRUE)
+  if (!length(files)) return(empty)
+  meta <- lapply(files, read_autosave_meta)
+  out <- data.frame(
+    path = files,
+    id = ifelse(basename(files) == paste0(AUTOSAVE_SLUG, ".omp"), NA_character_,
+                sub("^_autosave-(.*)\\.omp$", "\\1", basename(files))),
+    modified = file.info(files)$mtime,
+    name = vapply(meta, function(m) m$name %||% NA_character_, character(1)),
+    n_layers = vapply(meta, function(m) as.integer(m$n_layers %||% NA_integer_), integer(1)),
+    stringsAsFactors = FALSE
+  )
+  out[order(out$modified, decreasing = TRUE), , drop = FALSE]
+}
+
+autosave_meta_path <- function(path) sub("\\.omp$", ".json", path)
+
+read_autosave_meta <- function(path) {
+  meta <- autosave_meta_path(path)
+  if (!file.exists(meta)) return(list())
+  tryCatch(jsonlite::read_json(meta), error = function(e) list())
 }
 
 #' List the projects saved in the store
@@ -286,7 +347,7 @@ list_saved_projects <- function(dir = omicsapp_data_dir()) {
                       stringsAsFactors = FALSE)
   if (!dir.exists(dir)) return(empty)
   files <- list.files(dir, pattern = "\\.omp$", full.names = TRUE)
-  files <- files[basename(files) != paste0(AUTOSAVE_SLUG, ".omp")]
+  files <- files[!grepl(AUTOSAVE_RE, basename(files))]
   if (length(files) == 0L) return(empty)
   info <- file.info(files)
   # Marked before the regex runs: sub() on unmarked non-ASCII bytes in a
@@ -426,8 +487,7 @@ prune_orphan_uploads <- function(digests, dir = omicsapp_data_dir()) {
   #
   # The autosave is deliberately included: it holds a real project, and
   # an upload it refers to is one a restore would need.
-  others <- c(list_saved_projects(dir)$path,
-              file.path(dir, paste0(AUTOSAVE_SLUG, ".omp")))
+  others <- c(list_saved_projects(dir)$path, list_autosaves(dir)$path)
   others <- others[file.exists(others)]
   still_used <- unlist(lapply(others, project_fingerprints), use.names = FALSE)
   orphans <- setdiff(digests, still_used %||% character(0))
@@ -479,7 +539,7 @@ store_load_project <- function(slug, dir = omicsapp_data_dir()) {
 #' @return `TRUE` on success, `FALSE` otherwise.
 #' @keywords internal
 #' @noRd
-store_autosave <- function(project, dir = omicsapp_data_dir()) {
+store_autosave <- function(project, dir = omicsapp_data_dir(), id = NULL) {
   if (!omicsCore::is_omics_project(project)) return(FALSE)
   # The snapshot replaces itself in place, so it does not grow the
   # store; enforcing quota here would only strand a user's recovery
@@ -489,11 +549,32 @@ store_autosave <- function(project, dir = omicsapp_data_dir()) {
       if (!dir.exists(dir)) {
         dir.create(dir, recursive = TRUE, showWarnings = FALSE)
       }
-      omicsCore::save_project(project, autosave_path(dir), overwrite = TRUE)
+      path <- autosave_path(dir, id)
+      omicsCore::save_project(project, path, overwrite = TRUE)
+      # What the Restore picker shows, without opening every snapshot.
+      try(jsonlite::write_json(
+        list(name = project$name %||% "Unnamed project",
+             n_layers = length(project$experiments),
+             layers = names(project$experiments)),
+        autosave_meta_path(path), auto_unbox = TRUE), silent = TRUE)
+      if (!is.null(id)) prune_autosaves(dir, keep = path)
       TRUE
     },
     error = function(e) FALSE
   )
+}
+
+# Keep this session's snapshot and the MAX_AUTOSAVES newest others.
+prune_autosaves <- function(dir, keep) {
+  all <- list_autosaves(dir)
+  others <- all$path[normalizePath(all$path, mustWork = FALSE) !=
+                       normalizePath(keep, mustWork = FALSE)]
+  old <- others[-seq_len(min(length(others), MAX_AUTOSAVES))]
+  if (length(old)) {
+    suppressWarnings(file.remove(c(old, autosave_meta_path(old))[
+      file.exists(c(old, autosave_meta_path(old)))]))
+  }
+  invisible(old)
 }
 
 #' Read the autosave snapshot, if one exists
@@ -503,8 +584,18 @@ store_autosave <- function(project, dir = omicsapp_data_dir()) {
 #' @return An `omics_project`, or `NULL` when absent or unreadable.
 #' @keywords internal
 #' @noRd
-store_read_autosave <- function(dir = omicsapp_data_dir()) {
-  path <- autosave_path(dir)
+store_read_autosave <- function(dir = omicsapp_data_dir(), path = NULL) {
+  # The newest snapshot unless one is named -- and a named one must be a
+  # snapshot of this store, since the name comes back from the browser.
+  if (is.null(path)) {
+    all <- list_autosaves(dir)
+    if (!nrow(all)) return(NULL)
+    path <- all$path[[1L]]
+  } else if (!basename(path) %in% basename(list_autosaves(dir)$path)) {
+    return(NULL)
+  } else {
+    path <- file.path(dir, basename(path))
+  }
   if (!file.exists(path)) return(NULL)
   tryCatch(omicsCore::load_project(path), error = function(e) NULL)
 }
@@ -517,9 +608,9 @@ store_read_autosave <- function(dir = omicsapp_data_dir()) {
 #' @keywords internal
 #' @noRd
 autosave_mtime <- function(dir = omicsapp_data_dir()) {
-  path <- autosave_path(dir)
-  if (!file.exists(path)) return(NULL)
-  file.info(path)$mtime
+  all <- list_autosaves(dir)
+  if (!nrow(all)) return(NULL)
+  all$modified[[1L]]
 }
 
 #' Directory holding archived raw uploads
@@ -658,7 +749,9 @@ split_file_name <- function(name) {
 #' @return Invisibly, the observer handle.
 #' @keywords internal
 #' @noRd
-wire_autosave <- function(current_project, writer = store_autosave) {
+wire_autosave <- function(current_project,
+                          writer = function(p) store_autosave(p, id = id),
+                          id = NULL) {
   # Reads `current_project` without writing it, so this cannot
   # re-trigger itself.
   invisible(shiny::observe({

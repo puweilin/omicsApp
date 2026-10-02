@@ -134,6 +134,21 @@ detect_orientation <- function(df) {
     return(list(orientation = "samples_in_rows", confidence = 0.9,
                 notes = "column labels look like feature IDs"))
   }
+  # Sample names share a stem ("S01".."S90", "Patient_3"), gene and
+  # protein names do not ("IL6", "TNF", "CXCL8"). Both pass as feature
+  # labels, so in an Olink NPX table -- samples in rows, ninety-odd
+  # proteins in columns -- neither test above fired, the shape was too
+  # square to decide, and the table was read transposed.
+  rows_sample <- looks_like_sample_labels(row_labels)
+  cols_sample <- looks_like_sample_labels(col_labels)
+  if (rows_sample && !cols_sample) {
+    return(list(orientation = "samples_in_rows", confidence = 0.75,
+                notes = "row labels share a sample-name stem"))
+  }
+  if (cols_sample && !rows_sample) {
+    return(list(orientation = "features_in_rows", confidence = 0.75,
+                notes = "column labels share a sample-name stem"))
+  }
   if (!is.na(shape_hint)) {
     return(list(orientation = shape_hint, confidence = 0.55,
                 notes = "decided by row vs column count"))
@@ -177,10 +192,16 @@ classify_sheet_role <- function(df, name = NA_character_) {
     orient <- detect_orientation(df)
     conf <- 0.7 + 0.2 * (numeric_fraction - 0.8) / 0.2
     if (name_matrix) conf <- min(conf + 0.1, 0.99)
+    # All numbers and a sample-sheet heading or name: possibly the sample
+    # sheet (numeric ids, age, BMI, a 0/1 group). Still offered as a
+    # matrix, but below a sheet with no such hint.
+    meta_like <- (has_meta_hint || name_meta) && !name_matrix
+    if (meta_like) conf <- conf - 0.25
     return(list(role = "matrix",
                 confidence = round(conf, 3),
                 orientation = orient$orientation,
-                notes = sprintf("%.0f%% numeric cells", 100 * numeric_fraction)))
+                notes = sprintf("%.0f%% numeric cells%s", 100 * numeric_fraction,
+                                if (meta_like) "; sample-sheet headings" else "")))
   }
 
   # A vendor report: a block of numeric sample columns beside a handful
@@ -288,6 +309,25 @@ strongly_feature_like <- function(labels) {
     any(vapply(strong, function(pat) grepl(pat, s, perl = TRUE), logical(1)))
   }, logical(1))
   mean(hits) >= 0.5
+}
+
+# Most labels share one stem once trailing numbers and separators are
+# taken off: S01, S02 ... or Ctrl_1, Ctrl_2, Trt_1 ... (at most a few
+# stems covering nearly all labels, each used several times).
+looks_like_sample_labels <- function(labels) {
+  labels <- trimws(as.character(labels))
+  labels <- labels[!is.na(labels) & nzchar(labels)]
+  if (length(labels) < 4L) return(FALSE)
+  if (!all(grepl("[0-9]", labels))) return(FALSE)
+  # Accessions share a stem too (ENSG..., P0...), and bare numbers
+  # (Entrez ids, numeric sample ids) say nothing either way.
+  if (strongly_feature_like(labels)) return(FALSE)
+  stem <- tolower(sub("[-_. ]*[0-9]+[A-Za-z]?$", "", labels))
+  if (mean(nzchar(stem)) < 0.9) return(FALSE)
+  tab <- sort(table(stem), decreasing = TRUE)
+  top <- tab[seq_len(min(3L, length(tab)))]
+  sum(top) / length(labels) >= 0.9 && all(top >= 2L) &&
+    length(tab) <= max(3L, length(labels) / 4)
 }
 
 looks_like_feature_labels <- function(labels) {

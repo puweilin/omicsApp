@@ -1,0 +1,104 @@
+# Build the production image and run both test suites inside it.
+#
+# R-CMD-check.yaml tests on the latest R release with today's CRAN. The
+# server runs deploy/docker/Dockerfile: R 4.4.2, Bioconductor 3.20 and a
+# CRAN snapshot pinned to 2025-03-01. Code that passed the first could
+# fail on the second (an API that did not exist yet, a package version
+# that behaves differently), and nothing ever built the Dockerfile, so
+# the first sign of a broken image was a failed deployment. This job
+# builds that image and tests the packages as installed in it.
+name: production-image
+
+on:
+  pull_request:
+    paths:
+      - "packages/omicsCore/**"
+      - "packages/omicsApp/**"
+      - "deploy/**"
+      - ".github/workflows/production-image.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/omicsCore/**"
+      - "packages/omicsApp/**"
+      - "deploy/**"
+      - ".github/workflows/production-image.yaml"
+  # Weekly, so a base image or mirror that moved is noticed before a
+  # deployment depends on it.
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    # The first build compiles the Bioconductor stack from source; later
+    # builds reuse the cached layers up to the package COPY.
+    timeout-minutes: 180
+    env:
+      IMAGE: omicsapp:ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image is several GB (Bioconductor, TeX); the runner's free
+      # space is not enough without clearing toolchains this job never uses.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The Dockerfile's default Bioconductor mirror is chosen for the
+      # server's network; from GitHub the upstream is the fast one.
+      - name: Build the production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          load: true
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            BIOC_MIRROR=https://bioconductor.org
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: The image serves the app
+        run: |
+          docker run -d --name smoke -p 3838:3838 "$IMAGE"
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:3838/; then
+              echo "up after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3838/ | grep -qi "omics"
+          docker logs smoke
+          docker rm -f smoke
+
+      # The packages' tests against the libraries in the image. Test-only
+      # packages come from the image's own pinned repositories, so they
+      # are the versions that snapshot carries.
+      - name: Test omicsCore and omicsApp inside the image
+        run: |
+          docker run --rm --user root -v "$PWD:/src" -w /src \
+            -e NOT_CRAN=true -e OMICSAPP_DATA_DIR=/tmp/omicsapp-data \
+            "$IMAGE" bash -euo pipefail -c '
+              Rscript -e "install.packages(c(\"testthat\", \"withr\", \"writexl\"), Ncpus = 2)"
+              Rscript -e "res <- testthat::test_local(\"packages/omicsCore\", reporter = \"summary\", stop_on_failure = TRUE)"
+              Rscript -e "res <- testthat::test_local(\"packages/omicsApp\", reporter = \"summary\", stop_on_failure = TRUE)"
+            '
+
+      - name: The backup scripts parse
+        run: |
+          bash -n deploy/scripts/backup.sh
+          bash -n deploy/scripts/restore_check.sh

@@ -247,8 +247,10 @@ test_that("the user store is the same directory in ShinyProxy, add_user.sh and t
   default_root <- grep("^USERS_ROOT=", script, value = TRUE)
   expect_match(default_root, users_root, fixed = TRUE)
 
-  cron <- read_deploy(root, "cron", "omicsapp-backup")
-  expect_true(any(grepl(paste0(users_root, "/"), cron, fixed = TRUE)))
+  backup <- read_deploy(root, "scripts", "backup.sh")
+  expect_true(any(grepl(sprintf('USERS_DIR="${USERS_DIR:-%s}"', users_root), backup, fixed = TRUE)))
+  env_tpl <- read_deploy(root, "backup.env.template")
+  expect_true(any(grepl(paste0("USERS_DIR=", users_root), env_tpl, fixed = TRUE)))
 
   # Inside the container the store is /data, and the app reads it from
   # this variable -- so the image must set it, or every project lands
@@ -377,4 +379,92 @@ test_that("render.sh refuses an address with a scheme, port or path, and the pla
     expect_false(identical(status, 0L), info = bad)
   }
   expect_length(list.files(out, recursive = TRUE), 0L)
+})
+
+# ---- backups: versioned, verified, off-host, alerting ----------------------
+
+test_that("the cron file runs the backup nightly and the restore drill weekly", {
+  root <- skip_unless_deploy()
+  cron <- read_deploy(root, "cron", "omicsapp-backup")
+  jobs <- cron[!grepl("^\\s*(#|$)", cron) & grepl("root", cron)]
+  expect_true(any(grepl("deploy/scripts/backup.sh", jobs, fixed = TRUE)))
+  expect_true(any(grepl("deploy/scripts/restore_check.sh", jobs, fixed = TRUE)))
+  # The pipe that replaced a good dump with an empty one is gone.
+  expect_false(any(grepl("pg_dump", jobs, fixed = TRUE)))
+})
+
+test_that("the backup script fails loudly and keeps history", {
+  root <- skip_unless_deploy()
+  sh <- read_deploy(root, "scripts", "backup.sh")
+  code <- sh[!grepl("^\\s*#", sh)]
+  expect_true(any(grepl("set -Eeuo pipefail", code, fixed = TRUE)))
+  expect_true(any(grepl("--link-dest", code, fixed = TRUE)))
+  expect_true(any(grepl("BACKUP_REMOTE", code, fixed = TRUE)))
+  expect_true(any(grepl("trap 'on_error", code, fixed = TRUE)))
+  expect_true(any(grepl("MANIFEST.sha256", code, fixed = TRUE)))
+})
+
+test_that("backup.sh and restore_check.sh work end to end on a scratch layout", {
+  root <- skip_unless_deploy()
+  skip_on_os("windows")
+  for (tool in c("bash", "rsync", "flock", "sha256sum", "gzip")) {
+    skip_if(!nzchar(Sys.which(tool)), paste(tool, "not available"))
+  }
+  t <- withr::local_tempdir()
+  dir.create(file.path(t, "users", "u1"), recursive = TRUE)
+  dir.create(file.path(t, "kc"))
+  dir.create(file.path(t, "remote"))
+  writeLines("project", file.path(t, "users", "u1", "a.omp"))
+  writeLines("16", file.path(t, "kc", "PG_VERSION"))
+  docker <- file.path(t, "docker")
+  writeLines(c("#!/bin/sh",
+               "case \"$1\" in",
+               "  exec) [ -n \"$FAKE_DUMP_FAIL\" ] && exit 1; head -c 3000 /dev/urandom | base64 ;;",
+               "  image) echo 'sha256:test omicsapp:1.0' ;;",
+               "esac"), docker)
+  Sys.chmod(docker, "755")
+  env <- c(OMICSAPP_BACKUP_CONF = "/nonexistent", USERS_DIR = file.path(t, "users"),
+           KEYCLOAK_DB_DIR = file.path(t, "kc"), GENESETS_DIR = file.path(t, "none"),
+           REPO_DIR = t, BACKUP_ROOT = file.path(t, "backup"), DOCKER = docker,
+           ALERT_LOG = file.path(t, "alerts"), EXTRA_PATHS = "",
+           BACKUP_REMOTE = file.path(t, "remote"), SKIP_DOCKER_CHECKS = "1")
+  run <- function(script, extra = character(0)) {
+    withr::with_envvar(c(env, extra),
+      system2("bash", file.path(root, "scripts", script), stdout = FALSE, stderr = FALSE))
+  }
+  expect_identical(run("backup.sh"), 0L)
+  Sys.sleep(1.1)
+  writeLines("more", file.path(t, "users", "u1", "b.omp"))
+  expect_identical(run("backup.sh"), 0L)
+  snaps <- list.files(file.path(t, "backup", "snapshots"))
+  expect_length(snaps, 2L)
+  # Unchanged files are shared between snapshots, not copied.
+  links <- system2("stat", c("-c", "%h", shQuote(file.path(t, "backup", "snapshots",
+                                                      snaps[[1L]], "users", "u1", "a.omp"))),
+                   stdout = TRUE)
+  expect_identical(as.integer(links), 2L)
+  expect_setequal(list.files(file.path(t, "remote", "snapshots")), snaps)
+  expect_identical(run("restore_check.sh"), 0L)
+
+  # A failed dump alerts, exits non-zero, and leaves the snapshots alone.
+  expect_false(run("backup.sh", c(FAKE_DUMP_FAIL = "1")) == 0L)
+  expect_length(list.files(file.path(t, "backup", "snapshots")), 2L)
+  expect_true(any(grepl("failed", readLines(file.path(t, "alerts")))))
+
+  # A damaged file is caught by the drill.
+  cat("x", file = file.path(t, "backup", "latest", "users", "u1", "b.omp"), append = TRUE)
+  expect_false(run("restore_check.sh") == 0L)
+})
+
+# ---- CI builds and tests the image the server runs ----------------------------
+
+test_that("CI builds the production Dockerfile and tests inside it", {
+  root <- skip_unless_deploy()
+  wf <- file.path(dirname(root), ".github", "workflows", "production-image.yaml")
+  skip_if(!file.exists(wf), "workflows not present")
+  lines <- readLines(wf, warn = FALSE)
+  expect_true(any(grepl("file: deploy/docker/Dockerfile", lines, fixed = TRUE)))
+  expect_true(any(grepl("pull_request", lines, fixed = TRUE)))
+  expect_true(any(grepl('test_local(\\"packages/omicsCore\\"', lines, fixed = TRUE)))
+  expect_true(any(grepl('test_local(\\"packages/omicsApp\\"', lines, fixed = TRUE)))
 })

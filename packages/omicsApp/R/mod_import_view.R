@@ -70,6 +70,8 @@ import_view_server <- function(id,
     # Roles the user has overridden, as read_omics() wants them. Kept apart
     # from `parsed` because they have to survive the re-parse they trigger.
     role_overrides <- shiny::reactiveVal(NULL)
+    # The matrix orientation the user chose, when the guess was wrong.
+    orientation_override <- shiny::reactiveVal(NULL)
 
     # Bumped on every new file. Shiny keeps an input's value across re-renders
     # of the control, so without this the role dropdowns would still hold the
@@ -78,64 +80,94 @@ import_view_server <- function(id,
     # ids means a new file starts with genuinely empty controls.
     parse_gen <- shiny::reactiveVal(0L)
 
+    # A new file picked while the previous one is still being read wins;
+    # the older parse is dropped when it lands (see run_epoch()).
+    parse_epoch <- run_epoch()
+
     do_parse <- function() {
       f <- input$file
       shiny::req(f)
       omics_type <- input$omics_type %||% "proteomics"
-      # Parse first with the modality default, then re-label from the values
-      # once there is a matrix to look at. read_omics() needs *an* assay_type,
-      # and the data it would be inferred from does not exist until it returns.
-      assay_type <- if (omics_type == "rnaseq") "raw_count" else "raw_intensity"
-
-      out <- tryCatch(
-        # The scale check inside omics_input() is muffled for this one
-        # call and nothing else: the label handed in here is the
-        # modality's default, and it is replaced from the values a few
-        # lines down. Warning about a label that is about to be
-        # corrected only trains people to ignore the warning that
-        # matters, the one at confirm time.
-        withCallingHandlers(
-          omicsCore::read_omics(
-            f$datapath,
-            omics_type = omics_type,
-            assay_type = assay_type,
-            sheet_roles = role_overrides()
-          ),
-          warning = function(w) {
-            if (grepl("implies (linear|log-scale) values", conditionMessage(w))) {
-              invokeRestart("muffleWarning")
-            }
-          }
-        ),
-        error = function(e) {
-          list(
-            input = NULL,
-            report = omicsCore::new_import_report(
-              warnings = paste0("The file could not be read: ",
-                                conditionMessage(e)),
-              source = f$name
-            )
-          )
-        }
-      )
-      # Stamp the user-visible source name so the schema card shows
-      # the original filename, not the tempfile path Shiny gave us.
-      out$report$source <- f$name
-      if (!is.null(out$input)) {
-        inferred <- omicsCore::infer_assay_type(out$input$expr_mat, omics_type)
-        if (!is.na(inferred)) {
-          out$input$assay_type <- inferred
-          assay_type <- inferred
-        }
-        # Fingerprint the upload so Confirm can tell a genuinely new
-        # dataset from the same file picked twice.
-        out$input$source_fingerprint <-
-          input_fingerprint(f$datapath, omics_type, assay_type)
-      }
-      parsed(out)
-      # New upload (or radio change) always resets the confirmed state
-      # so the user has to re-confirm against the rebuilt input.
+      my_parse <- parse_epoch$start()
+      # Off the main thread: a large workbook takes tens of seconds to
+      # read, and read in the observer it froze every view of the session
+      # -- and, under one R process per container, the whole app -- for
+      # that long.
+      parsed(NULL)
       confirmed_input(NULL)
+      run_async(
+        detached_call(
+          function() {
+            # Parse first with the modality default, then re-label from
+            # the values once there is a matrix to look at. read_omics()
+            # needs *an* assay_type, and the data it would be inferred
+            # from does not exist until it returns.
+            assay_type <- if (omics_type == "rnaseq") "raw_count" else "raw_intensity"
+            out <- tryCatch(
+              # The scale check inside omics_input() is muffled for this
+              # one call and nothing else: the label handed in here is
+              # the modality's default, and it is replaced from the
+              # values a few lines down. Warning about a label that is
+              # about to be corrected only trains people to ignore the
+              # warning that matters, the one at confirm time.
+              withCallingHandlers(
+                omicsCore::read_omics(
+                  datapath,
+                  omics_type = omics_type,
+                  assay_type = assay_type,
+                  sheet_roles = roles,
+                  orientation = orientation
+                ),
+                warning = function(w) {
+                  if (grepl("implies (linear|log-scale) values", conditionMessage(w))) {
+                    invokeRestart("muffleWarning")
+                  }
+                }
+              ),
+              error = function(e) {
+                list(
+                  input = NULL,
+                  report = omicsCore::new_import_report(
+                    warnings = paste0("The file could not be read: ",
+                                      conditionMessage(e)),
+                    source = name
+                  )
+                )
+              }
+            )
+            if (!is.null(out$input)) {
+              inferred <- omicsCore::infer_assay_type(out$input$expr_mat, omics_type)
+              if (!is.na(inferred)) out$input$assay_type <- inferred
+            }
+            out
+          },
+          datapath = f$datapath, name = f$name, omics_type = omics_type,
+          roles = role_overrides(), orientation = orientation_override()
+        ),
+        on_success = function(out) {
+          if (!parse_epoch$is_current(my_parse)) return(invisible())
+          # Stamp the user-visible source name so the schema card shows
+          # the original filename, not the tempfile path Shiny gave us.
+          out$report$source <- f$name
+          if (!is.null(out$input)) {
+            # Fingerprint the upload so Confirm can tell a genuinely new
+            # dataset from the same file picked twice.
+            out$input$source_fingerprint <-
+              input_fingerprint(f$datapath, omics_type, out$input$assay_type)
+          }
+          parsed(out)
+          # New upload (or radio change) always resets the confirmed
+          # state so the user has to re-confirm against the rebuilt input.
+          confirmed_input(NULL)
+        },
+        on_error = function(msg) {
+          if (!parse_epoch$is_current(my_parse)) return(invisible())
+          parsed(list(input = NULL, report = omicsCore::new_import_report(
+            warnings = paste0("The file could not be read: ", msg),
+            source = f$name)))
+        },
+        message = sprintf("Reading %s...", f$name)
+      )
     }
 
     # Both templates carry the same donors under different sample ids --
@@ -152,6 +184,7 @@ import_view_server <- function(id,
     shiny::observeEvent(input$file, {
       # A new file makes the previous sheet assignment meaningless
       role_overrides(NULL)
+      orientation_override(NULL)
       parse_gen(shiny::isolate(parse_gen()) + 1L)
       do_parse()
     })
@@ -224,8 +257,24 @@ import_view_server <- function(id,
     output$confirm_shape <- shiny::renderUI({
       cand <- parsed()
       if (is.null(cand)) return(NULL)
-      confirm_shape_ui(cand$input, cand$report)
+      htmltools::tagList(
+        confirm_shape_ui(cand$input, cand$report),
+        orientation_picker_ui(ns, cand$report)
+      )
     })
+
+    # Samples as columns or rows. Asked outright rather than left to the
+    # role dropdowns: a transposed matrix imports cleanly and analyses
+    # features as samples, and the only sign is a count the user has to
+    # notice.
+    shiny::observeEvent(input$orientation_pick, {
+      cand <- parsed()
+      shiny::req(cand)
+      current <- cand$report$suggested_input$orientation
+      if (identical(input$orientation_pick, current)) return()
+      orientation_override(input$orientation_pick)
+      do_parse()
+    }, ignoreInit = TRUE)
 
     output$confirm_roles <- shiny::renderUI({
       cand <- parsed()
@@ -953,8 +1002,34 @@ confirm_shape_ui <- function(input_obj, report) {
       label = "Orientation",
       value = if (identical(orientation, "features_in_rows")) "features in rows"
               else "samples in rows",
-      trend = "swap the role below if reversed"
+      trend = if (identical(report$suggested_input$orientation_source, "user")) "as you set it"
+              else sprintf("detected (confidence %.2f)",
+                           report$suggested_input$orientation_confidence %||% NA_real_),
+      accent = if ((report$suggested_input$orientation_confidence %||% 1) < 0.6) "warn" else "ok"
     )
+  )
+}
+
+# The control that corrects the orientation, prominent when it was a guess.
+orientation_picker_ui <- function(ns, report) {
+  sug <- report$suggested_input
+  if (is.null(sug$orientation) || identical(sug$matrix_sheet, "rds")) return(NULL)
+  guessed <- (sug$orientation_confidence %||% 1) < 0.6 &&
+    !identical(sug$orientation_source, "user")
+  htmltools::tags$div(
+    style = "margin:-6px 0 14px",
+    if (guessed) {
+      notice(title = "Check the orientation",
+             detail = paste("The file did not make it clear whether samples are",
+                            "columns or rows. If the Samples count above is really",
+                            "the number of features, switch it here."),
+             kind = "warn")
+    },
+    shiny::radioButtons(
+      ns("orientation_pick"), label = "Samples are the matrix's",
+      choices = c("columns (features in rows)" = "features_in_rows",
+                  "rows (samples in rows, e.g. Olink NPX)" = "samples_in_rows"),
+      selected = sug$orientation, inline = TRUE)
   )
 }
 

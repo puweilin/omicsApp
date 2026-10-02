@@ -119,3 +119,76 @@ test_that("subsetting keeps where the data came from and what was done to it", {
   expect_identical(sub$source_path, "upload.xlsx")
   expect_identical(sub$normalization$method, "log2")
 })
+
+ae_int_project <- function() {
+  set.seed(21)
+  sym <- c(paste0("S", 1:10), paste0("G", 1:30))
+  groups <- rep(c("ctrl", "trtA", "trtB"), each = 4)
+  mk <- function(prefix, omics, assay, shift) {
+    ids <- paste0(prefix, seq_along(sym))
+    samp <- paste0(prefix, "_S", 1:12)
+    m <- matrix(stats::rnorm(length(sym) * 12, 8, 0.3), length(sym),
+                dimnames = list(ids, samp))
+    m[1:10, groups == "trtA"] <- m[1:10, groups == "trtA"] + shift
+    omics_input(m, data.frame(group = groups, donor = paste0("D", 1:12), row.names = samp),
+                data.frame(feature_id = ids, feature_symbol = sym, row.names = ids),
+                omics_type = omics, assay_type = assay)
+  }
+  omics_project("int", list(proteomics = mk("p", "proteomics", "normalized_intensity", 2),
+                            rnaseq = mk("r", "rnaseq", "logcpm", 1.5)))
+}
+
+# Runs an exported script with read_omics() answering from memory.
+ae_run_script <- function(lines, inputs) {
+  env <- new.env(parent = asNamespace("omicsCore"))
+  env$read_omics <- function(path, ...) {
+    list(input = inputs[[sub("^<path-to-(.*)-file>$", "\\1", path)]])
+  }
+  env$library <- function(...) invisible(NULL)
+  env$sessionInfo <- function() invisible(NULL)
+  pdf(NULL)
+  on.exit(grDevices::dev.off(), add = TRUE)
+  eval(parse(text = lines), envir = env)
+  env
+}
+
+test_that("the script reproduces a concordance integration, partner diff and settings included", {
+  p <- ae_int_project()
+  full <- lapply(p$experiments, run_diff, method = "limma", group_col = "group",
+                 control_group = "ctrl", case_group = c("trtA", "trtB"))
+  d <- lapply(full, select_comparison, "trtA_vs_ctrl")
+  p$bundles <- list(
+    diff = full$proteomics,
+    integration = run_integration(p, "concordance", c("proteomics", "rnaseq"),
+                                  diff_bundles = d, p_cutoff = 0.01,
+                                  effect_cutoff = 0.5))
+  lines <- export_script(p)
+  expect_true(any(grepl("p_cutoff", lines)))
+  expect_true(any(grepl("effect_cutoff", lines)))
+  expect_true(any(grepl("diff_rnaseq <- run_diff(", lines, fixed = TRUE)))
+  expect_true(any(grepl('view = "quadrant"', lines, fixed = TRUE)))
+  expect_false(any(grepl("NOTE: run_integration", lines, fixed = TRUE)))
+  env <- ae_run_script(lines, p$experiments)
+  expect_equal(env$integration$results$integration_df,
+               p$bundles$integration$results$integration_df)
+})
+
+test_that("the script reproduces a correlation integration with its sample pairing", {
+  p <- ae_int_project()
+  link <- data.frame(
+    tag = rep(c("proteomics", "rnaseq"), each = 12),
+    sample_id = c(paste0("p_S", 1:12), paste0("r_S", 12:1)),
+    donor_id = c(paste0("D", 1:12), paste0("D", 1:12)),
+    stringsAsFactors = FALSE)
+  p$sample_link <- link
+  p$bundles <- list(integration = run_integration(
+    p, "correlation", c("proteomics", "rnaseq"), cor_method = "pearson", min_samples = 5L))
+  lines <- export_script(p)
+  expect_true(any(grepl("sample_link = data.frame(", lines, fixed = TRUE)))
+  expect_true(any(grepl('cor_method', lines)))
+  expect_true(any(grepl('view = "scatter"', lines, fixed = TRUE)))
+  expect_false(any(grepl("dual_volcano", lines)))
+  env <- ae_run_script(lines, p$experiments)
+  expect_equal(env$integration$results$integration_df,
+               p$bundles$integration$results$integration_df)
+})

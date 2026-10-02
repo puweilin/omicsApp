@@ -80,7 +80,7 @@ render_call <- function(fn_name, first, params, arg_names, assign_to = NULL) {
     if (!nm %in% names(params)) next
     value <- params[[nm]]
     if (is.null(value)) next
-    rendered <- render_value(value)
+    rendered <- if (inherits(value, "script_code")) unclass(value) else render_value(value)
     if (is.na(rendered)) {
       notes <- c(notes, sprintf(
         "%s: `%s` was not a literal and is omitted; the call below is incomplete.",
@@ -108,6 +108,54 @@ render_call <- function(fn_name, first, params, arg_names, assign_to = NULL) {
     notes = notes
   )
 }
+
+# Code written into a call as it stands (a variable, a list of them).
+script_code <- function(x) structure(x, class = "script_code")
+
+# The run_diff() call that made a bundle, followed by the selection when
+# the bundle is one contrast taken out of a shared fit: re-running only
+# its two groups would give different p-values, since the shared fit
+# pools the variance of every group in the model.
+diff_call_lines <- function(params, input_var, var) {
+  all_cases <- params$all_case_groups
+  all_specs <- params$all_contrasts
+  shown <- params$comparison
+  selected <- FALSE
+  if (length(shown) == 1L && length(all_specs) > 1L) {
+    params$contrasts <- all_specs
+    params$case_group <- NULL
+    selected <- TRUE
+  } else if (length(shown) == 1L && length(all_cases) > 1L) {
+    params$case_group <- all_cases
+    selected <- TRUE
+  }
+  call <- render_call("run_diff", input_var, params,
+                      script_arg_names(run_diff), assign_to = var)
+  lines <- call$lines
+  if (selected) {
+    lines <- c(lines, sprintf("%s <- select_comparison(%s, %s)", var, var,
+                              render_value(shown)))
+  }
+  list(lines = lines, notes = call$notes, selected = selected)
+}
+
+# A data frame as the code that builds it, or NA when a column is not a
+# literal.
+render_data_frame <- function(df) {
+  cols <- vapply(names(df), function(nm) {
+    v <- render_value(as.vector(df[[nm]]))
+    if (is.na(v)) NA_character_ else sprintf("%s = %s", render_name(nm), v)
+  }, character(1))
+  if (anyNA(cols)) return(NA_character_)
+  sprintf("data.frame(%s, stringsAsFactors = FALSE)", paste(cols, collapse = ", "))
+}
+
+# The figures plot_integration() draws for each method.
+INTEGRATION_FIGURES <- list(
+  correlation = "scatter",
+  concordance = c("dual_volcano", "effect_pair", "quadrant"),
+  active_pathways = "dotplot"
+)
 
 # Text bound for a comment. A newline in a project name ended the
 # comment and handed the rest of the name to the parser as code -- and
@@ -247,7 +295,8 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
         "read_omics", render_value(src),
         params = list(omics_type = exp$omics_type,
                       assay_type = file_assay,
-                      sheet_roles = exp$sheet_roles),
+                      sheet_roles = exp$sheet_roles,
+                      orientation = exp$orientation),
         arg_names = script_arg_names(read_omics),
         assign_to = var
       )
@@ -321,24 +370,10 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     # followed by the selection. Re-running only its two groups would
     # give different p-values: the shared fit pools the variance of every
     # group in the model.
-    all_cases <- bundles$diff$params$all_case_groups
-    all_specs <- bundles$diff$params$all_contrasts
     shown <- bundles$diff$params$comparison
-    selected <- FALSE
-    if (length(shown) == 1L && length(all_specs) > 1L) {
-      bundles$diff$params$contrasts <- all_specs
-      bundles$diff$params$case_group <- NULL
-      selected <- TRUE
-    } else if (length(shown) == 1L && length(all_cases) > 1L) {
-      bundles$diff$params$case_group <- all_cases
-      selected <- TRUE
-    }
-    emit("diff", "Differential analysis", "run_diff", run_diff,
-         input_for("diff"), "diff")
-    if (selected) {
-      lines <- c(lines, sprintf("diff <- select_comparison(diff, %s)",
-                                render_value(shown)))
-    }
+    dc <- diff_call_lines(bundles$diff$params, input_for("diff"), "diff")
+    lines <- c(lines, section("Differential analysis"), dc$lines)
+    notes <- c(notes, dc$notes)
     # A bundle holding every contrast of a run: the downstream steps each
     # ran on one of them, so that one is taken out for them by name.
     if (length(shown) > 1L &&
@@ -389,28 +424,56 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     # fact: an earlier version ran a sub() over every line to append the
     # comma, which would have edited any other line that happened to
     # start with a `name` argument.
+    ip <- bundles$integration$params %||% list()
+    # The sample pairing correlation relies on, when the project has one.
+    link <- project$sample_link
+    link_code <- if (!is.null(link) && nrow(link) > 0L) render_data_frame(link)
+    if (!is.null(link_code) && is.na(link_code)) {
+      notes <- c(notes, "the project's sample_link could not be written out; set it before run_integration().")
+      link_code <- NULL
+    }
     lines <- c(
       lines,
       "project <- omics_project(",
       sprintf("  name        = %s,",
               render_value(project$name %||% "project")),
-      sprintf("  experiments = list(%s)",
+      sprintf("  experiments = list(%s)%s",
               paste(sprintf("%s = %s", vapply(names(input_vars), render_name, ""),
-                            unname(input_vars)), collapse = ", ")),
+                            unname(input_vars)), collapse = ", "),
+              if (!is.null(link_code)) "," else ""),
+      if (!is.null(link_code)) sprintf("  sample_link = %s", link_code),
       ")"
     )
-    call <- render_call("run_integration", "project",
-                        bundles$integration$params %||% list(),
-                        script_arg_names(run_integration),
+    # Each layer's differential result, made the way it was made --
+    # including the partner layer's, which the app computes itself.
+    if (length(ip$diff_params)) {
+      dvars <- character(0)
+      for (tag in names(ip$diff_params)) {
+        var <- make.names(paste0("diff_", tag))
+        dc <- diff_call_lines(ip$diff_params[[tag]],
+                              input_vars[[tag]] %||% "input", var)
+        lines <- c(lines, sprintf("# The differential result for '%s':", comment_text(tag)),
+                   dc$lines)
+        notes <- c(notes, dc$notes)
+        dvars[[tag]] <- var
+      }
+      ip$diff_bundles <- script_code(sprintf("list(%s)", paste(
+        sprintf("%s = %s", vapply(names(dvars), render_name, ""), dvars),
+        collapse = ", ")))
+    } else if (!identical(ip$method, "correlation")) {
+      notes <- c(notes, paste(
+        "run_integration() was given differential results that this project",
+        "does not record; supply `diff_bundles =` for both layers."))
+    }
+    # The method's own settings travel through `...`, so they are named
+    # here; omitting them ran every method at its defaults.
+    method_args <- setdiff(names(ip), c(script_arg_names(run_integration), "method_info",
+                                        "diff_params"))
+    call <- render_call("run_integration", "project", ip,
+                        c(script_arg_names(run_integration), method_args),
                         assign_to = "integration")
     lines <- c(lines, call$lines)
     notes <- c(notes, call$notes)
-    if (!"diff_bundles" %in% names(bundles$integration$params %||% list())) {
-      notes <- c(notes, paste(
-        "run_integration() was given differential bundles that are not",
-        "recorded in params; add `diff_bundles = list(diff)` if the",
-        "method needs them."))
-    }
   }
 
   if (isTRUE(include_plots)) {
@@ -425,15 +488,19 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
         "# Drawn at plot_volcano()'s default cut, which is the figure the",
         "# app shows: its threshold sliders filter the hit table, not this.",
         "# The cut is printed in the plot's caption.",
-        "plot_volcano(diff)")
+        # One comparison per figure: a bundle holding several is refused.
+        if (length(bundles$diff$params$comparison) > 1L) {
+          if (identical(diff_var_for_enrich, "diff_shown")) "plot_volcano(diff_shown)"
+          else sprintf("plot_volcano(select_comparison(diff, %s))", render_value(
+            (bundles$diff$params$shown_comparison %||% bundles$diff$params$comparison)[[1L]]))
+        } else "plot_volcano(diff)")
     }
     if (!is.null(bundles$enrich)) {
       lines <- c(lines, 'plot_enrichment(enrich, view = "dot", top_n = 12L)')
     }
     if (!is.null(bundles$integration)) {
-      lines <- c(lines,
-                 'plot_integration(integration, view = "dual_volcano")',
-                 'plot_integration(integration, view = "effect_pair")')
+      views <- INTEGRATION_FIGURES[[bundles$integration$params$method %||% "concordance"]]
+      lines <- c(lines, sprintf('plot_integration(integration, view = "%s")', views))
     }
   }
 

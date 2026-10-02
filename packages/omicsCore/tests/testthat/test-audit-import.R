@@ -107,3 +107,78 @@ test_that("omics_input() reorders metadata, and validation refuses what it canno
   rownames(ff$feature_df) <- c("zz", "yy", "xx")
   expect_error(validate_omics_input(ff), "does not match the rows")
 })
+
+test_that("an Olink-style table with samples in rows is read the right way round", {
+  set.seed(3)
+  prot <- c("IL6", "TNF", "CXCL8", "IL10", "CCL2", "IL1B", "IFNG", "VEGFA",
+            "MMP9", "CD40", "IL18", "CSF1", "FGF2", "HGF", "OSM", "TGFA",
+            "IL17A", "CCL11", "CXCL10", "IL2")
+  samp <- sprintf("S%02d", 1:24)
+  npx <- data.frame(SampleID = samp,
+                    matrix(round(stats::rnorm(24 * 20, 5), 3), 24,
+                           dimnames = list(NULL, prot)),
+                    check.names = FALSE)
+  path <- withr::local_tempfile(fileext = ".xlsx")
+  writexl::write_xlsx(list(npx = npx,
+                           samples = data.frame(SampleID = samp,
+                                                group = rep(c("A", "B"), 12))), path)
+  r <- read_omics(path, omics_type = "proteomics", assay_type = "normalized_intensity")
+  expect_identical(colnames(r$input$expr_mat), samp)
+  expect_identical(rownames(r$input$expr_mat), prot)
+
+  # And a caller can always say which way round it is.
+  r2 <- read_omics(path, omics_type = "proteomics", assay_type = "normalized_intensity",
+                   orientation = "samples_in_rows")
+  expect_identical(r2$report$suggested_input$orientation_source, "user")
+  expect_identical(r2$input$orientation, "samples_in_rows")
+})
+
+test_that("a guessed orientation is reported as a guess", {
+  m <- ai_mat(c("A", "B", "C", "D", "E", "F"))   # names give nothing away
+  m$Gene <- paste0("feat", letters[seq_len(30) %% 26 + 1], seq_len(30) %/% 26)
+  m <- m[1:8, ]
+  path <- withr::local_tempfile(fileext = ".xlsx")
+  writexl::write_xlsx(list(x = m), path)
+  r <- read_omics(path, omics_type = "proteomics", assay_type = "normalized_intensity")
+  if (r$report$suggested_input$orientation_confidence < 0.6) {
+    expect_match(r$report$warnings, "was a guess", all = FALSE)
+  } else {
+    succeed()
+  }
+})
+
+test_that("an all-numeric sample sheet is not taken for the matrix", {
+  ids <- 101:108
+  mat <- ai_mat(as.character(ids))
+  meta <- data.frame(id = ids, age = c(30, 41, 52, 33, 44, 55, 36, 47),
+                     bmi = round(stats::runif(8, 18, 30), 1),
+                     arm = rep(0:1, 4))
+  path <- withr::local_tempfile(fileext = ".xlsx")
+  writexl::write_xlsx(list(Sheet1 = mat, Sheet2 = meta), path)
+  r <- read_omics(path, omics_type = "proteomics", assay_type = "normalized_intensity")
+  expect_identical(r$report$suggested_input$matrix_sheet, "Sheet1")
+  expect_identical(r$report$suggested_input$metadata_sheet, "Sheet2")
+  expect_identical(dim(r$input$expr_mat), c(30L, 8L))
+  expect_identical(r$input$meta_df$age, meta$age)
+  expect_match(r$report$warnings, "name the samples", all = FALSE)
+})
+
+test_that("a workbook that unpacks past the limit is refused before it is read", {
+  path <- withr::local_tempfile(fileext = ".xlsx")
+  writexl::write_xlsx(list(expression = ai_mat(paste0("S", 1:6))), path)
+  withr::local_options(omicsCore.max_unpacked_mb = 0.001)
+  expect_error(read_omics(path, omics_type = "proteomics"), "unpacks to")
+})
+
+test_that("a saved omics_input that is not valid is reported, not loaded", {
+  inp <- omics_input(matrix(1:12 + 10, 3, dimnames = list(paste0("g", 1:3), paste0("s", 1:4))),
+                     data.frame(group = c("a", "a", "b", "b"), row.names = paste0("s", 1:4)),
+                     data.frame(feature_id = paste0("g", 1:3)),
+                     omics_type = "proteomics", assay_type = "normalized_intensity")
+  inp$meta_df <- inp$meta_df[4:1, , drop = FALSE]
+  path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(inp, path)
+  r <- read_omics(path)
+  expect_null(r$input)
+  expect_match(r$report$warnings, "not valid", all = FALSE)
+})

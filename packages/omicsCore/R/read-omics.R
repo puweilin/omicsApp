@@ -29,6 +29,11 @@
 #'   an unconfident one: a metadata sheet read as the matrix produces an
 #'   `omics_input` that analyses cleanly and means nothing. This is how a
 #'   caller lets the user correct it without re-implementing the reader.
+#' @param orientation Optional `"features_in_rows"` or `"samples_in_rows"`
+#'   for the matrix sheet, overriding the guess. The guess is reported
+#'   with its confidence; below 0.6 the report says it was a guess, and
+#'   this is how the caller corrects it (an Olink NPX table has samples in
+#'   rows and protein names that look like gene symbols on both axes).
 #' @param ... Forwarded to the underlying reader (`readxl::read_excel`,
 #'   `utils::read.csv`).
 #'
@@ -43,34 +48,44 @@ read_omics <- function(
   omics_type = NULL,
   assay_type = NULL,
   sheet_roles = NULL,
+  orientation = NULL,
   ...
 ) {
   type <- match.arg(type)
   sheet_roles <- validate_sheet_roles(sheet_roles)
+  assert_choice(orientation, "orientation", c("features_in_rows", "samples_in_rows"),
+                allow_null = TRUE)
   if (!is.character(path) || length(path) != 1L || !nzchar(path)) {
     stop("`path` must be a non-empty single string.")
   }
   if (!file.exists(path)) {
     stop("File does not exist: ", path)
   }
+  guard_archive(path)
   if (type == "auto") {
     type <- detect_file_type(path)
   }
   out <- switch(type,
     excel = read_omics_excel(path, omics_type = omics_type,
                              assay_type = assay_type,
-                             sheet_roles = sheet_roles, ...),
+                             sheet_roles = sheet_roles,
+                             orientation = orientation, ...),
     csv = read_omics_csv(path, omics_type = omics_type,
                          assay_type = assay_type,
-                         sheet_roles = sheet_roles, ...),
+                         sheet_roles = sheet_roles,
+                             orientation = orientation, ...),
     rds = read_omics_rds(path, omics_type = omics_type,
                          assay_type = assay_type,
-                         sheet_roles = sheet_roles, ...),
+                         sheet_roles = sheet_roles,
+                             orientation = orientation, ...),
     stop("Unsupported type: ", type)
   )
   # Kept on the input so export_script() can read the file the same way.
   if (!is.null(sheet_roles) && is_omics_input(out$input)) {
     out$input$sheet_roles <- sheet_roles
+  }
+  if (!is.null(orientation) && is_omics_input(out$input)) {
+    out$input$orientation <- orientation
   }
   out
 }
@@ -125,6 +140,55 @@ is_excel_file <- function(path) {
     identical(magic, as.raw(c(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1)))
 }
 
+# A workbook is a zip archive and an .rds a gzip stream. A small upload
+# can inflate to gigabytes -- a "zip bomb" -- and the readers inflate it
+# in memory before looking at a single cell, which takes the session (and
+# on a shared server, its neighbours) down with it. The sizes the archive
+# declares are checked first; the limit is
+# `options(omicsCore.max_unpacked_mb =)`, 2 GB by default.
+guard_archive <- function(path,
+                          max_mb = getOption("omicsCore.max_unpacked_mb", 2048)) {
+  con <- file(path, "rb")
+  magic <- tryCatch(readBin(con, "raw", 4L), finally = close(con))
+  limit <- max_mb * 1024^2
+  too_big <- function(bytes, what) {
+    stop(sprintf(paste(
+      "This %s unpacks to %s, more than the %s this server reads.",
+      "If the file is genuine, split it or raise",
+      "options(omicsCore.max_unpacked_mb)."),
+      what, format_mb(bytes), format_mb(limit)), call. = FALSE)
+  }
+  if (length(magic) >= 4L && identical(magic[1:4], as.raw(c(0x50, 0x4b, 0x03, 0x04)))) {
+    entries <- tryCatch(utils::unzip(path, list = TRUE), error = function(e) NULL)
+    if (is.null(entries)) {
+      stop("The file looks like a workbook but its archive could not be read; ",
+           "it may be damaged or encrypted.", call. = FALSE)
+    }
+    if (nrow(entries) > 10000L) {
+      stop("The workbook holds ", nrow(entries), " parts; a spreadsheet has a ",
+           "few dozen. Refusing to unpack it.", call. = FALSE)
+    }
+    total <- sum(as.numeric(entries$Length), na.rm = TRUE)
+    if (total > limit) too_big(total, "workbook")
+  } else if (length(magic) >= 2L && identical(magic[1:2], as.raw(c(0x1f, 0x8b)))) {
+    # gzip records the unpacked size (mod 2^32) in its last four bytes.
+    size <- file.size(path)
+    if (size >= 18) {
+      con <- file(path, "rb")
+      isize <- tryCatch({
+        seek(con, size - 4)
+        sum(as.numeric(readBin(con, "raw", 4L)) * 256^(0:3))
+      }, finally = close(con))
+      if (isize > limit) too_big(isize, "compressed file")
+    }
+  }
+  invisible(TRUE)
+}
+
+format_mb <- function(bytes) {
+  if (bytes >= 1024^3) sprintf("%.1f GB", bytes / 1024^3) else sprintf("%.0f MB", bytes / 1024^2)
+}
+
 detect_file_type <- function(path) {
   ext <- tolower(tools::file_ext(path))
 
@@ -149,7 +213,7 @@ detect_file_type <- function(path) {
 }
 
 read_omics_excel <- function(path, omics_type, assay_type,
-                             sheet_roles = NULL, ...) {
+                             sheet_roles = NULL, orientation = NULL, ...) {
   sheet_names <- readxl::excel_sheets(path)
   sheets <- list()
   rows <- list()
@@ -186,7 +250,8 @@ read_omics_excel <- function(path, omics_type, assay_type,
   }
   sheet_table <- apply_sheet_roles(do.call(rbind, rows), sheet_roles)
   build_input_from_sheets(sheets, sheet_table, source = path,
-                          omics_type = omics_type, assay_type = assay_type)
+                          omics_type = omics_type, assay_type = assay_type,
+                          orientation = orientation)
 }
 
 # From the header line, not the extension: a .xls that turned out to be
@@ -231,7 +296,7 @@ count_leading_comment_lines <- function(path) {
 }
 
 read_omics_csv <- function(path, omics_type, assay_type,
-                           sheet_roles = NULL, ...) {
+                           sheet_roles = NULL, orientation = NULL, ...) {
   skip <- count_leading_comment_lines(path)
   header_line <- tryCatch(readLines(path, n = skip + 1L, warn = FALSE)[skip + 1L],
                           error = function(e) NA_character_)
@@ -298,7 +363,8 @@ read_omics_csv <- function(path, omics_type, assay_type,
   sheets <- setNames(list(df), nm)
   sheet_table <- apply_sheet_roles(sheet_table, sheet_roles)
   out <- build_input_from_sheets(sheets, sheet_table, source = path,
-                                 omics_type = omics_type, assay_type = assay_type)
+                                 omics_type = omics_type, assay_type = assay_type,
+                                 orientation = orientation)
   # read.table renames a repeated column quietly ("S01.1"); a sample
   # sheet will not match the new name, and the user should know why.
   if (length(duplicated_headers) > 0L) {
@@ -310,11 +376,20 @@ read_omics_csv <- function(path, omics_type, assay_type,
 }
 
 read_omics_rds <- function(path, omics_type, assay_type,
-                           sheet_roles = NULL, ...) {
+                           sheet_roles = NULL, orientation = NULL, ...) {
   obj <- readRDS(path)
   if (inherits(obj, "omics_input")) {
     if (!is.null(omics_type)) obj$omics_type <- omics_type
     if (!is.null(assay_type)) obj$assay_type <- assay_type
+    # A saved object is checked like a built one: it may come from an
+    # older version, or from anywhere.
+    bad <- tryCatch({ validate_omics_input(obj); NULL },
+                    error = function(e) conditionMessage(e))
+    if (!is.null(bad)) {
+      return(list(input = NULL, report = new_import_report(
+        warnings = paste0("The saved omics_input is not valid: ", bad),
+        source = path)))
+    }
     sheet_table <- data.frame(
       name = "rds", role = "matrix",
       n_rows = as.integer(nrow(obj$expr_mat)),
@@ -366,7 +441,8 @@ read_omics_rds <- function(path, omics_type, assay_type,
   sheets <- setNames(list(df), nm)
   sheet_table <- apply_sheet_roles(sheet_table, sheet_roles)
   build_input_from_sheets(sheets, sheet_table, source = path,
-                          omics_type = omics_type, assay_type = assay_type)
+                          omics_type = omics_type, assay_type = assay_type,
+                          orientation = orientation)
 }
 
 # ---- internal: assembling an omics_input from classifier output --------
@@ -375,14 +451,23 @@ read_omics_rds <- function(path, omics_type, assay_type,
 # matrix / metadata / feature_annot sheets and try to glue them into an
 # `omics_input`. Returns list(input, report) without raising.
 build_input_from_sheets <- function(sheets, sheet_table, source,
-                                    omics_type, assay_type) {
+                                    omics_type, assay_type, orientation = NULL) {
   report <- new_import_report(sheets = sheet_table, source = source)
   if (nrow(sheet_table) == 0L) {
     report <- add_import_warning(report, "No readable sheets in the input.")
     return(list(input = NULL, report = report))
   }
 
-  matrix_sheet <- pick_best_sheet(sheet_table, "matrix")
+  # Two sheets that both look like a matrix: one is often the sample
+  # sheet, all numbers (numeric ids, age, BMI, a 0/1 group). It used to
+  # win on confidence alone and the import analysed the metadata. A sheet
+  # whose values name the other sheet's columns is that sheet's metadata.
+  resolved <- resolve_matrix_candidates(sheets, sheet_table)
+  sheet_table <- resolved$sheet_table
+  report$sheets <- sheet_table
+  for (note in resolved$notes) report <- add_import_warning(report, note)
+
+  matrix_sheet <- pick_best_sheet(sheet_table, "matrix", sheets)
   metadata_sheet <- pick_best_sheet(sheet_table, "metadata")
   feature_sheet <- pick_best_sheet(sheet_table, "feature_annot")
 
@@ -397,6 +482,18 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   }
 
   orient <- sheet_table$orientation[sheet_table$name == matrix_sheet]
+  orient_conf <- detect_orientation(sheets[[matrix_sheet]])$confidence
+  if (!is.null(orientation)) {
+    orient <- orientation
+    sheet_table$orientation[sheet_table$name == matrix_sheet] <- orientation
+    report$sheets <- sheet_table
+  } else if (orient_conf < 0.6) {
+    report <- add_import_warning(report, sprintf(paste(
+      "Whether samples are the columns or the rows of '%s' was a guess",
+      "(read as %s). Check the sample count below, and switch the",
+      "orientation if it is the number of features instead."),
+      matrix_sheet, gsub("_", " ", orient)))
+  }
   # Vendor tables carry QC counts and annotation beside the samples; the
   # numeric ones would otherwise become samples. Done on the table, where
   # the column names still say what each column is.
@@ -451,6 +548,8 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
     metadata_sheet = metadata_sheet,
     feature_sheet = feature_sheet,
     orientation = orient,
+    orientation_confidence = if (!is.null(orientation)) 1 else orient_conf,
+    orientation_source = if (!is.null(orientation)) "user" else "detected",
     omics_type = omics_type,
     assay_type = assay_type,
     id_column = attr(feat, "id_column")
@@ -474,11 +573,62 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   list(input = input, report = report)
 }
 
-pick_best_sheet <- function(sheet_table, role) {
+pick_best_sheet <- function(sheet_table, role, sheets = NULL) {
   cand <- sheet_table[sheet_table$role == role, , drop = FALSE]
   if (nrow(cand) == 0L) return(NULL)
-  cand <- cand[order(cand$confidence, decreasing = TRUE), , drop = FALSE]
-  cand$name[[1L]]
+  # Confidence first, and for the matrix the larger table on a near tie:
+  # an expression matrix has thousands of cells, a sample sheet dozens.
+  size <- as.numeric(cand$n_rows) * as.numeric(cand$n_cols)
+  score <- cand$confidence
+  if (identical(role, "matrix")) score <- round(score, 1) + 1e-9 * size
+  cand$name[[order(score, decreasing = TRUE)[[1L]]]]
+}
+
+# Candidates for the matrix role, checked against each other. When the
+# values of one sheet name the columns (or rows) of another, the first is
+# the second's sample sheet: it is relabelled metadata, and the report
+# says so.
+resolve_matrix_candidates <- function(sheets, sheet_table) {
+  notes <- character(0)
+  cand <- sheet_table$name[sheet_table$role == "matrix" & sheet_table$name %in% names(sheets)]
+  if (length(cand) < 2L) return(list(sheet_table = sheet_table, notes = notes))
+  labels_of <- function(df) unique(trimws(c(colnames(df), as.character(df[[1L]]))))
+  values_of <- function(df) {
+    lapply(df, function(col) unique(trimws(as.character(stats::na.omit(col)))))
+  }
+  is_meta <- stats::setNames(rep(FALSE, length(cand)), cand)
+  owner <- stats::setNames(rep(NA_character_, length(cand)), cand)
+  by_user <- sheet_table$name[sheet_table$notes %in% "role set by user"]
+  for (a in setdiff(cand, by_user)) for (b in setdiff(cand, a)) {
+    da <- sheets[[a]]
+    db <- sheets[[b]]
+    # A sample sheet is the smaller one: one row per sample.
+    if (nrow(da) * ncol(da) >= nrow(db) * ncol(db)) next
+    lab_b <- labels_of(db)
+    hit <- vapply(values_of(da), function(v) {
+      length(v) >= 2L && mean(v %in% lab_b) >= 0.8
+    }, logical(1))
+    if (any(hit)) {
+      is_meta[[a]] <- TRUE
+      owner[[a]] <- b
+    }
+  }
+  for (a in cand[is_meta]) {
+    i <- sheet_table$name == a
+    sheet_table$role[i] <- "metadata"
+    sheet_table$orientation[i] <- NA_character_
+    sheet_table$notes[i] <- paste0("names the samples of '", owner[[a]], "'")
+    notes <- c(notes, sprintf(
+      "Sheet '%s' looked like a matrix, but its values name the samples of '%s'; it was read as the sample sheet.",
+      a, owner[[a]]))
+  }
+  remaining <- setdiff(cand, cand[is_meta])
+  if (length(remaining) >= 2L) {
+    notes <- c(notes, sprintf(
+      "Several sheets look like an expression matrix (%s); the largest, most confident one was used. Change the roles if that is wrong.",
+      paste(sprintf("'%s'", remaining), collapse = ", ")))
+  }
+  list(sheet_table = sheet_table, notes = notes)
 }
 
 # Suffixes a sequencing vendor uses to say what a column measures. Only

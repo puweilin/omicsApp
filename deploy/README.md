@@ -33,7 +33,10 @@ memory cannot take anyone else down with it.
 | `nginx/omicsapp.conf.template` | Reverse proxy: TLS, the WebSocket headers Shiny needs, and Keycloak at `/auth`. Rendered to `omicsapp.conf`. |
 | `nginx/nginx-limits.conf` | systemd drop-in raising nginx's file-descriptor limit. |
 | `keycloak/` | The identity provider: compose file and realm definition (both rendered from `.template`), and its own README. |
-| `cron/omicsapp-backup` | Nightly backup of the work **and** the account database. |
+| `cron/omicsapp-backup` | Runs the nightly backup and the weekly restore drill. |
+| `scripts/backup.sh` | Dated, checksummed snapshots of the work, the account database and the configuration; copied off the host; alerts on failure. |
+| `scripts/restore_check.sh` | Restore drill: backup age, checksums, the account dump restored into a scratch database, a project opened. |
+| `backup.env.template` | Backup settings (remote host, alert hook, retention). Copy to `/etc/omicsapp/backup.env`. |
 | `scripts/build_image.sh` | Wrapper that gets the build context right. |
 | `scripts/add_user.sh` | Creates an account in Keycloak and its storage directory, in that order. |
 | `scripts/list_users.sh` | Maps the UUID directory names back to people. |
@@ -555,56 +558,77 @@ attack, and `.omp` files are the irreplaceable part: a raw upload can
 usually be exported from the instrument again, the analysis parameters
 encoded in a project cannot.
 
-The data is on the HDD, so the backup goes to the **SSD** — a different
-physical disk, which is the point. There is ample room: 75 GB a year
-against 4 TB.
+`deploy/scripts/backup.sh` does the whole job; the header of the script
+says what it keeps and why. In short, every night it writes a **dated
+snapshot** of:
 
-**Two directories, not one.** `users/` is the work; `keycloak-db/` is
-the accounts. Without the second, a restore gives you every file and
-nobody who can log in to reach it — and the directory names are UUIDs,
-so there is no way to work out whose is whose after the fact.
+* `/srv/omicsapp/users/` — the work;
+* the Keycloak account database, as a `pg_dump` that is checked before it
+  replaces anything (and the database files as a fallback). Without it a
+  restore gives you every file and nobody who can log in to reach it —
+  the directory names are UUIDs, so there is no way to work out whose is
+  whose after the fact;
+* the rendered configuration (`application.yml`, nginx, Keycloak `.env`
+  and realm, `host.env`), the TLS certificate and key, the cron files and
+  the refreshed gene-set cache — what it takes to stand the service up
+  again;
+* `MANIFEST.sha256` (every file's checksum) and `IMAGE` (the app image's
+  digest).
+
+Unchanged files are hard links to the previous snapshot, so a night costs
+only what changed. Snapshots are kept for 14 days, then one per week for
+8 weeks. With `BACKUP_REMOTE` set they are also copied, with their
+history, to **another machine** — without it the backup shares the
+host's fate (fire, theft, an OS reinstall). Any failure is sent to
+`ALERT_WEBHOOK` and/or `ALERT_EMAIL` and logged; the script exits
+non-zero and the earlier snapshots are untouched.
 
 ```bash
-sudo mkdir -p /backup/omicsapp
-sudo rsync -a --delete /srv/omicsapp/users/       /backup/omicsapp/users/
-sudo rsync -a --delete /srv/omicsapp/keycloak-db/ /backup/omicsapp/keycloak-db/
-```
-
-The schedule is a file in the repository rather than something to
-transcribe:
-
-```bash
+sudo mkdir -p /etc/omicsapp /backup/omicsapp
+sudo cp deploy/backup.env.template /etc/omicsapp/backup.env
+sudo chmod 600 /etc/omicsapp/backup.env
+sudo $EDITOR /etc/omicsapp/backup.env       # BACKUP_REMOTE, ALERT_WEBHOOK, ...
+sudo deploy/scripts/backup.sh               # once by hand: it should end with "done"
 sudo cp deploy/cron/omicsapp-backup /etc/cron.d/omicsapp-backup
 sudo chmod 644 /etc/cron.d/omicsapp-backup
 ```
 
-It takes a `pg_dump` of the account database as well as copying the
-files. Copying Postgres' files while it is running gives you something
-that may need crash recovery to open; the dump gives you something that
-restores. The dumps are named by day of week, so seven of them rotate
-themselves — a single overwritten file would propagate a corruption on
-the first night nobody noticed.
+The cron file expects the deployed checkout at `/opt/omicsApp` (set
+`REPO_DIR` and the paths in the cron file if it is elsewhere). For
+`BACKUP_REMOTE`, give root an ssh key the other machine accepts — cron
+cannot answer a password prompt.
 
 `chmod 644` is not decoration: cron silently ignores a file in
 `/etc/cron.d` that is group- or world-writable, so a stricter-looking
 mode gets you no backups and no error.
 
-Check it ran, the morning after:
+**The restore drill.** A backup that has never been restored is a hope.
+Every Sunday the cron file runs `deploy/scripts/restore_check.sh`, which
+alerts when the newest backup is more than 36 hours old, verifies the
+checksums, restores the Keycloak dump into a throwaway Postgres container
+and counts the accounts, opens a random project with the image's own
+`load_project()`, and checks that the remote copy has the latest snapshot.
+Run it by hand after setting up, and after any change to the server:
 
 ```bash
-ls -l /backup/omicsapp/ /backup/omicsapp/users/ | head
+sudo deploy/scripts/restore_check.sh        # ends with "all checks passed"
 ```
 
-Two things this does not cover, so decide about them explicitly:
+**Restoring.** Stop ShinyProxy and Keycloak, then from the snapshot you
+want (`/backup/omicsapp/latest` or a dated one under `snapshots/`):
 
-* **An OS reinstall wipes the SSD, and the backup with it.** The data
-  itself survives on the HDD, which is why it is there — but you would
-  be running without a backup until the SSD is repopulated. Copy
-  `/backup` somewhere else before reinstalling.
-* **`--delete` mirrors deletions.** A file removed on Monday is gone
-  from the backup on Tuesday. That is a mirror, not history; if you want
-  to recover a project someone deleted last week, use a snapshotting
-  filesystem or `rsync --link-dest` rotations instead.
+```bash
+S=/backup/omicsapp/latest
+(cd "$S" && sha256sum --quiet -c MANIFEST.sha256)          # nothing printed = intact
+sudo rsync -a "$S/users/" /srv/omicsapp/users/
+docker compose -f deploy/keycloak/docker-compose.yml up -d keycloak-db
+gunzip -c "$S/keycloak.sql.gz" | docker exec -i keycloak-db psql -U keycloak keycloak
+# configuration, if the host itself was lost:
+ls "$S/config"     # deploy/... files and host/etc/... (certificate, cron)
+```
+
+Hard-linked snapshots share unchanged files, so never edit a file inside
+a snapshot: copy it out first.
 
 **Keeping KEGG current.** The image bakes the MSigDB tables in, and the
 `kegg` table among them is the 2011 `KEGG_LEGACY` snapshot (186 human

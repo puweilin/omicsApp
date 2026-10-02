@@ -55,7 +55,7 @@ test_that("upload, run, enrich, download, replace: the wiring holds end to end",
   expect_match(journey_text(app$get_value(output = "project_picker")),
                "User project", fixed = TRUE)
   # The snapshot and the archived upload are on disk already
-  expect_true(file.exists(file.path(store, "_autosave.omp")))
+  expect_true(file.exists(autosave_file(store)))
   expect_length(list.files(file.path(store, "raw")), 1L)
 
   # ---- differential --------------------------------------------------
@@ -103,6 +103,6 @@ test_that("upload, run, enrich, download, replace: the wiring holds end to end",
   stats_after <- journey_text(app$get_value(output = "diff-stats"))
   expect_false(grepl("Tested features", stats_after, fixed = TRUE))
   # And the snapshot on disk no longer carries the old analysis
-  snap <- omicsCore::load_project(file.path(store, "_autosave.omp"))
+  snap <- omicsCore::load_project(autosave_file(store))
   expect_false("diff" %in% names(snap$bundles))
 })

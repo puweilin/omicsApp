@@ -10,6 +10,7 @@ read_omics(
   omics_type = NULL,
   assay_type = NULL,
   sheet_roles = NULL,
+  orientation = NULL,
   ...
 )
 }
@@ -32,6 +33,12 @@ an unconfident one: a metadata sheet read as the matrix produces an
 \code{omics_input} that analyses cleanly and means nothing. This is how a
 caller lets the user correct it without re-implementing the reader.}
 
+\item{orientation}{Optional \code{"features_in_rows"} or \code{"samples_in_rows"}
+for the matrix sheet, overriding the guess. The guess is reported
+with its confidence; below 0.6 the report says it was a guess, and
+this is how the caller corrects it (an Olink NPX table has samples in
+rows and protein names that look like gene symbols on both axes).}
+
 \item{...}{Forwarded to the underlying reader (\code{readxl::read_excel},
 \code{utils::read.csv}).}
 }
@@ -50,13 +57,13 @@ object (or \code{NULL}) and a structured \code{\link[=new_import_report]{ImportR
 so the UI can show what was detected before the user commits.
 }
 \seealso{
-Other io: 
-\code{\link{classify_sheet_role}()},
-\code{\link{detect_id_columns}()},
-\code{\link{detect_orientation}()},
-\code{\link{import_report_sheets}()},
-\code{\link{import_report_warnings}()},
-\code{\link{is_import_report}()},
-\code{\link{new_import_report}()}
+Other io:
+\code{\link[=classify_sheet_role]{classify_sheet_role()}},
+\code{\link[=detect_id_columns]{detect_id_columns()}},
+\code{\link[=detect_orientation]{detect_orientation()}},
+\code{\link[=import_report_sheets]{import_report_sheets()}},
+\code{\link[=import_report_warnings]{import_report_warnings()}},
+\code{\link[=is_import_report]{is_import_report()}},
+\code{\link[=new_import_report]{new_import_report()}}
 }
 \concept{io}

@@ -267,7 +267,8 @@ app_server <- function(input, output, session) {
   # above, so an observer firing on the same flush as a finished bundle
   # would read the project from before that bundle was folded in, and
   # persist a snapshot missing the very result that triggered it.
-  wire_autosave(current_project)
+  # Under this session's own id, so a second tab does not overwrite it.
+  wire_autosave(current_project, id = session_autosave_id(session))
 }
 
 # ---- internal helpers ------------------------------------------------
