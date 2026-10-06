@@ -109,7 +109,16 @@ gsea_rank_vector <- function(result_df, feature_col) {
   st <- unique(stats::na.omit(result_df$statistic_type))
   stat <- result_df$statistic
   eff <- result_df$effect
-  if (length(st) == 1L && st %in% c("t", "wald") && any(is.finite(stat))) {
+  signed <- result_df$signed_stat
+  if (!is.null(signed) && any(is.finite(signed))) {
+    # Every engine's statistic on one signed scale, made when the result
+    # was (DIFF_RESULT_OPTIONAL_COLS). It is the t or Wald statistic
+    # itself, and edgeR's sign(logFC) * sqrt(F), so the ranking is the
+    # one the branches below give; they remain for bundles saved before
+    # the column existed.
+    metric <- signed
+    label <- if (length(st) == 1L && st == "F") "signed sqrt(F)" else "signed test statistic"
+  } else if (length(st) == 1L && st %in% c("t", "wald") && any(is.finite(stat))) {
     # The statistic carries its own sign. sign(effect) is not always the
     # same thing: a continuous fit reports Spearman's rho as the effect
     # and the slope's t as the statistic, and they disagree for ~9% of

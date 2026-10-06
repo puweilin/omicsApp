@@ -11,6 +11,13 @@
 #' @param var_equal If `TRUE`, use equal-variance t-test. Default `FALSE`
 #'   (Welch).
 #' @param paired_col Optional pairing column for paired t-test.
+#' @param incomplete_pairs What a paired test does with a pair that lacks a
+#'   sample in one of the two groups (or has two in one): `"error"` (the
+#'   default, for a single comparison) refuses the design; `"drop"` leaves
+#'   such pairs out and tests the complete ones, which is how [run_diff()]
+#'   runs each comparison when several treatment groups share a control and
+#'   not every subject received every treatment. At least two complete
+#'   pairs are needed either way.
 #'
 #' @return List with `results_raw`, `results_std`, `model_object` (`NULL`),
 #'   and `analysis_info`.
@@ -21,8 +28,10 @@ run_ttest_group <- function(
   control_group,
   case_group,
   var_equal = FALSE,
-  paired_col = NULL
+  paired_col = NULL,
+  incomplete_pairs = c("error", "drop")
 ) {
+  incomplete_pairs <- match.arg(incomplete_pairs)
   validate_omics_input(input)
 
   expr_mat <- input$expr_mat
@@ -42,21 +51,42 @@ run_ttest_group <- function(
 
   ctrl_samples <- rownames(target_meta[target_meta[[group_col]] == control_group, , drop = FALSE])
   case_samples <- rownames(target_meta[target_meta[[group_col]] == case_group, , drop = FALSE])
-  if (length(ctrl_samples) < 2L || length(case_samples) < 2L) {
+  is_paired <- !is.null(paired_col)
+  # Pairing per comparison counts complete pairs instead, and says so in
+  # its own words.
+  if (!(is_paired && identical(incomplete_pairs, "drop")) &&
+      (length(ctrl_samples) < 2L || length(case_samples) < 2L)) {
     stop("Each group must have at least 2 samples for t-test.")
   }
 
-  is_paired <- !is.null(paired_col)
+  pairs <- NULL
   if (is_paired) {
     check_paired_col(meta_df, paired_col, object_name = "meta_df")
-    validate_two_group_pairing(
-      target_meta,
-      group_col = group_col,
-      paired_col = paired_col,
-      control_group = control_group,
-      case_group = case_group,
-      object_name = "target_meta"
-    )
+    if (identical(incomplete_pairs, "drop")) {
+      pairs <- complete_pairs(target_meta, group_col, paired_col,
+                              control_group, case_group)
+      if (length(pairs$used) < 2L) {
+        stop(sprintf(paste(
+          "The paired t-test of %s against %s needs at least 2 complete pairs",
+          "(a `%s` with one sample in each group); %s."),
+          case_group, control_group, paired_col,
+          if (length(pairs$used)) "there is 1" else "there are none"), call. = FALSE)
+      }
+      keep <- !is.na(target_meta[[paired_col]]) &
+        as.character(target_meta[[paired_col]]) %in% pairs$used
+      target_meta <- target_meta[keep, , drop = FALSE]
+      ctrl_samples <- rownames(target_meta[target_meta[[group_col]] == control_group, , drop = FALSE])
+      case_samples <- rownames(target_meta[target_meta[[group_col]] == case_group, , drop = FALSE])
+    } else {
+      validate_two_group_pairing(
+        target_meta,
+        group_col = group_col,
+        paired_col = paired_col,
+        control_group = control_group,
+        case_group = case_group,
+        object_name = "target_meta"
+      )
+    }
     ctrl_order <- target_meta[ctrl_samples, paired_col]
     case_order <- target_meta[case_samples, paired_col]
     case_samples <- case_samples[match(ctrl_order, case_order)]
@@ -116,7 +146,26 @@ run_ttest_group <- function(
       analysis_type = "group",
       comparison = comparison,
       var_equal = var_equal,
-      paired_col = paired_col
+      paired_col = paired_col,
+      pairs_used = if (!is.null(pairs)) length(pairs$used),
+      pairs_left_out = if (!is.null(pairs)) pairs$dropped
     )
   )
+}
+
+# The pairs of one comparison: the values of `paired_col` with exactly
+# one sample in each of the two groups (`used`), and those present in
+# either group without being such a pair (`dropped`) -- a subject who
+# missed one of the two treatments, or was sampled twice under one.
+complete_pairs <- function(meta, group_col, paired_col, control_group, case_group) {
+  g <- as.character(meta[[group_col]])
+  p <- as.character(meta[[paired_col]])
+  ok <- !is.na(g) & !is.na(p) & g %in% c(control_group, case_group)
+  g <- g[ok]
+  p <- p[ok]
+  ids <- sort(unique(p))
+  n_ctrl <- vapply(ids, function(i) sum(p == i & g == control_group), integer(1))
+  n_case <- vapply(ids, function(i) sum(p == i & g == case_group), integer(1))
+  complete <- n_ctrl == 1L & n_case == 1L
+  list(used = ids[complete], dropped = ids[!complete])
 }

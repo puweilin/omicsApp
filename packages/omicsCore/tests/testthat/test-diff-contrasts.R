@@ -387,3 +387,105 @@ test_that("counts get a global test from edgeR and DESeq2 too", {
   expect_error(run_diff(cnt, method = "ttest", analysis_type = "anova",
                         group_col = "group"), "ANOVA")
 })
+
+# ---- paired t-test with several treatments ------------------------------
+
+# Six patients, all sampled under Control and TreatA; only P1-P4 under
+# TreatB. Samples in a scrambled order, so pairs are found by patient and
+# not by position.
+pt_input <- function() {
+  set.seed(31)
+  pts <- paste0("P", 1:6)
+  meta <- data.frame(patient = c(pts, pts, pts[1:4]),
+                     group = rep(c("Control", "TreatA", "TreatB"), c(6, 6, 4)),
+                     stringsAsFactors = FALSE)
+  rownames(meta) <- paste0(meta$patient, "_", meta$group)
+  meta <- meta[sample(nrow(meta)), ]
+  n_feat <- 25L
+  patient_effect <- stats::rnorm(6, 0, 1)
+  m <- matrix(stats::rnorm(n_feat * nrow(meta), 10, 0.3), n_feat,
+              dimnames = list(paste0("F", seq_len(n_feat)), rownames(meta)))
+  m <- m + rep(patient_effect[match(meta$patient, pts)], each = n_feat)
+  m[1:5, meta$group == "TreatA"] <- m[1:5, meta$group == "TreatA"] + 1
+  m[6:10, meta$group == "TreatB"] <- m[6:10, meta$group == "TreatB"] - 1
+  omics_input(m, meta, data.frame(feature_id = rownames(m)),
+              omics_type = "proteomics", assay_type = "normalized_intensity")
+}
+
+pt_manual <- function(inp, case, control, patients) {
+  m <- inp$expr_mat
+  t(vapply(rownames(m), function(f) {
+    x <- m[f, paste0(patients, "_", case)]
+    y <- m[f, paste0(patients, "_", control)]
+    tt <- stats::t.test(x, y, paired = TRUE)
+    c(t = unname(tt$statistic), p = tt$p.value, d = mean(x - y))
+  }, numeric(3)))
+}
+
+test_that("a paired t-test with several treatments pairs each comparison on its own", {
+  inp <- pt_input()
+  b <- run_diff(inp, method = "ttest", group_col = "group", control_group = "Control",
+                case_group = c("TreatA", "TreatB"), paired_col = "patient")
+  expect_identical(diff_comparisons(b), c("TreatA_vs_Control", "TreatB_vs_Control"))
+  df <- b$results$diff_result_df
+  for (cmp in list(list("TreatA", paste0("P", 1:6)), list("TreatB", paste0("P", 1:4)))) {
+    got <- df[df$comparison == paste0(cmp[[1]], "_vs_Control"), ]
+    want <- pt_manual(inp, cmp[[1]], "Control", cmp[[2]])
+    got <- got[match(rownames(want), got$feature_id), ]
+    expect_equal(got$statistic, unname(want[, "t"]), info = cmp[[1]])
+    expect_equal(got$p_value, unname(want[, "p"]), info = cmp[[1]])
+    expect_equal(got$effect, unname(want[, "d"]), info = cmp[[1]])
+  }
+  # Said in words, with the count for each comparison and who was left out.
+  note <- grep("Paired t-test", b$warnings, value = TRUE)
+  expect_length(note, 1L)
+  expect_match(note, "TreatA vs Control used 6 pairs", fixed = TRUE)
+  expect_match(note, "TreatB vs Control used 4 pairs (2 left out", fixed = TRUE)
+  expect_match(note, "P5, P6", fixed = TRUE)
+})
+
+test_that("pairwise paired comparisons use the patients both groups share", {
+  inp <- pt_input()
+  b <- run_diff(inp, method = "ttest", group_col = "group", control_group = "Control",
+                contrasts = "pairwise", paired_col = "patient")
+  df <- b$results$diff_result_df
+  got <- df[df$comparison == "TreatB_vs_TreatA", ]
+  want <- pt_manual(inp, "TreatB", "TreatA", paste0("P", 1:4))
+  got <- got[match(rownames(want), got$feature_id), ]
+  expect_equal(got$statistic, unname(want[, "t"]))
+  expect_match(b$warnings, "TreatB vs TreatA used 4 pairs", fixed = TRUE, all = FALSE)
+})
+
+test_that("a comparison with fewer than two complete pairs is refused", {
+  inp <- pt_input()
+  keep <- !(inp$meta_df$group == "TreatB" & inp$meta_df$patient %in% paste0("P", 2:4))
+  inp <- subset_omics(inp, samples = rownames(inp$meta_df)[keep])
+  expect_error(run_diff(inp, method = "ttest", group_col = "group",
+                        control_group = "Control", case_group = c("TreatA", "TreatB"),
+                        paired_col = "patient"),
+               "TreatB against Control needs at least 2 complete pairs")
+})
+
+test_that("a subject sampled twice under one group is left out of that comparison", {
+  inp <- pt_input()
+  inp$meta_df$patient[rownames(inp$meta_df) == "P6_TreatA"] <- "P1"
+  b <- run_diff(inp, method = "ttest", group_col = "group", control_group = "Control",
+                case_group = c("TreatA", "TreatB"), paired_col = "patient")
+  expect_match(b$warnings,
+               "TreatA vs Control used 4 pairs (2 left out, without one sample in each group: P1, P6)",
+               fixed = TRUE, all = FALSE)
+})
+
+test_that("a balanced paired design needs no note, and one comparison stays strict", {
+  inp <- pt_input()
+  bal <- subset_omics(inp, samples = rownames(inp$meta_df)[inp$meta_df$patient %in% paste0("P", 1:4)])
+  b <- run_diff(bal, method = "ttest", group_col = "group", control_group = "Control",
+                case_group = c("TreatA", "TreatB"), paired_col = "patient")
+  expect_false(any(grepl("Paired t-test", b$warnings)))
+  # A single comparison with a patient missing its partner is still an
+  # error: there the gap is more likely a labelling mistake than a design.
+  expect_error(run_diff(inp, method = "ttest", group_col = "group",
+                        control_group = "Control", case_group = "TreatB",
+                        paired_col = "patient"),
+               "exactly one")
+})

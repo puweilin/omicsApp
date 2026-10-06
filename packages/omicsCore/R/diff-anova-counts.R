@@ -6,6 +6,8 @@
 # DESeq2 as a likelihood-ratio test of the model with the groups against
 # the model without them. Both return one row per feature with no
 # direction -- which groups differ is what the pairwise contrasts are for.
+# Both normalise as the pairwise fits do, with tximport's gene-length
+# offsets when the input carries them.
 
 # Shared set-up: the samples of the groups tested, a design with the
 # groups after any block and before any covariates, all checked.
@@ -66,6 +68,8 @@ standardize_anova_counts <- function(raw_df, feature_df, method, stat, stat_type
     effect_type = paste0(stat_type, "_statistic"),
     statistic = out[[stat]],
     statistic_type = stat_type,
+    # A global test has no direction, so no signed statistic.
+    signed_stat = NA_real_,
     p_value = out[[p]],
     adj_p_value = out[[padj]],
     direction = "ns",
@@ -101,7 +105,9 @@ run_edger_anova <- function(input, group_col, covariates = NULL,
   y <- edger_filter(edgeR::DGEList(counts = d$counts), design)
   filter_note <- attr(y, "filter_note")
   report_progress("Normalising library sizes (1 of 4)")
-  y <- edgeR::calcNormFactors(y)
+  # With tximport's gene lengths when the input has them, as the
+  # pairwise fit uses (edger_normalise(), diff-edger.R).
+  y <- edger_normalise(y, input)
   report_progress("Estimating dispersions (2 of 4)")
   y <- edgeR::estimateDisp(y, design = design)
   report_progress("Fitting the model (3 of 4)")
@@ -141,6 +147,8 @@ run_deseq2_anova <- function(input, group_col, covariates = NULL,
   safe <- deseq2_safe_coldata(d$target, d$terms)
   red <- setdiff(unlist(safe$map), safe$map[[group_col]])
   reduced <- stats::as.formula(paste("~", if (length(red)) paste(red, collapse = " + ") else "1"))
+  # The pairwise fit's dataset builder, so tximport's gene lengths become
+  # normalisation factors here too (DESeqDataSetFromTximport).
   dds <- build_deseq_dataset(input, d$counts, safe$col_data, safe$formula)
   bp <- deseq2_bpparam()
   dds <- with_fixed_seed(1L, with_deseq2_progress(

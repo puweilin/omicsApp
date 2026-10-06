@@ -162,6 +162,14 @@ loop_case_groups <- function(fun, input, args) {
          "the contrast \"", specs[not_pair][[1L]]$spec, "\" needs limma, ",
          "DESeq2 or edgeR.", call. = FALSE)
   }
+  # A paired t-test is paired per comparison. With several treatments
+  # against one control, a subject who missed one treatment is the
+  # ordinary unbalanced design, not an error: each comparison uses the
+  # subjects sampled in both of its groups. Demanding every subject in
+  # every comparison refused the whole run over one missing sample.
+  per_pair <- !is.null(args$paired_col) && identical(fun, run_ttest_group) &&
+    length(specs) > 1L
+  if (per_pair) args$incomplete_pairs <- "drop"
   runs <- lapply(specs, function(s) {
     a <- args
     a$control_group <- s$control
@@ -176,6 +184,16 @@ loop_case_groups <- function(fun, input, args) {
   info <- runs[[1L]]$analysis_info
   info$comparison <- vapply(runs, function(r) r$analysis_info$comparison,
                             character(1))
+  if (per_pair) {
+    info$pairs_used <- stats::setNames(
+      vapply(runs, function(r) as.integer(r$analysis_info$pairs_used), integer(1)),
+      info$comparison)
+    info$pairs_left_out <- stats::setNames(
+      lapply(runs, function(r) r$analysis_info$pairs_left_out), info$comparison)
+    note <- paired_comparisons_note(specs, info$pairs_used, info$pairs_left_out,
+                                    args$paired_col)
+    info$warnings <- c(info$warnings, note)
+  }
   std <- do.call(rbind, lapply(runs, `[[`, "results_std"))
   rownames(std) <- NULL
   raw <- if (all(vapply(raw, is.data.frame, logical(1)))) do.call(rbind, raw) else raw
@@ -185,6 +203,27 @@ loop_case_groups <- function(fun, input, args) {
     model_object = lapply(runs, `[[`, "model_object"),
     analysis_info = info
   )
+}
+
+# How many pairs each comparison of a paired t-test used, in words. Said
+# only when some comparison left pairs out: a balanced design used every
+# pair everywhere, which needs no note.
+paired_comparisons_note <- function(specs, used, left_out, paired_col) {
+  if (!any(lengths(left_out) > 0L)) return(NULL)
+  parts <- vapply(seq_along(specs), function(i) {
+    out <- sprintf("%s vs %s used %d pairs", specs[[i]]$case, specs[[i]]$control,
+                   used[[i]])
+    lo <- left_out[[i]]
+    if (length(lo)) {
+      shown <- paste(utils::head(lo, 5L), collapse = ", ")
+      if (length(lo) > 5L) shown <- paste0(shown, ", ...")
+      out <- sprintf("%s (%d left out, without one sample in each group: %s)",
+                     out, length(lo), shown)
+    }
+    out
+  }, character(1))
+  sprintf("Paired t-test by `%s`, pairing each comparison on its own: %s.",
+          paired_col, paste(parts, collapse = "; "))
 }
 
 #' Run a differential-expression analysis

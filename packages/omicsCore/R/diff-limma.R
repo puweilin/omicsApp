@@ -373,6 +373,8 @@ run_limma_anova <- function(
       effect_type = "F_statistic",
       statistic = .data$F,
       statistic_type = "F",
+      # A global test has no direction, so no signed statistic.
+      signed_stat = NA_real_,
       p_value = .data$P.Value,
       adj_p_value = .data$adj.P.Val,
       direction = "ns",

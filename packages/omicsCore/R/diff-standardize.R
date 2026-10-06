@@ -56,6 +56,7 @@ standardize_limma_continuous_results <- function(
       effect_type = "correlation",
       statistic = if (is_spline) .data$F else .data$t,
       statistic_type = if (is_spline) "F" else "t",
+      signed_stat = if (is_spline) NA_real_ else .data$t,
       p_value = .data$P.Value,
       adj_p_value = .data$adj.P.Val,
       direction = dplyr::case_when(
@@ -110,6 +111,7 @@ standardize_limma_group_results <- function(
       effect_type = "log2FC",
       statistic = .data$t,
       statistic_type = "t",
+      signed_stat = .data$t,
       p_value = .data$P.Value,
       adj_p_value = .data$adj.P.Val,
       direction = dplyr::case_when(
@@ -164,6 +166,9 @@ standardize_edger_group_results <- function(
       effect_type = "log2FC",
       statistic = .data$F,
       statistic_type = "F",
+      # A QL F on one degree of freedom is a squared t; its root, with
+      # the sign of the fold change, is on the other engines' scale.
+      signed_stat = sign(.data$logFC) * sqrt(.data$F),
       p_value = .data$PValue,
       adj_p_value = .data$FDR,
       direction = dplyr::case_when(
@@ -218,6 +223,7 @@ standardize_deseq2_group_results <- function(
       effect_type = "log2FC",
       statistic = .data$stat,
       statistic_type = "wald",
+      signed_stat = .data$stat,
       p_value = .data$pvalue,
       adj_p_value = .data$padj,
       direction = dplyr::case_when(
@@ -272,6 +278,7 @@ standardize_deseq2_continuous_results <- function(
       effect_type = "log2FC_per_unit",
       statistic = .data$stat,
       statistic_type = "wald",
+      signed_stat = .data$stat,
       p_value = .data$pvalue,
       adj_p_value = .data$padj,
       direction = dplyr::case_when(
@@ -324,6 +331,7 @@ standardize_ttest_group_results <- function(
       effect_type = "mean_diff",
       statistic = .data$t_stat,
       statistic_type = "t",
+      signed_stat = .data$t_stat,
       p_value = .data$p_value,
       adj_p_value = .data$adj_p_value,
       direction = dplyr::case_when(
@@ -376,6 +384,7 @@ standardize_lm_group_results <- function(
       effect_type = "beta",
       statistic = .data$t_stat,
       statistic_type = "t",
+      signed_stat = .data$t_stat,
       p_value = .data$p_value,
       adj_p_value = .data$adj_p_value,
       direction = dplyr::case_when(
@@ -428,6 +437,7 @@ standardize_lm_continuous_results <- function(
       effect_type = "correlation",
       statistic = .data$t_stat,
       statistic_type = "t",
+      signed_stat = .data$t_stat,
       p_value = .data$p_value,
       adj_p_value = .data$adj_p_value,
       direction = dplyr::case_when(

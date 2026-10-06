@@ -34,6 +34,21 @@ DIFF_RESULT_REQUIRED_COLS <- c(
   "is_significant"
 )
 
+# Columns a diff result may carry beyond the required ones. They are not
+# checked by `check_diff_result_schema()`: a bundle saved before a column
+# existed lacks it, and has to keep loading, plotting and enriching, so
+# every reader of an optional column falls back when it is absent.
+#
+# `signed_stat` is the test statistic on one scale for every engine, with
+# the sign of the effect: limma's moderated t, DESeq2's Wald statistic,
+# the t-test's and lm's t, and for edgeR sign(logFC) * sqrt(F), since a
+# quasi-likelihood F on one degree of freedom is a squared t. `statistic`
+# stays what the engine reported (edgeR's unsigned F among them), so the
+# two agree everywhere except edgeR. It is NA where a test has no
+# direction -- a global test across groups (ANOVA, LRT) or a spline fit,
+# whose F spans several degrees of freedom.
+DIFF_RESULT_OPTIONAL_COLS <- c("signed_stat")
+
 #' Create an empty diff result template
 #'
 #' @return Empty `data.frame` following the standardized diff-result schema.
@@ -63,6 +78,7 @@ new_diff_result_template <- function() {
   out$base_mean <- numeric(0)
   out$model_fit <- numeric(0)
   out$is_significant <- logical(0)
+  out$signed_stat <- numeric(0)
 
   out
 }

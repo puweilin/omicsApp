@@ -103,28 +103,8 @@ run_edger_group <- function(
   y <- edgeR::DGEList(counts = count_sub)
   y <- edger_filter(y, design_mat)
   filter_note <- attr(y, "filter_note")
-  count_sub <- count_sub[rownames(y), , drop = FALSE]
-  txi_info <- get_tximport_info(input)
-  # Length offsets only for counts that still carry the length bias.
-  # Counts from abundance ("scaledTPM", "lengthScaledTPM") have it
-  # removed already, and offsetting them again corrected twice.
   report_progress("Normalising library sizes (1 of 4)")
-  if (!is.null(txi_info$length) &&
-      identical(txi_info$counts_from_abundance %||% "no", "no")) {
-    length_sub <- txi_info$length[rownames(count_sub), colnames(count_sub), drop = FALSE]
-    # The tximport vignette's recipe: length factors centred per gene,
-    # then TMM on the length-corrected counts. The offsets used to be
-    # log(length) + log(library size) with no TMM at all, so a group in
-    # which a tenth of the genes went up 8-fold had nearly every other
-    # gene called "down" (1449 of 1774 unchanged genes).
-    norm_mat <- length_sub / exp(rowMeans(log(length_sub)))
-    norm_cts <- count_sub / norm_mat
-    eff_lib <- edgeR::calcNormFactors(norm_cts) * colSums(norm_cts)
-    norm_mat <- log(sweep(norm_mat, 2L, eff_lib, "*"))
-    y <- edgeR::scaleOffset(y, offset = norm_mat)
-  } else {
-    y <- edgeR::calcNormFactors(y)
-  }
+  y <- edger_normalise(y, input)
 
   report_progress("Estimating dispersions (2 of 4)")
   y <- edgeR::estimateDisp(y, design = design_mat)
@@ -189,6 +169,36 @@ run_edger_group <- function(
   )
 }
 
+
+# Library sizes for a (filtered) DGEList, with tximport's gene lengths
+# when the input carries them. Shared by the pairwise fit and the global
+# test, which used to normalise by library size alone: a gene whose
+# dominant isoform is four times longer in one group, at the same
+# expression, has four times the reads there, and the global test called
+# it changed where the pairwise test (with the offsets) did not.
+#
+# Length offsets only for counts that still carry the length bias.
+# Counts from abundance ("scaledTPM", "lengthScaledTPM") have it removed
+# already, and offsetting them again corrected twice.
+edger_normalise <- function(y, input) {
+  txi_info <- get_tximport_info(input)
+  if (is.null(txi_info$length) ||
+      !identical(txi_info$counts_from_abundance %||% "no", "no")) {
+    return(edgeR::calcNormFactors(y))
+  }
+  counts <- y$counts
+  length_sub <- txi_info$length[rownames(counts), colnames(counts), drop = FALSE]
+  # The tximport vignette's recipe: length factors centred per gene,
+  # then TMM on the length-corrected counts. The offsets used to be
+  # log(length) + log(library size) with no TMM at all, so a group in
+  # which a tenth of the genes went up 8-fold had nearly every other
+  # gene called "down" (1449 of 1774 unchanged genes).
+  norm_mat <- length_sub / exp(rowMeans(log(length_sub)))
+  norm_cts <- counts / norm_mat
+  eff_lib <- edgeR::calcNormFactors(norm_cts) * colSums(norm_cts)
+  norm_mat <- log(sweep(norm_mat, 2L, eff_lib, "*"))
+  edgeR::scaleOffset(y, offset = norm_mat)
+}
 
 # Low-count genes out before the model sees them (edgeR's own
 # filterByExpr()). Without it thousands of near-zero genes flattened the
