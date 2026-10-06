@@ -169,7 +169,7 @@ test_that("the volcano does not depend on the threshold sliders", {
       # The figure is the stable reference the hit table is read against;
       # a screenshot of it must not depend on where a control was left.
       expect_identical(caption_of(), before)
-      expect_match(before, "adj_p_value < 0.05", fixed = TRUE)
+      expect_match(before, "adjusted p < 0.05", fixed = TRUE)
     }
   )
 })

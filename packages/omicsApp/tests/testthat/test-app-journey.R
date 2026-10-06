@@ -54,7 +54,9 @@ test_that("upload, run, enrich, download, replace: the wiring holds end to end",
   app$wait_for_idle(timeout = 15000)
   expect_match(journey_text(app$get_value(output = "project_picker")),
                "User project", fixed = TRUE)
-  # The snapshot and the archived upload are on disk already
+  # The snapshot and the archived upload are on disk already. Autosave
+  # writes once the project has been still for 1.5 s, so allow it that.
+  for (i in 1:20) if (!file.exists(autosave_file(store))) Sys.sleep(0.25)
   expect_true(file.exists(autosave_file(store)))
   expect_length(list.files(file.path(store, "raw")), 1L)
 
@@ -102,7 +104,9 @@ test_that("upload, run, enrich, download, replace: the wiring holds end to end",
   app$wait_for_idle(timeout = 30000)   # same headroom as the first entry
   stats_after <- journey_text(app$get_value(output = "diff-stats"))
   expect_false(grepl("Tested features", stats_after, fixed = TRUE))
-  # And the snapshot on disk no longer carries the old analysis
+  # And the snapshot on disk no longer carries the old analysis (once
+  # the 1.5 s autosave window has passed).
+  Sys.sleep(2)
   snap <- omicsCore::load_project(autosave_file(store))
   expect_false("diff" %in% names(snap$bundles))
 })

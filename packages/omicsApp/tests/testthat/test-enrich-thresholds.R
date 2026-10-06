@@ -64,9 +64,9 @@ test_that("the panel states how many features went in", {
   })
   expect_true(grepl("120 of 3000 features", html, fixed = TRUE))
   # `<` renders escaped, so assert on the parts that survive it: which
-  # column was used and at what cutoff.
-  expect_true(grepl("p_value", html, fixed = TRUE))
-  expect_false(grepl("adj_p_value", html, fixed = TRUE))
+  # p-value was used, in the words the controls use, and at what cutoff.
+  expect_true(grepl("selected at p ", html, fixed = TRUE))
+  expect_false(grepl("adjusted p", html, fixed = TRUE))
   expect_true(grepl("0.05", html, fixed = TRUE))
 })
 
