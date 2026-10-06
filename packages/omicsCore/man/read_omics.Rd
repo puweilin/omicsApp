@@ -47,7 +47,11 @@ layout. Its rows are matched to the matrix's samples by name and
 replace any sample information found in \code{path}.}
 
 \item{...}{Forwarded to the underlying reader (\code{readxl::read_excel},
-\code{utils::read.csv}).}
+\code{utils::read.table}). Delimited text is otherwise read with
+\code{data.table::fread()} when that is installed, giving the table
+\code{read.table} would give in a fraction of the time; passing any
+argument here, or setting \code{options(omicsCore.use_fread = FALSE)},
+reads it with \code{read.table} instead.}
 }
 \value{
 A list with two elements:

@@ -33,6 +33,7 @@ Imports:
     msigdbr,
     qs2
 Suggests:
+    data.table,
     DESeq2,
     edgeR,
     S4Vectors,

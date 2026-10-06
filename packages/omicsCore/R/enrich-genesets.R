@@ -90,6 +90,7 @@ cache_get <- function(key) {
 
 cache_set <- function(key, value) {
   assign(key, value, envir = .omicsCore_enrich_cache)
+  drop_term_tables_for(key)
   invisible(value)
 }
 
@@ -97,6 +98,87 @@ cache_drop <- function(key) {
   if (exists(key, envir = .omicsCore_enrich_cache, inherits = FALSE)) {
     rm(list = key, envir = .omicsCore_enrich_cache)
   }
+  drop_term_tables_for(key)
+  invisible(NULL)
+}
+
+# Where the table for one database / organism would come from right now:
+# the on-disk cache file, identified by its path, modification time and
+# size, or else the installed msigdbr. Both memos below are checked
+# against it, so a table refreshed by another process -- the monthly
+# cron, a second R session running refresh_geneset_cache() -- is picked
+# up on the next run instead of the session serving what it read first.
+# Costs a stat() per call, nothing next to the tables it guards.
+geneset_source_signature <- function(database, organism) {
+  dir <- geneset_cache_dir()
+  if (!is.null(dir)) {
+    path <- geneset_cache_file(dir, database, organism)
+    info <- file.info(path, extra_cols = FALSE)
+    if (!is.na(info$size)) {
+      return(sprintf("file:%s:%.6f:%.0f", normalizePath(path, mustWork = FALSE),
+                     as.numeric(info$mtime), info$size))
+    }
+  }
+  # msigdbr 10 keeps its data in msigdbdf, which updates on its own.
+  versions <- vapply(c("msigdbr", "msigdbdf"), function(pkg) {
+    if (is_installed(pkg)) as.character(utils::packageVersion(pkg)) else "-"
+  }, character(1L))
+  paste0("msigdbr:", paste(versions, collapse = ":"))
+}
+
+# ---- built term tables ------------------------------------------------
+#
+# ORA and GSEA hand clusterProfiler the same two long tables every time,
+# and building them is not free: for go_bp the unique() over 700k
+# (term, gene) rows takes a second or two and allocates ~400 MB, on every
+# run_enrichment() call and once per comparison in compare_enrichment().
+# Remembered by what decides their content -- database, organism and the
+# source signature above -- so a refreshed cache file or a new msigdbr
+# is a different key, never a stale hit. The last few only: a go_bp pair
+# is ~15 MB, and a session rarely moves between more than a handful of
+# databases.
+.term_table_cache <- new.env(parent = emptyenv())
+TERM_TABLE_CACHE_SIZE <- 4L
+
+term_table_key <- function(database, organism, signature) {
+  paste0("terms::", database, "::", organism, "::", signature)
+}
+
+cached_term_tables <- function(key, build) {
+  hit <- .term_table_cache[[key]]
+  # A counter rather than the clock, so two hits in the same instant
+  # still order.
+  tick <- (.term_table_cache[[".tick"]] %||% 0) + 1
+  assign(".tick", tick, envir = .term_table_cache)
+  if (!is.null(hit)) {
+    hit$used <- tick
+    assign(key, hit, envir = .term_table_cache)
+    return(hit$value)
+  }
+  value <- build()
+  keys <- setdiff(ls(.term_table_cache), ".tick")
+  if (length(keys) >= TERM_TABLE_CACHE_SIZE) {
+    used <- vapply(keys, function(k) .term_table_cache[[k]]$used, numeric(1L))
+    rm(list = keys[which.min(used)], envir = .term_table_cache)
+  }
+  assign(key, list(value = value, used = tick), envir = .term_table_cache)
+  value
+}
+
+# The built tables are derived from the raw-table memo, so whatever
+# replaces or drops a raw table (a refresh, a test planting a fixture)
+# takes the tables built from it along.
+drop_term_tables_for <- function(memo_key) {
+  if (!startsWith(memo_key, "msig::")) return(invisible(NULL))
+  prefix <- paste0("terms::", substring(memo_key, nchar("msig::") + 1L), "::")
+  stale <- ls(.term_table_cache)
+  stale <- stale[startsWith(stale, prefix)]
+  if (length(stale)) rm(list = stale, envir = .term_table_cache)
+  invisible(NULL)
+}
+
+clear_term_table_cache <- function() {
+  rm(list = ls(.term_table_cache, all.names = TRUE), envir = .term_table_cache)
   invisible(NULL)
 }
 
@@ -168,19 +250,27 @@ fetch_msigdbr_table <- function(database, organism) {
   database <- normalize_enrich_database(database)
   organism <- normalize_organism(organism)
   cache_key <- paste0("msig::", database, "::", organism)
+  signature <- geneset_source_signature(database, organism)
   hit <- cache_get(cache_key)
-  if (!is.null(hit)) return(hit)
+  # A table planted without a signature (tests do) is trusted as before;
+  # one read from a source that has since changed is read again.
+  if (!is.null(hit)) {
+    hit_sig <- attr(hit, "omicsCore_source")
+    if (is.null(hit_sig) || identical(hit_sig, signature)) return(hit)
+  }
 
   cached <- read_geneset_cache(database, organism)
   if (!is.null(cached)) {
     if (identical(database, "kegg")) {
       cached <- maybe_refresh_kegg_cache(cached, organism)
     }
+    attr(cached, "omicsCore_source") <- signature
     cache_set(cache_key, cached)
     return(cached)
   }
 
   df <- fetch_msigdbr_raw(database, organism)
+  attr(df, "omicsCore_source") <- signature
   cache_set(cache_key, df)
   df
 }
@@ -218,8 +308,20 @@ fetch_msigdbr_raw <- function(database, organism) {
 
 # Build long-form (term, gene) and (term, name) tables in symbol space.
 # Returns a list with `term2gene` and `term2name` data.frames, suitable for
-# `clusterProfiler::enricher()` / `GSEA()`.
+# `clusterProfiler::enricher()` / `GSEA()`. Remembered across calls; see
+# `.term_table_cache` above.
 build_term_tables <- function(database, organism) {
+  database <- normalize_enrich_database(database)
+  organism <- normalize_organism(organism)
+  # The signature is taken before the build, so a source that changes
+  # while the tables are built is stored under the older key and simply
+  # rebuilt on the next call.
+  key <- term_table_key(database, organism,
+                        geneset_source_signature(database, organism))
+  cached_term_tables(key, function() build_term_tables_uncached(database, organism))
+}
+
+build_term_tables_uncached <- function(database, organism) {
   df <- fetch_msigdbr_table(database, organism)
   gene_col <- if ("gene_symbol" %in% colnames(df)) "gene_symbol" else "human_gene_symbol"
   # The display name comes from gs_name, not gs_description.

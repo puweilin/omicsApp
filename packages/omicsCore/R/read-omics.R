@@ -40,7 +40,11 @@
 #'   layout. Its rows are matched to the matrix's samples by name and
 #'   replace any sample information found in `path`.
 #' @param ... Forwarded to the underlying reader (`readxl::read_excel`,
-#'   `utils::read.csv`).
+#'   `utils::read.table`). Delimited text is otherwise read with
+#'   `data.table::fread()` when that is installed, giving the table
+#'   `read.table` would give in a fraction of the time; passing any
+#'   argument here, or setting `options(omicsCore.use_fread = FALSE)`,
+#'   reads it with `read.table` instead.
 #'
 #' @return A list with two elements:
 #'   * `input`: an `omics_input` or `NULL`.
@@ -350,11 +354,178 @@ count_leading_comment_lines <- function(path) {
   skip
 }
 
-read_omics_csv <- function(path, omics_type, assay_type,
-                           sheet_roles = NULL, orientation = NULL, ...) {
+# The header's fields, read with the scan() call read.table makes for
+# its header line -- quotes honoured, surrounding white space stripped,
+# text marked UTF-8 -- so the names are the ones read.table would give.
+# Splitting on the delimiter by hand miscounted a quoted name holding
+# one -- "Sample, A" became two fields -- which made the colClasses one
+# longer than the table, and reported repeated names that were not.
+parse_header_fields <- function(path, skip, sep, quote, header_line) {
+  if (length(header_line) == 0L || is.na(header_line)) return(character(0))
+  fields <- tryCatch(
+    scan(path, what = "", sep = sep, quote = quote, skip = skip,
+         nlines = 1L, quiet = TRUE, strip.white = TRUE,
+         na.strings = character(0), comment.char = "", encoding = "UTF-8"),
+    # Whatever scan() could not read, read.table will not either, and
+    # says so; the old split serves until it does.
+    error = function(e) strsplit(header_line, sep, fixed = TRUE)[[1L]]
+  )
+  strip_bom(fields)
+}
+
+# A byte-order mark belongs to the file, not to the first column's name.
+# Compared as bytes: a sub() on "^\ufeff" matches nothing under a C
+# locale, and the mark stayed on the name there.
+strip_bom <- function(x) {
+  if (length(x) == 0L || is.na(x[1L])) return(x)
+  b <- charToRaw(x[1L])
+  if (length(b) >= 3L && identical(b[1:3], as.raw(c(0xef, 0xbb, 0xbf)))) {
+    rest <- rawToChar(b[-(1:3)])
+    Encoding(rest) <- "UTF-8"
+    x[1L] <- rest
+  }
+  x
+}
+
+# read.table, but in a fraction of the time: a 30k x 60 matrix of
+# decimals (31 MB) takes read.table 3.3 s, most of it turning every cell
+# into a string before turning it back into a number, and this 0.1 s,
+# checks included. Returns
+# NULL whenever it cannot promise read.table's answer, and the caller
+# then asks read.table itself, so an unusual file costs time, never a
+# different table. `options(omicsCore.use_fread = FALSE)` always defers.
+#
+# What fread does differently, and what is done about each:
+#   * a ragged row makes it stop early with a warning, or take a later
+#     line for the header -- any warning, or a header that is not the
+#     one parse_header_fields() found, hands the file to read.table,
+#     which then fails the way it always has;
+#   * a quote inside an unquoted field is kept where read.table drops
+#     it -- a quote character in any text column hands the file over;
+#   * it reads Excel's error cells as missing ("#N/A" -> NA, "#DIV/0!"
+#     -> NaN) where read.table keeps them as text for
+#     clean_numeric_text() to count and report, and dates as dates --
+#     a numeric column with any non-finite value, or a column of any
+#     other class, is checked against its raw text and retyped the way
+#     read.table types it where they differ;
+#   * it leaves as text what read.table's type.convert() reads as
+#     logical ("T", "F") or numeric ("0x1A") -- every text column is
+#     passed through type.convert() as read.table would.
+read_delimited_fast <- function(path, sep, skip, quote, dec, header_fields) {
+  if (!isTRUE(getOption("omicsCore.use_fread", TRUE)) ||
+      !is_installed("data.table") || length(header_fields) == 0L) {
+    return(NULL)
+  }
+  fread_raw <- function(...) {
+    warned <- FALSE
+    out <- tryCatch(
+      withCallingHandlers(
+        data.table::fread(
+          path, sep = sep, quote = quote, dec = dec, skip = skip,
+          header = TRUE, data.table = FALSE, check.names = FALSE,
+          encoding = "UTF-8", strip.white = FALSE, blank.lines.skip = TRUE,
+          fill = FALSE, integer64 = "double", showProgress = FALSE, ...),
+        warning = function(w) {
+          warned <<- TRUE
+          invokeRestart("muffleWarning")
+        }),
+      error = function(e) NULL)
+    if (warned) NULL else out
+  }
+
+  df <- fread_raw(na.strings = "NA", colClasses = list(character = 1L))
+  if (!is.data.frame(df) || ncol(df) != length(header_fields)) return(NULL)
+  # fread names an empty header cell "V2"; read.table leaves it empty.
+  named <- nzchar(header_fields)
+  if (!identical(trimws(names(df))[named], header_fields[named])) return(NULL)
+  if (nzchar(quote)) {
+    quoted_inside <- vapply(df, function(x) {
+      is.character(x) && any(grepl(quote, x, fixed = TRUE))
+    }, logical(1L))
+    if (any(quoted_inside)) return(NULL)
+  }
+
+  # read.table's typing: scan() to text with "NA" as missing, quoted or
+  # not, then type.convert() each column not given a class.
+  first <- df[[1L]]
+  first[first %in% "NA"] <- NA_character_
+  df[[1L]] <- first
+  basic <- c("logical", "integer", "numeric", "character")
+  # Every spreadsheet error fread reads as NA is spelled with a "#"
+  # ("#N/A", "#REF!"); with none in the data, a missing cell was "NA" or
+  # empty and needs no second look. Worth asking: a proteomics matrix
+  # has gaps in every column, and re-reading them all as text is most
+  # of what made read.table slow.
+  hash_in_data <- NULL
+  suspect <- integer(0)
+  for (j in seq_along(df)[-1L]) {
+    x <- df[[j]]
+    if (is.character(x)) {
+      df[[j]] <- utils::type.convert(x, as.is = TRUE, dec = dec,
+                                     numerals = "allow.loss", na.strings = "NA")
+      next
+    }
+    odd_value <- is.double(x) && (any(is.nan(x)) || any(is.infinite(x)))
+    if (!odd_value && anyNA(x) && is.null(hash_in_data)) {
+      hash_in_data <- file_has_byte_after(path, "#", data_offset(path, skip))
+    }
+    if (!class(x)[1L] %in% basic || odd_value || (anyNA(x) && hash_in_data)) {
+      suspect <- c(suspect, j)
+    }
+  }
+  if (length(suspect) > 0L) {
+    raw <- fread_raw(na.strings = NULL, colClasses = "character", select = suspect)
+    if (!is.data.frame(raw) || ncol(raw) != length(suspect) ||
+        nrow(raw) != nrow(df)) {
+      return(NULL)
+    }
+    for (k in seq_along(suspect)) {
+      j <- suspect[[k]]
+      x <- df[[j]]
+      r <- raw[[k]]
+      gap <- if (is.double(x)) !is.finite(x) else is.na(x)
+      # Missing where the file says "NA" or nothing is missing in
+      # read.table too; anything else is retyped from the text.
+      if (class(x)[1L] %in% basic && all(r[gap] %in% c("NA", ""))) next
+      r[r %in% "NA"] <- NA_character_
+      df[[j]] <- utils::type.convert(r, as.is = TRUE, dec = dec,
+                                     numerals = "allow.loss",
+                                     na.strings = character(0))
+    }
+  }
+  names(df) <- header_fields
+  df
+}
+
+# Bytes taken by the preamble and the header, counted as if lines ended
+# in a bare newline: with CRLF the true offset is larger, so the search
+# below starts early, never late.
+data_offset <- function(path, skip) {
+  head_lines <- readLines(path, n = skip + 1L, warn = FALSE)
+  sum(nchar(head_lines, type = "bytes")) + length(head_lines)
+}
+
+# Whether `byte` occurs at or after `offset`, read in slices so a large
+# file is never held in memory whole just to answer yes or no.
+file_has_byte_after <- function(path, byte, offset = 0) {
+  con <- file(path, "rb")
+  on.exit(close(con), add = TRUE)
+  if (offset > 0) seek(con, offset)
+  pattern <- charToRaw(byte)
+  repeat {
+    chunk <- readBin(con, "raw", n = 8L * 1024L^2)
+    if (length(chunk) == 0L) return(FALSE)
+    if (length(grepRaw(pattern, chunk, fixed = TRUE)) > 0L) return(TRUE)
+  }
+}
+
+# The delimited table as read.table reads it, with the header's repeated
+# names alongside (read_omics_csv() reports them).
+read_delimited_table <- function(path, ...) {
   skip <- count_leading_comment_lines(path)
-  header_line <- tryCatch(readLines(path, n = skip + 1L, warn = FALSE)[skip + 1L],
-                          error = function(e) NA_character_)
+  header_line <- tryCatch(
+    readLines(path, n = skip + 1L, warn = FALSE, encoding = "UTF-8")[skip + 1L],
+    error = function(e) NA_character_)
   sep <- detect_delimiter(path, line = header_line)
 
   args <- list(path, header = TRUE, sep = sep, skip = skip,
@@ -363,27 +534,6 @@ read_omics_csv <- function(path, omics_type, assay_type,
   # the decimal mark. "12,345" there is twelve point three, and stripping
   # the comma as a thousands separator made it 1000 times too large.
   if (identical(sep, ";") && is.null(list(...)$dec)) args$dec <- ","
-
-  # The first column is the identifiers, whatever they look like, and
-  # they are text: an Entrez id is a number that must not be summed, and
-  # a probe id "0001" read as a number comes back "1". Only the first
-  # column is forced; the rest keep read.table's typing, which on a 63k
-  # by 258 file is the difference between seconds and a minute.
-  header_fields <- if (is.na(header_line)) character(0) else
-    strsplit(header_line, sep, fixed = TRUE)[[1L]]
-  if (is.null(args$colClasses) && length(header_fields) > 0L) {
-    args$colClasses <- c("character", rep(NA_character_, length(header_fields) - 1L))
-  }
-  duplicated_headers <- unique(header_fields[duplicated(trimws(header_fields))])
-  duplicated_headers <- duplicated_headers[nzchar(duplicated_headers)]
-  # Mark the text as UTF-8 rather than as "whatever the process locale
-  # is". The files are UTF-8 -- every pipeline and spreadsheet writes
-  # them so -- but a container without a configured locale runs R in C,
-  # where an unmarked non-ASCII name survives as bytes only: it compares
-  # unequal to the same name from a workbook, and Shiny's JSON layer
-  # renders it as <e5><9f><ba>. `encoding` marks without converting, so
-  # it costs nothing on ASCII and is right on everything else.
-  if (is.null(args$encoding)) args$encoding <- "UTF-8"
 
   # Quoting rules differ by ecosystem, so they follow the delimiter.
   # Tab-separated files from bioinformatics pipelines do not quote
@@ -398,13 +548,48 @@ read_omics_csv <- function(path, omics_type, assay_type,
   if (is.null(args$quote)) {
     args$quote <- if (identical(sep, "\t")) "" else "\""
   }
+
+  # The first column is the identifiers, whatever they look like, and
+  # they are text: an Entrez id is a number that must not be summed, and
+  # a probe id "0001" read as a number comes back "1". Only the first
+  # column is forced; the rest keep read.table's typing, which on a 63k
+  # by 258 file is the difference between seconds and a minute.
+  header_fields <- parse_header_fields(path, skip, sep, args$quote, header_line)
+  if (is.null(args$colClasses) && length(header_fields) > 0L) {
+    args$colClasses <- c("character", rep(NA_character_, length(header_fields) - 1L))
+  }
+  duplicated_headers <- unique(header_fields[duplicated(trimws(header_fields))])
+  duplicated_headers <- duplicated_headers[nzchar(duplicated_headers)]
+  # Mark the text as UTF-8 rather than as "whatever the process locale
+  # is". The files are UTF-8 -- every pipeline and spreadsheet writes
+  # them so -- but a container without a configured locale runs R in C,
+  # where an unmarked non-ASCII name survives as bytes only: it compares
+  # unequal to the same name from a workbook, and Shiny's JSON layer
+  # renders it as <e5><9f><ba>. `encoding` marks without converting, so
+  # it costs nothing on ASCII and is right on everything else.
+  if (is.null(args$encoding)) args$encoding <- "UTF-8"
+
   # Never: `#` is a legal character in a gene description and truncating
   # the line at one loses columns silently.
   if (is.null(args$comment.char)) args$comment.char <- ""
 
-  df <- do.call(utils::read.table, args)
+  # Arguments passed through `...` are read.table's, and only read.table
+  # knows what they mean; the fast path is for the call the wizard makes.
+  df <- if (length(list(...)) == 0L) {
+    read_delimited_fast(path, sep = sep, skip = skip, quote = args$quote,
+                        dec = args$dec %||% ".", header_fields = header_fields)
+  }
+  if (is.null(df)) df <- do.call(utils::read.table, args)
   # A byte-order mark is not part of the first column's name.
-  if (ncol(df) > 0L) colnames(df)[1L] <- sub("^\ufeff", "", colnames(df)[1L])
+  if (ncol(df) > 0L) colnames(df) <- strip_bom(colnames(df))
+  list(df = df, duplicated_headers = duplicated_headers)
+}
+
+read_omics_csv <- function(path, omics_type, assay_type,
+                           sheet_roles = NULL, orientation = NULL, ...) {
+  read <- read_delimited_table(path, ...)
+  df <- read$df
+  duplicated_headers <- read$duplicated_headers
   nm <- tools::file_path_sans_ext(basename(path))
   cls <- classify_sheet_role(df, name = nm)
   sheet_table <- data.frame(
