@@ -128,3 +128,13 @@ test_that("results remember their layer when two layers share an omics type", {
     expect_false(is.null(diff_bundle()))
   })
 })
+
+test_that("a saved QC result goes back to its own layer of two of the same type", {
+  a <- p1_input("fp-A"); b <- p1_input("fp-B", shift = 1)
+  q <- omicsCore::run_qc(b, outlier_method = "pca", impute_method = "none")
+  q$input_info$layer <- "batch2"
+  exps <- list(batch1 = a, batch2 = b)
+  expect_identical(qc_bundle_layer(exps, q), "batch2")
+  q$input_info$layer <- NULL
+  expect_identical(qc_bundle_layer(exps, q), "batch1")   # older result: first that fits
+})

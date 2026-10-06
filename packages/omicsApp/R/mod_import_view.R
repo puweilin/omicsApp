@@ -866,10 +866,23 @@ import_view_server <- function(id,
 
       cand <- apply_design(cand)
 
-      # One archived file per layer: a layer merged from several
-      # quantification files is not archived (export_script() then asks
-      # for the path), rather than archived as its first file alone.
-      if (!is.null(f) && length(f$datapath) == 1L) {
+      # Quantification files are archived one by one, with the names
+      # they were uploaded under: export_script() reads them back with
+      # read_quant_files(), and the names are the sample names (the
+      # archived copies are renamed to stay unique).
+      is_quant <- !is.null(parsed()$report$suggested_input$quant_format)
+      if (!is.null(f) && is_quant) {
+        res <- lapply(seq_along(f$datapath), function(i) {
+          store_raw_upload(f$datapath[[i]], f$name[[i]], unname(tools::md5sum(f$datapath[[i]])))
+        })
+        if (all(vapply(res, function(r) isTRUE(r$ok), logical(1)))) {
+          cand$quant_source <- list(paths = vapply(res, `[[`, character(1), "path"),
+                                    names = as.character(f$name))
+        } else if (any(grepl("quota", vapply(res, function(r) r$message %||% "", character(1)),
+                             fixed = TRUE))) {
+          shiny::showNotification(res[[1L]]$message, type = "warning", duration = 8)
+        }
+      } else if (!is.null(f) && length(f$datapath) == 1L) {
         res <- store_raw_upload(f$datapath, f$name, cand$source_fingerprint)
         if (isTRUE(res$ok)) {
           # Recorded so `omicsCore::export_script()` can point its

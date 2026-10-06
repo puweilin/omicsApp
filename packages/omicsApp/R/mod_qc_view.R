@@ -391,6 +391,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (inherits(bundle, "error")) {
         last_error(conditionMessage(bundle))
       } else {
+        # The layer's name travels with the result (a project can hold
+        # two layers of one omics type); the demo's layers are not the
+        # user's.
+        if (!is.null(current_project())) bundle$input_info$layer <- req$tag
         last_error(NULL)
         last_bundle(bundle)
       }
@@ -845,6 +849,18 @@ qc_outlier_choice <- function(methods) {
 qc_bundle_layer <- function(exps, bundle) {
   info <- bundle$input_info
   kept <- colnames(bundle$results$cleaned_input$expr_mat)
+  fits <- function(e) {
+    identical(e$omics_type %||% "", info$omics_type %||% "") &&
+      isTRUE(ncol(e$expr_mat) == info$n_samples_in) &&
+      isTRUE(nrow(e$expr_mat) == info$n_features_in) &&
+      all(kept %in% colnames(e$expr_mat))
+  }
+  # The layer it records, when that layer still holds the same data;
+  # otherwise (older results) the first layer that fits.
+  rec <- info$layer
+  if (length(rec) == 1L && !is.na(rec)) {
+    return(if (rec %in% names(exps) && fits(exps[[rec]])) rec else NULL)
+  }
   for (tag in names(exps)) {
     e <- exps[[tag]]
     if (identical(e$omics_type %||% "", info$omics_type %||% "") &&

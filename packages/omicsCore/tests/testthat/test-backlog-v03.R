@@ -176,3 +176,56 @@ test_that("a result is matched to the layer it records, then by omics type", {
   d$input_info$layer <- "batch2"
   expect_identical(resolve_tag(proj, d), "batch2")
 })
+
+test_that("an uploaded .rds holding code is refused, data is read", {
+  inp <- bl_diff(c("A", "B"))
+  ok <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(inp, ok)
+  expect_false(is.null(read_omics(ok)$input))
+  bad <- withr::local_tempfile(fileext = ".rds")
+  evil <- inp
+  evil$misc <- list(hook = function() stop("ran"))
+  saveRDS(evil, bad)
+  r <- read_omics(bad)
+  expect_null(r$input)
+  expect_match(paste(import_report_warnings(r$report), collapse = " "), "a function", fixed = TRUE)
+})
+
+test_that("a layer merged from quantification files is scripted with read_quant_files", {
+  dir <- withr::local_tempdir()
+  raw <- file.path(dir, "raw"); dir.create(raw)
+  ids <- paste0("ENSG", sprintf("%011d", 1:30))
+  set.seed(5)
+  mk <- function(f) {
+    reads <- stats::rpois(30, 200); eff <- stats::runif(30, 500, 3000)
+    tpm <- reads / eff; tpm <- tpm / sum(tpm) * 1e6
+    utils::write.table(data.frame(Name = ids, Length = round(eff) + 150, EffectiveLength = eff,
+                                  TPM = tpm, NumReads = reads),
+                       file.path(raw, f), sep = "\t", quote = FALSE, row.names = FALSE)
+    file.path(raw, f)
+  }
+  # Archived under store names; uploaded as these.
+  paths <- vapply(c("a__1.sf", "b__2.sf", "c__3.sf", "d__4.sf"), mk, character(1))
+  shown <- c("ctrl_1.quant.sf", "ctrl_2.quant.sf", "ko_1.quant.sf", "ko_2.quant.sf")
+  inp <- read_quant_files(unname(paths), file_names = shown)$input
+  inp$quant_source <- list(paths = unname(paths), names = shown)
+  proj <- omics_project("q", list(rnaseq = inp))
+  out <- withr::local_tempfile(fileext = ".R")
+  export_script(proj, out)
+  txt <- readLines(out)
+  expect_true(any(grepl("read_quant_files(", txt, fixed = TRUE)))
+  expect_false(any(grepl("not archived", txt, fixed = TRUE)))
+  # The read line runs from the folder the script sits in, and gives
+  # back the same samples the app had.
+  i <- grep("^[^#]*read_quant_files\\(", txt)[1L]
+  j <- i
+  while (!grepl("\\$input$", txt[j])) j <- j + 1L
+  env <- new.env()
+  withr::with_dir(dir, eval(parse(text = txt[i:j]), envir = env))
+  got <- get(ls(env)[1], env)
+  expect_identical(colnames(got$expr_mat), colnames(inp$expr_mat))
+  expect_equal(got$expr_mat, inp$expr_mat)
+  # And it survives a QC exclusion.
+  sub <- subset_omics(inp, samples = colnames(inp$expr_mat)[-1])
+  expect_identical(sub$quant_source, inp$quant_source)
+})

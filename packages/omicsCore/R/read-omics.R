@@ -659,6 +659,17 @@ read_omics_csv <- function(path, omics_type, assay_type,
 read_omics_rds <- function(path, omics_type, assay_type,
                            sheet_roles = NULL, orientation = NULL, ...) {
   obj <- readRDS(path)
+  # An uploaded .rds is a file from anywhere, and an R object can carry
+  # code (a function, an environment, a promise) as easily as data. The
+  # same walk an untrusted project gets: data only, of known classes.
+  unsafe <- tryCatch({ check_project_structure(obj); NULL },
+                     omp_unsafe_error = function(e) conditionMessage(e))
+  if (!is.null(unsafe)) {
+    return(list(input = NULL, report = new_import_report(
+      warnings = sub("which a project never holds", "which a data table never holds",
+                     unsafe, fixed = TRUE),
+      source = path)))
+  }
   if (inherits(obj, "omics_input")) {
     if (!is.null(omics_type)) obj$omics_type <- omics_type
     if (!is.null(assay_type)) obj$assay_type <- assay_type

@@ -266,6 +266,39 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     for (tag in names(experiments)) {
       exp <- experiments[[tag]]
       var <- input_vars[[tag]]
+      # A layer merged from Salmon / RSEM / kallisto files is read back
+      # the way it was built, from the archived files under the names
+      # they were uploaded with (those names are the sample names).
+      if (!is.null(exp$quant_source$paths)) {
+        qs <- exp$quant_source
+        call <- render_call(
+          "read_quant_files", render_value(file.path("raw", basename(qs$paths))),
+          params = list(file_names = qs$names,
+                        sample_sheet = if (!is.null(exp$sample_sheet_path))
+                          file.path("raw", basename(exp$sample_sheet_path))),
+          arg_names = script_arg_names(read_quant_files),
+          assign_to = var)
+        last <- length(call$lines)
+        call$lines[last] <- paste0(call$lines[last], "$input")
+        lines <- c(lines, "# read_quant_files() returns the merged input and its import report.",
+                   call$lines)
+        notes <- c(notes, call$notes)
+        if (length(exp$excluded_samples)) {
+          lines <- c(lines,
+                     "# Samples excluded in QC:",
+                     sprintf("%s <- subset_omics(%s, samples = setdiff(colnames(%s$expr_mat), %s))",
+                             var, var, var, render_value(as.character(exp$excluded_samples))))
+        }
+        if (!is.null(exp$design$group_col)) {
+          dc <- render_call("set_study_design", var,
+                            params = exp$design[c("group_col", "reference")],
+                            arg_names = script_arg_names(set_study_design),
+                            assign_to = var)
+          lines <- c(lines, dc$lines)
+          notes <- c(notes, dc$notes)
+        }
+        next
+      }
       src <- exp$source_path %||% NA_character_
       if (is.na(src)) {
         notes <- c(notes, sprintf(

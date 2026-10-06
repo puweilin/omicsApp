@@ -356,7 +356,8 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         on.exit(unlink(dirname(dir), recursive = TRUE), add = TRUE)
         writeLines(lines, file.path(dir, "analysis.R"))
         srcs <- unique(stats::na.omit(unlist(lapply(proj$experiments, function(e)
-          c(e$source_path %||% NA_character_, e$sample_sheet_path %||% NA_character_)))))
+          c(e$source_path %||% NA_character_, e$sample_sheet_path %||% NA_character_,
+            e$quant_source$paths %||% NA_character_)))))
         srcs <- srcs[file.exists(srcs)]
         file.copy(srcs, file.path(dir, "raw", basename(srcs)))
         writeLines(c(
