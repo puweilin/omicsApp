@@ -75,3 +75,106 @@ resolve_enrich_p_col <- function(enrich_df, p_preference) {
   }
   hit[[1L]]
 }
+
+# Which gene list an ORA tested, in words, for a plot subtitle: "" for
+# GSEA, or for a bundle that does not record it.
+ora_list_caption <- function(params) {
+  if (!identical(params$type, "ora") || is.null(params$direction)) return("")
+  switch(params$direction,
+         separate = " · up- and down-regulated genes tested separately",
+         up = " · up-regulated genes",
+         down = " · down-regulated genes",
+         both = " · up and down pooled",
+         "")
+}
+
+# ---- gene-symbol case -------------------------------------------------
+#
+# Gene sets are matched to the data by symbol, exactly. Symbol case is a
+# species convention -- TP53 in human, Trp53 in mouse and rat, tp53 in
+# zebrafish -- and data often break it: a mouse table exported in upper
+# case, a fish table run through a tool that capitalised everything.
+# Matched as written, such a table finds a handful of genes and the
+# result is an empty or near-empty enrichment with nothing to say why.
+#
+# So when the exact match is poor and ignoring case would match clearly
+# more genes, the data's symbols are rewritten to the gene sets' spelling
+# before enrichment, and the run says so. Only unambiguous matches are
+# used: a set symbol that differs from another only by case (rare, but
+# it happens in some fly and yeast tables) is never a target.
+
+# How the data's `symbols` would match the gene sets' `reference`.
+# `apply` is TRUE when the case-insensitive match gains at least
+# `min_gain` genes and the exact match finds under half of what the
+# case-insensitive one does.
+symbol_case_plan <- function(symbols, reference, min_gain = 10L) {
+  u <- unique(as.character(symbols[!is.na(symbols) & nzchar(symbols)]))
+  ref <- unique(as.character(reference[!is.na(reference)]))
+  up_ref <- toupper(ref)
+  ambiguous <- unique(up_ref[duplicated(up_ref)])
+  keep <- !up_ref %in% ambiguous
+  map <- stats::setNames(ref[keep], up_ref[keep])
+  exact <- u %in% ref
+  ci <- !exact & toupper(u) %in% names(map)
+  n_exact <- sum(exact)
+  n_ci <- n_exact + sum(ci)
+  list(
+    apply = sum(ci) >= min_gain && n_exact < 0.5 * n_ci,
+    map = map,
+    reference = ref,
+    n_symbols = length(u),
+    n_exact = n_exact,
+    n_ci = n_ci
+  )
+}
+
+# Rewrite `x` to the gene sets' spelling where only case differs.
+apply_symbol_case <- function(x, plan) {
+  x <- as.character(x)
+  idx <- !is.na(x) & !(x %in% plan$reference) & toupper(x) %in% names(plan$map)
+  x[idx] <- unname(plan$map[toupper(x[idx])])
+  x
+}
+
+# Put the data's own spelling back into "/"-joined gene lists, so the
+# genes a result names are the ones the user's table has.
+restore_symbol_case <- function(gene_lists, back) {
+  if (!length(back) || !length(gene_lists)) return(gene_lists)
+  vapply(gene_lists, function(s) {
+    if (is.na(s) || !nzchar(s)) return(s)
+    g <- strsplit(s, "/", fixed = TRUE)[[1L]]
+    hit <- g %in% names(back)
+    g[hit] <- unname(back[g[hit]])
+    paste(g, collapse = "/")
+  }, character(1), USE.NAMES = FALSE)
+}
+
+# ---- multiple testing across databases --------------------------------
+
+# Re-adjust p-values across every database of one result instead of
+# within each. Each gene list is its own family: for ORA the up-, down-
+# or pooled list (`direction`, NA for pooled), for GSEA the one ranking.
+# Rows are then bounded at `cutoff` on raw and adjusted p alike, as
+# clusterProfiler bounds its own tables. q-values are per-database
+# quantities this does not recompute, so they are set to NA rather than
+# left contradicting the new adjusted p.
+adjust_enrich_across_databases <- function(df, type, p_adjust_method, cutoff) {
+  if (!nrow(df)) return(df)
+  family <- if (identical(type, "ora")) {
+    ifelse(is.na(df$direction), "pooled", df$direction)
+  } else {
+    rep("all", nrow(df))
+  }
+  adj <- df$adj_p_value
+  for (f in unique(family)) {
+    i <- family == f
+    adj[i] <- stats::p.adjust(df$p_value[i], method = p_adjust_method)
+  }
+  df$adj_p_value <- adj
+  df$q_value <- NA_real_
+  keep <- !is.na(df$p_value) & df$p_value <= cutoff &
+    !is.na(df$adj_p_value) & df$adj_p_value <= cutoff
+  out <- df[keep, , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}

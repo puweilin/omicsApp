@@ -49,8 +49,8 @@ that share donors.
 analyses, classified into the four sign quadrants and combined via
 Fisher's method.
 \item \code{"active_pathways"} -- pathway-level combined-p enrichment via the
-\code{ActivePathways} package, fed by the p-values of two differential
-analyses.
+\code{ActivePathways} package, fed by the p-values and fold-change signs
+of two differential analyses.
 }
 
 All methods return an \code{analysis_bundle} whose \code{results$integration_df}
@@ -98,9 +98,33 @@ correction across pathways.
 \item \code{significant} -- pathway-level cutoff (default \code{0.05}).
 \item \code{geneset_filter} -- length-2 integer vector of min/max gene-set sizes
 (default \code{c(5L, 1000L)}).
-\item \code{merge_method} -- \code{"Brown"} (default) or another method accepted by
-\code{ActivePathways::ActivePathways()}.
+\item \code{merge_method} -- \code{"DPM"} (default), the directional extension of
+Brown's method, or another method accepted by
+\code{ActivePathways::ActivePathways()} (\code{"Brown"} ignores direction, as
+results made before the directional method did).
+\item \code{constraints_vector} -- for a directional \code{merge_method}, the expected
+sign relation of the two layers' fold changes. Default \code{c(1, 1)}: the
+layers are expected to move the same way (RNA and protein of a gene
+rise together), so genes whose layers disagree are penalised and
+contribute less to any pathway. \code{c(1, -1)} would expect them to move
+oppositely.
 }
+
+With a directional merge, the ActivePathways table also says which way
+each pathway went: \code{direction} is \code{"up"} or \code{"down"} when the genes that
+drove it (ActivePathways' overlap) moved that way in both layers, and
+\code{"mixed"} when the layers disagree; \code{direction_a} / \code{direction_b} give
+each layer's own reading (the sign most driving genes share in it),
+\code{layers_agree} whether those match, and \code{n_genes_agree} /
+\code{n_genes_disagree} count the driving genes measured in both layers
+whose signs agree or not. \code{evidence} says which layers found the
+pathway on their own: \code{"shared"} (both), \code{"unique"} (one), or
+\code{"combined"} (only once merged). Results made before this held the
+evidence in \code{direction}. The direction is reported for a non-directional
+merge too, but there it describes the result without having shaped it.
+When the installed ActivePathways predates the directional method (it
+needs 2.0 or later), Brown's method is used instead, the bundle's
+\code{params$merge_method} records \code{"Brown"}, and a warning says so.
 }
 
 \examples{

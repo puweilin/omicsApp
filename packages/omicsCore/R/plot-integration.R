@@ -16,8 +16,10 @@
 #' * `"quadrant"` -- concordance-only. Bar count of the four
 #'   `(direction_a, direction_b)` sign quadrants.
 #' * `"dotplot"` -- active_pathways-only. Dotplot of top pathways, with
-#'   color = adjusted p-value and shape = evidence (shared by both layers,
-#'   unique to one, or found only by the combined p-value).
+#'   colour = direction (up in both layers, down in both, or layers
+#'   disagree) and shape = evidence (shared by both layers, unique to one,
+#'   or found only by the combined p-value). Results made before the
+#'   directional method carry no direction and are coloured by adjusted p.
 #'
 #' @param bundle An [`analysis_bundle`][is_analysis_bundle()] produced by
 #'   [run_integration()].
@@ -313,23 +315,60 @@ plot_integration_dotplot <- function(df, bundle, top_n) {
   if (nrow(df) == 0L) {
     return(empty_integration_plot("No pathways to plot."))
   }
-  df$.label <- truncate_pathway_name(df$feature_symbol)
+  df$.label <- truncate_pathway_name(prettify_gene_set_name(df$feature_symbol))
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df$adj_p_value)]))
+  # Bundles made before the directional rework kept the evidence class
+  # in `direction` and had no pathway direction at all.
+  directional <- "evidence" %in% names(df)
+  df$.evidence <- if (directional) df$evidence else df$direction
+  subtitle <- paste(bundle$params$experiments, collapse = " vs ")
+  mm <- bundle$params$merge_method
+  if (!is.null(mm)) {
+    subtitle <- paste0(subtitle, " \u00B7 ",
+                       if (mm %in% DIRECTIONAL_MERGE_METHODS)
+                         "layers expected to agree in direction"
+                       else "direction not used in the test")
+  }
 
-  ggplot2::ggplot(
-    df,
-    ggplot2::aes(x = .data$effect, y = .data$.label,
-                 color = .data$adj_p_value, shape = .data$direction)
-  ) +
-    ggplot2::geom_point(size = 4, na.rm = TRUE) +
-    ggplot2::scale_color_gradient(low = omics_colors$up, high = omics_colors$ns,
-                                  name = "adj p") +
-    ggplot2::scale_shape_manual(values = c(shared = 16, unique = 1, combined = 17),
-                                na.value = 4, name = "evidence") +
+  shape_scale <- ggplot2::scale_shape_manual(
+    values = c(shared = 16, unique = 1, combined = 17),
+    labels = c(shared = "both layers", unique = "one layer",
+               combined = "only combined"),
+    na.value = 4, name = "found by")
+  p <- if (directional) {
+    df$.dir <- factor(ap_direction_label(df$direction),
+                      levels = unname(AP_DIRECTION_LABELS))
+    ggplot2::ggplot(df, ggplot2::aes(x = .data$effect, y = .data$.label,
+                                     color = .data$.dir, shape = .data$.evidence)) +
+      ggplot2::geom_point(size = 4, na.rm = TRUE) +
+      ggplot2::scale_color_manual(
+        values = stats::setNames(
+          c(omics_colors$up, omics_colors$down, omics_colors$conc_up_down,
+            omics_colors$ns),
+          unname(AP_DIRECTION_LABELS)),
+        drop = TRUE, name = "direction")
+  } else {
+    ggplot2::ggplot(df, ggplot2::aes(x = .data$effect, y = .data$.label,
+                                     color = .data$adj_p_value, shape = .data$.evidence)) +
+      ggplot2::geom_point(size = 4, na.rm = TRUE) +
+      ggplot2::scale_color_gradient(low = omics_colors$up, high = omics_colors$ns,
+                                    name = "adj p")
+  }
+  p + shape_scale +
     ggplot2::labs(
       title = "Integration: ActivePathways",
-      subtitle = paste(bundle$params$experiments, collapse = " vs "),
+      subtitle = subtitle,
       x = "-log10(adj p)", y = NULL
     ) +
     theme_omics_labelled()
+}
+
+# A pathway's direction in words, for legends and tables.
+AP_DIRECTION_LABELS <- c(up = "up in both layers", down = "down in both layers",
+                         mixed = "mixed / layers disagree", none = "no direction")
+
+ap_direction_label <- function(direction) {
+  out <- unname(AP_DIRECTION_LABELS[direction])
+  out[is.na(out)] <- AP_DIRECTION_LABELS[["none"]]
+  out
 }

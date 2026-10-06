@@ -18,14 +18,36 @@ DB_MSIGDBR_MAP <- list(
 
 SUPPORTED_ENRICH_DATABASES <- names(DB_MSIGDBR_MAP)
 
-# Common organism shorthands.
+# The species offered by name. MSigDB curates human gene sets; msigdbr
+# carries them to other species through ortholog tables (HCOP), so every
+# species below gets the same pathways written in its own gene symbols
+# (Trp53 in mouse, tp53 in zebrafish). Further species msigdbr knows are
+# accepted by their full name -- see msigdbr::msigdbr_species() -- but
+# these are the ones a lab is likely to bring, and they work offline from
+# the data msigdbr ships.
+ENRICH_SPECIES <- data.frame(
+  code = c("Hs", "Mm", "Rn", "Dr", "Dm", "Sc", "Ce"),
+  species = c("Homo sapiens", "Mus musculus", "Rattus norvegicus",
+              "Danio rerio", "Drosophila melanogaster",
+              "Saccharomyces cerevisiae", "Caenorhabditis elegans"),
+  label = c("Human", "Mouse", "Rat", "Zebrafish", "Fruit fly",
+            "Yeast (S. cerevisiae)", "Worm (C. elegans)"),
+  stringsAsFactors = FALSE
+)
+
+# Common organism shorthands. Codes and full names are matched as
+# written; the everyday names ("mouse", "Zebrafish") in any case.
 ORGANISM_ALIASES <- c(
-  Hs                = "Homo sapiens",
-  human             = "Homo sapiens",
-  `Homo sapiens`    = "Homo sapiens",
-  Mm                = "Mus musculus",
-  mouse             = "Mus musculus",
-  `Mus musculus`    = "Mus musculus"
+  stats::setNames(ENRICH_SPECIES$species, ENRICH_SPECIES$code),
+  stats::setNames(ENRICH_SPECIES$species, ENRICH_SPECIES$species),
+  human = "Homo sapiens",
+  mouse = "Mus musculus",
+  rat = "Rattus norvegicus",
+  zebrafish = "Danio rerio",
+  fly = "Drosophila melanogaster",
+  `fruit fly` = "Drosophila melanogaster",
+  yeast = "Saccharomyces cerevisiae",
+  worm = "Caenorhabditis elegans"
 )
 
 normalize_organism <- function(organism) {
@@ -36,11 +58,57 @@ normalize_organism <- function(organism) {
     stop("`organism` must be a single non-missing string.")
   }
   key <- as.character(organism)
-  if (!key %in% names(ORGANISM_ALIASES)) {
-    stop("Unsupported organism: ", organism,
-         ". Supported: ", paste(unique(ORGANISM_ALIASES), collapse = ", "), ".")
+  if (key %in% names(ORGANISM_ALIASES)) return(unname(ORGANISM_ALIASES[key]))
+  low <- tolower(key)
+  if (low %in% names(ORGANISM_ALIASES)) return(unname(ORGANISM_ALIASES[low]))
+  # Any other species msigdbr maps the sets to, by its full name.
+  extra <- msigdbr_species_names()
+  if (key %in% extra) return(key)
+  stop("Unsupported organism: ", organism,
+       ". Supported: ", paste(unique(c(ENRICH_SPECIES$species, extra)), collapse = ", "),
+       ".")
+}
+
+# The species names msigdbr lists, or none when it is not installed (or
+# its listing fails). Read once per session: the listing is a fixed table.
+msigdbr_species_names <- function() {
+  hit <- .omicsCore_enrich_cache[["species::msigdbr"]]
+  if (!is.null(hit)) return(hit)
+  out <- character(0)
+  if (is_installed("msigdbr")) {
+    sp <- tryCatch(msigdbr::msigdbr_species(), error = function(e) NULL)
+    if (is.data.frame(sp) && "species_name" %in% names(sp)) {
+      out <- as.character(sp$species_name)
+    }
   }
-  unname(ORGANISM_ALIASES[key])
+  assign("species::msigdbr", out, envir = .omicsCore_enrich_cache)
+  out
+}
+
+#' Species the pathway gene sets are available for
+#'
+#' MSigDB's gene sets are curated in human; `msigdbr` carries them to other
+#' species through ortholog tables, so enrichment in, say, zebrafish tests
+#' the same pathways written in zebrafish gene symbols. This lists the
+#' species offered by short code. Any other species named by
+#' `msigdbr::msigdbr_species()` can be passed by its full name.
+#'
+#' @return A `data.frame` with columns `code` (what `organism =` accepts,
+#'   e.g. `"Rn"`), `species` (the scientific name) and `label` (a plain
+#'   name for menus).
+#' @export
+#' @family enrich
+#' @examples
+#' enrichment_species()
+enrichment_species <- function() {
+  ENRICH_SPECIES
+}
+
+# The code a species name is offered under ("Rattus norvegicus" -> "Rn"),
+# or the name itself when it has none.
+organism_code <- function(organism) {
+  hit <- match(organism, ENRICH_SPECIES$species)
+  if (is.na(hit)) organism else ENRICH_SPECIES$code[[hit]]
 }
 
 normalize_enrich_database <- function(database) {
@@ -390,7 +458,9 @@ get_gene_set_list <- function(database, organism = "Hs",
 #'
 #' @param database One of the supported database keys (see above).
 #' @param organism Organism, accepting `"Hs"`, `"human"`, `"Homo sapiens"`,
-#'   `"Mm"`, `"mouse"`, or `"Mus musculus"`.
+#'   `"Mm"`, `"mouse"`, `"Mus musculus"`, or any other code or name from
+#'   [enrichment_species()] (`"Rn"`, `"Dr"`, `"Dm"`, `"Sc"`, `"Ce"`); the
+#'   gene symbols are then that species' orthologs.
 #'
 #' @return A `tibble` with columns `database`, `pathway_id`, `pathway_name`,
 #'   `gene_symbol`.

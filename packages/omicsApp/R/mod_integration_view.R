@@ -445,11 +445,18 @@ integration_view_server <- function(id,
               args$p_preference <- th$p_preference %||% "adjusted"
               args$effect_cutoff <- th$effect_cutoff %||% 0
             }
+            if (identical(m, "active_pathways")) args$organism <- ap_org
             res <- do.call(omicsCore::run_integration, args)
             list(result = res, sec_diff = sec_diff)
           },
           info = info, m = m, th = th, primary = primary, proj = proj,
-          sec_diff = sec_diff, sec_method = sec_method
+          sec_diff = sec_diff, sec_method = sec_method,
+          # The gene sets' species, read from how the gene names are
+          # written, as the Enrichment view suggests it: mouse genes
+          # against human sets lost every gene whose name differs
+          # between the two (Trp53 / TP53).
+          ap_org = if (!is.null(primary))
+            guess_organism(primary$results$diff_result_df$feature_symbol) else "Hs"
         ),
         on_success = function(out) {
           # A run overtaken by a newer one does not get to overwrite it.
@@ -619,7 +626,7 @@ integration_view_server <- function(id,
         htmltools::tagList(
           htmltools::tags$div(class = "row-grid r-6-6",
             integration_plot_card(ns("ap_dot"), "ActivePathways",
-                                  "shape = which layers found it"),
+                                  "colour = direction \u00B7 shape = which layers found it"),
             integration_table_card(ns("top_table"), "Pathways",
                                    "ranked by adjusted p")))
       } else {
@@ -749,6 +756,28 @@ integration_stat_cards <- function(df, bundle) {
                 trend = "all genes", mono = TRUE)
     ))
   }
+  if (identical(method, "active_pathways") && "evidence" %in% names(df)) {
+    # Which way the significant pathways went. The test expected the two
+    # layers to change the same way, so "up in both" and "down in both"
+    # are the findings, and a pathway whose layers disagree is the
+    # exception worth a look.
+    sig <- df$is_significant %in% TRUE
+    return(htmltools::tags$div(
+      class = "stat-grid",
+      stat_card("Significant pathways", sum(sig),
+                trend = sprintf("of %d tested \u00B7 %d only when the layers are merged",
+                                nrow(df), sum(sig & df$evidence %in% "combined")),
+                accent = "brand", mono = TRUE),
+      stat_card("Up in both layers", sum(sig & df$direction %in% "up"),
+                trend = "the driving genes rise in both", accent = "up", mono = TRUE),
+      stat_card("Down in both layers", sum(sig & df$direction %in% "down"),
+                trend = "the driving genes fall in both", accent = "down", mono = TRUE),
+      stat_card("Layers disagree", sum(sig & df$direction %in% "mixed"),
+                trend = "mixed, or opposite directions in the two layers",
+                accent = if (any(sig & df$direction %in% "mixed")) "warn" else "ok",
+                mono = TRUE)
+    ))
+  }
   if (identical(method, "active_pathways")) {
     sig <- df$is_significant %in% TRUE
     return(htmltools::tags$div(
@@ -820,6 +849,22 @@ integration_result_table <- function(df, method, experiments) {
     names(out)[2:3] <- paste0("Effect (", exps[1:2], ")")
     return(out)
   }
+  if (identical(method, "active_pathways") && "evidence" %in% names(df)) {
+    d <- df[order(df$adj_p_value, na.last = TRUE), , drop = FALSE]
+    word <- function(x) unname(ifelse(is.na(x), "\u2014", x))
+    out <- data.frame(
+      Pathway = d$feature_symbol,
+      `Adj. p` = signif(d$adj_p_value, 3),
+      Direction = word(c(up = "up in both layers", down = "down in both layers",
+                         mixed = "mixed / layers disagree")[d$direction]),
+      a = word(d$direction_a),
+      b = word(d$direction_b),
+      `Found by` = word(c(shared = "both layers", unique = "one layer",
+                          combined = "only combined")[d$evidence]),
+      check.names = FALSE, stringsAsFactors = FALSE)
+    names(out)[4:5] <- paste0("In ", exps[1:2])
+    return(out)
+  }
   d <- df[order(df$adj_p_value, na.last = TRUE), , drop = FALSE]
   data.frame(
     Feature = d$feature_symbol,
@@ -857,7 +902,13 @@ integration_setup_card <- function(ns) {
         paste("Concordance repeats the Differential view's contrast on the",
               "second layer and compares the two results gene by gene, at the",
               "same thresholds. Correlation compares the two layers sample by",
-              "sample and needs the pairing below.")
+              "sample and needs the pairing below.",
+              if (has_pkg("ActivePathways"))
+                paste("ActivePathways merges both layers' evidence pathway by",
+                      "pathway, expecting the layers to change the same way:",
+                      "genes that go up in one and down in the other count",
+                      "against a pathway, and each pathway is reported as up,",
+                      "down, or mixed."))
       )
     )
   )

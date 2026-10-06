@@ -43,13 +43,15 @@ run_ora_database <- function(
 }
 
 # Direction-aware ORA driver used by `run_enrichment()`. Splits the input
-# diff bundle by sign and runs ORA per direction (or as a single set when
-# `direction = "both"`).
+# diff bundle by sign and runs ORA per direction: `"separate"` runs the
+# up- and down-regulated lists one after the other, each with its own
+# multiple-testing correction, exactly as two runs with `"up"` and
+# `"down"` would; `"both"` pools the two into a single list.
 run_ora_from_bundle <- function(
   diff_bundle,
   database,
   organism = "Hs",
-  direction = c("both", "up", "down"),
+  direction = c("separate", "up", "down", "both"),
   p_cutoff = 0.05,
   # Separate from p_cutoff, which for ORA also decides which features go
   # in. Bounding the stored result at the same number means a bundle can
@@ -86,11 +88,14 @@ run_ora_from_bundle <- function(
   feature_col <- if ("feature_symbol" %in% colnames(sig_df)) "feature_symbol" else "feature_id"
   comparison <- diff_bundle$params$comparison %||% "comparison"
 
+  up_df <- sig_df[!is.na(sig_df$effect) & sig_df$effect > 0, , drop = FALSE]
+  down_df <- sig_df[!is.na(sig_df$effect) & sig_df$effect < 0, , drop = FALSE]
   case_definitions <- switch(
     direction,
+    separate = list(up = up_df, down = down_df),
     both = list(both = sig_df),
-    up   = list(up = sig_df[sig_df$effect > 0, , drop = FALSE]),
-    down = list(down = sig_df[sig_df$effect < 0, , drop = FALSE])
+    up   = list(up = up_df),
+    down = list(down = down_df)
   )
 
   per_direction <- lapply(names(case_definitions), function(dir_label) {

@@ -186,13 +186,25 @@ if (!is.null(diff_b)) {
 }
 if (!is.null(bundles$enrich)) {
   e <- bundles$enrich$params
+  ora_what <- switch(e$direction %||% "both",
+    separate = paste("the up-regulated and the down-regulated hits, tested as two separate",
+                     "lists each with its own multiple-testing correction,"),
+    up = "the up-regulated hits",
+    down = "the down-regulated hits",
+    "the significant hits (up and down pooled into one list)")
   para <- c(para, sprintf(
-    "Pathway enrichment used %s on %s gene sets (%s, MSigDB via msigdbr)%s.",
+    "Pathway enrichment used %s on %s gene sets (%s, MSigDB via msigdbr)%s.%s%s",
     if (identical(e$type, "gsea")) sprintf("preranked GSEA (ranking: %s)", e$rank_metric %||% "test statistic")
-    else sprintf("over-representation analysis of the %s hits against the tested genes",
-                 if (identical(e$direction, "both")) "significant" else e$direction),
+    else sprintf("over-representation analysis of %s against the tested genes", ora_what),
     esc(and_list(e$database)), e$organism %||% "Homo sapiens",
-    sprintf(", gene-set size %s-%s", e$min_size %||% 10, e$max_size %||% 500)))
+    sprintf(", gene-set size %s-%s", e$min_size %||% 10, e$max_size %||% 500),
+    if (length(e$database) > 1L)
+      if (identical(e$p_adjust_scope, "all"))
+        " P-values were adjusted across all databases together."
+      else " P-values were adjusted within each database."
+    else "",
+    if (identical(e$symbol_case, "ignored"))
+      " Gene names were matched to the gene sets ignoring upper and lower case." else ""))
 }
 if (!is.null(bundles$integration)) {
   ip <- bundles$integration$params
@@ -202,7 +214,13 @@ if (!is.null(bundles$integration)) {
                                  correlation = sprintf("per-feature %s correlation across paired samples",
                                                        ip$cor_method %||% "Spearman"),
                                  concordance = "comparing each feature's fold change between layers (Fisher's combined p)",
-                                 active_pathways = "combined pathway enrichment (ActivePathways)",
+                                 active_pathways = if ((ip$merge_method %||% "Brown") %in%
+                                                       c("DPM", "Fisher_directional",
+                                                         "Stouffer_directional", "Strube_directional"))
+                                   paste("combined pathway enrichment (ActivePathways, directional",
+                                         "merge expecting the layers to change in the same direction)")
+                                 else sprintf("combined pathway enrichment (ActivePathways, %s's method)",
+                                              ip$merge_method %||% "Brown"),
                                  ip$method %||% "")))
 }
 if (length(para)) cat(paste(para, collapse = " "), "\n") else cat("_Nothing to describe yet._\n")
@@ -302,7 +320,13 @@ if (!is.null(eb)) {
                       `adjusted p` = fmt_p(df$adj_p_value), check.names = FALSE,
                       stringsAsFactors = FALSE)
     if (!all(is.na(df$effect))) tab$NES <- formatC(df$effect, digits = 2, format = "f")
-    if (!all(is.na(df$direction))) tab$Direction <- df$direction
+    if (!all(is.na(df$direction))) {
+      # ORA tested up and down as separate lists: say which list, in words.
+      tab$Direction <- if (identical(eb$params$type, "ora"))
+        ifelse(df$direction %in% "up", "up-regulated genes",
+               ifelse(df$direction %in% "down", "down-regulated genes", ""))
+      else df$direction
+    }
     print(knitr::kable(esc_df(tab)))
     cat("\n\n")
   }
@@ -335,13 +359,28 @@ if (!is.null(ib)) {
                  concordance = "effect_pair", active_pathways = "dotplot", "scatter")
   safe_print(omicsCore::plot_integration(ib, view = view))
   df <- ib$results$integration_df
+  if (identical(ip$method, "active_pathways") && is.data.frame(df) && nrow(df) &&
+      "evidence" %in% names(df)) {
+    sig <- df$is_significant %in% TRUE
+    cat(sprintf("%s pathways were significant: %s up in both layers, %s down in both, %s mixed or with the layers disagreeing.\n\n",
+                fmt_n(sum(sig)), fmt_n(sum(sig & df$direction %in% "up")),
+                fmt_n(sum(sig & df$direction %in% "down")),
+                fmt_n(sum(sig & df$direction %in% "mixed"))))
+  }
   if (is.data.frame(df) && nrow(df)) {
     df <- utils::head(df[order(df$adj_p_value, na.last = NA), , drop = FALSE], 15L)
-    print(knitr::kable(esc_df(data.frame(
+    tab <- data.frame(
       Feature = df$feature_symbol %||% df$feature_id,
       Effect = formatC(df$effect, digits = 3, format = "f"),
       `adjusted p` = fmt_p(df$adj_p_value),
-      Class = df$direction %||% "", check.names = FALSE, stringsAsFactors = FALSE))))
+      Class = df$direction %||% "", check.names = FALSE, stringsAsFactors = FALSE)
+    # A directional ActivePathways result: the direction and which layers
+    # found the pathway are two different things, each its own column.
+    if ("evidence" %in% names(df)) {
+      names(tab)[names(tab) == "Class"] <- "Direction"
+      tab$`Found by` <- df$evidence
+    }
+    print(knitr::kable(esc_df(tab)))
     cat("\n\n")
   }
 }

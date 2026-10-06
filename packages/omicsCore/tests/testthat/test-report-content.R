@@ -78,3 +78,60 @@ test_that("a restored project reports the same as the live one", {
   strip_dates <- function(html) gsub("[0-9]{4}-[0-9]{2}-[0-9]{2}[^<]*", "", html)
   expect_identical(strip_dates(strip(live)), strip_dates(strip(restored)))
 })
+
+test_that("the report says which gene lists ORA tested and which way pathways went", {
+  skip_if_no_report()
+  inp <- realistic_input(n_per_group = 3L)
+  diff <- run_diff(inp, method = "limma", analysis_type = "group",
+                   group_col = "group", control_group = "G1", case_group = "G2")
+  enr <- data.frame(
+    database = "hallmark", result_type = "ora", comparison = "G2_vs_G1",
+    pathway_id = c("HALLMARK_G2M_CHECKPOINT", "HALLMARK_ADIPOGENESIS"),
+    pathway_name = c("G2M CHECKPOINT", "ADIPOGENESIS"),
+    effect = NA_real_, effect_type = NA_character_, direction = c("up", "down"),
+    p_value = c(1e-8, 1e-3), adj_p_value = c(1e-7, 1e-2), q_value = NA_real_,
+    gene_set_size = 40, overlap_size = c(30, 8), overlap_features = "A",
+    leading_features = "A", source_label = "ora", stringsAsFactors = FALSE)
+  eb <- new_analysis_bundle("run_enrichment", input_info = diff$input_info,
+                            params = list(type = "ora", database = c("hallmark", "kegg"),
+                                          organism = "Homo sapiens",
+                                          direction = "separate",
+                                          p_adjust_scope = "all"),
+                            results = list(enrich_result_df = enr))
+  p <- omics_project("Directions", experiments = list(proteomics = inp))
+  p$bundles <- list(diff = diff, enrich = eb)
+  # Pandoc wraps long lines; a phrase can straddle one.
+  html <- gsub("\\s+", " ", report_html(p))
+  expect_match(html, "tested as two separate lists", fixed = TRUE)
+  expect_match(html, "adjusted across all databases together", fixed = TRUE)
+  expect_match(html, "up-regulated genes", fixed = TRUE)
+  expect_match(html, "down-regulated genes", fixed = TRUE)
+
+  # An older, pooled result is described as pooled.
+  eb$params$direction <- "both"
+  eb$params$database <- "hallmark"
+  eb$results$enrich_result_df$direction <- NA_character_
+  p$bundles$enrich <- eb
+  html <- gsub("\\s+", " ", report_html(p))
+  expect_match(html, "up and down pooled into one list", fixed = TRUE)
+
+  # A directional ActivePathways result: the way each pathway went.
+  idf <- data.frame(
+    feature_id = c("P1", "P2"), feature_symbol = c("HALLMARK_ONE", "HALLMARK_TWO"),
+    result_type = "active_pathways", experiments = "a vs b", comparison = "x | y",
+    effect = c(10, 6), effect_type = "neg_log10_padj", statistic = c(1e-10, 1e-6),
+    statistic_type = "adjusted_p_val", p_value = c(1e-10, 1e-6),
+    adj_p_value = c(1e-10, 1e-6), direction = c("up", "mixed"), quadrant = "a,b",
+    is_significant = TRUE, source_label = "ap", evidence = c("shared", "combined"),
+    stringsAsFactors = FALSE)
+  p$bundles$integration <- new_analysis_bundle(
+    "run_integration",
+    params = list(method = "active_pathways", experiments = c("a", "b"),
+                  merge_method = "DPM", constraints_vector = c(1, 1)),
+    results = list(integration_df = idf))
+  html <- gsub("\\s+", " ", report_html(p))
+  expect_match(html, "2 pathways were significant: 1 up in both layers, 0 down in both, 1 mixed",
+               fixed = TRUE)
+  expect_match(html, "expecting the layers to change in the same direction", fixed = TRUE)
+  expect_match(html, "Found by", fixed = TRUE)
+})

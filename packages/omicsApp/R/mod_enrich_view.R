@@ -118,7 +118,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       thr <- diff_thresholds()
       type <- input$type %||% "ora"
       args <- list(type = type, database = input$database %||% "hallmark",
-                   direction = input$direction %||% "both",
+                   direction = run_direction(b),
                    organism = organism())
       if (identical(type, "ora")) {
         args <- c(args, list(p_cutoff = thr$p_cutoff,
@@ -157,9 +157,12 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     have_cp <- has_pkg("clusterProfiler")
 
     # The species the gene sets come from. Suggested from the symbols --
-    # mouse genes are written Trp53, human TP53 -- because the default
-    # human sets matched no mouse gene, and the result was an empty table
-    # with no word of why.
+    # mouse genes are written Trp53, human TP53, zebrafish tp53 -- because
+    # the default human sets matched no mouse gene, and the result was an
+    # empty table with no word of why. Every species msigdbr carries the
+    # MSigDB sets to (through orthologs) is offered; mouse and rat write
+    # their genes alike, so a rat table is suggested mouse and switched by
+    # hand.
     suggested_organism <- shiny::reactive({
       b <- diff_bundle()
       if (is.null(b)) return("Hs")
@@ -169,7 +172,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     output$ui_organism <- shiny::renderUI({
       sel <- shiny::isolate(input$organism) %||% suggested_organism()
       shiny::selectInput(session$ns("organism"), label = "Species",
-                         choices = c("Human" = "Hs", "Mouse" = "Mm"), selected = sel)
+                         choices = species_choices(), selected = sel)
     })
     shiny::observeEvent(suggested_organism(), {
       shiny::updateSelectInput(session, "organism", selected = suggested_organism())
@@ -200,9 +203,9 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       my_run <- enrich_epoch$start()
       db_arg <- input$database %||% "hallmark"
       type   <- input$type %||% "ora"
-      dir_   <- input$direction %||% "both"
       thr    <- diff_thresholds()
       bundle <- diff_bundle()
+      dir_   <- run_direction(bundle)
       if (is.null(bundle) || !have_cp) {
         # Demo fallback: synthetic table re-shaped to match the
         # standardized enrich schema.
@@ -310,8 +313,16 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                                                               selected = params$database[[1L]])
       if (!is.null(params$direction)) shiny::updateRadioButtons(session, "direction",
                                                                 selected = params$direction)
-      org <- switch(params$organism %||% "", "Mus musculus" = "Mm", "Homo sapiens" = "Hs", NULL)
+      org <- species_code(params$organism)
       if (!is.null(org)) shiny::updateSelectInput(session, "organism", selected = org)
+    }
+
+    # The gene list(s) to test, as the Direction control says -- except
+    # for a result with no direction (a spline fit), which has one list
+    # only: it is enriched pooled, whatever the control is set to.
+    run_direction <- function(bundle) {
+      if (diff_undirected(bundle)) return("both")
+      input$direction %||% "separate"
     }
     shiny::observeEvent(input$rerun, do_run())
     if (is.function(navigate)) {
@@ -512,15 +523,23 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       if (!is.null(eb) && !isTRUE(is_demo()) &&
           nrow(eb$results$enrich_result_df %||% data.frame()) == 0L) {
         guess <- guess_organism(diff_bundle()$results$diff_result_df$feature_symbol)
-        used <- if (identical(eb$params$organism, "Mus musculus")) "Mm" else "Hs"
+        used <- species_code(eb$params$organism) %||% "Hs"
         tagged <- htmltools::tagAppendChild(tagged, notice(
           title = "No pathway was found",
           detail = if (!identical(guess, used))
-            sprintf("The gene names look %s, but %s gene sets were used. Switch Species and re-run.",
-                    if (guess == "Mm") "like mouse genes (e.g. Trp53)" else "like human genes (e.g. TP53)",
-                    if (used == "Mm") "mouse" else "human")
+            sprintf("The gene names look like %s genes (e.g. %s), but %s gene sets were used. Switch Species and re-run.",
+                    tolower(species_label(guess)), species_example(guess),
+                    tolower(species_label(used)))
           else "None of the sets passed the threshold. Try GSEA, another database, or looser Differential thresholds.",
           kind = "warn"))
+      }
+      # What the run itself had to say -- the gene names matched to the
+      # gene sets only once upper and lower case were ignored, say.
+      if (!is.null(eb) && !isTRUE(is_demo()) && length(eb$warnings)) {
+        for (w in eb$warnings) {
+          tagged <- htmltools::tagAppendChild(tagged, notice(
+            "Note on this result", detail = w, kind = "info"))
+        }
       }
       tagged
     })
@@ -557,30 +576,8 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     output$hits <- DT::renderDT({
       df <- table_data()
       shiny::req(nrow(df) > 0L)
-      df <- omicsCore::filter_enrich_results(
-        df, p_cutoff = show_cutoff(), p_preference = show_p())
-      shiny::req(nrow(df) > 0L)
-      pcol <- if (identical(show_p(), "raw")) "p_value" else "adj_p_value"
-      df <- df[order(df[[pcol]]), , drop = FALSE]
-      out <- data.frame(
-        Pathway   = df$pathway_name,
-        NES       = sprintf("%+.2f", df$effect),
-        # Named for the column it holds, so the table cannot say adj.P
-        # over raw values.
-        P         = signif(df[[pcol]], 3),
-        Direction = df$direction,
-        Overlap   = sprintf("%d/%d",
-                            df$overlap_size %||% NA_integer_,
-                            df$gene_set_size %||% NA_integer_),
-        check.names = FALSE,
-        stringsAsFactors = FALSE
-      )
-      names(out)[names(out) == "P"] <-
-        if (identical(show_p(), "raw")) "p" else "adjusted p"
-      # ORA has no enrichment score, and a direction only when it was
-      # run on one direction; columns of NA said nothing.
-      if (all(is.na(df$effect))) out$NES <- NULL
-      if (all(is.na(df$direction))) out$Direction <- NULL
+      out <- enrich_hits_table(df, show_p(), show_cutoff())
+      shiny::req(nrow(out) > 0L)
       DT::datatable(
         out,
         rownames  = FALSE,
@@ -637,6 +634,47 @@ enrich_omics_display <- function(t) {
          "\u2014")
 }
 
+# The rows of the Enriched sets table: the pathways that pass the
+# display threshold, strongest first.
+enrich_hits_table <- function(df, show_p, show_cutoff) {
+  df <- omicsCore::filter_enrich_results(
+    df, p_cutoff = show_cutoff, p_preference = show_p)
+  pcol <- if (identical(show_p, "raw")) "p_value" else "adj_p_value"
+  df <- df[order(df[[pcol]]), , drop = FALSE]
+  out <- data.frame(
+    Pathway   = df$pathway_name,
+    NES       = sprintf("%+.2f", df$effect),
+    # Named for the column it holds, so the table cannot say adj.P
+    # over raw values.
+    P         = signif(df[[pcol]], 3),
+    Direction = df$direction,
+    Overlap   = sprintf("%d/%d",
+                        df$overlap_size %||% NA_integer_,
+                        df$gene_set_size %||% NA_integer_),
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+  names(out)[names(out) == "P"] <-
+    if (identical(show_p, "raw")) "p" else "adjusted p"
+  if (!nrow(df)) return(out)
+  # ORA's direction is the gene list a pathway was found in, which is
+  # worth saying in words: "up" next to an ORA pathway read as the
+  # pathway's activity going up, which ORA does not measure.
+  if (all(is.na(df$effect))) {
+    out$Direction <- ifelse(df$direction %in% "up", "up-regulated genes",
+                     ifelse(df$direction %in% "down", "down-regulated genes",
+                            NA_character_))
+    names(out)[names(out) == "Direction"] <- "Found among"
+  }
+  # ORA has no enrichment score, and a direction only when it was run on
+  # one direction or on both separately; columns of NA said nothing.
+  if (all(is.na(df$effect))) out$NES <- NULL
+  if (all(is.na(df$direction))) {
+    out <- out[setdiff(names(out), c("Direction", "Found among"))]
+  }
+  out
+}
+
 enrich_params_card <- function(ns) {
   bslib::card(
     # A dropdown opened from this card renders *inside* it, and a card
@@ -685,11 +723,14 @@ enrich_params_card <- function(ns) {
         ),
         param_group(
           "Direction",
-          help = "Enrich up- and down-regulated hits together, or one direction only.",
+          help = paste("Which hits ORA tests. Separately (the default) tests the",
+                       "up-regulated and the down-regulated hits as two lists, so",
+                       "opposite changes are not mixed in one pathway; pooled tests",
+                       "them as one list. GSEA always keeps up and down apart."),
           shiny::radioButtons(
             ns("direction"), label = NULL,
-            choices  = c("both", "up", "down"),
-            selected = "both", inline = TRUE
+            choices  = ENRICH_DIRECTION_CHOICES,
+            selected = "separate", inline = TRUE
           )
         ),
         param_group(
@@ -760,13 +801,66 @@ enrich_hits_card <- function(ns) {
 # codetools cannot see.
 utils::globalVariables("bundle")
 
-# Which species a set of gene symbols most likely comes from: mouse and
-# rat symbols are capitalised (Trp53), human ones upper case (TP53).
+# The Direction control, in plain words. "both" keeps its old meaning --
+# up and down pooled -- so a project saved before "separate" existed
+# restores to what it ran.
+ENRICH_DIRECTION_CHOICES <- c("Up and down separately" = "separate",
+                              "Up only" = "up",
+                              "Down only" = "down",
+                              "Up and down pooled" = "both")
+
+# A differential result that says whether features change, not which way
+# (a global test, a spline fit): it can only be enriched as one list.
+diff_undirected <- function(bundle) {
+  at <- bundle$results$diff_result_df$analysis_type
+  any(at %in% c("anova", "continuous_spline"))
+}
+
+# The species offered, as label = code, from omicsCore's own list so the
+# menu and the engine cannot drift apart.
+species_choices <- function() {
+  sp <- omicsCore::enrichment_species()
+  stats::setNames(sp$code, sp$label)
+}
+
+species_code <- function(organism) {
+  if (is.null(organism) || !length(organism) || is.na(organism[[1L]])) return(NULL)
+  sp <- omicsCore::enrichment_species()
+  hit <- match(organism[[1L]], c(sp$species, sp$code))
+  if (is.na(hit)) return(NULL)
+  c(sp$code, sp$code)[[hit]]
+}
+
+species_label <- function(code) {
+  sp <- omicsCore::enrichment_species()
+  lab <- sp$label[match(code, sp$code)]
+  if (is.na(lab)) code else sub(" \\(.*\\)$", "", lab)
+}
+
+species_example <- function(code) {
+  switch(code, Hs = "TP53", Mm = "Trp53", Rn = "Tp53", Dr = "tp53",
+         Dm = "p53", Sc = "RAD9", Ce = "cep-1", "TP53")
+}
+
+# Which species a set of gene symbols most likely comes from, by how the
+# names are written: human upper case (TP53), mouse and rat capitalised
+# (Trp53 -- the two cannot be told apart this way, so mouse is
+# suggested), zebrafish lower case (tp53), worm lower case with a dash and
+# number (unc-54), fly with many CG-numbered genes (CG1824), yeast with
+# systematic ORF names (YAL001C).
 guess_organism <- function(symbols) {
   x <- symbols[is_gene_symbol(symbols)]
   if (length(x) < 10L) return("Hs")
+  orf_like <- mean(grepl("^Y[A-P][LR][0-9]{3}[WC](-[A-Z])?$", x))
+  if (orf_like > 0.3) return("Sc")
+  cg_like <- mean(grepl("^C[GR][0-9]+$", x))
+  if (cg_like > 0.2) return("Dm")
+  worm_like <- mean(grepl("^[a-z]{2,5}-[0-9]+(\\.[0-9]+)?$", x))
+  if (worm_like > 0.5) return("Ce")
+  lower_like <- mean(x == tolower(x) & grepl("[a-z]", x))
   mouse_like <- mean(grepl("^[A-Z][a-z0-9]+[a-z0-9-]*$", x) & grepl("[a-z]", x))
   human_like <- mean(x == toupper(x))
+  if (lower_like > 0.5 && lower_like > human_like) return("Dr")
   if (mouse_like > 0.5 && mouse_like > human_like) "Mm" else "Hs"
 }
 

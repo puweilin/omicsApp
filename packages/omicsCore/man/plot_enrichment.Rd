@@ -39,9 +39,17 @@ pathways per database (size = overlap, color = adjusted p-value); the
 GSEA bundles a \code{"gsea_dot"} view is available that splits pathways by
 direction (up / down).
 }
+\details{
+An ORA run with up- and down-regulated genes tested separately (the
+default of \code{\link[=run_enrichment]{run_enrichment()}}) is drawn with one panel per gene list,
+headed "Up-regulated genes" and "Down-regulated genes", and \code{top_n}
+is shared between the two lists of a database (alternating best of
+each), so neither direction crowds the other out.
+}
 \seealso{
 Other enrich:
 \code{\link[=compare_enrichment]{compare_enrichment()}},
+\code{\link[=enrichment_species]{enrichment_species()}},
 \code{\link[=filter_enrich_results]{filter_enrich_results()}},
 \code{\link[=geneset_cache_status]{geneset_cache_status()}},
 \code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}},

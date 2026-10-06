@@ -36,6 +36,7 @@ size and direction filter.
 \seealso{
 Other enrich:
 \code{\link[=compare_enrichment]{compare_enrichment()}},
+\code{\link[=enrichment_species]{enrichment_species()}},
 \code{\link[=geneset_cache_status]{geneset_cache_status()}},
 \code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}},
 \code{\link[=list_gene_sets]{list_gene_sets()}},

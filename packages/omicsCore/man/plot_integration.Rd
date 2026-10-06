@@ -49,8 +49,10 @@ features that are hits in both layers coloured by quadrant.
 \item \code{"quadrant"} -- concordance-only. Bar count of the four
 \verb{(direction_a, direction_b)} sign quadrants.
 \item \code{"dotplot"} -- active_pathways-only. Dotplot of top pathways, with
-color = adjusted p-value and shape = evidence (shared by both layers,
-unique to one, or found only by the combined p-value).
+colour = direction (up in both layers, down in both, or layers
+disagree) and shape = evidence (shared by both layers, unique to one,
+or found only by the combined p-value). Results made before the
+directional method carry no direction and are coloured by adjusted p.
 }
 }
 \seealso{

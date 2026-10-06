@@ -7,6 +7,12 @@
 #' GSEA bundles a `"gsea_dot"` view is available that splits pathways by
 #' direction (up / down).
 #'
+#' An ORA run with up- and down-regulated genes tested separately (the
+#' default of [run_enrichment()]) is drawn with one panel per gene list,
+#' headed "Up-regulated genes" and "Down-regulated genes", and `top_n`
+#' is shared between the two lists of a database (alternating best of
+#' each), so neither direction crowds the other out.
+#'
 #' @param bundle An [`analysis_bundle`][is_analysis_bundle()] produced by
 #'   [run_enrichment()].
 #' @param top_n Number of pathways to display per database.
@@ -126,10 +132,46 @@ pick_top_per_database <- function(df, top_n, p_col) {
   if (nrow(df) == 0L) return(df)
   df <- df[order(df$database, df[[p_col]]), , drop = FALSE]
   split_df <- split(df, df$database, drop = TRUE)
-  picked <- lapply(split_df, function(x) utils::head(x, top_n))
+  picked <- lapply(split_df, function(x) {
+    # Up and down lists take turns -- best of each, then second best of
+    # each -- so a strong up list does not leave the down list unseen,
+    # and a short list hands its unused places to the other.
+    if (all(c("up", "down") %in% x$direction) && all(x$direction %in% c("up", "down")) &&
+        ora_list_facet(x)) {
+      turn <- stats::ave(seq_len(nrow(x)), x$direction, FUN = seq_along)
+      x <- x[order(turn, x[[p_col]]), , drop = FALSE]
+    }
+    utils::head(x, top_n)
+  })
   out <- do.call(rbind, picked)
   rownames(out) <- NULL
   out
+}
+
+# ORA rows that say which gene list they came from: the panels are then
+# split by list. ORA has no effect size; a result that has one (GSEA's
+# NES) carries its direction as that sign, which the x axis already
+# shows.
+ora_list_facet <- function(df) {
+  !any(is.finite(df$effect)) && any(df$direction %in% c("up", "down"))
+}
+
+ORA_LIST_LABELS <- c(up = "Up-regulated genes", down = "Down-regulated genes")
+
+with_list_label <- function(df) {
+  lab <- ifelse(df$direction %in% names(ORA_LIST_LABELS),
+                ORA_LIST_LABELS[df$direction], "Up and down pooled")
+  df$.list <- factor(lab, levels = c(unname(ORA_LIST_LABELS), "Up and down pooled"))
+  df
+}
+
+enrich_facets <- function(df, scales) {
+  if (ora_list_facet(df)) {
+    ggplot2::facet_wrap(ggplot2::vars(.data$database, .data$.list),
+                        scales = scales, ncol = 1)
+  } else {
+    ggplot2::facet_wrap(~ .data$database, scales = scales, ncol = 1)
+  }
 }
 
 empty_enrich_plot <- function(label) {
@@ -141,6 +183,7 @@ empty_enrich_plot <- function(label) {
 }
 
 plot_enrich_dot <- function(df, p_col) {
+  if (ora_list_facet(df)) df <- with_list_label(df)
   df$.label <- wrap_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df[[p_col]])]))
 
@@ -172,7 +215,7 @@ plot_enrich_dot <- function(df, p_col) {
 
   p <- ggplot2::ggplot(df, do.call(ggplot2::aes, aes_args)) +
     ggplot2::geom_point(na.rm = TRUE) +
-    ggplot2::facet_wrap(~ .data$database, scales = "free", ncol = 1) +
+    enrich_facets(df, scales = "free") +
     # Low to high significance, matching the volcano: a reader who has
     # learnt one colour scale reads the other without relearning it.
     ggplot2::scale_color_gradient(low = omics_colors$scale_low,
@@ -201,6 +244,7 @@ plot_enrich_dot <- function(df, p_col) {
 }
 
 plot_enrich_bar <- function(df, p_col) {
+  if (ora_list_facet(df)) df <- with_list_label(df)
   df$.label <- wrap_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(df[[p_col]], decreasing = TRUE)]))
   ggplot2::ggplot(
@@ -209,7 +253,7 @@ plot_enrich_bar <- function(df, p_col) {
                  y = .data$.label, fill = .data$database)
   ) +
     ggplot2::geom_col() +
-    ggplot2::facet_wrap(~ .data$database, scales = "free_y", ncol = 1) +
+    enrich_facets(df, scales = "free_y") +
     ggplot2::guides(fill = "none") +
     ggplot2::labs(
       title = "Enrichment",

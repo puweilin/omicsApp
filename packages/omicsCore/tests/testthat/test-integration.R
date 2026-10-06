@@ -218,9 +218,11 @@ test_that("active_pathways returns the integration schema when installed", {
   expect_true(is_analysis_bundle(b))
   df <- b$results$integration_df
   check_integration_result_schema(df)
-  # If any pathways come back, direction should be shared/unique.
+  # If any pathways come back, direction is the way they went and
+  # evidence which layers found them.
   if (nrow(df) > 0L) {
-    expect_true(all(df$direction %in% c("shared", "unique")))
+    expect_true(all(df$direction %in% c("up", "down", "mixed", NA)))
+    expect_true(all(df$evidence %in% c("shared", "unique", "combined")))
   }
 })
 

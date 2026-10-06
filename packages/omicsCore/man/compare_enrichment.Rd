@@ -14,7 +14,9 @@ compare_enrichment(diff_bundle, comparisons = NULL, ...)
 \code{\link[=diff_comparisons]{diff_comparisons()}}.}
 
 \item{...}{Passed to \code{\link[=run_enrichment]{run_enrichment()}} for every comparison (\code{type},
-\code{database}, \code{direction}, thresholds).}
+\code{database}, \code{direction}, thresholds). As there, ORA tests the up- and
+down-regulated hits as separate lists unless \code{direction} says
+otherwise, and each row's \code{direction} says which list it came from.}
 }
 \value{
 An \code{\link[=is_analysis_bundle]{analysis_bundle}} named
@@ -29,6 +31,7 @@ Enrich every comparison of a differential run
 }
 \seealso{
 Other enrich:
+\code{\link[=enrichment_species]{enrichment_species()}},
 \code{\link[=filter_enrich_results]{filter_enrich_results()}},
 \code{\link[=geneset_cache_status]{geneset_cache_status()}},
 \code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}},

@@ -23,8 +23,8 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #'   analyses, classified into the four sign quadrants and combined via
 #'   Fisher's method.
 #' * `"active_pathways"` -- pathway-level combined-p enrichment via the
-#'   `ActivePathways` package, fed by the p-values of two differential
-#'   analyses.
+#'   `ActivePathways` package, fed by the p-values and fold-change signs
+#'   of two differential analyses.
 #'
 #' All methods return an `analysis_bundle` whose `results$integration_df`
 #' follows the schema documented in [check_integration_result_schema()].
@@ -72,8 +72,32 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #' * `significant` -- pathway-level cutoff (default `0.05`).
 #' * `geneset_filter` -- length-2 integer vector of min/max gene-set sizes
 #'   (default `c(5L, 1000L)`).
-#' * `merge_method` -- `"Brown"` (default) or another method accepted by
-#'   `ActivePathways::ActivePathways()`.
+#' * `merge_method` -- `"DPM"` (default), the directional extension of
+#'   Brown's method, or another method accepted by
+#'   `ActivePathways::ActivePathways()` (`"Brown"` ignores direction, as
+#'   results made before the directional method did).
+#' * `constraints_vector` -- for a directional `merge_method`, the expected
+#'   sign relation of the two layers' fold changes. Default `c(1, 1)`: the
+#'   layers are expected to move the same way (RNA and protein of a gene
+#'   rise together), so genes whose layers disagree are penalised and
+#'   contribute less to any pathway. `c(1, -1)` would expect them to move
+#'   oppositely.
+#'
+#' With a directional merge, the ActivePathways table also says which way
+#' each pathway went: `direction` is `"up"` or `"down"` when the genes that
+#' drove it (ActivePathways' overlap) moved that way in both layers, and
+#' `"mixed"` when the layers disagree; `direction_a` / `direction_b` give
+#' each layer's own reading (the sign most driving genes share in it),
+#' `layers_agree` whether those match, and `n_genes_agree` /
+#' `n_genes_disagree` count the driving genes measured in both layers
+#' whose signs agree or not. `evidence` says which layers found the
+#' pathway on their own: `"shared"` (both), `"unique"` (one), or
+#' `"combined"` (only once merged). Results made before this held the
+#' evidence in `direction`. The direction is reported for a non-directional
+#' merge too, but there it describes the result without having shaped it.
+#' When the installed ActivePathways predates the directional method (it
+#' needs 2.0 or later), Brown's method is used instead, the bundle's
+#' `params$merge_method` records `"Brown"`, and a warning says so.
 #'
 #' @return An [`analysis_bundle`][is_analysis_bundle()] with
 #'   `results$integration_df` (standardized schema) and, for
@@ -172,7 +196,8 @@ run_integration <- function(
     p_preference <- dots$p_preference %||% "raw"
     significant <- dots$significant %||% 0.05
     geneset_filter <- dots$geneset_filter %||% c(5L, 1000L)
-    merge_method <- dots$merge_method %||% "Brown"
+    merge_method <- dots$merge_method %||% "DPM"
+    constraints_vector <- dots$constraints_vector %||% c(1, 1)
 
     backend <- run_integration_active_pathways(
       project = project,
@@ -184,18 +209,23 @@ run_integration <- function(
       p_preference = p_preference,
       significant = significant,
       geneset_filter = geneset_filter,
-      merge_method = merge_method
+      merge_method = merge_method,
+      constraints_vector = constraints_vector
     )
     integration_df <- backend$std
     integration_raw <- backend$raw
     method_info <- backend$info
+    # The method that actually ran: a directional request on an older
+    # ActivePathways falls back to Brown's, and the script must repeat
+    # what ran.
     method_params <- list(
       database = normalize_enrich_database(database),
       organism = normalize_organism(organism),
       p_preference = p_preference,
       significant = significant,
       geneset_filter = geneset_filter,
-      merge_method = merge_method
+      merge_method = method_info$merge_method %||% merge_method,
+      constraints_vector = method_info$constraints_vector
     )
   }
 
@@ -243,7 +273,7 @@ run_integration <- function(
     results$integration_raw <- integration_raw
   }
 
-  warns <- character(0)
+  warns <- as.character(method_info$notes %||% character(0))
   n_amb <- method_info$n_ambiguous_samples %||% 0L
   if (n_amb > 0L) {
     warns <- c(warns, sprintf(

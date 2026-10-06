@@ -9,12 +9,13 @@ run_enrichment(
   type = c("ora", "gsea"),
   database = c("hallmark", "kegg", "reactome", "go_bp", "go_mf", "go_cc", "wikipathways"),
   organism = "Hs",
-  direction = c("both", "up", "down"),
+  direction = c("separate", "up", "down", "both"),
   p_cutoff = 0.05,
   output_p_cutoff = NULL,
   p_preference = c("adjusted", "raw"),
   effect_cutoff = NULL,
   p_adjust_method = "BH",
+  p_adjust_scope = c("database", "all"),
   min_size = 10L,
   max_size = 500L,
   ...
@@ -30,9 +31,14 @@ by \code{\link[=run_diff]{run_diff()}}.}
 \code{"wikipathways"}, \code{"go_bp"}, \code{"go_mf"}, \code{"go_cc"}. Pass a character
 vector to query multiple databases.}
 
-\item{organism}{Organism shorthand (e.g. \code{"Hs"}).}
+\item{organism}{Species of the gene sets: a code or name from
+\code{\link[=enrichment_species]{enrichment_species()}} (\code{"Hs"}, \code{"Mm"}, \code{"Rn"}, \code{"Dr"}, \code{"Dm"},
+\code{"Sc"}, \code{"Ce"}, or e.g. \code{"mouse"}), or any full species name
+\code{msigdbr::msigdbr_species()} lists.}
 
-\item{direction}{One of \code{"both"} (default), \code{"up"}, or \code{"down"}.}
+\item{direction}{One of \code{"separate"} (default: up and down tested as
+two lists), \code{"up"}, \code{"down"}, or \code{"both"} (up and down pooled into one
+list). See Details.}
 
 \item{p_cutoff}{Significance cutoff for selecting diff features (ORA
 only; GSEA ranks the whole list).}
@@ -48,6 +54,10 @@ raw or adjusted p at display time without re-running.}
 
 \item{p_adjust_method}{Multiple-testing correction method.}
 
+\item{p_adjust_scope}{\code{"database"} (default) to correct within each
+database, or \code{"all"} to correct across all queried databases
+together. Makes a difference only with more than one database.}
+
 \item{min_size, max_size}{Min/max gene-set sizes, for ORA and GSEA alike.}
 
 \item{...}{Reserved for backend-specific extensions.}
@@ -56,7 +66,8 @@ raw or adjusted p at display time without re-running.}
 An \code{\link[=is_analysis_bundle]{analysis_bundle}} with
 \code{results$enrich_result_df} (standardized schema) and
 \code{results$enrich_object} (named list of clusterProfiler objects keyed by
-database, or for ORA by \verb{<direction>__<database>}).
+database, or for ORA by \verb{<list>__<database>} where \verb{<list>} is \code{up},
+\code{down} or \code{both}).
 }
 \description{
 Single entry point for over-representation analysis (\code{type = "ora"}) and
@@ -66,9 +77,39 @@ run against the requested MSigDB database in symbol space via
 package is required.
 }
 \details{
-For ORA, features are split into up/down sets unless
-\code{direction = "both"}; for GSEA, the full ranked vector is always passed
-to the backend and \code{direction} filters the standardized output.
+For ORA, \code{direction} decides which gene list is tested. The default,
+\code{"separate"}, tests the up-regulated and the down-regulated hits as two
+lists, each with its own multiple-testing correction, and returns both
+in one table whose \code{direction} column says which list a pathway came
+from -- the same rows two runs with \code{"up"} and \code{"down"} would give.
+\code{"both"} pools up and down into one list (the behaviour before
+\code{"separate"} existed, and what saved results and scripts with
+\code{direction = "both"} still mean); pooling mixes opposite biology, so a
+pathway half up and half down can look enriched.
+
+For GSEA the full ranked vector is always passed to the backend, so up
+and down are always separate; \code{"up"} or \code{"down"} keep one sign only,
+and \code{"separate"} and \code{"both"} keep both.
+
+A result with no direction (an ANOVA or spline fit) can only be
+enriched as one pooled list: ORA then defaults to \code{"both"}, and asking
+for a direction is an error.
+
+When several databases are queried, \code{p_adjust_scope} decides the
+family each pathway is corrected in: \code{"database"} (default) adjusts
+within each database, as running them one at a time would; \code{"all"}
+adjusts across every database's pathways together (within each ORA
+gene list), the stricter choice when the databases are read as one
+search. Under \code{"all"}, \code{q_value} is set to \code{NA} (it is a per-database
+quantity), and the clusterProfiler objects in \code{enrich_object} keep
+their per-database adjustment -- the table is the result.
+
+Gene sets come in the chosen species' own symbols (see
+\code{\link[=enrichment_species]{enrichment_species()}}). When the data's symbols match them poorly as
+written but well ignoring case (a mouse table in upper case, say), the
+match ignoring case is used, the result's gene lists keep the data's
+spelling, and the bundle carries a warning saying so
+(\code{params$symbol_case} is then \code{"ignored"}).
 
 For GSVA-style sample-level scoring, see \code{\link[=run_gsva]{run_gsva()}}.
 }
@@ -84,6 +125,7 @@ For GSVA-style sample-level scoring, see \code{\link[=run_gsva]{run_gsva()}}.
 \seealso{
 Other enrich:
 \code{\link[=compare_enrichment]{compare_enrichment()}},
+\code{\link[=enrichment_species]{enrichment_species()}},
 \code{\link[=filter_enrich_results]{filter_enrich_results()}},
 \code{\link[=geneset_cache_status]{geneset_cache_status()}},
 \code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}},

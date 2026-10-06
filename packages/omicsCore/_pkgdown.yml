@@ -110,6 +110,7 @@ reference:
   desc: MSigDB gene sets, the on-disk cache, and gene symbols
   contents:
   - list_gene_sets
+  - enrichment_species
   - geneset_cache_status
   - refresh_geneset_cache
   - map_ensembl_symbols
