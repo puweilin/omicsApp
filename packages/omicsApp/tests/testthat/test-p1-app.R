@@ -37,3 +37,31 @@ test_that("a restored result is not flagged until a control is changed", {
                  fixed = TRUE)
   })
 })
+
+test_that("an enrichment whose controls or thresholds moved says so until re-run", {
+  skip_if_not(has_pkg("clusterProfiler"))
+  p <- tutorial_project()
+  d <- omicsCore::run_diff(p$experiments$proteomics, method = "limma", group_col = "group",
+                           control_group = "Control", case_group = "TreatA")
+  thr <- shiny::reactiveVal(list(p_cutoff = 0.05, p_preference = "adjusted", effect_cutoff = NULL))
+  shiny::testServer(enrich_view_server,
+                    args = list(diff_bundle = shiny::reactiveVal(d),
+                                diff_thresholds = shiny::reactive(thr()),
+                                current_project = shiny::reactiveVal(p)), {
+    stale <- function() grepl("settings have changed",
+                              paste(as.character(output$notices), collapse = ""), fixed = TRUE)
+    session$setInputs(type = "ora", database = "hallmark", direction = "separate",
+                      organism = "Hs", rerun = 1)
+    expect_false(is.null(enrich_bundle()))
+    expect_false(stale())
+    session$setInputs(direction = "both")
+    expect_true(stale())
+    session$setInputs(direction = "separate")
+    expect_false(stale())
+    thr(list(p_cutoff = 0.01, p_preference = "adjusted", effect_cutoff = NULL))
+    session$flushReact()
+    expect_true(stale())
+    session$setInputs(rerun = 2)
+    expect_false(stale())
+  })
+})

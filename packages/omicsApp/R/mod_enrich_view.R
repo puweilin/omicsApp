@@ -320,6 +320,34 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     # The gene list(s) to test, as the Direction control says -- except
     # for a result with no direction (a spline fit), which has one list
     # only: it is enriched pooled, whatever the control is set to.
+    # The result on screen no longer answers the controls: the test,
+    # database, species or lists changed, or (for ORA) the thresholds
+    # that chose its genes did. Read from the result's own parameters,
+    # so a restored result is judged the same way as a fresh one.
+    settings_changed <- shiny::reactive({
+      b <- enrich_bundle()
+      if (is.null(b) || isTRUE(is_demo())) return(FALSE)
+      p <- b$params
+      type <- input$type %||% "ora"
+      same_num <- function(a, b) {
+        a <- if (length(a)) as.numeric(a[[1L]]) else NA_real_
+        b <- if (length(b)) as.numeric(b[[1L]]) else NA_real_
+        (is.na(a) && is.na(b)) || isTRUE(all.equal(a, b))
+      }
+      changed <- !identical(type, p$type %||% type) ||
+        !identical(input$database %||% "hallmark", p$database[[1L]] %||% "hallmark") ||
+        !identical(organism(), species_code(p$organism) %||% organism())
+      if (identical(p$type, "ora")) {
+        thr <- diff_thresholds()
+        changed <- changed ||
+          !identical(run_direction(diff_bundle()), p$direction %||% "both") ||
+          !same_num(thr$p_cutoff, p$p_cutoff) ||
+          !identical(thr$p_preference %||% "adjusted", p$p_preference %||% "adjusted") ||
+          !same_num(thr$effect_cutoff, p$effect_cutoff)
+      }
+      changed
+    })
+
     run_direction <- function(bundle) {
       if (diff_undirected(bundle)) return("both")
       input$direction %||% "separate"
@@ -486,6 +514,13 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     output$notices <- shiny::renderUI({
       tagged <- htmltools::tagList()
       err <- enrich_error()
+      if (is.null(err) && isTRUE(settings_changed())) {
+        tagged <- htmltools::tagAppendChild(tagged, notice(
+          "The settings have changed since this result was computed",
+          paste("The pathways below are from the previous settings (test, database,",
+                "species, gene lists or the Differential thresholds). Press Re-run to update them."),
+          kind = "warn"))
+      }
       if (!is.null(err)) {
         tagged <- htmltools::tagAppendChild(
           tagged,
