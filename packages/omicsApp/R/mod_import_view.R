@@ -1099,3 +1099,6 @@ preview_metadata <- function(meta, n_row = 5L) {
   df <- meta[seq_len(min(n_row, nrow(meta))), , drop = FALSE]
   cbind(sample = rownames(df), as.data.frame(df, stringsAsFactors = FALSE))
 }
+
+# Bound by detached_call() in do_parse(), not visible to R CMD check.
+utils::globalVariables(c("datapath", "name", "orientation", "roles"))
