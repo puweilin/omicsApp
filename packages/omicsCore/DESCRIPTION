@@ -1,6 +1,6 @@
 Package: omicsCore
 Title: Multi-Omics Analysis Engine for Proteomics, Transcriptomics, and Integration
-Version: 0.0.0.9000
+Version: 0.2.0
 Authors@R:
     person("Weilin", "Pu", email = "puweilin@gmail.com", role = c("aut", "cre"))
 Description: A unified, headless analysis engine for proteomics and

@@ -24,3 +24,4 @@ reference:
   contents:
   - omicsApp-package
   - launch
+  - shiny_app

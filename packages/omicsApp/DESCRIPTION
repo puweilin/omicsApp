@@ -1,6 +1,6 @@
 Package: omicsApp
 Title: Shiny Web Interface for Multi-Omics Analysis
-Version: 0.0.0.9000
+Version: 0.2.0
 Authors@R:
     person("Weilin", "Pu", email = "puweilin@gmail.com", role = c("aut", "cre"))
 Description: A modern Shiny application providing interactive visualization

@@ -11,8 +11,8 @@ This monorepo contains two R packages:
 
 | Package | Purpose | Status |
 |---|---|---|
-| [`omicsCore`](./packages/omicsCore) | Headless analysis engine: QC, differential expression, enrichment (ORA/GSEA/GSVA), and multi-omics integration | Phase 0 — skeleton |
-| [`omicsApp`](./packages/omicsApp) | Shiny web interface built on `omicsCore`: smart input parsing, interactive plots, project sessions | Phase 0 — skeleton |
+| [`omicsCore`](./packages/omicsCore) | Headless analysis engine: QC, differential expression, enrichment (ORA/GSEA/GSVA), and multi-omics integration | 0.2.0 |
+| [`omicsApp`](./packages/omicsApp) | Shiny web interface built on `omicsCore`: smart input parsing, interactive plots, project sessions | 0.2.0 |
 
 ## Design goals
 
@@ -101,7 +101,12 @@ again.
 
 ## Status
 
-Pre-alpha. See [docs/export-manifest.md](./docs/export-manifest.md) for the planned public API and [docs/roadmap.md](./docs/roadmap.md) for the delivery plan. [docs/review-2026-09.md](./docs/review-2026-09.md) records the September 2026 review: the tutorial, UI, integration defects fixed, and how several treatment groups against one control are handled (`run_diff(case_group = c(...))`, `select_comparison()`).
+Version 0.2.0 (see each package's `NEWS.md`). The reviews and the plan for
+the next releases are in [`docs/`](./docs): [review-2026-10.md](./docs/review-2026-10.md)
+and [review-2026-10-round4.md](./docs/review-2026-10-round4.md) record the
+October 2026 audits and fixes, and [next-release-plan.md](./docs/next-release-plan.md)
+lists what is done and what remains. [docs/export-manifest.md](./docs/export-manifest.md)
+describes the public API.
 
 The legacy `omics_core` framework in the parent project's `scripts/frameworks/omics_core/` remains **frozen** as the production code path for the existing analyses. `omicsCore` is a parallel, properly-packaged rewrite that does not affect those scripts.
 

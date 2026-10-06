@@ -10,18 +10,37 @@ Interactive Shiny application for proteomics and transcriptomics analysis,
 powered by the \href{https://github.com/puweilin/omicsApp}{omicsCore} engine.
 }
 \details{
-The entry point is \code{\link[=launch]{launch()}}.
+The app walks a project through the same steps as the engine, one view
+each: \strong{Import} (Excel/CSV/TSV workbooks, separate sample sheets,
+orientation and assay checks), \strong{Quality control} (missing values,
+depth, outlier samples, imputation, excluding a sample), \strong{Differential}
+(limma, edgeR, DESeq2, t-test or linear models; several comparisons,
+paired designs, continuous variables, a global test), \strong{Enrichment}
+(ORA and GSEA against MSigDB collections, across comparisons),
+\strong{Integration} (two layers by concordance, correlation or
+ActivePathways) and \strong{Report} (an HTML/PDF report and an R script that
+reproduces the analysis, with its data files). Projects are saved to a
+per-user store and autosaved per browser session.
+
+Start it with \code{\link[=launch]{launch()}}; \code{\link[=shiny_app]{shiny_app()}} returns the application object
+for hosting it yourself.
 }
 \seealso{
 Useful links:
 \itemize{
   \item \url{https://github.com/puweilin/omicsApp}
+  \item \url{https://puweilin.github.io/omicsApp/omicsApp/}
   \item Report bugs at \url{https://github.com/puweilin/omicsApp/issues}
 }
 
 }
 \author{
 \strong{Maintainer}: Weilin Pu \email{puweilin@gmail.com}
+
+Authors:
+\itemize{
+  \item Weilin Pu \email{puweilin@gmail.com}
+}
 
 }
 \keyword{internal}
