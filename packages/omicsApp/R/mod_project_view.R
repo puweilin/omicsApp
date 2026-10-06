@@ -810,7 +810,7 @@ project_activity_card <- function(project, is_demo = TRUE) {
                 if (exp$omics_type == "rnaseq") "--brand-500" else "--ok",
                 sprintf("Imported %s layer",
                         project_omics_label(exp)),
-                sprintf("tag = %s \u00B7 %d samples \u00B7 %d features",
+                sprintf("layer %s \u00B7 %d samples \u00B7 %d features",
                         tag, ncol(exp$expr_mat), nrow(exp$expr_mat))
               )
             }),

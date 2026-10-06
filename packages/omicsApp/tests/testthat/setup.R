@@ -43,4 +43,4 @@ render_html <- function(tag) {
 
 # Server-side tests set an input and read the result in the same flush;
 # the QC slider's debounce would defer it.
-options(omicsApp.qc_debounce_ms = 0)
+options(omicsApp.qc_debounce_ms = 0, omicsApp.autosave_debounce_ms = 0)

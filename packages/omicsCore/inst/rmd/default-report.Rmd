@@ -174,8 +174,13 @@ if (!is.null(diff_b)) {
   s <- paste0(s, sprintf(". P-values were adjusted for multiple testing (Benjamini-Hochberg). Features were called significant at %s < %s",
                          p_name, thr$p_cutoff))
   if ((thr$effect_cutoff %||% 0) > 0) {
-    s <- paste0(s, sprintf(" and |log2 fold change| >= %.3g (%.2g-fold)", thr$effect_cutoff,
-                           2^thr$effect_cutoff))
+    eff <- omicsCore::effect_label(diff_b)
+    s <- paste0(s, if (identical(eff, "log2FC")) {
+      sprintf(" and |log2 fold change| >= %.3g (%.2g-fold)", thr$effect_cutoff,
+              2^thr$effect_cutoff)
+    } else {
+      sprintf(" and |%s| >= %.3g", eff, thr$effect_cutoff)
+    })
   }
   para <- c(para, paste0(s, "."))
 }
@@ -251,10 +256,10 @@ if (!is.null(diff_b) && is.data.frame(diff_b$results$diff_result_df)) {
       tab <- data.frame(
         Feature = ifelse(is.na(top$feature_symbol) | !nzchar(top$feature_symbol),
                          top$feature_id, top$feature_symbol),
-        `log2 FC` = formatC(top$effect, digits = 3, format = "f"),
-        p = fmt_p(top$p_value), `adj. p` = fmt_p(top$adj_p_value),
+        effect = formatC(top$effect, digits = 3, format = "f"),
+        p = fmt_p(top$p_value), `adjusted p` = fmt_p(top$adj_p_value),
         check.names = FALSE, stringsAsFactors = FALSE)
-      if (identical(one$params$analysis_type, "continuous")) names(tab)[2] <- "rho"
+      names(tab)[2] <- omicsCore::effect_label(one)
       cat("Top features by p-value:\n\n")
       print(knitr::kable(esc_df(tab), align = "lrrr"))
       cat("\n\n")
@@ -275,7 +280,7 @@ if (!is.null(ab)) {
   if (nrow(df)) {
     print(knitr::kable(esc_df(data.frame(
       Feature = ifelse(is.na(df$feature_symbol), df$feature_id, df$feature_symbol),
-      p = fmt_p(df$p_value), `adj. p` = fmt_p(df$adj_p_value), check.names = FALSE))))
+      p = fmt_p(df$p_value), `adjusted p` = fmt_p(df$adj_p_value), check.names = FALSE))))
     cat("\n\n")
   }
 }
@@ -294,7 +299,7 @@ if (!is.null(eb)) {
     tab <- data.frame(Pathway = df$pathway_name,
                       Genes = ifelse(is.na(df$overlap_size), "",
                                      sprintf("%s / %s", df$overlap_size, df$gene_set_size)),
-                      `adj. p` = fmt_p(df$adj_p_value), check.names = FALSE,
+                      `adjusted p` = fmt_p(df$adj_p_value), check.names = FALSE,
                       stringsAsFactors = FALSE)
     if (!all(is.na(df$effect))) tab$NES <- formatC(df$effect, digits = 2, format = "f")
     if (!all(is.na(df$direction))) tab$Direction <- df$direction
@@ -335,7 +340,7 @@ if (!is.null(ib)) {
     print(knitr::kable(esc_df(data.frame(
       Feature = df$feature_symbol %||% df$feature_id,
       Effect = formatC(df$effect, digits = 3, format = "f"),
-      `adj. p` = fmt_p(df$adj_p_value),
+      `adjusted p` = fmt_p(df$adj_p_value),
       Class = df$direction %||% "", check.names = FALSE, stringsAsFactors = FALSE))))
     cat("\n\n")
   }

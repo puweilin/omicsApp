@@ -528,6 +528,7 @@ table.tbl td.num, table.tbl th.num {
                         margin: 8px 0 4px; overflow: hidden; }
 .async-progress-bar { height: 100%; background: var(--brand-600); transition: width 1s linear; }
 .async-cancel { padding: 0; font-size: 12px; }
+.async-progress-step { font-size: 12px; margin-top: 4px; }
 
 // A long project name is cut with an ellipsis (the full name is in the
 // tooltip); 60 characters made the page 612 px wide on a phone.
@@ -539,4 +540,25 @@ table.tbl td.num, table.tbl th.num {
 .visually-hidden-label {
   position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+// The Differential run button stays in reach while the parameter rail
+// is taller than the window. The card has to let it out: bslib cards
+// scroll their own contents (overflow: auto, set with more specificity
+// than a plain class), which would pin it inside a box that never
+// scrolls.
+.bslib-card.params-card,
+.bslib-card.params-card > .card-body { overflow: visible !important; }
+.run-sticky {
+  position: sticky; bottom: 0; z-index: 2;
+  margin: 8px -4px 0; padding: 8px 4px;
+  background: var(--bs-card-bg, #fff);
+}
+// The imputation and other selects: room for the caret, so a long
+// choice is cut short before it, not drawn under it.
+.form-select, select.form-control { padding-right: 2.25rem; text-overflow: ellipsis; }
+.selectize-control.single .selectize-input { padding-right: 2rem; }
+.selectize-control.single .selectize-input > .item {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: top;
 }

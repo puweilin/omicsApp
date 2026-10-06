@@ -124,6 +124,7 @@ reference:
   - plot_volcano
   - plot_diff_contrasts
   - plot_diff_overlap
+  - effect_label
   - plot_enrichment_comparison
   - plot_ma
   - plot_feature_expression
@@ -133,6 +134,7 @@ reference:
   - plot_integration
   - theme_omicsCore
   - omics_colors
+  - wrap_label
 
 - title: Export
   desc: Save results and render reports

@@ -108,6 +108,7 @@ run_edger_group <- function(
   # Length offsets only for counts that still carry the length bias.
   # Counts from abundance ("scaledTPM", "lengthScaledTPM") have it
   # removed already, and offsetting them again corrected twice.
+  report_progress("Normalising library sizes (1 of 4)")
   if (!is.null(txi_info$length) &&
       identical(txi_info$counts_from_abundance %||% "no", "no")) {
     length_sub <- txi_info$length[rownames(count_sub), colnames(count_sub), drop = FALSE]
@@ -125,7 +126,9 @@ run_edger_group <- function(
     y <- edgeR::calcNormFactors(y)
   }
 
+  report_progress("Estimating dispersions (2 of 4)")
   y <- edgeR::estimateDisp(y, design = design_mat)
+  report_progress("Fitting the model (3 of 4)")
   fit <- edgeR::glmQLFit(y, design = design_mat)
 
   # model.matrix() names a factor's columns `<column><level>` verbatim,
@@ -146,6 +149,9 @@ run_edger_group <- function(
       }
       cvec[[grp_cols[[lv]]]] <- w[[lv]]
     }
+    report_progress(if (length(specs) > 1L) {
+      sprintf("Testing comparison %d of %d (4 of 4)", i, length(specs))
+    } else "Testing (4 of 4)")
     qlf <- edgeR::glmQLFTest(fit, contrast = unname(cvec))
     tt <- edgeR::topTags(qlf, n = Inf, sort.by = "none")
     raw_df <- as.data.frame(tt$table) |>

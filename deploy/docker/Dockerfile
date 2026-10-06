@@ -122,7 +122,7 @@ RUN R -q -e 'pkgs <- c("S4Vectors","limma","impute","pcaMethods","edgeR", \
                                 paste(missing, collapse = ", "))'
 
 # 3b. 23 more, and the first heavy C++ builds (BiocParallel, Rhdf5lib).
-RUN R -q -e 'pkgs <- c("fgsea","DESeq2"); \
+RUN R -q -e 'pkgs <- c("fgsea","DESeq2","BiocParallel"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("Bioconductor 3b failed: ", \

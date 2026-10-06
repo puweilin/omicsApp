@@ -100,9 +100,13 @@ run_edger_anova <- function(input, group_col, covariates = NULL,
   grp_cols <- which(attr(design, "assign") == term)
   y <- edger_filter(edgeR::DGEList(counts = d$counts), design)
   filter_note <- attr(y, "filter_note")
+  report_progress("Normalising library sizes (1 of 4)")
   y <- edgeR::calcNormFactors(y)
+  report_progress("Estimating dispersions (2 of 4)")
   y <- edgeR::estimateDisp(y, design = design)
+  report_progress("Fitting the model (3 of 4)")
   fit <- edgeR::glmQLFit(y, design = design)
+  report_progress("Testing (4 of 4)")
   qlf <- edgeR::glmQLFTest(fit, coef = grp_cols)
   raw_df <- as.data.frame(edgeR::topTags(qlf, n = Inf, sort.by = "none")$table) |>
     tibble::rownames_to_column("feature_id")
@@ -138,8 +142,11 @@ run_deseq2_anova <- function(input, group_col, covariates = NULL,
   red <- setdiff(unlist(safe$map), safe$map[[group_col]])
   reduced <- stats::as.formula(paste("~", if (length(red)) paste(red, collapse = " + ") else "1"))
   dds <- build_deseq_dataset(input, d$counts, safe$col_data, safe$formula)
-  dds <- with_fixed_seed(1L, DESeq2::DESeq(dds, test = "LRT", reduced = reduced,
-                                           quiet = TRUE))
+  bp <- deseq2_bpparam()
+  dds <- with_fixed_seed(1L, with_deseq2_progress(
+    if (is.null(bp)) DESeq2::DESeq(dds, test = "LRT", reduced = reduced, quiet = FALSE)
+    else DESeq2::DESeq(dds, test = "LRT", reduced = reduced, quiet = FALSE,
+                       parallel = TRUE, BPPARAM = bp)))
   raw_df <- as.data.frame(DESeq2::results(dds)) |>
     tibble::rownames_to_column("feature_id")
   std <- standardize_anova_counts(raw_df, input$feature_df, "deseq2", "stat",

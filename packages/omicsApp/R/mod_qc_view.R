@@ -241,13 +241,19 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # app; the demo input is 50 x 12, so a re-run is milliseconds.
       qc_input <- if (a$is_demo) example_qc_input() else a$input
 
+      run <- function() omicsCore::run_qc(
+        qc_input,
+        missing_threshold = thr,
+        outlier_method    = out_m,
+        impute_method     = imp
+      )
+      # A big layer takes several seconds the first time (up to 10 s for
+      # 60 samples), and all it showed was the busy pulse. It now says
+      # which step it is on. A small one finishes before a panel could
+      # be read, so it gets none rather than a flash.
+      big <- length(qc_input$expr_mat) >= QC_PROGRESS_CELLS
       bundle <- tryCatch(
-        omicsCore::run_qc(
-          qc_input,
-          missing_threshold = thr,
-          outlier_method    = out_m,
-          impute_method     = imp
-        ),
+        if (big) with_step_progress("Running quality control", run()) else run(),
         error = function(e) e)
 
       if (inherits(bundle, "error")) {
@@ -455,7 +461,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                            width = "220px"))
     })
 
-    output$pca <- shiny::renderPlot(alt = "Principal component plot of the samples", {
+    output$pca <- shiny::renderPlot(res = PLOT_RES, alt = "Principal component plot of the samples", fit_to_width("pca", {
       bundle <- last_bundle()
       shiny::req(bundle)
       ch <- pca_color_choices()
@@ -466,7 +472,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (identical(input$pca_color_by, "(none)")) color_by <- NULL
       p <- omicsCore::plot_qc(bundle, view = "pca", color_by = color_by)
       p + ggplot2::theme(legend.position = "bottom")
-    })
+    }))
 
     # Which quality panel this modality is actually asking about.
     #
@@ -515,11 +521,11 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         selected = sel, inline = TRUE)
     })
 
-    output$missing <- shiny::renderPlot(alt = "Missing values per sample and per feature", {
+    output$missing <- shiny::renderPlot(res = PLOT_RES, alt = "Missing values per sample and per feature", fit_to_width("missing", {
       bundle <- last_bundle()
       shiny::req(bundle)
       omicsCore::plot_qc(bundle, view = quality_view())
-    })
+    }))
 
     output$missing_caption <- shiny::renderUI({
       a <- active()
@@ -640,3 +646,7 @@ omics_display <- function(t) {
 }
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
+
+# Matrix cells above which a QC run shows its steps: about 5,000
+# features x 40 samples, which takes a second or more.
+QC_PROGRESS_CELLS <- 2e5

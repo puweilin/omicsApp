@@ -34,7 +34,7 @@ CRAN_PKGS <- c(
 )
 BIOC_PKGS <- c(
   "limma", "clusterProfiler", "DESeq2", "edgeR", "S4Vectors", "enrichplot",
-  "fgsea", "GSVA", "ComplexHeatmap", "impute", "pcaMethods", "vsn"
+  "fgsea", "GSVA", "ComplexHeatmap", "impute", "pcaMethods", "vsn", "BiocParallel"
 )
 
 # Versions the image depends on for reasons that are not obvious from the

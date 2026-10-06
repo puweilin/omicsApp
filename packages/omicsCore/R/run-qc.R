@@ -118,6 +118,7 @@ run_qc <- function(
   }
 
   # ---- missingness ----
+  report_progress("Counting missing values")
   missingness <- qc_missingness(
     input,
     sample_missing_cutoff = sample_missing_threshold,
@@ -131,6 +132,7 @@ run_qc <- function(
   depth <- qc_depth(input)
 
   # ---- outliers ----
+  report_progress("Checking for outlier samples")
   run_outliers <- !identical(outlier_method, "none") &&
                   !(length(outlier_method) == 1L && is.na(outlier_method))
   outliers <- if (run_outliers) {
@@ -171,6 +173,7 @@ run_qc <- function(
   # ---- imputation ----
   imputation <- NULL
   if (impute_method != "none" && anyNA(cleaned$expr_mat)) {
+    report_progress("Imputing missing values")
     na_cells <- which(is.na(cleaned$expr_mat))
     cleaned$raw_mat <- cleaned$raw_mat %||% cleaned$expr_mat
     linear <- !is.null(cleaned$assay_type) &&

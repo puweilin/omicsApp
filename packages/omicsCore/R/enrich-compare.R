@@ -126,9 +126,10 @@ plot_enrichment_comparison <- function(bundle, top_n = 8L, p_cutoff = 0.05,
 
   p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$.col, y = .data$.row)) +
     ggplot2::scale_y_discrete(labels = labels[levels(df$.row)]) +
+    ggplot2::scale_x_discrete(labels = function(x) wrap_comparison(x, width = 18L)) +
     ggplot2::scale_shape_manual(values = c(yes = 16, no = 1),
                                 name = sprintf("%s < %s",
-                                               if (p_preference == "adjusted") "adj. p" else "p",
+                                               if (p_preference == "adjusted") "adjusted p" else "p",
                                                format(p_cutoff))) +
     ggplot2::labs(title = "Pathways across comparisons",
                   subtitle = paste(toupper(bundle$params$type %||% ""),

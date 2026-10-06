@@ -62,7 +62,7 @@ test_that("the table is sorted and labelled by the column in use", {
     if (identical(pref, "raw")) {
       expect_true(grepl(">p<", html, fixed = TRUE), info = pref)
     } else {
-      expect_true(grepl("adj.P", html, fixed = TRUE), info = pref)
+      expect_true(grepl("adjusted p", html, fixed = TRUE), info = pref)
     }
   }
 })

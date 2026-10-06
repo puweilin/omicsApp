@@ -612,7 +612,7 @@ integration_view_server <- function(id,
           htmltools::tags$div(class = "row-grid r-6-6",
             integration_plot_card(ns("cor_scatter"),
                                   "Correlation per gene",
-                                  "r across paired samples \u00B7 y = -log10 adj. p"),
+                                  "r across paired samples \u00B7 y = -log10 adjusted p"),
             integration_table_card(ns("top_table"), "Top features",
                                    "ranked by adjusted p")))
       } else if (identical(m, "active_pathways")) {
@@ -636,29 +636,29 @@ integration_view_server <- function(id,
       }
     })
 
-    output$dual <- shiny::renderPlot(alt = "Volcano plots of the two layers side by side", {
+    output$dual <- shiny::renderPlot(res = PLOT_RES, alt = "Volcano plots of the two layers side by side", fit_to_width("dual", {
       b <- plot_bundle()
       shiny::req(b, identical(b$params$method, "concordance"))
       omicsCore::plot_integration(b, view = "dual_volcano")
-    })
+    }))
 
-    output$scatter <- shiny::renderPlot(alt = "Effect in one layer against the effect in the other", {
+    output$scatter <- shiny::renderPlot(res = PLOT_RES, alt = "Effect in one layer against the effect in the other", fit_to_width("scatter", {
       b <- plot_bundle()
       shiny::req(b, identical(b$params$method, "concordance"))
       omicsCore::plot_integration(b, view = "effect_pair")
-    })
+    }))
 
-    output$cor_scatter <- shiny::renderPlot(alt = "Per-feature correlation between the layers across paired samples", {
+    output$cor_scatter <- shiny::renderPlot(res = PLOT_RES, alt = "Per-feature correlation between the layers across paired samples", fit_to_width("cor_scatter", {
       b <- plot_bundle()
       shiny::req(b, identical(b$params$method, "correlation"))
       omicsCore::plot_integration(b, view = "scatter")
-    })
+    }))
 
-    output$ap_dot <- shiny::renderPlot(alt = "Pathways found by combining the two layers", {
+    output$ap_dot <- shiny::renderPlot(res = PLOT_RES, alt = "Pathways found by combining the two layers", fit_to_width("ap_dot", {
       b <- plot_bundle()
       shiny::req(b, identical(b$params$method, "active_pathways"))
       omicsCore::plot_integration(b, view = "dotplot")
-    })
+    }))
 
     output$top_table <- DT::renderDT({
       b <- plot_bundle()

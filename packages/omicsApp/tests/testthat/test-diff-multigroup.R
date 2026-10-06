@@ -67,7 +67,7 @@ test_that("the hit table names the p-value it was masked on", {
                       method = "limma", p_kind = "raw", rerun = 1)
     expect_identical(p_label(), "p")
     session$setInputs(p_kind = "adj")
-    expect_identical(p_label(), "adj.P")
+    expect_identical(p_label(), "adjusted p")
   })
 })
 

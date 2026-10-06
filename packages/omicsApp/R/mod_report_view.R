@@ -243,9 +243,13 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
           type = "warning", duration = 8)
         shiny::req(FALSE)
       }
+      # A download link gives no sign that anything is happening, and an
+      # HTML report takes about 4 s to render; the panel says it is.
       tryCatch(
-        omicsCore::export_report(proj, file, format = format,
-                                 overwrite = TRUE),
+        shiny::withProgress(
+          message = sprintf("Rendering the %s report", toupper(format)),
+          value = 0.3,
+          omicsCore::export_report(proj, file, format = format, overwrite = TRUE)),
         error = function(e) {
           shiny::showNotification(
             sprintf("Report export failed (%s): %s",

@@ -157,7 +157,7 @@ test_that("the volcano is two-coloured at a stated cut, and the sliders do not t
     # evidence of the threshold the figure was drawn at.)
     # (The hover shows the gene, so the line is found by its y.)
     expect_match(volcano_before, '"y":[1.30102999566398', fixed = TRUE)
-    expect_match(volcano_before, "-log10(adj_p_value)", fixed = TRUE)
+    expect_match(volcano_before, "-log10(adjusted p)", fixed = TRUE)
     expect_identical(diff_view$thresholds()$p_cutoff, 0.05)
 
     # Open the thresholds right up

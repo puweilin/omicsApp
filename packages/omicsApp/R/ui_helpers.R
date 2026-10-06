@@ -431,3 +431,53 @@ legend_swatch <- function(label, color) {
     label
   )
 }
+
+# Static plots are drawn at 96 dpi rather than Shiny's 72: the same
+# pixel size, with text a third larger. At 72 the axis text was about
+# 7 px on a desktop and 5-6 px on a phone.
+PLOT_RES <- 96
+
+# Height for one row per comparison, each as tall as its label: a long
+# name wraps over up to three lines (omicsCore::wrap_comparison()), and
+# a fixed row height let wrapped labels run into each other.
+label_rows_px <- function(comparisons, pad_px) {
+  lines <- omicsCore::comparison_label_lines(comparisons)
+  as.integer(sum(pad_px + 19L * lines))
+}
+
+# A run button that cannot be pressed again while its run is in flight,
+# the pattern the Differential and Integration buttons already had.
+# Enrichment's Re-run, "Enrich every comparison" and "Run global test"
+# stayed live through an 8 s GSEA, and a second press queued a second
+# run behind the first. `flag` is a reactiveVal the module keeps, so a
+# button re-rendered by renderUI mid-run comes back disabled too.
+set_button_busy <- function(id, busy, flag = NULL) {
+  if (!is.null(flag)) flag(busy)
+  tryCatch(if (busy) shinyjs::disable(id) else shinyjs::enable(id),
+           error = function(e) NULL)
+  invisible(busy)
+}
+
+disabled_if <- function(tag, busy) {
+  if (isTRUE(busy)) htmltools::tagAppendAttributes(tag, disabled = NA) else tag
+}
+
+# On a phone a plot is about 280 px wide, and at 96 dpi its titles and
+# legends no longer fit: the "Hits per comparison" legend and the PCA
+# group names ran off the right edge. Below NARROW_PLOT_PX the text is
+# set smaller and legends stack, rather than the figure being cut.
+NARROW_PLOT_PX <- 420
+
+fit_to_width <- function(output_id, p, session = shiny::getDefaultReactiveDomain()) {
+  w <- tryCatch(session$clientData[[paste0("output_", session$ns(output_id), "_width")]],
+                error = function(e) NULL)
+  if (!is.numeric(w) || !length(w) || w >= NARROW_PLOT_PX) return(p)
+  # Stacked only where a legend sits under the panel; one above it (up /
+  # down) fits on a line.
+  top <- identical(tryCatch(p$theme$legend.position, error = function(e) NULL), "top")
+  shrink <- ggplot2::theme(text = ggplot2::element_text(size = 9))
+  if (!top) shrink <- shrink + ggplot2::theme(legend.direction = "vertical")
+  if (inherits(p, "patchwork")) p & shrink
+  else if (inherits(p, c("gg", "ggplot"))) p + shrink
+  else p
+}

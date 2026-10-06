@@ -157,7 +157,7 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
       title = title,
       subtitle = paste(bundle$params$experiments, collapse = " vs "),
       x = xlab,
-      y = "-log10(adj_p_value)"
+      y = p_axis_label("adj_p_value")
     ) +
     theme_omics_labelled()
 

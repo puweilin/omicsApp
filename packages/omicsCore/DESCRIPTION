@@ -33,6 +33,7 @@ Imports:
     msigdbr,
     qs2
 Suggests:
+    BiocParallel,
     data.table,
     DESeq2,
     edgeR,

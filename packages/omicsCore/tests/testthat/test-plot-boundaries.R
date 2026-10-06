@@ -221,9 +221,9 @@ test_that("the figure states the cut it was drawn at", {
   cap <- function(p) ggplot2::ggplot_build(p)$plot$labels$caption
   # A screenshot outlives the session that produced it, so the cut has
   # to travel with the picture.
-  expect_match(cap(plot_volcano(b)), "adj_p_value < 0.05", fixed = TRUE)
+  expect_match(cap(plot_volcano(b)), "adjusted p < 0.05", fixed = TRUE)
   expect_match(cap(plot_volcano(b, effect_threshold = 1.5)),
-               "|effect| > 1.5", fixed = TRUE)
+               "|log2FC| > 1.5", fixed = TRUE)
   expect_match(cap(plot_volcano(b, p_threshold = NULL,
                                 effect_threshold = NULL)),
                "as recorded", fixed = TRUE)
@@ -260,7 +260,7 @@ test_that("the MA plot decides significance the same way the volcano does", {
   # disagreeing about the same data.
   expect_equal(unname(counts[["significant"]]), n_sig)
   expect_match(ggplot2::ggplot_build(plot_ma(b))$plot$labels$caption,
-               "adj_p_value < 0.05", fixed = TRUE)
+               "adjusted p < 0.05", fixed = TRUE)
 })
 
 test_that("the MA plot honours a supplied threshold", {

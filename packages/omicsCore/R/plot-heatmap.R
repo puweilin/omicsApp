@@ -132,7 +132,7 @@ resolve_heatmap_selection <- function(x, input, n_top, features) {
     list(
       mat = mat,
       meta = input$meta_df,
-      default_title = paste0("Top ", length(keep), " features by adj. p")
+      default_title = paste0("Top ", length(keep), " features by adjusted p")
     )
   } else {
     stop("`x` must be an `omics_input` or a `run_diff` analysis_bundle.")

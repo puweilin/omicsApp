@@ -66,6 +66,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     # A result that arrives after the comparisons it was asked about
     # were replaced is dropped (see run_epoch()).
     compare_epoch <- run_epoch()
+    compare_running <- shiny::reactiveVal(FALSE)
     shiny::observeEvent(diff_all(), {
       compare_epoch$bump()
       compare_bundle(NULL)
@@ -86,10 +87,11 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
         bslib::card_body(
           htmltools::tags$div(
             style = "display:flex;gap:12px;align-items:center;flex-wrap:wrap",
-            shiny::actionButton(session$ns("run_compare"),
-                                if (is.null(b)) "Enrich every comparison"
-                                else "Re-run for every comparison",
-                                class = "btn btn-sm btn-outline-primary"),
+            disabled_if(shiny::actionButton(session$ns("run_compare"),
+                                            if (is.null(b)) "Enrich every comparison"
+                                            else "Re-run for every comparison",
+                                            class = "btn btn-sm btn-outline-primary"),
+                        shiny::isolate(compare_running())),
             htmltools::tags$span(class = "muted", style = "font-size:12px",
                                  paste("Shared pathways sort to the top; an",
                                        "empty cell means the pathway was not",
@@ -124,6 +126,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                              effect_cutoff = thr$effect_cutoff))
       }
       my_run <- compare_epoch$start()
+      set_button_busy("run_compare", TRUE, compare_running)
       run_async(
         detached_call(
           function() do.call(omicsCore::compare_enrichment,
@@ -131,23 +134,25 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           bundle = b, args = args
         ),
         on_success = function(res) {
+          if (compare_epoch$is_last_started(my_run)) set_button_busy("run_compare", FALSE, compare_running)
           if (!compare_epoch$is_current(my_run)) return(invisible())
           compare_error(NULL)
           compare_bundle(res)
         },
         on_error = function(msg) {
+          if (compare_epoch$is_last_started(my_run)) set_button_busy("run_compare", FALSE, compare_running)
           if (compare_epoch$is_current(my_run)) compare_error(msg)
         },
         message = "Enriching every comparison..."
       )
     })
 
-    output$compare_plot <- shiny::renderPlot(alt = "Pathways enriched in each comparison, side by side", {
+    output$compare_plot <- shiny::renderPlot(res = PLOT_RES, alt = "Pathways enriched in each comparison, side by side", fit_to_width("compare_plot", {
       b <- compare_bundle()
       shiny::req(b)
       omicsCore::plot_enrichment_comparison(
         b, p_preference = input$show_p %||% "adjusted")
-    })
+    }))
 
     have_cp <- has_pkg("clusterProfiler")
 
@@ -212,6 +217,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
         enrich_bundle(NULL)
         return(invisible())
       }
+      set_button_busy("rerun", TRUE)
       run_async(
         # Detached for the same reason as the Differential view: a
         # closure defined here carries this module's whole scope to the
@@ -254,12 +260,14 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           thr = thr, org = organism()
         ),
         on_success = function(result) {
+          if (enrich_epoch$is_last_started(my_run)) set_button_busy("rerun", FALSE)
           if (!enrich_epoch$is_current(my_run)) return(invisible())
           enrich_error(NULL)
           is_demo(FALSE)
           enrich_bundle(result)
         },
         on_error = function(msg) {
+          if (enrich_epoch$is_last_started(my_run)) set_button_busy("rerun", FALSE)
           if (!enrich_epoch$is_current(my_run)) return(invisible())
           # The error, and nothing under it: the demo's pathways beneath
           # a failure notice read as the user's result.
@@ -438,9 +446,11 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           }
         ))
       }
-      bits <- sprintf("%s < %s", s$p_col, format(s$p_cutoff))
+      p_name <- switch(s$p_col, adj_p_value = "adjusted p", p_value = "p", s$p_col)
+      bits <- sprintf("%s < %s", p_name, format(s$p_cutoff))
       if (!is.null(s$effect_cutoff) && is.finite(s$effect_cutoff)) {
-        bits <- paste0(bits, sprintf(", |effect| \u2265 %.3f", s$effect_cutoff))
+        bits <- paste0(bits, sprintf(", |%s| \u2265 %.3f",
+                                     omicsCore::effect_label(diff_bundle()), s$effect_cutoff))
       }
       htmltools::tags$div(
         class = "muted", style = "font-size:12.5px;margin:2px 0 10px",
@@ -536,13 +546,13 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       if (is.null(v) || !is.finite(v) || v <= 0 || v > 1) 0.05 else v
     })
 
-    output$dot <- shiny::renderPlot(alt = "Dot plot of the most enriched pathways", {
+    output$dot <- shiny::renderPlot(res = PLOT_RES, alt = "Dot plot of the most enriched pathways", fit_to_width("dot", {
       b <- plot_bundle()
       shiny::req(b)
       omicsCore::plot_enrichment(b, view = "dot", top_n = 12L,
                                  p_preference = show_p(),
                                  p_cutoff = show_cutoff())
-    })
+    }))
 
     output$hits <- DT::renderDT({
       df <- table_data()
@@ -566,7 +576,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
         stringsAsFactors = FALSE
       )
       names(out)[names(out) == "P"] <-
-        if (identical(show_p(), "raw")) "p" else "adj.P"
+        if (identical(show_p(), "raw")) "p" else "adjusted p"
       # ORA has no enrichment score, and a direction only when it was
       # run on one direction; columns of NA said nothing.
       if (all(is.na(df$effect))) out$NES <- NULL
@@ -717,7 +727,7 @@ enrich_dot_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Pathway dotplot"),
       htmltools::tags$span(class = "card-sub",
-                           "top 12 by adj.P \u00B7 size = overlap")
+                           "top 12 by adjusted p \u00B7 size = overlap")
     ),
     bslib::card_body(
       shiny::plotOutput(ns("dot"), height = "420px")
@@ -730,7 +740,7 @@ enrich_hits_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Enriched sets"),
       htmltools::tags$span(class = "card-sub",
-                           "ranked by adj.P"),
+                           "ranked by adjusted p"),
       # Everything, not what the table happens to be showing: the CSV is
       # what gets opened in Excel a week later, and a file silently
       # truncated to one significance threshold is the kind of thing

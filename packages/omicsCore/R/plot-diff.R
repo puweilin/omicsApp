@@ -74,9 +74,10 @@ plot_volcano <- function(
       # it a reader has a two-coloured cloud and no way to know which
       # cut produced it -- and a screenshot outlives the session that
       # set the controls.
-      caption = threshold_caption(p_col, p_threshold, effect_threshold),
+      caption = threshold_caption(p_col, p_threshold, effect_threshold,
+                                effect_label(bundle)),
       x = volcano_xlab(bundle),
-      y = paste0("-log10(", p_col, ")")
+      y = p_axis_label(p_col)
     ) +
     theme_omicsCore()
 
@@ -163,7 +164,8 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL,
     ggplot2::labs(
       title = "MA plot",
       subtitle = volcano_subtitle(bundle),
-      caption = threshold_caption(p_col, p_threshold, effect_threshold),
+      caption = threshold_caption(p_col, p_threshold, effect_threshold,
+                                effect_label(bundle)),
       x = ma_xlab(bundle),
       y = volcano_xlab(bundle)
     ) +
@@ -226,6 +228,14 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
   mapping <- ggplot2::aes(x = .data$PC1, y = .data$PC2)
   if (!is.null(color_by)) mapping$colour <- ggplot2::aes(color = .data[[color_by]])$colour
   if (!is.null(shape_by)) mapping$shape  <- ggplot2::aes(shape = .data[[shape_by]])$shape
+  group_vals <- if (is.null(color_by)) NULL else scores[[color_by]]
+  redundant <- is.null(shape_by) && use_group_shape(group_vals)
+  if (redundant) mapping$shape <- ggplot2::aes(shape = .data[[color_by]])$shape
+  legend <- group_legend_scales(group_vals, redundant_shape = redundant)
+  if (!is.null(shape_by)) {
+    legend <- c(legend, list(ggplot2::scale_shape_discrete(
+      labels = function(x) wrap_label(x, width = 18L, max_lines = 3L))))
+  }
 
   ggplot2::ggplot(scores, mapping) +
     ggplot2::geom_point(size = 2.5, alpha = 0.9) +
@@ -234,6 +244,7 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
       x = sprintf("PC1 (%.1f%%)", var_pct[1L]),
       y = sprintf("PC2 (%.1f%%)", var_pct[2L])
     ) +
+    legend +
     theme_omicsCore()
 }
 
@@ -382,13 +393,21 @@ diff_significance <- function(df, p_col, p_threshold, effect_threshold) {
   sig
 }
 
-threshold_caption <- function(p_col, p_threshold, effect_threshold) {
+# Axis titles say "adjusted p", the words the controls use, not the
+# column name (adj_p_value) the value was read from.
+p_axis_label <- function(p_col) {
+  paste0("-log10(", switch(p_col, adj_p_value = "adjusted p", p_value = "p", p_col), ")")
+}
+
+threshold_caption <- function(p_col, p_threshold, effect_threshold,
+                              effect_name = "effect") {
   bits <- character(0)
   if (!is.null(p_threshold)) {
-    bits <- c(bits, sprintf("%s < %g", p_col, p_threshold))
+    p_name <- switch(p_col, adj_p_value = "adjusted p", p_value = "p", p_col)
+    bits <- c(bits, sprintf("%s < %g", p_name, p_threshold))
   }
   if (!is.null(effect_threshold)) {
-    bits <- c(bits, sprintf("|effect| > %g", effect_threshold))
+    bits <- c(bits, sprintf("|%s| > %g", effect_name, effect_threshold))
   }
   if (length(bits) == 0L) {
     return("significance as recorded on the result")
@@ -448,4 +467,37 @@ add_repel_layer <- function(df, x, y, label_col) {
       vjust = -0.6, na.rm = TRUE, inherit.aes = FALSE
     )
   }
+}
+
+#' Short name of a differential result's effect
+#'
+#' What the `effect` column of a result is, in the words the app, the
+#' plots and the report all use: `"log2FC"` for a group comparison,
+#' `"slope"` for a linear trend, `"rho"` for a rank correlation. One
+#' name, so a threshold set as "|log2FC| 0.26" is not described as
+#' "effect > 0.26" on the next card and "|effect| >= 0.263" on the
+#' next page.
+#'
+#' @param x An `analysis_bundle` from [run_diff()], or an `effect_type`
+#'   string from its result table.
+#' @return A length-one character string.
+#' @export
+#' @family diff
+#' @examples
+#' effect_label("log2FC")
+effect_label <- function(x) {
+  type <- if (is_analysis_bundle(x)) {
+    first_or_na(x$results$diff_result_df$effect_type)
+  } else {
+    first_or_na(as.character(x))
+  }
+  if (is.na(type)) return("log2FC")
+  switch(type,
+    log2FC = "log2FC",
+    log2FC_per_unit = "slope",
+    beta = "slope",
+    mean_diff = "mean difference",
+    correlation = "rho",
+    F_statistic = "F",
+    "effect")
 }

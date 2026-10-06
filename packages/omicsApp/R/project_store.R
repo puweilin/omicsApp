@@ -745,23 +745,61 @@ split_file_name <- function(name) {
 #' @param writer Function called with the project. Injected rather than
 #'   mocked so a test can count writes without depending on how the
 #'   test runner resolves namespace bindings.
+#' @param id The session's autosave id.
+#' @param delay_ms How long the project must stay unchanged before it is
+#'   written; 0 writes on every change.
+#' @param session The Shiny session, whose end flushes a pending write.
 #'
 #' @return Invisibly, the observer handle.
 #' @keywords internal
 #' @noRd
 wire_autosave <- function(current_project,
                           writer = function(p) store_autosave(p, id = id),
-                          id = NULL) {
-  # Reads `current_project` without writing it, so this cannot
-  # re-trigger itself.
-  invisible(shiny::observe({
-    proj <- current_project()
-    if (is.null(proj)) return()
+                          id = NULL,
+                          delay_ms = getOption("omicsApp.autosave_debounce_ms", 1500),
+                          session = shiny::getDefaultReactiveDomain()) {
+  write <- function(proj) {
     # `store_autosave()` already swallows its own failures, but the
     # invariant belongs here too: an observer that throws is destroyed,
     # so one unlucky write would silently switch autosaving off for the
     # rest of the session -- the failure mode this whole path exists to
     # prevent, arrived at by a different road.
     tryCatch(writer(proj), error = function(e) NULL)
-  }))
+  }
+  if (!isTRUE(delay_ms > 0)) {
+    # Reads `current_project` without writing it, so this cannot
+    # re-trigger itself.
+    return(invisible(shiny::observe({
+      proj <- current_project()
+      if (!is.null(proj)) write(proj)
+    })))
+  }
+
+  # One analysis changes the project several times in a row -- the
+  # differential result, then the enrichment it starts, then the
+  # integration -- and each change wrote the whole project again. The
+  # writes are coalesced: the project is saved once it has been still
+  # for `delay_ms`. A session that ends inside that window writes the
+  # last state as it closes, so coalescing never costs a change.
+  changed <- 0L
+  saved <- 0L
+  shiny::observe({
+    current_project()
+    changed <<- changed + 1L
+  })
+  settled <- shiny::debounce(current_project, delay_ms)
+  obs <- shiny::observe({
+    proj <- settled()
+    saved <<- changed
+    if (!is.null(proj)) write(proj)
+  })
+  if (!is.null(session)) {
+    session$onSessionEnded(function() {
+      if (changed > saved) {
+        proj <- shiny::isolate(current_project())
+        if (!is.null(proj)) write(proj)
+      }
+    })
+  }
+  invisible(obs)
 }

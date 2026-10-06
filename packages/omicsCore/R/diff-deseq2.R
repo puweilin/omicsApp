@@ -88,8 +88,12 @@ build_deseq_dataset <- function(input, count_mat, col_data, design) {
 # session, to create a `.Random.seed` that was not there before. The
 # stream is pinned for the fit and put back.
 deseq_with_dispersion_fallback <- function(dds) {
+  bp <- deseq2_bpparam()
   with_fixed_seed(1L, tryCatch(
-    DESeq2::DESeq(dds, quiet = TRUE),
+    with_deseq2_progress(
+      if (is.null(bp)) DESeq2::DESeq(dds, quiet = FALSE)
+      else DESeq2::DESeq(dds, quiet = FALSE, parallel = TRUE, BPPARAM = bp)
+    ),
     error = function(e) {
       msg <- conditionMessage(e)
       if (!grepl("dispersion", msg, ignore.case = TRUE)) stop(e)

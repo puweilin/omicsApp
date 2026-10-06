@@ -106,6 +106,7 @@ plot_missing_by_sample <- function(sample_df, upper = 1) {
   ggplot2::ggplot(df, ggplot2::aes(x = .data$missing_rate,
                                    y = .data$sample_id)) +
     ggplot2::geom_col(fill = MISSING_FILL, width = 0.7) +
+    ggplot2::scale_y_discrete(labels = function(x) truncate_pathway_name(x, 24L)) +
     ggplot2::scale_x_continuous(
       labels = scales::label_percent(),
       limits = c(0, upper),
@@ -216,8 +217,12 @@ plot_qc_pca <- function(bundle, color_by = NULL) {
 
   var_pct <- (pca$sdev^2) / sum(pca$sdev^2) * 100
 
+  group_vals <- if (is.null(color_by)) NULL else scores[[color_by]]
   mapping <- if (is.null(color_by)) {
     ggplot2::aes(x = .data$PC1, y = .data$PC2)
+  } else if (use_group_shape(group_vals)) {
+    ggplot2::aes(x = .data$PC1, y = .data$PC2,
+                 color = .data[[color_by]], shape = .data[[color_by]])
   } else {
     ggplot2::aes(x = .data$PC1, y = .data$PC2,
                  color = .data[[color_by]])
@@ -242,6 +247,7 @@ plot_qc_pca <- function(bundle, color_by = NULL) {
       x = sprintf("PC1 (%.1f%%)", var_pct[1L]),
       y = sprintf("PC2 (%.1f%%)", var_pct[2L])
     ) +
+    group_legend_scales(group_vals) +
     theme_omicsCore()
 }
 
@@ -267,6 +273,7 @@ plot_qc_connectivity <- function(bundle) {
                                fill = .data$is_outlier)) +
     ggplot2::geom_col() +
     ggplot2::scale_fill_manual(values = c(`TRUE` = "#C0392B", `FALSE` = "#2C3E99")) +
+    ggplot2::scale_x_discrete(labels = function(x) truncate_pathway_name(x, 20L)) +
     ggplot2::labs(
       title = "Sample connectivity",
       x = NULL,
@@ -340,8 +347,23 @@ theme_omicsCore <- function(base_size = 11, base_family = "") {
       panel.grid.minor = ggplot2::element_blank(),
       panel.grid.major = ggplot2::element_line(color = "#E5E7EB"),
       axis.line = ggplot2::element_line(color = "#9AA3AE"),
-      strip.text = ggplot2::element_text(face = "bold")
-    )
+      strip.text = ggplot2::element_text(face = "bold"),
+      # Titles from the plot's left edge, not the panel's: with long
+      # axis labels the panel starts half-way across and the title ran
+      # off the right side ("Hits per compar").
+      plot.title.position = "plot"
+    ) +
+    legend_key_spacing()
+}
+
+# Room between legend entries, so a label wrapped over three lines does
+# not run into the next one. The element is ggplot2 >= 3.5; older
+# versions do not know it and would refuse the theme.
+legend_key_spacing <- function() {
+  if (!"legend.key.spacing.y" %in% names(ggplot2::get_element_tree())) {
+    return(ggplot2::theme())
+  }
+  ggplot2::theme(legend.key.spacing.y = ggplot2::unit(5, "pt"))
 }
 
 # ---- depth (RNA-seq) ---------------------------------------------------

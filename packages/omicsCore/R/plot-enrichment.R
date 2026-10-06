@@ -177,7 +177,7 @@ plot_enrich_dot <- function(df, p_col) {
     # learnt one colour scale reads the other without relearning it.
     ggplot2::scale_color_gradient(low = omics_colors$scale_low,
                                   high = omics_colors$scale_high,
-                                  name = paste0("-log10(", p_col, ")")) +
+                                  name = p_axis_label(p_col)) +
     ggplot2::labs(
       title = "Enrichment",
       x = if (has_effect) "effect" else "overlap size",
@@ -213,7 +213,7 @@ plot_enrich_bar <- function(df, p_col) {
     ggplot2::guides(fill = "none") +
     ggplot2::labs(
       title = "Enrichment",
-      x = paste0("-log10(", p_col, ")"),
+      x = p_axis_label(p_col),
       y = NULL
     ) +
     theme_omics_labelled()
@@ -265,16 +265,7 @@ truncate_pathway_name <- function(x, max_chars = 45L) {
 }
 
 wrap_pathway_name <- function(x, width = 34L, max_lines = 3L) {
-  x <- as.character(x)
-  vapply(x, function(s) {
-    if (is.na(s) || !nzchar(s)) return(s)
-    lines <- strwrap(s, width = width)
-    if (length(lines) > max_lines) {
-      lines <- lines[seq_len(max_lines)]
-      lines[max_lines] <- paste0(lines[max_lines], "\u2026")
-    }
-    paste(lines, collapse = "\n")
-  }, character(1), USE.NAMES = FALSE)
+  wrap_label(x, width = width, max_lines = max_lines)
 }
 
 # Used by the enrichment and integration panels -- named for why, not

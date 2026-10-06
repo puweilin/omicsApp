@@ -205,18 +205,25 @@ plot_diff_contrasts <- function(
                                name = NULL) +
     ggplot2::scale_x_continuous(
       labels = function(x) abs(x),
-      expand = ggplot2::expansion(mult = 0.15)
+      expand = ggplot2::expansion(mult = 0.22)
     ) +
+    ggplot2::scale_y_discrete(labels = function(x) wrap_comparison(x)) +
     ggplot2::labs(
       title = "Hits per comparison",
       subtitle = sprintf("%s p < %s%s",
                          if (p_preference == "adjusted") "adjusted" else "raw",
                          format(p_cutoff),
                          if (is.null(effect_cutoff)) "" else
-                           sprintf(", |effect| \u2265 %s", format(effect_cutoff))),
-      x = "features (down \u2190 \u2192 up)", y = NULL
+                           sprintf("\n|%s| \u2265 %s", effect_label(bundle), format(effect_cutoff))),
+      # Words, not arrows: the arrows are outside the PDF device's
+      # encoding, so a PDF report warned (mbcsToSbcs) and dropped them.
+      x = "features, down | up", y = NULL
     ) +
-    theme_omics_labelled()
+    theme_omics_labelled() +
+    # Up/down above the bars rather than beside them: the panel shares
+    # its width with the comparison names already, and on a phone the
+    # side legend left the counts cut off at the right edge.
+    ggplot2::theme(legend.position = "top", legend.justification = "left")
 }
 
 #' The hits of every comparison, as sets
@@ -325,7 +332,7 @@ plot_diff_overlap <- function(
                          if (p_preference == "adjusted") "adjusted" else "raw",
                          format(p_cutoff),
                          if (is.null(effect_cutoff)) "" else
-                           sprintf(", |effect| \u2265 %s", format(effect_cutoff))),
+                           sprintf("\n|%s| \u2265 %s", effect_label(bundle), format(effect_cutoff))),
       x = NULL, y = "features in exactly\nthis combination") +
     theme_omics_labelled() +
     ggplot2::theme(axis.text.x = ggplot2::element_blank(),
@@ -344,7 +351,9 @@ plot_diff_overlap <- function(
                         show.legend = FALSE) +
     ggplot2::scale_color_manual(values = c(`TRUE` = "#333333", `FALSE` = "#DADADA")) +
     ggplot2::scale_y_discrete(labels = function(x) {
-      sprintf("%s (%d)", x, lengths(sets)[x])
+      # The count goes after the wrapping, so a long name cut short
+      # never takes its total with it.
+      sprintf("%s (%d)", wrap_comparison(x), lengths(sets)[x])
     }) +
     ggplot2::labs(x = NULL, y = NULL) +
     theme_omics_labelled() +
@@ -352,6 +361,35 @@ plot_diff_overlap <- function(
                    axis.ticks.x = ggplot2::element_blank(),
                    panel.grid = ggplot2::element_blank())
 
+  # The dot rows grow with their labels: a name wrapped over three lines
+  # needs three lines of height, or it runs into its neighbours.
+  n_lines <- sum(comparison_label_lines(set_names))
   patchwork::wrap_plots(top, dots, ncol = 1L,
-                        heights = c(2, max(1, 0.35 * length(set_names))))
+                        heights = c(2, max(1, 0.13 * length(set_names) + 0.22 * n_lines)))
+}
+
+#' @rdname wrap_label
+#' @details `wrap_comparison()` wraps a `"<case> vs <control>"` label with
+#'   each side on its own lines -- the case over at most two, then
+#'   `"vs <control>"` on one -- so a long case name cut short never takes
+#'   the control, half of what the label says, with it.
+#' @export
+wrap_comparison <- function(x, width = 22L) {
+  assert_count(width, "width")
+  x <- gsub("_vs_", " vs ", as.character(x), fixed = TRUE)
+  vapply(x, function(s) {
+    if (is.na(s) || nchar(s, type = "width") <= width) return(s)
+    sides <- strsplit(s, " vs ", fixed = TRUE)[[1L]]
+    if (length(sides) != 2L) return(wrap_label(s, width = width, max_lines = 3L))
+    paste0(wrap_label(sides[1L], width = width, max_lines = 2L), "\n",
+           wrap_label(paste("vs", sides[2L]), width = width, max_lines = 1L))
+  }, character(1), USE.NAMES = FALSE)
+}
+
+#' @rdname wrap_label
+#' @details `comparison_label_lines()` gives the number of lines
+#'   `wrap_comparison()` uses for each label, for sizing a plot to fit.
+#' @export
+comparison_label_lines <- function(x, width = 22L) {
+  lengths(strsplit(wrap_comparison(x, width = width), "\n", fixed = TRUE))
 }

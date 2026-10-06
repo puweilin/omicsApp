@@ -39,6 +39,7 @@ run_async <- function(func, on_success, on_error, message = "Running...",
 
   session <- shiny::getDefaultReactiveDomain()
   task <- async_task_new(session, message)
+  func <- with_step_file(func, task$step_file)
 
   # future() can throw before anything is submitted -- most reliably by
   # refusing to export globals over future.globals.maxSize. Thrown from
@@ -97,9 +98,12 @@ async_task_new <- function(session, message) {
   task$done <- FALSE
   task$future <- NULL
   task$on_cancel <- NULL
+  # Where the worker says which step it is on (see with_step_file()).
+  task$step_file <- tempfile("omics-step-", fileext = ".txt")
   task$finish <- function() {
     if (task$done) return(invisible(NULL))
     task$done <- TRUE
+    unlink(task$step_file)
     if (!is.null(task$ticker)) task$ticker$destroy()
     if (!is.null(session)) {
       tryCatch(shiny::removeNotification(task$id, session = session),
@@ -118,7 +122,7 @@ async_task_new <- function(session, message) {
   show <- function() {
     secs <- as.numeric(difftime(Sys.time(), started, units = "secs"))
     shiny::showNotification(
-      async_progress_ui(message, secs, task$id),
+      async_progress_ui(message, secs, task$id, step = read_step(task$step_file)),
       id = task$id, duration = NULL, closeButton = FALSE,
       type = "message", session = session)
   }
@@ -165,7 +169,7 @@ async_cancel <- function(task) {
   invisible(TRUE)
 }
 
-async_progress_ui <- function(message, secs, id) {
+async_progress_ui <- function(message, secs, id, step = NULL) {
   # 1 - exp(-t / 20): half-way at ~14 s, 90% at ~46 s, never 100%.
   frac <- 0.05 + 0.9 * (1 - exp(-secs / 20))
   htmltools::tags$div(
@@ -175,6 +179,9 @@ async_progress_ui <- function(message, secs, id) {
       htmltools::tags$strong(message),
       htmltools::tags$span(class = "muted", format_elapsed(secs))
     ),
+    if (length(step) && nzchar(step)) {
+      htmltools::tags$div(class = "async-progress-step muted", step)
+    },
     htmltools::tags$div(
       class = "async-progress-track",
       htmltools::tags$div(class = "async-progress-bar",
@@ -187,6 +194,47 @@ async_progress_ui <- function(message, secs, id) {
         id),
       "Cancel")
   )
+}
+
+# The engine reports the step it starts (omicsCore's report_progress(),
+# read through the `omicsCore.progress` option). A worker is another
+# process, so the step travels through a file: the worker writes it,
+# and the notification, redrawn every second, reads it. The file is
+# written whole and renamed into place, so a read never sees half a line.
+with_step_file <- function(func, step_file) {
+  detached_call(
+    function() {
+      options(omicsCore.progress = function(step) {
+        tmp <- paste0(step_file, ".tmp")
+        writeLines(step, tmp)
+        file.rename(tmp, step_file)
+      })
+      func()
+    },
+    func = func, step_file = step_file
+  )
+}
+
+read_step <- function(step_file) {
+  if (is.null(step_file) || !file.exists(step_file)) return(NULL)
+  tryCatch(readLines(step_file, n = 1L, warn = FALSE), error = function(e) NULL)
+}
+
+# The same steps for work done in the main process (QC), as a Shiny
+# progress panel: its messages go out while the computation still runs,
+# which an output or notification redrawn by the server would not.
+with_step_progress <- function(message, expr,
+                               session = shiny::getDefaultReactiveDomain()) {
+  if (is.null(session) || isTRUE(getOption("shiny.allowoutputreads", FALSE))) {
+    return(expr)
+  }
+  shiny::withProgress(message = message, value = 0.2, session = session, {
+    old <- options(omicsCore.progress = function(step) {
+      shiny::setProgress(detail = step, session = session)
+    })
+    on.exit(options(old), add = TRUE)
+    expr
+  })
 }
 
 format_elapsed <- function(secs) {

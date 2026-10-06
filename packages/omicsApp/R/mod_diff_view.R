@@ -203,6 +203,12 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       }, logical(1))]
     })
     design_mode <- shiny::reactive(input$design_mode %||% "groups")
+    # A trend's effect is a slope, not a fold change; the cutoff says so.
+    shiny::observeEvent(design_mode(), {
+      shiny::updateNumericInput(
+        session, "fc_cut",
+        label = if (identical(design_mode(), "continuous")) "|slope| cutoff" else "|log2FC| cutoff")
+    }, ignoreInit = TRUE)
 
     output$ui_design_mode <- shiny::renderUI({
       if (!length(continuous_cols())) return(NULL)
@@ -712,7 +718,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     p_col   <- shiny::reactive(
       if (identical(input$p_kind %||% "adj", "raw")) "p_value" else "adj_p_value")
     p_label <- shiny::reactive(
-      if (identical(input$p_kind %||% "adj", "raw")) "p" else "adj.P")
+      if (identical(input$p_kind %||% "adj", "raw")) "p" else "adjusted p")
 
     marked <- shiny::reactive({
       shiny::req(shown_bundle())
@@ -849,7 +855,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       top    <- if (nrow(sig) > 0L) sig[which.max(abs(sig$effect)), ] else NULL
       top_value <- if (is.null(top)) "\u2014" else as.character(top$feature_symbol[1L])
       top_trend <- if (is.null(top)) "no features pass thresholds"
-                   else sprintf("effect %+.2f \u00B7 %s %.2g",
+                   else sprintf("%s %+.2f \u00B7 %s %.2g", omicsCore::effect_label(b),
                                 top$effect[1L], p_label(), top[[p_col()]][1L])
       htmltools::tags$div(
         class = "stat-grid",
@@ -873,14 +879,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         stat_card(
           label  = sprintf("Up in %s", case_lbl),
           value  = up_n,
-          trend  = sprintf("effect > %.2f \u00B7 %s < %.3f",
+          trend  = sprintf("%s > %.2f \u00B7 %s < %.3g", omicsCore::effect_label(b),
                            fc_cut_d(), p_label(), fdr_cut_d()),
           accent = "up"
         ),
         stat_card(
           label  = sprintf("Down in %s", case_lbl),
           value  = down_n,
-          trend  = sprintf("effect < -%.2f \u00B7 %s < %.3f",
+          trend  = sprintf("%s < -%.2f \u00B7 %s < %.3g", omicsCore::effect_label(b),
                            fc_cut_d(), p_label(), fdr_cut_d()),
           accent = "down"
         ),
@@ -918,6 +924,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                        modeBarButtonsToRemove = c("lasso2d", "select2d"))
     })
 
+    # An empty card before the first run read as a broken one.
+    output$hits_empty <- shiny::renderUI({
+      if (!is.null(diff_bundle())) return(NULL)
+      htmltools::tags$p(class = "muted", style = "font-size:13px;margin:4px 0",
+                        "Run the analysis to see the features that pass the thresholds.")
+    })
+
     output$hits <- DT::renderDT({
       df <- marked()
       sig <- df[df$is_significant, , drop = FALSE]
@@ -930,7 +943,9 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         check.names = FALSE,
         stringsAsFactors = FALSE
       )
-      # The column is named for the p-value the mask was read from.
+      # The columns are named for what they hold: the p-value the mask
+      # was read from, and the effect in the words the cards use.
+      names(out)[2] <- omicsCore::effect_label(shown_bundle())
       names(out)[3] <- p_label()
       DT::datatable(
         out,
@@ -939,6 +954,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         options   = list(
           pageLength = 10,
           dom        = "ftip",
+          language   = list(emptyTable = "No feature passes the current thresholds."),
           scrollX    = TRUE,
           columnDefs = list(list(className = "dt-right", targets = 1:2))
         )
@@ -964,7 +980,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           htmltools::tags$div(
             class = "row-grid r-6-6",
             shiny::plotOutput(session$ns("contrast_plot"),
-                              height = paste0(90 + 42 * length(comparisons()), "px")),
+                              height = paste0(160 + label_rows_px(comparisons(), 20L), "px")),
             DT::DTOutput(session$ns("contrast_table"))
           ),
           # Which comparisons share their hits. The table's "also in
@@ -977,12 +993,12 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                                 selected = "any", inline = TRUE)
           ),
           shiny::plotOutput(session$ns("overlap_plot"),
-                            height = paste0(260 + 26 * length(comparisons()), "px"))
+                            height = paste0(270 + label_rows_px(comparisons(), 10L), "px"))
         )
       )
     })
 
-    output$overlap_plot <- shiny::renderPlot(alt = "Overlap of the significant features between comparisons", {
+    output$overlap_plot <- shiny::renderPlot(res = PLOT_RES, alt = "Overlap of the significant features between comparisons", fit_to_width("overlap_plot", {
       b <- diff_bundle()
       shiny::req(omicsCore::is_analysis_bundle(b), length(comparisons()) > 1L)
       omicsCore::plot_diff_overlap(
@@ -990,7 +1006,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         p_preference = if (identical(input$p_kind %||% "adj", "raw")) "raw" else "adjusted",
         effect_cutoff = fc_cut_d(),
         direction = input$overlap_dir %||% "any")
-    })
+    }))
 
     contrast_summary_df <- shiny::reactive({
       b <- diff_bundle()
@@ -1001,14 +1017,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         effect_cutoff = fc_cut_d())
     })
 
-    output$contrast_plot <- shiny::renderPlot(alt = "Number of up- and down-regulated features per comparison", {
+    output$contrast_plot <- shiny::renderPlot(res = PLOT_RES, alt = "Number of up- and down-regulated features per comparison", fit_to_width("contrast_plot", {
       b <- diff_bundle()
       shiny::req(omicsCore::is_analysis_bundle(b), length(comparisons()) > 1L)
       omicsCore::plot_diff_contrasts(
         b, p_cutoff = fdr_cut_d(),
         p_preference = if (identical(input$p_kind %||% "adj", "raw")) "raw" else "adjusted",
         effect_cutoff = fc_cut_d())
-    })
+    }))
 
     output$contrast_table <- DT::renderDT({
       s <- contrast_summary_df()
@@ -1029,6 +1045,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # downstream (enrichment, integration) can use it.
     anova_bundle <- shiny::reactiveVal(NULL)
     anova_error <- shiny::reactiveVal(NULL)
+    anova_running <- shiny::reactiveVal(FALSE)
 
     output$anova_card <- shiny::renderUI({
       if (length(levels_()) < 3L) return(NULL)
@@ -1045,9 +1062,10 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         bslib::card_body(
           htmltools::tags$div(
             style = "display:flex;gap:12px;align-items:center;flex-wrap:wrap",
-            shiny::actionButton(session$ns("run_anova"),
-                                if (is.null(b)) "Run global test" else "Re-run global test",
-                                class = "btn btn-sm btn-outline-primary"),
+            disabled_if(shiny::actionButton(session$ns("run_anova"),
+                                            if (is.null(b)) "Run global test" else "Re-run global test",
+                                            class = "btn btn-sm btn-outline-primary"),
+                        shiny::isolate(anova_running())),
             shiny::uiOutput(session$ns("anova_summary"), inline = TRUE)
           ),
           if (!is.null(anova_error())) {
@@ -1071,6 +1089,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (!method %in% c("limma", "edger", "deseq2")) method <- "auto"
       covariates <- input$covariates
       my_run <- anova_epoch$start()
+      set_button_busy("run_anova", TRUE, anova_running)
       run_async(
         detached_call(
           function() {
@@ -1082,11 +1101,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           covariates = if (length(covariates)) covariates else NULL
         ),
         on_success = function(bundle) {
+          if (anova_epoch$is_last_started(my_run)) set_button_busy("run_anova", FALSE, anova_running)
           if (!anova_epoch$is_current(my_run)) return(invisible())
           anova_error(NULL)
           anova_bundle(bundle)
         },
         on_error = function(msg) {
+          if (anova_epoch$is_last_started(my_run)) set_button_busy("run_anova", FALSE, anova_running)
           if (anova_epoch$is_current(my_run)) anova_error(msg)
         },
         message = "Running the global test..."
@@ -1243,6 +1264,7 @@ diff_omics_display <- function(t) {
 
 diff_params_card <- function(ns) {
   bslib::card(
+    class = "params-card",
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Parameters"),
       htmltools::tags$span(class = "card-sub",
@@ -1303,9 +1325,11 @@ diff_params_card <- function(ns) {
             choices = c("adjusted p" = "adj", "raw p" = "raw"),
             selected = "adj", inline = TRUE
           ),
+          # Ticks off: on a rail this narrow their labels ran together
+          # ("0.020.04"); the handle shows the value.
           shiny::sliderInput(
             ns("fdr_cut"), label = "p cutoff",
-            min = 0, max = 0.2, value = 0.05, step = 0.005
+            min = 0, max = 0.2, value = 0.05, step = 0.005, ticks = FALSE
           ),
           # A box, not a slider. The slider stepped 0.05, which cannot
           # express log2(1.2) = 0.263 -- so the fold change most often
@@ -1323,8 +1347,11 @@ diff_params_card <- function(ns) {
             value = FALSE, status = "primary", right = TRUE
           )
         ),
+        # Pinned to the bottom of the window while the rail scrolls: at
+        # the end of the parameters it sat at y = 1,470 on a 900 px
+        # screen, below the fold, under the controls it acts on.
         htmltools::tags$div(
-          style = "margin-top:8px",
+          class = "run-sticky",
           shiny::uiOutput(ns("run_button"))
         )
       )
@@ -1359,9 +1386,10 @@ diff_hits_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Top hits"),
       htmltools::tags$span(class = "card-sub",
-                           "ranked by |effect| within current thresholds")
+                           "largest changes first, within current thresholds")
     ),
     bslib::card_body(
+      shiny::uiOutput(ns("hits_empty")),
       DT::DTOutput(ns("hits"), fill = FALSE),
       htmltools::tags$div(
         style = "display:flex;gap:8px;margin-top:8px;flex-wrap:wrap",
