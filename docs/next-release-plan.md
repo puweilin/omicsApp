@@ -47,21 +47,72 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 术语统一、基因集表缓存、`fread` 读取 CSV（同时修复带引号表头的 P1 问题，见 2.1）、DESeq2 可选并行、
 自动保存合并写入。本节以下列表中 2.1 的"表头带引号且含分隔符的 CSV 崩溃"与 2.5 的"DESeq2 等长任务没有进度"随之完成。
 
+## 1.4 发布计划中全部 P1 完成情况（2026-10）
+
+第 2 节中所有 P1 条目均已完成（含此前已在第四轮完成、本次补标的 RDS 重新校验、恢复项目后视图回填、四项性能优化）。
+每项都有回归测试；两个包的全量测试见文末记录。要点如下：
+
+**导入（2.1）**
+- 非 UTF-8 文件：按字节识别编码（UTF-16 BOM → UTF-8 → GB18030/GBK → Windows-1252/Latin-1），转为 UTF-8 后读取，矩阵与样本表都适用，导入页提示所用编码。
+- Salmon / RSEM / kallisto：按列特征识别；新函数 `read_quant_files()` 合并多个样本文件（计数取 NumReads/expected_count/est_counts，有效长度存为 tximport 元数据，DESeq2/edgeR 自动使用长度校正），支持 tx2gene 汇总到基因（与 tximport 算法一致，不依赖 tximport 包）；导入页可一次选择多个文件；导出脚本用 `read_quant_files()` 重读归档的原文件。
+- 汇总列（Total、Mean、Sum、SD 等）按列名或"等于其他列的行和/行均值"识别并剔除。
+- RNA-seq 数值尺度：整数 → 计数；列和约 1e6 → TPM；有负值或最大值 < 30 → log 尺度；其余 → FPKM。导入页显示判断依据，可修改；非计数数据不提供 DESeq2/edgeR。
+- 上传的 `.rds` 先做与不可信项目相同的"只含数据"结构检查。
+
+**QC（2.2）**
+- 新增留一法（leave-one-out）离群检测：比较每个样本与最近邻样本的距离和其余样本的同一分布（中位数/MAD），4 个样本即可使用；模拟中干净数据误报 0–1%，明显异常样本检出 ≥ 86–100%。加入默认的"全部方法"，其他三种方法结果不变。
+- 按组缺失率过滤：`missing_filter = "any_group"`（至少一组满足）/ `"all_groups"`（每组都满足），默认仍为全局；界面可选，导出脚本可复现。
+- 打开/恢复项目时显示保存的 QC 结果并恢复其参数，只有参数改变时才重算。
+
+**差异分析（2.3）**
+- 新增统一的带符号统计量列 `signed_stat`（limma t、DESeq2 Wald、edgeR sign(logFC)·√F、t 检验/线性模型 t），GSEA 排序优先使用；旧结果兼容。
+- edgeR 全局检验使用与两组比较相同的 tximport 长度校正（DESeq2 本已使用）。
+- 配对 t 检验按每个对比单独配对（单个对比也一样），并说明每个对比使用/剔除了哪些配对。
+
+**富集与整合（2.4）**
+- ORA 默认上调、下调分别富集（各自校正，结果中注明来自哪一组），合并作为可选项；旧结果与脚本含义不变。
+- 多数据库时可选跨库 BH 校正（`p_adjust_scope = "all"`）；界面目前只选单个数据库，故只在核心函数与脚本中提供。
+- ActivePathways 使用方向性方法（DPM，要求两层方向一致），结果给出每条通路在两层中的方向及是否一致。
+- 物种：新增 `enrichment_species()`（人、小鼠、大鼠、斑马鱼、果蝇、酵母、线虫，及 msigdbr 支持的其他物种），使用 msigdbr 的直系同源映射；基因名大小写不匹配但忽略大小写匹配良好时自动忽略大小写并提示。
+
+**Shiny 应用（2.5）**
+- 同一组学类型可以有多个图层：导入时填写图层名（默认组学类型）；同名时可"替换"或"保留两者"（新图层命名为 `<名称>_2`）。所有结果记录所属图层（新函数 `bundle_layer()`），各视图、导出脚本按图层而非组学类型匹配；替换/删除图层只清除该图层的结果。
+- 结果过期提示：差异页、富集页在控件（或差异阈值）改变后提示"结果对应之前的设置，请重新运行"；整合页随输入自动重算、QC 页实时计算，不会出现过期结果。
+
+**部署（2.7）**
+- nginx 只允许 `ADMIN_ALLOW_CIDR` 访问 Keycloak 管理端点、ShinyProxy `/admin`、`/actuator` 等；应用端口只绑定本机。
+- 容器加固：ShinyProxy 支持的内存/CPU 限制、非特权、专用网络；镜像去除所有 setuid/setgid 与文件能力，进程数上限；Keycloak/Postgres 服务 no-new-privileges、去除能力、pids/内存/CPU 限制。ShinyProxy 的 Docker 后端不支持只读根文件系统、cap-drop 等选项，已在 README 说明替代方案（主机级 `daemon.json`）。
+- 出站限制：`egress.sh` + systemd 单元阻止应用容器网络新建出站连接。
+- 日志持久化与轮转，并纳入备份。
+- 回滚：镜像标签为 `版本-提交号`，不再使用可变标签；`rollback.sh <tag>` 一键切换；基础镜像与 Postgres 按 digest 固定（`pin_base_digests.sh` 维护锁文件；Keycloak 因网络限制暂未固定，README 有 TODO）。
+- `.omp` 项目文件记录格式版本，`load_project()` 按版本链执行迁移。
+- 项目文件签名：保存时附加 HMAC-SHA256（密钥来自 `OMICSAPP_SIGNING_KEY` 或数据目录中自动生成的密钥），打开前验证；未签名或被篡改的文件被拒绝；首次运行时为通过结构检查的旧文件补签名。
+
+**打包（2.8）**
+- limma、clusterProfiler、msigdbr 移到 Suggests（调用处均已有安装检查，缺 limma 时 `auto` 退回 t 检验）；删除未使用的 Suggests（here、ggpubr、tximport、GenomicFeatures；应用中的 GSVA、fgsea、enrichplot、ComplexHeatmap、circlize、ggrepel、knitr）。
+- 两个包版本号 0.2.0，新增 NEWS.md，README 更新，新增导出函数 `shiny_app()`，`inst/app/app.R` 不再使用 `:::`；删除误提交的文件。
+
+**已知限制 / 后续**
+- 多数据库跨库校正尚无界面入口；KEGG 在线刷新只支持人/小鼠；部署预热只包含人/小鼠基因集。
+- 留一法离群检测不能发现"两组之间互换"的样本；单样本组可能被标为离群（仍保留）。
+- 项目只保存一个差异结果槽位：在两个图层上分别做差异分析时，项目中保留最近一次。
+- 部署改动无法在本环境中对真实 nginx/Docker/ShinyProxy 验证，需要在服务器上执行 README 中的检查步骤。
+
 ---
 
-## 2. 已知问题（确认但未修复）
+## 2. 已知问题清单（✅ = 已完成）
 
 ### 2.1 导入
 | 级别 | 问题 | 建议 |
 |---|---|---|
 | P0 ✅ | 样本在行、特征在列的表（如 Olink NPX 宽表）方向识别置信度默认 0.4，会被转置读入且无提示 | 置信度 < 0.6 或首列像样本名时在导入页要求确认方向 |
 | P0 ✅ | 全数值的元数据 sheet 可能被识别成表达矩阵，压过真正的矩阵 sheet | 对行/列很少的 sheet 降权；多个候选时让用户选择 |
-| P1 | CP1252/GBK 编码的 CSV 直接崩溃 | 依次尝试 UTF-8 → 本地编码 → latin1，报告使用的编码 |
+| P1 ✅ | CP1252/GBK 编码的 CSV 直接崩溃 | 依次尝试 UTF-8 → 本地编码 → latin1，报告使用的编码 |
 | P1 ✅ | 表头带引号且含分隔符的 CSV 崩溃（自写的 `strsplit` 解析） | 改用 `utils::count.fields()` / `data.table::fread()` 解析表头 |
-| P1 | 单样本的 Salmon / RSEM / kallisto 文件被读成 4 个"样本"（各列） | 识别这些格式，支持多文件合并（tximport） |
-| P1 | `Total`/`Mean` 等汇总**列**被当作样本（汇总行已处理） | 与汇总行同样识别并剔除 |
-| P1 | `infer_assay_type()` 对 RNA-seq 永远返回 `raw_count`；非整数（TPM、log 值）也被当作计数 | 依据整数性、取值范围、负值判断，并在导入页确认 |
-| P1 | RDS 导入的 `omics_input` 不重新校验 | 走 `validate_omics_input()` |
+| P1 ✅ | 单样本的 Salmon / RSEM / kallisto 文件被读成 4 个"样本"（各列） | 识别这些格式，支持多文件合并（tximport） |
+| P1 ✅ | `Total`/`Mean` 等汇总**列**被当作样本（汇总行已处理） | 与汇总行同样识别并剔除 |
+| P1 ✅ | `infer_assay_type()` 对 RNA-seq 永远返回 `raw_count`；非整数（TPM、log 值）也被当作计数 | 依据整数性、取值范围、负值判断，并在导入页确认 |
+| P1 ✅ | RDS 导入的 `omics_input` 不重新校验 | 走 `validate_omics_input()` |
 | P2 | 不支持 `.gz`、`.xlsm`、`SummarizedExperiment`、`DESeqDataSet`、小鼠 ENSMUSG、`_PAR_Y` 后缀 | 逐项补充读取器与 ID 映射 |
 | P2 | `winsorize_counts()` 会把"开/关"型基因压成 0，并产生非整数 | 仅对表达基因、按整数截断 |
 | P2 | MinProb 在特征很少的数据上报错或无效 | 回退到 MinDet 并提示 |
@@ -69,27 +120,27 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 ### 2.2 QC
 | 级别 | 问题 | 建议 |
 |---|---|---|
-| P1 | 样本 ≤ 10 时 z 分数离群检测不可能触发（本轮已加说明，但没有替代方法） | 小样本用稳健方法：`rrcov::PcaHubert` 或基于留一法的 Grubbs 型检验 |
-| P1 | 缺失率过滤是全局的，不按组 | 增加"至少一组中 ≥ x% 有值"的过滤（蛋白组标准做法） |
-| P1 | QC 视图每次切换图层都用默认参数重算，覆盖恢复项目里保存的 QC 结果 | 有保存结果时先展示保存的结果，参数改变后再重算 |
+| P1 ✅ | 样本 ≤ 10 时 z 分数离群检测不可能触发（本轮已加说明，但没有替代方法） | 小样本用稳健方法：`rrcov::PcaHubert` 或基于留一法的 Grubbs 型检验 |
+| P1 ✅ | 缺失率过滤是全局的，不按组 | 增加"至少一组中 ≥ x% 有值"的过滤（蛋白组标准做法） |
+| P1 ✅ | QC 视图每次切换图层都用默认参数重算，覆盖恢复项目里保存的 QC 结果 | 有保存结果时先展示保存的结果，参数改变后再重算 |
 | P2 | log2 归一化没有中位数对齐选项 | `normalize_omics(method = "log2", center = "median")` |
 
 ### 2.3 差异分析
 | 级别 | 问题 | 建议 |
 |---|---|---|
-| P1 | edgeR 结果的 `statistic` 是无符号 F，与 limma 的 t、DESeq2 的 Wald 含义不同 | 结果表增加带符号统计量列（GSEA 已在内部处理） |
-| P1 | 全局检验（edgeR/DESeq2）未使用 tximport offset | 与两组比较一致处理 |
-| P1 | 多个处理组时配对 t 检验要求过严 | 每个对比单独配对 |
+| P1 ✅ | edgeR 结果的 `statistic` 是无符号 F，与 limma 的 t、DESeq2 的 Wald 含义不同 | 结果表增加带符号统计量列（GSEA 已在内部处理） |
+| P1 ✅ | 全局检验（edgeR/DESeq2）未使用 tximport offset | 与两组比较一致处理 |
+| P1 ✅ | 多个处理组时配对 t 检验要求过严 | 每个对比单独配对 |
 | P2 | DESeq2 连续变量分析没有测试覆盖 | 补测试 |
 
 ### 2.4 富集与整合
 | 级别 | 问题 | 建议 |
 |---|---|---|
 | P0 ✅ | 整合分析导出脚本不完整：`cor_method`、`min_samples`、阈值、数据库等方法参数丢失；`sample_link` 未写出；伴随层的差异分析只在会话缓存里，脚本不可重现；作图代码总是写 dual_volcano | 整合 bundle 记录全部方法参数与伴随差异 bundle；脚本按方法生成对应图 |
-| P1 | ORA 默认"both"把上调下调合并 | 默认分别做上/下调，合并作为选项 |
-| P1 | 多数据库同时富集时没有跨库多重校正 | 提供跨库 BH 选项 |
-| P1 | ActivePathways 的结果没有方向（只说"显著"） | 使用 directional ActivePathways（`merge_method = "DPM"`） |
-| P1 | 非人物种依赖基因符号大小写，没有直系同源映射 | 引入 `msigdbr` 物种映射或 `babelgene` |
+| P1 ✅ | ORA 默认"both"把上调下调合并 | 默认分别做上/下调，合并作为选项 |
+| P1 ✅ | 多数据库同时富集时没有跨库多重校正 | 提供跨库 BH 选项 |
+| P1 ✅ | ActivePathways 的结果没有方向（只说"显著"） | 使用 directional ActivePathways（`merge_method = "DPM"`） |
+| P1 ✅ | 非人物种依赖基因符号大小写，没有直系同源映射 | 引入 `msigdbr` 物种映射或 `babelgene` |
 | P2 | 蛋白—基因匹配只按 symbol，同一基因的多个蛋白异构体只保留一个 | 引入 UniProt ↔ Gene 映射表与 feature_link |
 | P2 | GSEA 未暴露 `eps` / `nPermSimple` | 透传参数 |
 
@@ -98,19 +149,19 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 |---|---|---|
 | P0 ✅ | 上传文件同步解析、无大小上限（xlsx/gzip 炸弹可拖垮会话） | `shiny.maxRequestSize` 分级上限；解析放到 future；解压后大小检查 |
 | P0 ✅ | 同一用户两个浏览器标签共用一个自动保存文件，互相覆盖 | 自动保存按会话/标签区分，恢复时让用户选 |
-| P1 | 打开或恢复项目后，各视图不从保存的结果重建（需要重新运行） | 视图启动时从 `project$bundles` 回填（rehydrate），并显示"已恢复"横幅 |
-| P1 | 一个组学类型只能有一个图层（图层名 = omics_type） | 允许多个同类型图层（如两批蛋白组），图层名由用户指定 |
-| P1 | 结果过期没有状态提示（改了参数但未重跑） | 控件变化后标记"结果对应旧参数" |
+| P1 ✅ | 打开或恢复项目后，各视图不从保存的结果重建（需要重新运行） | 视图启动时从 `project$bundles` 回填（rehydrate），并显示"已恢复"横幅 |
+| P1 ✅ | 一个组学类型只能有一个图层（图层名 = omics_type） | 允许多个同类型图层（如两批蛋白组），图层名由用户指定 |
+| P1 ✅ | 结果过期没有状态提示（改了参数但未重跑） | 控件变化后标记"结果对应旧参数" |
 | P1 ✅ | DESeq2 等长任务没有进度 | 分阶段进度（离散度/拟合/检验） |
 | P2 | QC 参数修改无防抖，大数据集上每动一次滑块就重算 | `debounce()` |
 
 ### 2.6 性能（实测 8000×60 蛋白 / 30000×60 RNA）
 | 级别 | 热点 | 建议（已验证的加速） |
 |---|---|---|
-| P1 | 项目文件 122 MB，保存 2 秒：DESeqDataSet（57 MB）与 DGEGLM（40 MB）模型对象随项目保存 | 保存时不存模型对象或只存必要部分 → 31 MB，快 6 倍 |
-| P1 | limma 连续变量分析逐特征 `lm` + `cor.test`：8.5 秒 | 闭式解，约 40 倍 |
-| P1 | t 检验 / lm 逐特征循环：0.7 秒 / 8.4 秒 | 向量化（t 检验 0.014 秒） |
-| P1 | QC 与 PCA 图每次都做完整 `prcomp`：RNA 5–7 秒 | Gram 矩阵特征分解（17 倍）或 `irlba`，并把得分缓存进 QC bundle |
+| P1 ✅ | 项目文件 122 MB，保存 2 秒：DESeqDataSet（57 MB）与 DGEGLM（40 MB）模型对象随项目保存 | 保存时不存模型对象或只存必要部分 → 31 MB，快 6 倍 |
+| P1 ✅ | limma 连续变量分析逐特征 `lm` + `cor.test`：8.5 秒 | 闭式解，约 40 倍 |
+| P1 ✅ | t 检验 / lm 逐特征循环：0.7 秒 / 8.4 秒 | 向量化（t 检验 0.014 秒） |
+| P1 ✅ | QC 与 PCA 图每次都做完整 `prcomp`：RNA 5–7 秒 | Gram 矩阵特征分解（17 倍）或 `irlba`，并把得分缓存进 QC bundle |
 | P2 | DESeq2 24 秒、edgeR 8.8 秒 | 预过滤（DESeq2 → 13 秒）、`glmGamPoi` |
 | P2 | QC bundle 复制了一份 `cleaned_input`（25 MB） | 只存过滤/插补记录，按需重建 |
 
@@ -119,17 +170,17 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 |---|---|---|
 | P0 ✅ | 备份与生产在同一主机；`rsync --delete` 镜像没有历史版本；`pg_dump` 无 `pipefail`，失败时会覆盖好的备份；无告警；基因集卷、`app.yml`、TLS、Keycloak 配置未备份 | 异地、带版本保留的备份；`set -o pipefail`；失败告警；补齐备份清单并定期恢复演练 |
 | P0 ✅ | CI 用最新 R-release 测试，而生产镜像是 R 4.4.2 / Bioconductor 3.20 快照；CI 从不构建 Dockerfile | CI 在生产镜像中跑测试，PR 上构建镜像 |
-| P1 | `/auth/admin` 在局域网可访问；容器无 `no-new-privileges`、pids 限制、出站限制；日志未持久化 | 反向代理屏蔽管理端点；容器加固；日志落盘/集中 |
-| P1 | 无回滚：镜像标签可变、基础镜像按标签引用、`.omp` 格式无迁移钩子 | 不可变标签 + digest 固定；`load_project()` 版本迁移 |
-| P1 | `load_project()` 反序列化不可信的 qs2 文件 | 只加载本服务写出的文件（签名/哈希），上传的项目先校验结构 |
+| P1 ✅ | `/auth/admin` 在局域网可访问；容器无 `no-new-privileges`、pids 限制、出站限制；日志未持久化 | 反向代理屏蔽管理端点；容器加固；日志落盘/集中 |
+| P1 ✅ | 无回滚：镜像标签可变、基础镜像按标签引用、`.omp` 格式无迁移钩子 | 不可变标签 + digest 固定；`load_project()` 版本迁移 |
+| P1 ✅ | `load_project()` 反序列化不可信的 qs2 文件 | 只加载本服务写出的文件（签名/哈希），上传的项目先校验结构 |
 | P2 | 缺 HSTS/安全头/限流；CI 只在 main 触发、单一 OS/R 版本、42 分钟；无 lint/覆盖率/shellcheck/hadolint；actions 未固定 SHA；19 个部署契约测试与 8 个 hygiene 测试在 check 下被跳过；性能/模糊测试从不运行 | 逐项补齐；性能与 fuzz 放到 nightly |
 
 ### 2.8 打包与可维护性
 | 级别 | 问题 | 建议 |
 |---|---|---|
-| P1 | limma、clusterProfiler（约 120 个依赖）、msigdbr 在 Imports，与 README 所说"可选"不符 | 移到 Suggests，通过 `ensure_*()` 按需提示安装 |
-| P1 | 未使用的 Suggests（here、ggpubr、tximport、GenomicFeatures；app 中 GSVA、fgsea、enrichplot、ComplexHeatmap 等） | 清理 |
-| P1 | 版本号仍是 0.0.0.9000；README 停留在 "Phase 0"；`omicsApp-package.Rd` 过时；`inst/app/app.R` 使用 `:::` | 发布 v0.2.0 时统一更新 |
+| P1 ✅ | limma、clusterProfiler（约 120 个依赖）、msigdbr 在 Imports，与 README 所说"可选"不符 | 移到 Suggests，通过 `ensure_*()` 按需提示安装 |
+| P1 ✅ | 未使用的 Suggests（here、ggpubr、tximport、GenomicFeatures；app 中 GSVA、fgsea、enrichplot、ComplexHeatmap 等） | 清理 |
+| P1 ✅ | 版本号仍是 0.0.0.9000；README 停留在 "Phase 0"；`omicsApp-package.Rd` 过时；`inst/app/app.R` 使用 `:::` | 发布 v0.2.0 时统一更新 |
 | P2 | 模块服务器过大（diff 约 1100 行、import、integration 各 650+ 行） | 按卡片拆分子模块 |
 | P2 | `%||%` 定义了 8 次；各后端的设计矩阵准备与 8 个 standardize 函数大量重复 | 抽公共工具函数 |
 | P2 | 测试 `setup.R` 依赖 `load_all`，与安装后测试耦合 | 测试只依赖已安装包 |
