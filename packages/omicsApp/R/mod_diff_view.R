@@ -490,8 +490,48 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       anova_bundle(NULL)
     }, ignoreInit = TRUE)
 
+    # The settings a result answers. Read with the same fallbacks do_run()
+    # uses, so a control that has not rendered yet counts as its default
+    # and the comparison below does not flag a result as out of date
+    # merely because the page is still drawing.
+    settings_now <- shiny::reactive({
+      d <- default_contrast()
+      mode <- design_mode()
+      common <- list(layer = input$layer %||% "", mode = mode,
+                     method = input$method %||% "auto",
+                     covariates = sort(as.character(input$covariates)))
+      if (identical(mode, "continuous")) {
+        return(c(common, list(
+          col = input$continuous_col %||% continuous_cols()[1L] %||% "",
+          model = input$continuous_model %||% "linear")))
+      }
+      control <- input$control %||% d$control
+      cmode <- input$contrast_mode %||% "control"
+      custom <- if (identical(cmode, "custom")) {
+        x <- trimws(strsplit(input$custom_contrasts %||% "", "\n")[[1L]])
+        x[nzchar(x)]
+      }
+      c(common, list(
+        group_col = input$group_col %||% d$group_col %||% "",
+        control = control %||% "",
+        case = sort(setdiff(input$case %||% d$case, control)),
+        paired = input$paired_col %||% "",
+        contrast_mode = cmode, custom = custom))
+    })
+    # What the result on screen was computed with, or, for a result a
+    # project brought back, the controls as they stood when it was shown.
+    ran_with <- shiny::reactiveVal(NULL)
+    # The controls moved since the result was computed: the volcano and
+    # the table still answer the old question until Re-run is pressed,
+    # and nothing on screen said so.
+    settings_changed <- shiny::reactive({
+      !is.null(diff_bundle()) && !is.null(ran_with()) &&
+        !identical(settings_now(), ran_with())
+    })
+
     do_run <- function() {
       a <- active()
+      snap <- shiny::isolate(settings_now())
       if (is.null(a$input)) {
         diff_error("This project has no layers to analyse.")
         return(invisible())
@@ -571,6 +611,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           if (diff_epoch$is_last_started(my_run)) set_busy(FALSE)
           if (!diff_epoch$is_current(my_run)) return(invisible())
           diff_error(NULL)
+          ran_with(snap)
           diff_bundle(bundle)
         },
         on_error = function(msg) {
@@ -586,6 +627,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     }
 
     run_continuous <- function(a, method, covariates) {
+      snap <- shiny::isolate(settings_now())
       col <- input$continuous_col %||% continuous_cols()[1L]
       if (is.null(col) || is.na(col)) {
         diff_error("Pick a numeric column to test for a trend.")
@@ -613,6 +655,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           if (diff_epoch$is_last_started(my_run)) set_busy(FALSE)
           if (!diff_epoch$is_current(my_run)) return(invisible())
           diff_error(NULL)
+          ran_with(snap)
           diff_bundle(bundle)
         },
         on_error = function(msg) {
@@ -685,6 +728,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       }
       diff_epoch$bump()
       diff_error(NULL)
+      ran_with(shiny::isolate(settings_now()))
       diff_bundle(b)
       a <- proj$bundles$anova
       if (!is.null(a) && identical(a$input_info$omics_type, b$input_info$omics_type)) {
@@ -806,6 +850,12 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                  kind   = "error",
                  technical = if (!plain) err)
         )
+      }
+      if (isTRUE(settings_changed()) && is.null(err)) {
+        tagged <- htmltools::tagAppendChild(tagged, notice(
+          "The settings have changed since this result was computed",
+          "The plots and tables below still show the previous result. Press Re-run to update them.",
+          kind = "warn"))
       }
       # What the engine said about the result: an ignored covariate, a
       # scale conversion, genes too low to test.
