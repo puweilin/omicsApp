@@ -1,0 +1,38 @@
+# Rotation for the omicsApp logs that nothing else rotates.
+#
+#   sudo cp deploy/logrotate/omicsapp /etc/logrotate.d/omicsapp
+#
+# Not here, because they rotate already: ShinyProxy's own log (Spring
+# Boot rotates /var/log/shinyproxy/shinyproxy.log, see logging.logback in
+# application.yml), nginx's (/var/log/nginx/*.log, by the distribution's
+# logrotate), and Docker's per-container logs (deploy/docker/daemon.json
+# and the compose file's logging options).
+#
+# backup.sh copies these directories into every snapshot, so what is
+# rotated away here is still in the backups for their retention period.
+
+# One file per app session, written by ShinyProxy (container-log-path).
+# copytruncate, because ShinyProxy keeps a running session's file open;
+# maxage removes the files of sessions long finished.
+/var/log/shinyproxy/containers/*.log {
+    weekly
+    rotate 8
+    maxsize 50M
+    maxage 90
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+
+# The backup and gene-set refresh jobs (deploy/cron/omicsapp-backup and
+# the README's omicsapp-genesets line).
+/var/log/omicsapp-backup.log /var/log/omicsapp-genesets.log {
+    monthly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+}

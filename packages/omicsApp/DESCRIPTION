@@ -28,7 +28,8 @@ Imports:
     shinyWidgets,
     shinyjs,
     promises,
-    future
+    future,
+    openssl
 Remotes:
     omicsCore=puweilin/omicsApp/packages/omicsCore
 Suggests:

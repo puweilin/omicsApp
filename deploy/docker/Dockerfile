@@ -9,7 +9,15 @@
 # steps: system deps, then CRAN, then Bioconductor, then the gene-set
 # prewarm, and only then the two packages, which change every commit.
 
-FROM bioconductor/bioconductor_docker:RELEASE_3_20
+# The base image by digest as well as tag. The tag is for the reader; the
+# digest is what Docker pulls, so a rebuild next year starts from the
+# bytes this one did rather than from whatever the tag points at by then.
+# deploy/scripts/pin_base_digests.sh resolves it and records it in
+# deploy/docker/base-digests.lock; test-deploy-contract.R fails if the two
+# disagree. Override for an experiment, not for a deployment:
+#   docker build --build-arg BASE_IMAGE=bioconductor/bioconductor_docker:RELEASE_3_21 ...
+ARG BASE_IMAGE=bioconductor/bioconductor_docker:RELEASE_3_20@sha256:5053f59de1c1a79b5a05d820ba722bae62ded0c1042e547189aa0226f111ea7e
+FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.source="https://github.com/puweilin/omicsApp"
 LABEL org.opencontainers.image.description="Multi-omics analysis web app (omicsCore + omicsApp)"
@@ -64,7 +72,7 @@ RUN R -q -e 'pkgs <- c( \
       "tibble","dplyr","stringr","readxl","openxlsx","jsonlite","scales", \
       "rlang","msigdbr","qs2", \
       "ggrepel","patchwork","circlize","knitr","rmarkdown", \
-      "imputeLCMD","ActivePathways","pkgload","data.table"); \
+      "imputeLCMD","ActivePathways","pkgload","data.table","openssl"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("CRAN packages failed to install: ", \
@@ -246,9 +254,33 @@ RUN R -q -e 'p <- Sys.getenv("R_PROFILE", unset = file.path(R.home("etc"), "Rpro
       cat("\noptions(omicsCore.max_unpacked_mb = 300)\n", file = p, append = TRUE)' \
  && R -q --no-echo -e 'stopifnot(identical(getOption("omicsCore.max_unpacked_mb"), 300))'
 
+# No way up from the app's user. ShinyProxy cannot pass --cap-drop or
+# --security-opt no-new-privileges to the containers it starts (see the
+# confinement note in application.yml), so the image makes them moot
+# instead: the process runs unprivileged, and with every setuid/setgid
+# bit and file capability removed there is no binary left that would
+# hand it root or a capability -- su, passwd, mount, ping and friends
+# become ordinary programs. The check after it fails the build if any
+# survived.
+RUN find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod ug-s {} + \
+ && if command -v getcap >/dev/null 2>&1; then \
+      getcap -r / 2>/dev/null | awk '{print $1}' | xargs -r setcap -r; fi \
+ && left="$(find / -xdev -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null)" \
+ && if [ -n "$left" ]; then echo "setuid/setgid files remain: $left"; exit 1; fi
+
 USER omics
 WORKDIR /home/omics
 EXPOSE 3838
 
 # host must be 0.0.0.0 for ShinyProxy to reach the container.
-CMD ["R", "-q", "-e", "omicsApp::launch(host = '0.0.0.0', port = 3838, launch.browser = FALSE, workers = 2)"]
+#
+# Through bash for one line before R: a cap on how many processes the
+# app's user may run, in place of the --pids-limit ShinyProxy cannot set.
+# A fork bomb -- or a runaway parallel back-end -- then fails to fork
+# rather than exhausting the host's process table. The limit is per uid
+# (RLIMIT_NPROC), and every user's container runs as the same uid, so it
+# is set well above what one session needs (R, two workers and their
+# threads stay under 200) and can be raised with OMICSAPP_MAX_PROCS in
+# container-env. If the daemon's hard limit is lower, the soft limit
+# cannot be raised to it; the app then starts under the hard one.
+CMD ["bash", "-c", "ulimit -S -u \"${OMICSAPP_MAX_PROCS:-2048}\" 2>/dev/null; exec R -q -e \"omicsApp::launch(host = '0.0.0.0', port = 3838, launch.browser = FALSE, workers = 2)\""]

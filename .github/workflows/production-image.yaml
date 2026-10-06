@@ -58,6 +58,17 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # The same immutable tag deploy/scripts/build_image.sh gives a
+      # build on the server, <version>-<commit>, so an image from CI and
+      # one from the server are named alike and never only `latest`.
+      - name: Work out the image tag
+        id: tag
+        run: |
+          version="$(sed -nE 's/^Version:[[:space:]]*([^[:space:]]+).*$/\1/p' packages/omicsApp/DESCRIPTION | head -n 1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "immutable=omicsapp:${version}-${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       # The Dockerfile's default Bioconductor mirror is chosen for the
       # server's network; from GitHub the upstream is the fast one.
       - name: Build the production image
@@ -66,15 +77,31 @@ jobs:
           context: .
           file: deploy/docker/Dockerfile
           load: true
-          tags: ${{ env.IMAGE }}
+          tags: |
+            ${{ env.IMAGE }}
+            ${{ steps.tag.outputs.immutable }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.tag.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.tag.outputs.created }}
           build-args: |
             BIOC_MIRROR=https://bioconductor.org
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: The image serves the app
+      # Run as confined as Docker allows -- read-only root, writes only to
+      # the tmpfs mounts, no capabilities, no privilege gain, a process
+      # cap and the production memory and CPU limits -- so the app is
+      # known to work that way. ShinyProxy cannot apply all of this
+      # (see application.yml), but compose, the restore drill and any
+      # future backend can, and an app that quietly started writing to
+      # its root filesystem would fail here first.
+      - name: The image serves the app, confined
         run: |
-          docker run -d --name smoke -p 3838:3838 "$IMAGE"
+          docker run -d --name smoke -p 3838:3838 \
+            --read-only --tmpfs /tmp:rw,exec,size=1g --tmpfs /home/omics --tmpfs /data \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 \
+            --memory 6g --cpus 2 "$IMAGE"
           for i in $(seq 1 60); do
             if curl -fsS -o /dev/null http://127.0.0.1:3838/; then
               echo "up after ${i}s"; break
@@ -98,7 +125,14 @@ jobs:
               Rscript -e "res <- testthat::test_local(\"packages/omicsApp\", reporter = \"summary\", stop_on_failure = TRUE)"
             '
 
-      - name: The backup scripts parse
+      - name: The deploy scripts parse
         run: |
-          bash -n deploy/scripts/backup.sh
-          bash -n deploy/scripts/restore_check.sh
+          for s in deploy/scripts/*.sh; do bash -n "$s"; done
+
+      # Weekly: has a registry moved a pinned tag? Informational -- taking
+      # the new digest is a deliberate change (pin_base_digests.sh, then a
+      # rebuild and test), not something CI does on its own.
+      - name: Base image digests against their registries
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        run: deploy/scripts/pin_base_digests.sh --check

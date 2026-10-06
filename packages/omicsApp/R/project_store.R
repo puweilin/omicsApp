@@ -328,6 +328,137 @@ read_autosave_meta <- function(path) {
   tryCatch(jsonlite::read_json(meta), error = function(e) list())
 }
 
+# ---- signatures --------------------------------------------------------
+#
+# The store only opens files it wrote. Every project and snapshot it
+# saves is signed (HMAC-SHA256, see omicsCore::save_project()), and a
+# file is verified before it is deserialised -- a qs2 file can hold any
+# R object, so reading first and checking afterwards would let a file
+# planted in the store decide what gets built in memory.
+#
+# The key is OMICSAPP_SIGNING_KEY when the deployment sets it, which is
+# the recommended setup: the key then lives outside the directory it
+# protects. Otherwise one is generated on first use and kept in the
+# store as SIGNING_KEY_FILE, readable only by the container's user.
+#
+# Stores that predate signing hold unsigned files that must keep
+# opening. The first time a store is used it is migrated once: every
+# unsigned file that reads as a project holding only data is signed, and
+# SIGNING_MARKER_FILE records that the migration ran. After that an
+# unsigned file is refused -- it was put there by something other than
+# this app. Deleting the marker re-runs the migration (deploy/README.md).
+
+SIGNING_KEY_FILE <- ".omicsapp-signing-key"
+SIGNING_MARKER_FILE <- ".omicsapp-signatures"
+
+# The key in a key file, creating the file when there is none. NULL when
+# it can neither be read nor written (a read-only store).
+store_key_file_value <- function(dir, create = TRUE) {
+  path <- file.path(dir, SIGNING_KEY_FILE)
+  read_key <- function() {
+    value <- tryCatch(trimws(readLines(path, n = 1L, warn = FALSE)),
+                      error = function(e) character(0))
+    if (length(value) == 1L && nzchar(value)) value else NULL
+  }
+  if (file.exists(path)) return(read_key())
+  if (!isTRUE(create)) return(NULL)
+  tryCatch({
+    if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+    tmp <- tempfile(pattern = ".omicsapp-key-", tmpdir = dir)
+    on.exit(unlink(tmp), add = TRUE)
+    old <- Sys.umask("077")
+    on.exit(Sys.umask(old), add = TRUE)
+    writeLines(paste(as.character(openssl::rand_bytes(32L)), collapse = ""), tmp)
+    Sys.chmod(tmp, "0600")
+    # A hard link fails if the name is taken, so two sessions starting at
+    # once cannot each install a different key: the loser reads the
+    # winner's.
+    linked <- suppressWarnings(file.link(tmp, path))
+    if (!isTRUE(linked) && !file.exists(path)) file.rename(tmp, path)
+    read_key()
+  }, error = function(e) NULL)
+}
+
+#' The key the store signs and verifies project files with
+#'
+#' Also runs the one-time signature migration on first use of a store,
+#' and moves a store from a generated key to `OMICSAPP_SIGNING_KEY` when
+#' the deployment starts setting it.
+#'
+#' @param dir Project directory.
+#' @return The key as a string, or `NULL` when none can be had.
+#' @keywords internal
+#' @noRd
+store_signing_key <- function(dir = omicsapp_data_dir()) {
+  env <- Sys.getenv("OMICSAPP_SIGNING_KEY", "")
+  key <- if (nzchar(env)) env else store_key_file_value(dir)
+  if (is.null(key)) return(NULL)
+  ensure_store_signed(dir, key, from_env = nzchar(env))
+  key
+}
+
+# Every project file the store would open: saved projects and snapshots.
+store_project_files <- function(dir) {
+  if (!dir.exists(dir)) return(character(0))
+  list.files(dir, pattern = "\\.omp$", full.names = TRUE)
+}
+
+ensure_store_signed <- function(dir, key, from_env = FALSE) {
+  marker <- file.path(dir, SIGNING_MARKER_FILE)
+  # A generated key left behind after the deployment set its own: files
+  # signed under it are moved to the new key, then it is retired, since
+  # a key kept beside the files it protects is what the setting avoids.
+  old_key <- if (isTRUE(from_env)) store_key_file_value(dir, create = FALSE)
+  if (identical(old_key, key)) old_key <- NULL
+  first_run <- !file.exists(marker)
+  if (!first_run && is.null(old_key)) return(invisible(NULL))
+  if (!dir.exists(dir)) return(invisible(NULL))
+
+  files <- store_project_files(dir)
+  outcome <- vapply(files, function(f) {
+    tryCatch(omicsCore::sign_project_file(f, key, verify_key = old_key,
+                                          adopt_unsigned = first_run)$status,
+             error = function(e) "error")
+  }, character(1))
+  counts <- table(factor(outcome, levels = c("valid", "signed", "resigned", "refused", "error")))
+  if (first_run) {
+    try(writeLines(c(
+      "omicsApp signed the existing project files in this directory once.",
+      "Unsigned files added after this point are not opened.",
+      "Delete this file to run the check again (see deploy/README.md).",
+      sprintf("%s: %d already signed, %d signed, %d refused, %d unreadable",
+              format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+              counts[["valid"]] + counts[["resigned"]], counts[["signed"]],
+              counts[["refused"]], counts[["error"]])),
+      marker), silent = TRUE)
+  }
+  if (!is.null(old_key) && counts[["error"]] == 0L) {
+    unlink(file.path(dir, SIGNING_KEY_FILE))
+  }
+  if (any(counts[c("signed", "resigned", "refused", "error")] > 0L)) {
+    # To the container log, where an administrator looks.
+    message(sprintf(
+      "omicsApp: project signatures in %s: %d signed, %d moved to the current key, %d refused%s",
+      dir, counts[["signed"]], counts[["resigned"]], counts[["refused"]] + counts[["error"]],
+      if (counts[["refused"]] + counts[["error"]] > 0L) {
+        # sub() rather than basename(), which re-encodes and can throw on a
+        # non-ASCII name in a C locale.
+        paste0(" (", paste(sub("^.*/", "", files[outcome %in% c("refused", "error")]),
+                           collapse = ", "), ")")
+      } else ""))
+  }
+  invisible(outcome)
+}
+
+# What the user is told when a file in their own store will not open.
+store_open_failure <- function(e) {
+  if (inherits(e, "omp_untrusted_error")) {
+    return(paste0("Open failed: ", conditionMessage(e),
+                  " If you did not change it, ask your administrator."))
+  }
+  paste0("Open failed: ", conditionMessage(e))
+}
+
 #' List the projects saved in the store
 #'
 #' The reserved autosave snapshot is excluded — it is surfaced through
@@ -401,9 +532,13 @@ store_save_project <- function(project, slug, dir = omicsapp_data_dir(),
   if (!dir.exists(dir)) {
     dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   }
+  key <- store_signing_key(dir)
+  if (is.null(key)) {
+    return(fail("Save failed: the project folder cannot be written to."))
+  }
   result <- tryCatch(
     {
-      omicsCore::save_project(project, path, overwrite = TRUE)
+      omicsCore::save_project(project, path, overwrite = TRUE, signing_key = key)
       list(ok = TRUE, path = path,
            message = sprintf("Saved '%s'.", slug))
     },
@@ -440,7 +575,7 @@ store_delete_project <- function(slug, dir = omicsapp_data_dir()) {
 
   # Read before removing: the project is the only record of which
   # uploads belong to it.
-  mine <- project_fingerprints(path)
+  mine <- project_fingerprints(path, dir) %||% character(0)
 
   removed <- suppressWarnings(file.remove(path))
   if (!isTRUE(removed)) {
@@ -458,10 +593,14 @@ store_delete_project <- function(slug, dir = omicsapp_data_dir()) {
 }
 
 # The fingerprints of every layer in a saved project, as the 12-character
-# digests store_raw_upload() names its files with.
-project_fingerprints <- function(path) {
-  proj <- tryCatch(omicsCore::load_project(path), error = function(e) NULL)
-  if (is.null(proj)) return(character(0))
+# digests store_raw_upload() names its files with. NULL when the file
+# cannot be read -- which is "unknown", not "refers to nothing".
+project_fingerprints <- function(path, dir = dirname(path)) {
+  key <- store_signing_key(dir)
+  proj <- if (is.null(key)) NULL else tryCatch(
+    omicsCore::load_project(path, signing_key = key),
+    error = function(e) NULL)
+  if (is.null(proj)) return(NULL)
   fps <- vapply(proj$experiments,
                 function(e) e$source_fingerprint %||% NA_character_,
                 character(1L))
@@ -489,7 +628,12 @@ prune_orphan_uploads <- function(digests, dir = omicsapp_data_dir()) {
   # an upload it refers to is one a restore would need.
   others <- c(list_saved_projects(dir)$path, list_autosaves(dir)$path)
   others <- others[file.exists(others)]
-  still_used <- unlist(lapply(others, project_fingerprints), use.names = FALSE)
+  used <- lapply(others, project_fingerprints, dir = dir)
+  # A project that will not open (unsigned, damaged) may still refer to
+  # an upload, and there is no telling which: keep them all rather than
+  # delete a file its owner may yet recover the project for.
+  if (any(vapply(used, is.null, logical(1)))) return(none)
+  still_used <- unlist(used, use.names = FALSE)
   orphans <- setdiff(digests, still_used %||% character(0))
   if (length(orphans) == 0L) return(none)
 
@@ -520,10 +664,14 @@ store_load_project <- function(slug, dir = omicsapp_data_dir()) {
   if (!file.exists(path)) {
     return(fail(sprintf("'%s' no longer exists.", slug)))
   }
+  key <- store_signing_key(dir)
+  if (is.null(key)) {
+    return(fail("Open failed: the project folder cannot be written to, so the app cannot check this file is its own. Ask your administrator."))
+  }
   tryCatch(
-    list(ok = TRUE, project = omicsCore::load_project(path),
+    list(ok = TRUE, project = omicsCore::load_project(path, signing_key = key),
          message = sprintf("Opened '%s'.", slug)),
-    error = function(e) fail(paste0("Open failed: ", conditionMessage(e)))
+    error = function(e) fail(store_open_failure(e))
   )
 }
 
@@ -550,7 +698,9 @@ store_autosave <- function(project, dir = omicsapp_data_dir(), id = NULL) {
         dir.create(dir, recursive = TRUE, showWarnings = FALSE)
       }
       path <- autosave_path(dir, id)
-      omicsCore::save_project(project, path, overwrite = TRUE)
+      key <- store_signing_key(dir)
+      if (is.null(key)) return(FALSE)
+      omicsCore::save_project(project, path, overwrite = TRUE, signing_key = key)
       # What the Restore picker shows, without opening every snapshot.
       try(jsonlite::write_json(
         list(name = project$name %||% "Unnamed project",
@@ -597,7 +747,9 @@ store_read_autosave <- function(dir = omicsapp_data_dir(), path = NULL) {
     path <- file.path(dir, basename(path))
   }
   if (!file.exists(path)) return(NULL)
-  tryCatch(omicsCore::load_project(path), error = function(e) NULL)
+  key <- store_signing_key(dir)
+  if (is.null(key)) return(NULL)
+  tryCatch(omicsCore::load_project(path, signing_key = key), error = function(e) NULL)
 }
 
 #' Modification time of the autosave snapshot

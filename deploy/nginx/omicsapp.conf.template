@@ -40,6 +40,45 @@
 # buried in a stack trace. On Debian and Ubuntu, update-ca-certificates
 # is what copies the certificate into /etc/ssl/certs/java/cacerts.
 
+# ---- administrative endpoints: from the allow-list only --------------
+# Keycloak's admin console and admin API (/auth/admin/), the master
+# realm its administrator logs in through (/auth/realms/master/),
+# Keycloak's health and metrics paths, ShinyProxy's admin page (/admin)
+# and Spring's actuator paths are served to the addresses below and
+# refused (403) to everyone else. Users never need any of them: their
+# own account page is /auth/realms/omicsapp/account, which stays open.
+#
+# The list is ADMIN_ALLOW_CIDR in deploy/host.env, written here by
+# deploy/scripts/render.sh. Its default is the server itself --
+# 127.0.0.1, ::1 and the server's own address -- so from a workstation
+# either add that workstation's address there and re-render, or reach
+# the console through the server (`ssh -D 1080 <server>`, then the
+# browser's SOCKS proxy set to localhost:1080). See deploy/README.md.
+#
+# `geo` and `map` sit at http level (this file is included inside the
+# http block), hence outside the server blocks. $uri is the normalised
+# path -- percent-decoded, `//` merged -- which is also what proxy_pass
+# forwards, so `/auth//admin` or `/auth/%61dmin` cannot slip past a
+# check that the backend would then read differently.
+geo $omicsapp_admin_client {
+    default 0;
+    @OMICSAPP_ADMIN_ALLOW@
+}
+
+map $uri $omicsapp_admin_path {
+    default 0;
+    ~*^/auth/admin(/.*)?$              1;
+    ~*^/auth/realms/master(/.*)?$      1;
+    ~*^/auth/(health|metrics)(/.*)?$   1;
+    ~*^/admin(/.*)?$                   1;
+    ~*^/actuator(/.*)?$                1;
+}
+
+map "$omicsapp_admin_path:$omicsapp_admin_client" $omicsapp_admin_denied {
+    default 0;
+    "1:0"   1;
+}
+
 server {
     listen 80;
     server_name omics.local omics @OMICSAPP_HOST@;
@@ -78,6 +117,19 @@ server {
     ssl_certificate     /etc/ssl/certs/omicsapp.crt;
     ssl_certificate_key /etc/ssl/private/omicsapp.key;
     ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # This site's own logs, beside nginx's: the distribution's logrotate
+    # already rotates /var/log/nginx/*.log, and backup.sh keeps
+    # /var/log/nginx in every snapshot.
+    access_log /var/log/nginx/omicsapp.access.log;
+    error_log  /var/log/nginx/omicsapp.error.log;
+
+    # Administrative paths from the allow-list only (see the top of this
+    # file). Server-level, so it covers both locations below. `return`
+    # is one of the two directives that are safe inside `if`.
+    if ($omicsapp_admin_denied) {
+        return 403;
+    }
 
     # Omics workbooks are large; the app accepts up to 500 MB
     # (omicsApp::launch(max_upload_mb =)), so nginx must not cut in

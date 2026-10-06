@@ -31,6 +31,10 @@
 #     realm, host.env), the TLS certificate and key, the cron files and
 #     the refreshed gene-set cache are part of being able to restore, and
 #     are copied too.
+#   * Logs lived only where they were written, so a lost disk or a
+#     reinstalled host took the record of what happened before it.
+#     LOG_PATHS (ShinyProxy's log and every app container's, nginx's,
+#     this script's) are copied into each snapshot under logs/.
 #
 # Each snapshot carries MANIFEST.sha256 (every file's checksum) and
 # IMAGE (the digest of the running app image), so a restore can be
@@ -52,12 +56,23 @@ KEEP_DAILY="${KEEP_DAILY:-14}"
 KEEP_WEEKLY="${KEEP_WEEKLY:-8}"
 BACKUP_REMOTE="${BACKUP_REMOTE:-}"
 KEYCLOAK_CONTAINER="${KEYCLOAK_CONTAINER:-keycloak-db}"
+SP_CONF="${SP_CONF:-/etc/shinyproxy/application.yml}"
+# The image ShinyProxy runs, read from its configuration unless set:
+# after a rollback (deploy/scripts/rollback.sh) a fixed name here would
+# record the wrong one.
+if [ -z "${APP_IMAGE:-}" ] && [ -r "$SP_CONF" ]; then
+  APP_IMAGE="$(sed -nE 's/^[[:space:]]*container-image:[[:space:]]*"?([^"#[:space:]]+)"?.*$/\1/p' "$SP_CONF" | head -n 1)"
+fi
 APP_IMAGE="${APP_IMAGE:-omicsapp:1.0}"
 ALERT_WEBHOOK="${ALERT_WEBHOOK:-}"
 ALERT_EMAIL="${ALERT_EMAIL:-}"
 DOCKER="${DOCKER:-docker}"
 # Extra files worth keeping, space-separated (absolute paths).
-EXTRA_PATHS="${EXTRA_PATHS:-/etc/ssl/certs/omicsapp.crt /etc/ssl/private/omicsapp.key /etc/cron.d/omicsapp-backup /etc/cron.d/omicsapp-genesets}"
+EXTRA_PATHS="${EXTRA_PATHS:-/etc/ssl/certs/omicsapp.crt /etc/ssl/private/omicsapp.key /etc/cron.d/omicsapp-backup /etc/cron.d/omicsapp-genesets /etc/docker/daemon.json /etc/logrotate.d/omicsapp /etc/systemd/system/omicsapp-egress.service}"
+# Logs kept with each snapshot, space-separated (directories or files).
+# Missing ones are skipped, and one that cannot be read is noted rather
+# than fatal: a log line must never cost the night's backup of the work.
+LOG_PATHS="${LOG_PATHS-/var/log/shinyproxy /var/log/nginx /var/log/omicsapp-backup.log /var/log/omicsapp-genesets.log}"
 
 SNAP_DIR="$BACKUP_ROOT/snapshots"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
@@ -154,7 +169,22 @@ for f in $EXTRA_PATHS; do
 done
 if [ -d "$REPO_DIR/.git" ]; then
   git -C "$REPO_DIR" rev-parse HEAD > "$WORK/config/REPO_COMMIT" 2>/dev/null || true
+elif [ -f "$REPO_DIR/REVISION" ]; then
+  cp -p "$REPO_DIR/REVISION" "$WORK/config/REPO_COMMIT"
 fi
+
+# ---- 3b. the logs -----------------------------------------------------------
+for src in $LOG_PATHS; do
+  [ -e "$src" ] || continue
+  mkdir -p "$WORK/logs$(dirname "$src")"
+  if [ -d "$src" ]; then
+    # shellcheck disable=SC2046
+    rsync -a $(link_dest "logs$src") "$src/" "$WORK/logs$src/" \
+      || log "could not copy all of $src; continuing"
+  else
+    cp -p "$src" "$WORK/logs$src" || log "could not copy $src; continuing"
+  fi
+done
 "$DOCKER" image inspect --format '{{.Id}} {{index .RepoTags 0}}' "$APP_IMAGE" \
   > "$WORK/IMAGE" 2>/dev/null || echo "unknown $APP_IMAGE" > "$WORK/IMAGE"
 

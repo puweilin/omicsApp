@@ -47,3 +47,7 @@ deploy/keycloak/omicsapp-realm.json
 
 # Backup settings name another machine and an alert channel.
 deploy/backup.env
+
+# The commit a server copy was taken from (deploy/README.md, step 0):
+# written before the rsync, read by deploy/scripts/build_image.sh.
+/REVISION

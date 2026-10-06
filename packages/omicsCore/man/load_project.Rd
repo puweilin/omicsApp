@@ -4,27 +4,44 @@
 \alias{load_project}
 \title{Load an omics_project from disk}
 \usage{
-load_project(path)
+load_project(path, signing_key = NULL, untrusted = FALSE)
 }
 \arguments{
 \item{path}{Path to the \code{.omp} file.}
+
+\item{signing_key}{\code{NULL} (default) to read without checking a
+signature, or the key the file must be signed with (see
+\code{\link[=save_project]{save_project()}}).}
+
+\item{untrusted}{If \code{TRUE}, check the structure of what was read
+before returning it. Default \code{FALSE}.}
 }
 \value{
 The deserialized \code{omics_project}.
 }
 \description{
 Reads an \code{.omp} archive written by \code{\link[=save_project]{save_project()}}. Validates the
-schema version and that the payload is an \code{omics_project}. Future
-schema changes will add migrations here.
+schema version and that the payload is an \code{omics_project}, and
+upgrades a file written in an older format through the registered
+migrations.
 }
 \details{
+With \code{signing_key}, the file must carry a valid signature under that
+key; an unsigned or altered file is refused before it is deserialised.
+With \code{untrusted = TRUE}, the object read is checked to hold only data
+-- no functions, environments, external pointers or unexpected classes
+-- before it is returned. Use it for a file that came from anywhere
+other than your own store.
+
 Requires the \code{qs2} package; install it with \code{install_optional("persistence")}.
+Verifying a signature also requires \code{openssl}.
 }
 \seealso{
 Other persistence: 
 \code{\link{export_bundle}()},
 \code{\link{export_report}()},
 \code{\link{export_script}()},
-\code{\link{save_project}()}
+\code{\link{save_project}()},
+\code{\link{sign_project_file}()}
 }
 \concept{persistence}

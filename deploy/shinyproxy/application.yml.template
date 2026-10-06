@@ -87,6 +87,15 @@ proxy:
   default-proxy-max-lifetime: 1440
   default-stop-proxy-on-logout: true
 
+  # ---- logs ------------------------------------------------------------
+  # Each app container's output, written to a file per session on the
+  # host. ShinyProxy removes a container when its session ends, and its
+  # `docker logs` go with it -- so without this, the R error behind
+  # "the app crashed yesterday" no longer exists anywhere. The directory
+  # must exist and be writable by the `shinyproxy` user (README, step 6);
+  # deploy/logrotate/omicsapp rotates it and backup.sh keeps it.
+  container-log-path: /var/log/shinyproxy/containers
+
   docker:
     # false, because ShinyProxy runs on the host as a systemd service.
     #
@@ -100,11 +109,23 @@ proxy:
     # Set it to true only if ShinyProxy itself is moved into a container
     # on the same network.
     internal-networking: false
+    # Where each app container's port is published for ShinyProxy to
+    # reach. Loopback, so nobody on the LAN can open a user's session by
+    # its port number and skip the login. It is the default in recent
+    # releases; stated so an older default cannot quietly differ. While a
+    # session runs, `sudo ss -tlnp | grep ':2[0-9]\{4\} '` should show
+    # only 127.0.0.1.
+    target-bind-ip: 127.0.0.1
 
   specs:
     - id: omicsapp
       display-name: Multi-omics analysis
       description: Proteomics and transcriptomics QC, differential analysis, enrichment, and integration
+      # An immutable tag from deploy/scripts/build_image.sh
+      # (<version>-<commit>), never `latest`: the tag is how you get back
+      # to yesterday's image. deploy/scripts/rollback.sh <tag> rewrites
+      # this line and restarts ShinyProxy -- for an upgrade as much as a
+      # rollback.
       container-image: omicsapp:1.0
       # Not sp-net, which is where Keycloak and its Postgres live. An app
       # container has no reason to reach either, and on a shared network
@@ -117,9 +138,45 @@ proxy:
       # containers have somewhere to be that is not next to the
       # credentials.
       #
-      #   sudo docker network create omicsapp-net
+      #
+      # It is also what keeps the app off the internet. The network is
+      # created with a fixed bridge name (README, step 5), and
+      # deploy/scripts/egress.sh drops every connection a container on it
+      # opens -- to the internet, the LAN, other Docker networks and the
+      # host's own services. ShinyProxy's connections *to* the container
+      # are unaffected, and the app needs nothing outbound: gene sets come
+      # from the image or the pre-warmed volume (OMICSCORE_GENESET_TTL_DAYS
+      # below stops it trying to refresh them itself).
+      #
+      # Not `docker network create --internal`: an internal network has no
+      # published ports, and published ports are how ShinyProxy reaches
+      # the container here (internal-networking: false, above).
       container-network: omicsapp-net
       port: 3838
+
+      # ---- confinement ----------------------------------------------------
+      # ShinyProxy 3.2's Docker backend sets only these on a container
+      # (ContainerSpec/DockerEngineBackend in containerproxy): memory and
+      # CPU limits and requests, network(s), DNS, volumes, env, labels,
+      # privileged, docker-ipc, docker-runtime, docker-user,
+      # docker-group-add and device requests. It has no setting for
+      # --cap-drop, --security-opt no-new-privileges, --read-only or
+      # --pids-limit, so writing such keys here would look like hardening
+      # and do nothing. What stands in for them, and where (README,
+      # "Hardening"):
+      #   * the image runs as an unprivileged user and has every setuid/
+      #     setgid bit stripped, so nothing in it can gain a capability --
+      #     what no-new-privileges and cap-drop protect against;
+      #   * the image's start command caps the process count (ulimit -u,
+      #     OMICSAPP_MAX_PROCS) in place of --pids-limit;
+      #   * /etc/docker/daemon.json (deploy/docker/daemon.json) adds
+      #     no-new-privileges and log rotation for every container on the
+      #     host, if the host's other users agree;
+      #   * a read-only root filesystem is not available through
+      #     ShinyProxy; the app writes only to /data (the bind mount
+      #     below), /tmp and its home directory. CI runs the image with
+      #     --read-only to keep that true.
+      container-privileged: false
       # A single analysis holds the matrices plus every computed bundle.
       # 6g is generous for 20k x 60; raise it before raising the number
       # of users if the data grows.
@@ -145,6 +202,18 @@ proxy:
         - "/srv/omicsapp/users/#{proxy.userId}:/data"
       container-env:
         OMICSAPP_QUOTA_GB: "50"
+        # No live re-fetch of KEGG from inside the container: it has no
+        # route out (see container-network). The monthly refresh in the
+        # README runs in its own container and writes the volume.
+        OMICSCORE_GENESET_TTL_DAYS: "0"
+        # The key project files are signed with. Unset, each user's
+        # store generates its own and keeps it beside the projects;
+        # set, the key lives outside the directory it protects, which
+        # is the point. Generate with `openssl rand -hex 32`, paste it
+        # here on the server (like client-secret, never in git), and
+        # restart. Existing stores move to it on their next use. See
+        # "Project files are signed" in the README.
+        # OMICSAPP_SIGNING_KEY: REPLACE_ME
       access-groups: [lab, admins]
 
       # Deliberately no `minimum-seats-available`. It looks attractive
@@ -181,6 +250,13 @@ management:
 logging:
   file:
     name: /var/log/shinyproxy/shinyproxy.log
+  # Spring Boot rotates its own file: daily and at 10 MB, 30 days kept,
+  # never more than 1 GB in all. logrotate must not also touch this file.
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 30
+      total-size-cap: 1GB
 
 server:
   # Required whenever TLS is terminated in front, and the documentation

@@ -43,6 +43,7 @@ reference:
   - experiment_tags
   - load_project
   - save_project
+  - sign_project_file
   - suggest_sample_link
   - derive_sample_link
   - sample_pairing_preview

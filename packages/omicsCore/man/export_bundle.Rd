@@ -73,6 +73,7 @@ Other persistence:
 \code{\link[=export_report]{export_report()}},
 \code{\link[=export_script]{export_script()}},
 \code{\link[=load_project]{load_project()}},
-\code{\link[=save_project]{save_project()}}
+\code{\link[=save_project]{save_project()}},
+\code{\link[=sign_project_file]{sign_project_file()}}
 }
 \concept{persistence}

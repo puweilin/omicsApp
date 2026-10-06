@@ -75,6 +75,13 @@ After that the database is authoritative and editing
 Admin console → `omicsapp` realm → Clients → `shinyproxy` → Credentials
 → Regenerate. Copy it into `client-secret:` in `application.yml`.
 
+The admin console (`https://<server>/auth/admin/`) answers only the
+addresses in `ADMIN_ALLOW_CIDR` — by default the server itself — and
+gives everyone else 403. Reach it through the server (`ssh -D 1080
+<server>` and the browser's SOCKS proxy on `localhost:1080`) or add your
+workstation's address; see "The admin console is not on the LAN" in the
+main README.
+
 It is deliberately not in this repository. A secret that is never
 written to a tracked file cannot be committed by accident, and even in a
 private repository a secret committed once stays in the history.

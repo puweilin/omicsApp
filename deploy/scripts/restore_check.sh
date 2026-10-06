@@ -30,6 +30,12 @@ BACKUP_ROOT="${BACKUP_ROOT:-/backup/omicsapp}"
 MAX_AGE_HOURS="${MAX_AGE_HOURS:-36}"
 BACKUP_REMOTE="${BACKUP_REMOTE:-}"
 KEYCLOAK_CONTAINER="${KEYCLOAK_CONTAINER:-keycloak-db}"
+SP_CONF="${SP_CONF:-/etc/shinyproxy/application.yml}"
+# The image ShinyProxy runs, unless told otherwise: after a rollback that
+# is the one whose load_project() has to open these files.
+if [ -z "${APP_IMAGE:-}" ] && [ -r "$SP_CONF" ]; then
+  APP_IMAGE="$(sed -nE 's/^[[:space:]]*container-image:[[:space:]]*"?([^"#[:space:]]+)"?.*$/\1/p' "$SP_CONF" | head -n 1)"
+fi
 APP_IMAGE="${APP_IMAGE:-omicsapp:1.0}"
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:16}"
 ALERT_WEBHOOK="${ALERT_WEBHOOK:-}"
@@ -119,8 +125,19 @@ if [ "$SKIP_DOCKER_CHECKS" != "1" ]; then
   # ---- 4. a project opens --------------------------------------------------
   omp="$(find "$snap/users" -name '*.omp' -type f 2>/dev/null | shuf -n 1 || true)"
   if [ -n "$omp" ]; then
-    if ! "$DOCKER" run --rm -v "$omp:/check.omp:ro" "$APP_IMAGE" \
-          R -q -e 'p <- omicsCore::load_project("/check.omp"); stopifnot(omicsCore::is_omics_project(p))' \
+    # With the store's own key when it kept one (no OMICSAPP_SIGNING_KEY),
+    # so the drill also proves the signature survived: a project the app
+    # would refuse to open is not a restorable one.
+    key_mount=()
+    if [ -r "$(dirname "$omp")/.omicsapp-signing-key" ]; then
+      key_mount=(-v "$(dirname "$omp")/.omicsapp-signing-key:/check.key:ro")
+    fi
+    # The same confinement the app gets, and no network at all: this
+    # opens a file from a backup.
+    if ! "$DOCKER" run --rm --network none --read-only --tmpfs /tmp \
+          --cap-drop ALL --security-opt no-new-privileges --pids-limit 256 \
+          -v "$omp:/check.omp:ro" "${key_mount[@]}" "$APP_IMAGE" \
+          R -q -e 'k <- if (file.exists("/check.key")) readLines("/check.key", 1L) else NULL; p <- omicsCore::load_project("/check.omp", signing_key = k); stopifnot(omicsCore::is_omics_project(p))' \
           >/dev/null 2>&1; then
       fail "a backed-up project does not open: ${omp#"$snap"/}"
     fi
