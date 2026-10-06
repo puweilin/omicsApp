@@ -4,17 +4,21 @@
 \alias{qc_outliers}
 \title{Detect sample-level outliers}
 \usage{
-qc_outliers(input, method = c("pca", "connectivity", "iqr"), sd_threshold = 3)
+qc_outliers(
+  input,
+  method = c("pca", "connectivity", "iqr", "loo"),
+  sd_threshold = 3
+)
 }
 \arguments{
 \item{input}{An \code{omics_input}.}
 
-\item{method}{One of \code{"pca"}, \code{"connectivity"}, \code{"iqr"}. Multiple methods
-may be supplied to run them in parallel and take the union of the
-flagged sets.}
+\item{method}{One or more of \code{"pca"}, \code{"connectivity"}, \code{"iqr"},
+\code{"loo"}. Multiple methods run in parallel and the union of the
+flagged sets is taken; the default runs all four.}
 
 \item{sd_threshold}{Z-score or IQR multiplier used to flag outliers
-(default \code{3}).}
+(default \code{3}); for \code{"loo"}, the number of robust spreads.}
 }
 \value{
 When \code{method} is length 1, a list with \code{method}, \code{stats},
@@ -24,7 +28,7 @@ with \code{stats} row-bound across methods and a \code{by_method} field holding
 per-method results.
 }
 \description{
-Outlier detection on an \code{\link[=omics_input]{omics_input()}}. Three methods are supported:
+Outlier detection on an \code{\link[=omics_input]{omics_input()}}. Four methods are supported:
 }
 \details{
 \itemize{
@@ -35,9 +39,25 @@ is more than \code{sd_threshold} standard deviations below the cohort mean
 (i.e. poorly-connected samples).
 \item \code{"iqr"} — flags samples whose mean log-intensity falls outside
 \verb{[Q1 - k*IQR, Q3 + k*IQR]}; \code{sd_threshold} is reused as \code{k}.
+\item \code{"loo"} — a leave-one-out test built for small studies. Each
+sample's distance to its most similar other sample (correlation
+distance, \code{sqrt(1 - r)}, on a log scale) is compared with the same
+distance computed among the remaining samples without it: their
+median, and their MAD as the spread. A sample is flagged when it sits
+more than \code{sd_threshold} spreads beyond that median. The spread is
+never taken as less than \code{0.17} (on the natural-log scale, a factor
+of about 1.2): with four samples the MAD of the other three can be
+near zero by chance, and a z-score over nothing is not evidence. At
+the default threshold of 3 a flagged sample is therefore at least
+1.67 times further from its nearest neighbour than the others are
+from theirs. The nearest neighbour, rather than the mean over all
+samples, is what keeps group structure from looking like an
+outlier: in a 3 vs 3 design every sample has a close partner in its
+own group, while a failed run or a swapped-in sample has none. It
+needs at least four samples.
 }
 
-All three methods are pure base R; no Suggests packages required.
+All four methods are pure base R; no Suggests packages required.
 
 They run on a log scale whatever the layer holds: raw counts become
 log2-CPM and linear intensities, TPM or FPKM become log2(x + 1), the
@@ -46,8 +66,10 @@ correlation or a PCA is driven by the handful of most abundant
 features, and the deepest library looks like the odd one out.
 
 A z-score over \code{n} samples cannot exceed \code{(n - 1) / sqrt(n)}, so with
-ten or fewer samples a threshold of 3 can never be reached. The result
-then carries a \code{note} saying so; look at the PCA plot instead.
+ten or fewer samples a threshold of 3 can never be reached by \code{"pca"}
+or \code{"connectivity"}. The result then carries a \code{note} saying so; the
+\code{"loo"} test does not have this limit, since the sample under test is
+not part of the reference it is scored against.
 }
 \seealso{
 Other qc:

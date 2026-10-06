@@ -12,6 +12,8 @@ run_qc(
   outlier_method = NULL,
   outlier_sd_threshold = 3,
   remove_outliers = FALSE,
+  missing_filter = c("global", "any_group", "all_groups"),
+  group_col = NULL,
   ...
 )
 }
@@ -31,7 +33,9 @@ Applied to the expression matrix of \code{cleaned_input} after filtering.
 counts.}
 
 \item{outlier_method}{One of \code{"none"}, \code{"pca"}, \code{"connectivity"}, \code{"iqr"},
-or a vector of those (other than \code{"none"}) to union their flags.}
+\code{"loo"}, or a vector of those (other than \code{"none"}) to union their
+flags. \code{"loo"}, the leave-one-out test of \code{\link[=qc_outliers]{qc_outliers()}}, is the one
+that can flag a sample in a study of ten or fewer.}
 
 \item{outlier_sd_threshold}{Z-score / IQR multiplier passed to
 \code{\link[=qc_outliers]{qc_outliers()}}. Default \code{3}.}
@@ -39,6 +43,15 @@ or a vector of those (other than \code{"none"}) to union their flags.}
 \item{remove_outliers}{Remove the samples \code{\link[=qc_outliers]{qc_outliers()}} flags from
 \code{cleaned_input}. Default \code{FALSE}: they are listed in
 \code{recommended_filters$remove_samples} and kept.}
+
+\item{missing_filter}{Where \code{missing_threshold} is applied: \code{"global"}
+(default; over all samples), \code{"any_group"} (within each group; kept
+when at least one group passes) or \code{"all_groups"} (kept when every
+group passes).}
+
+\item{group_col}{Sample-metadata column holding the groups, for the
+group filters. \code{NULL} uses the layer's recorded study design
+(\code{\link[=study_design]{study_design()}}). Ignored by \code{"global"}.}
 
 \item{...}{Forwarded to the imputation backend.}
 }
@@ -90,6 +103,13 @@ Imputation on a linear scale (raw intensities) runs on log2 values and
 is transformed back: the left-censored methods draw from a normal
 distribution, which only fits intensities after logging, and on the
 raw scale they returned negative intensities.
+
+The feature filter is global by default. \code{missing_filter = "any_group"}
+applies \code{missing_threshold} within each group of \code{group_col} and keeps
+a feature measured well enough in at least one of them -- the usual
+proteomics rule, which keeps a protein present in one condition and
+absent from the other; \code{"all_groups"} asks for every group. See
+\code{\link[=qc_missingness]{qc_missingness()}}.
 }
 \examples{
 set.seed(1)

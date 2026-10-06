@@ -9,7 +9,8 @@
 #'
 #' Per slice-3 convention QC runs on every input change (no Run
 #' button) -- it's cheap and the feedback loop is more useful that
-#' way.
+#' way. A project that arrives with a saved QC result shows that result
+#' instead, with its settings in the controls, until one is changed.
 #'
 #' Reference markup: `omicsApp/mockup/index.html:686-750`.
 #'
@@ -66,6 +67,29 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       shiny::observeEvent(input$go_next, navigate("diff"))
     }
 
+    # ---- a saved result -------------------------------------------------
+    # A project opened or restored brings its QC result, computed at the
+    # settings the user chose then. Recomputing it on arrival, at whatever
+    # the controls happened to say, replaced that result -- in the project
+    # and in the next autosave -- with one nobody asked for. So the saved
+    # result is shown, its settings are put back into the controls, and QC
+    # runs again only once the user changes one of them or moves to a
+    # layer it was not computed on.
+    #
+    # restore() holds the saved bundle, the layer it belongs to, its
+    # settings as a request (see qc_request below), and, per control, the
+    # value saved and the value the control held when the project arrived.
+    # Until a control is seen to take its saved value (or the user moves
+    # it somewhere else), its old value is read as the saved one: the
+    # browser applies the update a moment later, and in that moment the
+    # old value is not a request to recompute.
+    restore <- shiny::reactiveVal(NULL)
+    pick <- function(name, value) {
+      r <- restore()
+      if (is.null(r) || !name %in% names(r$saved)) return(value)
+      if (identical(value, r$old[[name]])) r$saved[[name]] else value
+    }
+
     # Active experiment selection. A tag asked for from elsewhere (the
     # Project view's "View" link) wins, provided it still names a layer
     # in the current project -- otherwise the request is stale and
@@ -86,7 +110,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # the user is looking at. requested_layer() is how another view
       # hands over ("show me this one"), and it seeds the picker rather
       # than fighting it.
-      want <- input$layer
+      want <- pick("layer", input$layer)
       if (is.null(want) || !want %in% names(exps)) want <- requested_layer()
       if (!is.null(want) && length(want) == 1L && want %in% names(exps)) {
         return(list(input = exps[[want]], tag = want, is_demo = FALSE))
@@ -107,7 +131,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # output writes input$layer and active() reads it, so reading it
       # here would close the loop -- re-rendering the control re-sends
       # its value, which invalidates active(), which re-renders it.
-      sel <- shiny::isolate(input$layer)
+      sel <- shiny::isolate(pick("layer", input$layer))
       if (is.null(sel) || !sel %in% tags_avail) {
         sel <- shiny::isolate(requested_layer())
       }
@@ -124,6 +148,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # plots stay visible.
     last_bundle <- shiny::reactiveVal(NULL)
     last_error  <- shiny::reactiveVal(NULL)
+    # What the result on screen was computed from (see qc_request()). A
+    # change to the project that leaves it alone -- another view's result
+    # being attached -- is not a reason to run QC again.
+    shown_request <- NULL
 
     # The layer this result was computed on has been replaced, so the
     # result is no longer about anything in the project. NULL is the
@@ -131,6 +159,8 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     shiny::observeEvent(invalidate(), {
       last_bundle(NULL)
       last_error(NULL)
+      restore(NULL)
+      shown_request <<- NULL
     }, ignoreInit = TRUE)
 
     # Imputation is offered for proteomics and withheld everywhere else.
@@ -197,7 +227,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (!impute_applies()) return(NULL)
       choices <- impute_choices()
       offered <- unlist(choices, use.names = FALSE)
-      sel <- shiny::isolate(input$impute_method)
+      sel <- shiny::isolate(pick("impute_method", input$impute_method))
       # Defaults to what run_qc() would resolve on its own, so the
       # control opens showing what is actually running rather than
       # imposing a different answer the moment it renders.
@@ -214,38 +244,140 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # a drag used to queue a full run_qc() -- 62 s of frozen session for
     # a five-tick drag on 8,000 x 300. (Tests set the delay to 0.)
     qc_delay <- getOption("omicsApp.qc_debounce_ms", 400)
-    thr_in <- shiny::reactive(input$missing_threshold %||% 0.5)
+    thr_in <- shiny::reactive(input$missing_threshold)
     thr_r <- if (isTRUE(qc_delay > 0)) shiny::debounce(thr_in, qc_delay) else thr_in
 
-    shiny::observe({
+    # The columns the group-wise missing filter can group by: the layer's
+    # recorded design first, then the Differential view's guesses. Empty
+    # when nothing splits the samples, and the control is then not shown.
+    missing_group_choices <- shiny::reactive({
       a <- active()
-      thr   <- thr_r()
-      out_m <- input$outlier_method   %||% "all"
-      # All three by default: after vsn the per-sample means are equal,
-      # and the IQR test on them -- the old default -- could not see a
-      # sample that PCA and connectivity both flagged.
-      if (identical(out_m, "all")) out_m <- c("pca", "connectivity", "iqr")
-      # Read here rather than trusted from the input: the control is
-      # hidden when the layer is not proteomics, but Shiny keeps an
-      # input's last value, so switching from a proteomics layer with
-      # `knn` selected to a counts layer would otherwise impute counts
-      # with a control the user can no longer see.
-      # NULL lets run_qc() resolve it per modality, which is where that
-      # decision belongs -- and means the control and a plain
-      # run_qc(input) agree instead of quietly differing.
-      imp <- if (!impute_applies()) "none" else input$impute_method
+      inp <- if (a$is_demo) example_qc_input() else a$input
+      meta <- inp$meta_df
+      if (is.null(meta) || !ncol(meta)) return(character(0))
+      cands <- grouping_candidates(meta)
+      if (!length(cands)) cands <- grouping_candidates(meta, min_per_level = 1L,
+                                                      replicated = TRUE)
+      design <- tryCatch(omicsCore::study_design(inp), error = function(e) NULL)
+      if (!is.null(design)) cands <- c(design$group_col, setdiff(cands, design$group_col))
+      cands
+    })
 
+    output$ui_missing_filter <- shiny::renderUI({
+      cols <- missing_group_choices()
+      if (!length(cols)) return(NULL)
+      mode <- shiny::isolate(pick("missing_filter", input$missing_filter))
+      if (is.null(mode) || !mode %in% QC_MISSING_FILTERS) mode <- "global"
+      gc <- shiny::isolate(pick("missing_group_col", input$missing_group_col))
+      if (is.null(gc) || !gc %in% cols) gc <- cols[[1L]]
+      htmltools::tags$div(
+        class = "row-grid r-6-6",
+        shiny::selectInput(
+          session$ns("missing_filter"),
+          label = htmltools::tagList(
+            "Apply the cutoff",
+            info_tip(paste(
+              "Across all samples, or within each group. \"In at least one group\"",
+              "keeps a protein seen in enough samples of one condition, even if it is",
+              "absent from the other -- often the most interesting kind."))),
+          choices = c("Across all samples" = "global",
+                      "In at least one group" = "any_group",
+                      "In every group" = "all_groups"),
+          selected = mode),
+        shiny::conditionalPanel(
+          condition = "input.missing_filter != 'global'", ns = session$ns,
+          shiny::selectInput(session$ns("missing_group_col"), label = "Groups from",
+                             choices = cols, selected = gc))
+      )
+    })
+
+    # Everything a QC result depends on, as the controls currently say it
+    # -- with the values a saved result is waiting for read through
+    # pick(), and every default resolved, so that two requests for the
+    # same thing compare equal however they were arrived at.
+    qc_request <- shiny::reactive({
+      a <- active()
       # The demo runs through run_qc() like a real project rather than
       # returning a fixed bundle. Both controls above are enabled, and
       # a control that is enabled and does nothing reads as a broken
       # app; the demo input is 50 x 12, so a re-run is milliseconds.
       qc_input <- if (a$is_demo) example_qc_input() else a$input
+      thr <- pick("missing_threshold", thr_r()) %||% 0.5
+      out_m <- pick("outlier_method", input$outlier_method) %||% "all"
+      # All of them by default: after vsn the per-sample means are equal,
+      # and the IQR test on them -- the old default -- could not see a
+      # sample that PCA and connectivity both flagged; and with ten or
+      # fewer samples only the leave-one-out test can flag anything.
+      if (identical(out_m, "all")) out_m <- QC_ALL_OUTLIER_METHODS
+      # Read here rather than trusted from the input: the control is
+      # hidden when the layer is not proteomics, but Shiny keeps an
+      # input's last value, so switching from a proteomics layer with
+      # `knn` selected to a counts layer would otherwise impute counts
+      # with a control the user can no longer see.
+      # Unset resolves the way run_qc() resolves it per modality, so the
+      # control and a plain run_qc(input) agree instead of quietly
+      # differing.
+      imp <- if (!impute_applies()) "none" else
+        pick("impute_method", input$impute_method) %||%
+          omicsCore::resolve_impute_method(qc_input$omics_type)
+      # The same reasoning as imputation: hidden when nothing splits the
+      # samples, so a value left over from another layer is not used.
+      cols <- missing_group_choices()
+      mf <- if (length(cols)) pick("missing_filter", input$missing_filter) %||% "global"
+            else "global"
+      gc <- NULL
+      if (!identical(mf, "global")) {
+        gc <- pick("missing_group_col", input$missing_group_col)
+        if (is.null(gc) || !gc %in% cols) gc <- cols[[1L]]
+      }
+      list(tag = a$tag, input = qc_input,
+           params = qc_request_params(thr, out_m, imp, mf, gc))
+    })
+
+    # Priority -6: after the restore below (-5), which itself runs after
+    # a generation bump has cleared the view, so a project arriving with
+    # a saved result is matched against it before anything is computed.
+    shiny::observe({
+      req <- qc_request()
+      r <- restore()
+      if (!is.null(r)) {
+        # Controls that have taken their saved value, or been moved
+        # elsewhere, no longer stand in for it.
+        now <- list(layer = input$layer, missing_threshold = thr_r(),
+                    outlier_method = input$outlier_method,
+                    impute_method = input$impute_method,
+                    missing_filter = input$missing_filter,
+                    missing_group_col = input$missing_group_col)
+        settled <- vapply(names(r$saved), function(nm) {
+          identical(now[[nm]], r$saved[[nm]]) || !identical(now[[nm]], r$old[[nm]])
+        }, logical(1))
+        if (any(settled)) {
+          r$saved <- r$saved[!settled]
+          r$old <- r$old[!settled]
+          restore(r)
+        }
+        # Asked for exactly what was saved, on the layer it was saved
+        # from: that result, not a new run of it.
+        if (identical(req$tag, r$tag) && identical(req$input, r$input) &&
+            identical(req$params, r$params)) {
+          shown_request <<- req
+          last_error(NULL)
+          last_bundle(r$bundle)
+          return(invisible())
+        }
+      }
+      if (identical(req, shown_request)) return(invisible())
+      shown_request <<- req
+      qc_input <- req$input
+      p <- req$params
 
       run <- function() omicsCore::run_qc(
         qc_input,
-        missing_threshold = thr,
-        outlier_method    = out_m,
-        impute_method     = imp
+        missing_threshold = p$missing_threshold,
+        outlier_method    = p$outlier_method,
+        impute_method     = p$impute_method,
+        missing_filter    = p$missing_filter,
+        group_col         = p$group_col
       )
       # A big layer takes several seconds the first time (up to 10 s for
       # 60 samples), and all it showed was the busy pulse. It now says
@@ -262,7 +394,46 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         last_error(NULL)
         last_bundle(bundle)
       }
-    })
+    }, priority = -6)
+
+    # A project opened or restored brings its QC result: shown as it was
+    # saved, on the layer it was computed on, with its settings back in
+    # the controls. After the generation bump and the clearing it causes
+    # (priority -5, as in the Differential view), so that does not undo
+    # this. A result this view published itself comes back through the
+    # project too, and is recognised as the one already on screen.
+    shiny::observeEvent(current_project(), {
+      proj <- current_project()
+      saved <- proj$bundles$qc
+      if (!omicsCore::is_analysis_bundle(saved) || identical(saved, last_bundle())) return()
+      tag <- qc_bundle_layer(proj$experiments, saved)
+      if (is.null(tag)) return()
+      p <- saved$params
+      saved_vals <- list(
+        layer = tag,
+        missing_threshold = p$missing_threshold,
+        outlier_method = qc_outlier_choice(p$outlier_method),
+        impute_method = p$impute_method,
+        missing_filter = p$missing_filter %||% "global",
+        missing_group_col = p$group_col
+      )
+      saved_vals <- saved_vals[!vapply(saved_vals, is.null, logical(1))]
+      old <- list(layer = input$layer, missing_threshold = thr_r(),
+                  outlier_method = input$outlier_method,
+                  impute_method = input$impute_method,
+                  missing_filter = input$missing_filter,
+                  missing_group_col = input$missing_group_col)[names(saved_vals)]
+      restore(list(
+        bundle = saved, tag = tag, input = proj$experiments[[tag]],
+        params = qc_request_params(p$missing_threshold, p$outlier_method,
+                                   p$impute_method, p$missing_filter %||% "global",
+                                   p$group_col),
+        saved = saved_vals, old = old))
+      shown_request <<- NULL
+      last_error(NULL)
+      last_bundle(saved)
+      qc_restore_controls(session, saved_vals)
+    }, priority = -5, ignoreNULL = TRUE)
 
     output$header <- shiny::renderUI({
       a <- active()
@@ -310,12 +481,14 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       notes <- notes[!grepl("^Flagged as outlier", notes)]
       notes <- sub("`raw_count` values were put on a log2 scale \\(log2-CPM\\) for outlier detection.",
                    "Counts were converted to log2 counts-per-million for the outlier checks.", notes)
+      notes <- qc_plain_outlier_notes(notes)
       out <- htmltools::tagList()
       if (length(flagged) && !active()$is_demo) {
         out <- htmltools::tagAppendChild(out, notice(
           title = sprintf("Possible outlier%s: %s", if (length(flagged) > 1L) "s" else "",
                           paste(flagged, collapse = ", ")),
           detail = htmltools::tagList(
+            qc_loo_explanation(b$results$qc_summary$outliers),
             "Kept in the analysis. Look at the PCA: if the sample is broken (a failed run, a swap) rather than biologically different, exclude it. ",
             shiny::actionButton(session$ns("exclude_flagged"),
                                 "Exclude from this layer\u2026",
@@ -392,16 +565,20 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           trend  = if (n_flagged_samp == 0L) "no outliers flagged"
                    else sprintf("%d flagged (%s) \u2014 kept; check the PCA",
                                 n_flagged_samp,
-                                paste(summary$outliers$method, collapse = " + ")),
+                                qc_method_labels(summary$outliers$method)),
           accent = if (n_flagged_samp == 0L) "ok" else "warn",
           mono   = TRUE
         ),
         stat_card(
           label = "Features kept",
           value = format(info$n_features_out, big.mark = ","),
-          trend = sprintf("%d filtered at %.0f%% missing",
+          trend = sprintf("%d filtered at %.0f%% missing%s",
                           n_flagged_feat,
-                          100 * (bundle$params$missing_threshold %||% 0.5)),
+                          100 * (bundle$params$missing_threshold %||% 0.5),
+                          switch(bundle$params$missing_filter %||% "global",
+                                 any_group = " in every group",
+                                 all_groups = " in any group",
+                                 "")),
           mono  = TRUE
         ),
         stat_card(
@@ -412,7 +589,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         ),
         stat_card(
           label  = "Outlier method",
-          value  = paste(summary$outliers$method, collapse = " + "),
+          value  = qc_method_labels(summary$outliers$method),
           trend  = sprintf("threshold = %g",
                            bundle$params$outlier_sd_threshold %||% 3),
           accent = "ok"
@@ -593,7 +770,7 @@ qc_controls_card <- function(ns) {
           ns("missing_threshold"),
           label = htmltools::tagList(
             "Feature missing-rate cutoff",
-            info_tip("Features missing in more than this fraction of samples are filtered out of the QC view.")),
+            info_tip("Features missing in more than this fraction of samples (or of each group's samples, when the cutoff is applied by group) are filtered out of the QC view.")),
           min   = 0,
           max   = 1,
           value = 0.5,
@@ -603,15 +780,24 @@ qc_controls_card <- function(ns) {
           ns("outlier_method"),
           label   = htmltools::tagList(
             "Outlier detection",
-            info_tip("How samples are flagged: IQR of per-sample summaries, distance in PCA space, or low connectivity (correlation) to the other samples.")),
-          choices = c("All three" = "all",
+            info_tip(paste(
+              "How samples are flagged: IQR of per-sample summaries, distance in PCA space,",
+              "low connectivity (correlation) to the other samples, or leave-one-out:",
+              "each sample set aside in turn and compared with how closely the remaining",
+              "samples resemble each other. Only leave-one-out can flag a sample in a",
+              "study of ten or fewer."))),
+          choices = c("All four" = "all",
                       "IQR" = "iqr",
                       "PCA" = "pca",
-                      "Connectivity" = "connectivity"),
+                      "Connectivity" = "connectivity",
+                      "Leave-one-out" = "loo"),
           selected = "all",
           inline   = TRUE
         )
       ),
+      # Shown only when the layer has a column that splits its samples
+      # into groups; rendered from the server for that reason.
+      shiny::uiOutput(ns("ui_missing_filter")),
       # Proteomics only, and rendered from the server because the choices
       # depend on the layer and on which optional packages are installed.
       shiny::uiOutput(ns("ui_impute")),
@@ -627,6 +813,115 @@ qc_controls_card <- function(ns) {
       )
     )
   )
+}
+
+# What "All" runs in the outlier control.
+QC_ALL_OUTLIER_METHODS <- c("pca", "connectivity", "iqr", "loo")
+QC_MISSING_FILTERS <- c("global", "any_group", "all_groups")
+
+# A QC request's settings in one canonical form, whether they came from
+# the controls or from a saved bundle's params, so that the two compare
+# equal when they ask for the same run.
+qc_request_params <- function(thr, outlier, impute, missing_filter, group_col) {
+  list(missing_threshold = as.numeric(thr),
+       outlier_method = as.character(outlier),
+       impute_method = impute,
+       missing_filter = missing_filter %||% "global",
+       group_col = if (!identical(missing_filter %||% "global", "global")) group_col)
+}
+
+# The radio value that runs these outlier methods: "all", a single
+# method, or the methods themselves when the radio has no button for
+# them (a project saved before the leave-one-out test, or a script).
+qc_outlier_choice <- function(methods) {
+  if (is.null(methods)) return(NULL)
+  if (setequal(methods, QC_ALL_OUTLIER_METHODS)) return("all")
+  methods
+}
+
+# The layer a saved QC bundle was computed on: same kind, same shape, and
+# its samples among the layer's. NULL when no layer fits -- the result is
+# then about data the project no longer holds.
+qc_bundle_layer <- function(exps, bundle) {
+  info <- bundle$input_info
+  kept <- colnames(bundle$results$cleaned_input$expr_mat)
+  for (tag in names(exps)) {
+    e <- exps[[tag]]
+    if (identical(e$omics_type %||% "", info$omics_type %||% "") &&
+        isTRUE(ncol(e$expr_mat) == info$n_samples_in) &&
+        isTRUE(nrow(e$expr_mat) == info$n_features_in) &&
+        all(kept %in% colnames(e$expr_mat))) {
+      return(tag)
+    }
+  }
+  NULL
+}
+
+# The outlier methods as the control names them.
+qc_method_labels <- function(methods) {
+  labels <- c(pca = "PCA", connectivity = "connectivity", iqr = "IQR",
+              loo = "leave-one-out", none = "none")
+  out <- ifelse(methods %in% names(labels), labels[methods], methods)
+  paste(out, collapse = " + ")
+}
+
+# The engine's notes about small studies, in the app's words: they speak
+# of z-scores and thresholds, and the decision they inform -- whether a
+# sample could have been flagged at all -- is simpler than that.
+qc_plain_outlier_notes <- function(notes) {
+  notes <- sub(paste0("^With (\\d+) samples a z-score cannot exceed [0-9.]+, so the PCA and ",
+                      "connectivity tests flag nothing at a threshold of [0-9.e+-]+; ",
+                      "the leave-one-out test still applies\\.$"),
+               paste("With \\1 samples the PCA and connectivity checks cannot flag a sample.",
+                     "The leave-one-out check can: it sets each sample aside in turn and asks",
+                     "whether it resembles its closest sample much less than the other samples",
+                     "resemble theirs."),
+               notes)
+  notes <- sub(paste0("^With (\\d+) samples a z-score cannot exceed [0-9.]+, so a threshold ",
+                      "of [0-9.e+-]+ flags nothing; inspect the PCA plot instead\\.$"),
+               paste("With \\1 samples this check cannot flag a sample. Look at the PCA plot,",
+                     "or choose leave-one-out, which works with as few as four samples."),
+               notes)
+  sub("^The leave-one-out test needs at least (\\d+) samples; with (\\d+) it flags nothing\\.$",
+      "The leave-one-out check needs at least \\1 samples, so with \\2 it flagged nothing.",
+      notes)
+}
+
+# One sentence per sample the leave-one-out check flagged, saying what it
+# saw in numbers a reader can check against the PCA.
+qc_loo_explanation <- function(outliers) {
+  st <- if (identical(outliers$method, "loo")) outliers$stats else outliers$by_method$loo$stats
+  if (is.null(st) || !any(st$is_outlier)) return(NULL)
+  st <- st[st$is_outlier, , drop = FALSE]
+  htmltools::tags$p(lapply(seq_len(nrow(st)), function(i) {
+    sprintf(paste("Leave-one-out: %s correlates %.3f with its closest sample (%s),",
+                  "where the other samples typically reach %.3f with theirs. "),
+            st$sample_id[i], st$nearest_correlation[i], st$nearest_sample[i],
+            st$reference_correlation[i])
+  }))
+}
+
+# Put a saved result's settings back into the controls. The controls a
+# result cannot be expressed in (several outlier methods the radio has no
+# button for) are left as they are.
+qc_restore_controls <- function(session, vals) {
+  if (!is.null(vals$layer)) shiny::updateSelectInput(session, "layer", selected = vals$layer)
+  if (!is.null(vals$missing_threshold)) {
+    shiny::updateSliderInput(session, "missing_threshold", value = vals$missing_threshold)
+  }
+  if (length(vals$outlier_method) == 1L) {
+    shiny::updateRadioButtons(session, "outlier_method", selected = vals$outlier_method)
+  }
+  if (!is.null(vals$impute_method)) {
+    shiny::updateSelectInput(session, "impute_method", selected = vals$impute_method)
+  }
+  if (!is.null(vals$missing_filter)) {
+    shiny::updateSelectInput(session, "missing_filter", selected = vals$missing_filter)
+  }
+  if (!is.null(vals$missing_group_col)) {
+    shiny::updateSelectInput(session, "missing_group_col", selected = vals$missing_group_col)
+  }
+  invisible(vals)
 }
 
 # Proteomics first when nothing else has been asked for: the missingness

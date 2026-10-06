@@ -7,7 +7,9 @@
 qc_missingness(
   input,
   sample_missing_cutoff = NULL,
-  feature_missing_cutoff = 0.5
+  feature_missing_cutoff = 0.5,
+  missing_filter = c("global", "any_group", "all_groups"),
+  group_col = NULL
 )
 }
 \arguments{
@@ -17,23 +19,53 @@ qc_missingness(
 \verb{[0, 1]}. \code{NULL} (default) leaves all samples unflagged.}
 
 \item{feature_missing_cutoff}{Feature missing-rate threshold in \verb{[0, 1]}.}
+
+\item{missing_filter}{How the feature cutoff is applied: \code{"global"},
+\code{"any_group"} or \code{"all_groups"} (see above).}
+
+\item{group_col}{Sample-metadata column holding the groups, for the
+group rules. \code{NULL} uses the layer's recorded study design
+(\code{\link[=study_design]{study_design()}}).}
 }
 \value{
 A list with:
 \describe{
 \item{\code{sample_metrics}}{\code{data.frame} with \code{sample_id}, \code{missing_rate}.}
-\item{\code{feature_metrics}}{\code{data.frame} with \code{feature_id}, \code{missing_rate}.}
+\item{\code{feature_metrics}}{\code{data.frame} with \code{feature_id}, \code{missing_rate}
+and, for the group rules, \code{filter_missing_rate}: the group rate the
+cutoff was compared with (the lowest for \code{"any_group"}, the
+highest for \code{"all_groups"}).}
 \item{\code{flagged_samples}}{Character vector of sample IDs exceeding
 \code{sample_missing_cutoff}.}
 \item{\code{flagged_features}}{Character vector of feature IDs exceeding
 \code{feature_missing_cutoff}.}
-\item{\code{settings}}{Echo of the thresholds used.}
+\item{\code{settings}}{Echo of the thresholds and the filter used (and the
+group column, for the group rules).}
 }
 }
 \description{
 Computes per-sample and per-feature missing rates for an
 \code{\link[=omics_input]{omics_input()}} and flags samples / features whose missing rate exceeds
 the supplied thresholds.
+}
+\details{
+The feature filter can look at the whole study or group by group. A
+protein measured in every treated sample and in no control is missing
+in half the samples overall, so the global rule puts it right at the
+usual 50\% cutoff, although it is the clearest on/off result the study
+has. The group rules, standard in proteomics, ask instead whether the
+feature was measured well enough \emph{within} a group:
+\itemize{
+\item \code{"global"} (default) — missing rate over all samples.
+\item \code{"any_group"} — kept when at least one group is at or below the
+cutoff, i.e. observed in at least \code{1 - feature_missing_cutoff} of
+the samples of some group.
+\item \code{"all_groups"} — kept only when every group is at or below the
+cutoff.
+}
+
+Samples with no value in \code{group_col} belong to no group and do not
+count towards any group's rate.
 }
 \seealso{
 Other qc: 

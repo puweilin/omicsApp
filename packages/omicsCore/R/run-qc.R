@@ -32,9 +32,23 @@
 #' distribution, which only fits intensities after logging, and on the
 #' raw scale they returned negative intensities.
 #'
+#' The feature filter is global by default. `missing_filter = "any_group"`
+#' applies `missing_threshold` within each group of `group_col` and keeps
+#' a feature measured well enough in at least one of them -- the usual
+#' proteomics rule, which keeps a protein present in one condition and
+#' absent from the other; `"all_groups"` asks for every group. See
+#' [qc_missingness()].
+#'
 #' @param input An `omics_input`.
 #' @param missing_threshold Feature missing-rate cutoff in `[0, 1]`. Features
 #'   above this are flagged and removed from `cleaned_input`. Default `0.5`.
+#' @param missing_filter Where `missing_threshold` is applied: `"global"`
+#'   (default; over all samples), `"any_group"` (within each group; kept
+#'   when at least one group passes) or `"all_groups"` (kept when every
+#'   group passes).
+#' @param group_col Sample-metadata column holding the groups, for the
+#'   group filters. `NULL` uses the layer's recorded study design
+#'   ([study_design()]). Ignored by `"global"`.
 #' @param sample_missing_threshold Optional sample missing-rate cutoff.
 #'   Samples above this are flagged and removed.
 #' @param impute_method One of [IMPUTE_METHODS] -- DEP's method set.
@@ -43,7 +57,9 @@
 #'   [resolve_impute_method()]: `"MinProb"` for proteomics, `"none"` for
 #'   counts.
 #' @param outlier_method One of `"none"`, `"pca"`, `"connectivity"`, `"iqr"`,
-#'   or a vector of those (other than `"none"`) to union their flags.
+#'   `"loo"`, or a vector of those (other than `"none"`) to union their
+#'   flags. `"loo"`, the leave-one-out test of [qc_outliers()], is the one
+#'   that can flag a sample in a study of ten or fewer.
 #' @param outlier_sd_threshold Z-score / IQR multiplier passed to
 #'   [qc_outliers()]. Default `3`.
 #' @param remove_outliers Remove the samples [qc_outliers()] flags from
@@ -86,13 +102,16 @@ run_qc <- function(
   outlier_method = NULL,
   outlier_sd_threshold = 3,
   remove_outliers = FALSE,
+  missing_filter = c("global", "any_group", "all_groups"),
+  group_col = NULL,
   ...
 ) {
   assert_number(missing_threshold, "missing_threshold", lower = 0, upper = 1)
   assert_number(sample_missing_threshold, "sample_missing_threshold",
                 lower = 0, upper = 1, allow_null = TRUE)
+  missing_filter <- match.arg(missing_filter)
   assert_subset(outlier_method, "outlier_method",
-                c("none", "pca", "connectivity", "iqr"), allow_null = TRUE)
+                c("none", "pca", "connectivity", "iqr", "loo"), allow_null = TRUE)
   assert_number(outlier_sd_threshold, "outlier_sd_threshold", lower = 0)
   assert_flag(remove_outliers, "remove_outliers")
   validate_omics_input(input)
@@ -119,10 +138,20 @@ run_qc <- function(
 
   # ---- missingness ----
   report_progress("Counting missing values")
+  # The group column is recorded as resolved (from the study design when
+  # not given), so the exported script names it rather than depending on
+  # a design the reader's copy of the layer may not carry.
+  if (!identical(missing_filter, "global")) {
+    group_col <- resolve_missing_group_col(input, group_col, missing_filter)
+  } else {
+    group_col <- NULL
+  }
   missingness <- qc_missingness(
     input,
     sample_missing_cutoff = sample_missing_threshold,
-    feature_missing_cutoff = missing_threshold
+    feature_missing_cutoff = missing_threshold,
+    missing_filter = missing_filter,
+    group_col = group_col
   )
 
   # ---- depth ----
@@ -218,7 +247,9 @@ run_qc <- function(
       impute_method = impute_method,
       outlier_method = outlier_method,
       outlier_sd_threshold = outlier_sd_threshold,
-      remove_outliers = remove_outliers
+      remove_outliers = remove_outliers,
+      missing_filter = missing_filter,
+      group_col = group_col
     ),
     results = list(
       qc_summary = list(
