@@ -367,7 +367,7 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         old <- setwd(dirname(dir))
         on.exit(setwd(old), add = TRUE)
         if (nzchar(Sys.which("zip"))) {
-          utils::zip(file, "analysis", flags = "-rq9X")
+          utils::zip(file, "analysis", flags = "-rq9X", zip = Sys.which("zip"))
         } else {
           utils::tar(file, "analysis", compression = "gzip", tar = "internal")
         }

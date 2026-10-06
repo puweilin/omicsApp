@@ -912,6 +912,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # WebGL rather than one SVG node per point: 60,000 genes painted in
       # 0.5 s instead of 4 s, with the same points and hover text.
       plotly::ggplotly(p, tooltip = "text") |>
+        drop_hoveron() |>
         plotly::toWebGL() |>
         plotly::config(displaylogo = FALSE,
                        modeBarButtonsToRemove = c("lasso2d", "select2d"))
@@ -1492,4 +1493,15 @@ grouping_candidates <- function(meta, min_per_level = 2L, replicated = FALSE) {
   hinted <- low %in% GROUP_COL_HINTS | grepl("group|condition|treat", low)
   nuisance <- grepl(NUISANCE_COL_RE, low)
   cands[order(!hinted, nuisance, n_levels)]
+}
+
+# ggplotly() sets `hoveron` on its traces; scattergl has no such
+# attribute, so once toWebGL() converts them plotly warns about it on
+# every build. Dropped first, it is never there to warn about.
+drop_hoveron <- function(fig) {
+  fig$x$data <- lapply(fig$x$data, function(tr) {
+    tr$hoveron <- NULL
+    tr
+  })
+  fig
 }
