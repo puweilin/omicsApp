@@ -150,9 +150,22 @@ dispatch_diff_backend <- function(input, method, analysis_type, args) {
 loop_case_groups <- function(fun, input, args) {
   specs <- args$contrasts
   args$contrasts <- NULL
+  paired_t <- !is.null(args$paired_col) && identical(fun, run_ttest_group)
   if (is.null(specs)) {
     if (length(args$case_group) <= 1L) {
-      return(do.call(fun, c(list(input = input), args)))
+      if (!paired_t) return(do.call(fun, c(list(input = input), args)))
+      # One comparison is paired the same way as several: the subjects
+      # sampled in both groups, with a note naming any left out. It used
+      # to refuse here, so the same Control vs TreatB comparison ran
+      # inside a multi-group analysis and failed on its own.
+      args$incomplete_pairs <- "drop"
+      res <- do.call(fun, c(list(input = input), args))
+      note <- paired_comparisons_note(
+        list(list(case = args$case_group, control = args$control_group)),
+        res$analysis_info$pairs_used, list(res$analysis_info$pairs_left_out),
+        args$paired_col)
+      res$analysis_info$warnings <- c(res$analysis_info$warnings, note)
+      return(res)
     }
     specs <- case_control_contrasts(args$control_group, args$case_group)
   }
@@ -167,8 +180,7 @@ loop_case_groups <- function(fun, input, args) {
   # ordinary unbalanced design, not an error: each comparison uses the
   # subjects sampled in both of its groups. Demanding every subject in
   # every comparison refused the whole run over one missing sample.
-  per_pair <- !is.null(args$paired_col) && identical(fun, run_ttest_group) &&
-    length(specs) > 1L
+  per_pair <- paired_t
   if (per_pair) args$incomplete_pairs <- "drop"
   runs <- lapply(specs, function(s) {
     a <- args

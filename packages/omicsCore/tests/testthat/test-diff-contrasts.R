@@ -476,16 +476,22 @@ test_that("a subject sampled twice under one group is left out of that compariso
                fixed = TRUE, all = FALSE)
 })
 
-test_that("a balanced paired design needs no note, and one comparison stays strict", {
+test_that("a balanced paired design needs no note, and one comparison pairs the same way", {
   inp <- pt_input()
   bal <- subset_omics(inp, samples = rownames(inp$meta_df)[inp$meta_df$patient %in% paste0("P", 1:4)])
   b <- run_diff(bal, method = "ttest", group_col = "group", control_group = "Control",
                 case_group = c("TreatA", "TreatB"), paired_col = "patient")
   expect_false(any(grepl("Paired t-test", b$warnings)))
-  # A single comparison with a patient missing its partner is still an
-  # error: there the gap is more likely a labelling mistake than a design.
-  expect_error(run_diff(inp, method = "ttest", group_col = "group",
-                        control_group = "Control", case_group = "TreatB",
-                        paired_col = "patient"),
-               "exactly one")
+  # A single comparison with a patient missing its partner uses the
+  # complete pairs, as the same comparison does inside a multi-group run.
+  one <- run_diff(inp, method = "ttest", group_col = "group",
+                  control_group = "Control", case_group = "TreatB",
+                  paired_col = "patient")
+  multi <- run_diff(inp, method = "ttest", group_col = "group",
+                    control_group = "Control", case_group = c("TreatA", "TreatB"),
+                    paired_col = "patient")
+  m <- multi$results$diff_result_df
+  m <- m[m$comparison == "TreatB_vs_Control", , drop = FALSE]
+  expect_equal(one$results$diff_result_df$p_value, m$p_value)
+  expect_match(one$warnings, "TreatB vs Control used", fixed = TRUE, all = FALSE)
 })
