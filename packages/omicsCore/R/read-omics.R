@@ -34,6 +34,11 @@
 #'   with its confidence; below 0.6 the report says it was a guess, and
 #'   this is how the caller corrects it (an Olink NPX table has samples in
 #'   rows and protein names that look like gene symbols on both axes).
+#' @param sample_sheet Optional path to a separate sample sheet (Excel or
+#'   CSV/TSV), for a matrix file that carries no sample information --
+#'   a featureCounts table beside a samples.csv, the usual RNA-seq
+#'   layout. Its rows are matched to the matrix's samples by name and
+#'   replace any sample information found in `path`.
 #' @param ... Forwarded to the underlying reader (`readxl::read_excel`,
 #'   `utils::read.csv`).
 #'
@@ -49,9 +54,14 @@ read_omics <- function(
   assay_type = NULL,
   sheet_roles = NULL,
   orientation = NULL,
+  sample_sheet = NULL,
   ...
 ) {
   type <- match.arg(type)
+  assert_string(sample_sheet, "sample_sheet", allow_null = TRUE)
+  if (!is.null(sample_sheet) && !file.exists(sample_sheet)) {
+    stop("Sample sheet does not exist: ", sample_sheet, call. = FALSE)
+  }
   sheet_roles <- validate_sheet_roles(sheet_roles)
   assert_choice(orientation, "orientation", c("features_in_rows", "samples_in_rows"),
                 allow_null = TRUE)
@@ -87,7 +97,52 @@ read_omics <- function(
   if (!is.null(orientation) && is_omics_input(out$input)) {
     out$input$orientation <- orientation
   }
+  if (!is.null(sample_sheet) && is_omics_input(out$input)) {
+    out <- attach_sample_sheet(out, sample_sheet)
+  }
   out
+}
+
+# A separate sample sheet, matched to the matrix's samples by name.
+attach_sample_sheet <- function(out, path) {
+  guard_archive(path)
+  sheet <- tryCatch(read_sample_table(path), error = function(e) e)
+  if (inherits(sheet, "error") || !is.data.frame(sheet) || !nrow(sheet)) {
+    out$report <- add_import_warning(out$report, paste0(
+      "The sample sheet could not be read",
+      if (inherits(sheet, "error")) paste0(": ", conditionMessage(sheet)) else ".", ""))
+    return(out)
+  }
+  meta <- materialize_metadata(sheet, sample_ids = colnames(out$input$expr_mat))
+  for (note in attr(meta, "notes")) out$report <- add_import_warning(out$report, note)
+  attr(meta, "notes") <- NULL
+  if (ncol(meta) <= 1L) return(out)
+  out$input$meta_df <- meta
+  out$input$sample_sheet_path <- path
+  out$report <- add_import_warning(out$report, sprintf(
+    "Sample information (%s) was taken from the separate sample sheet.",
+    paste(utils::head(setdiff(names(meta), "sample_id"), 6L), collapse = ", ")))
+  out
+}
+
+read_sample_table <- function(path) {
+  if (is_excel_file(path)) {
+    sheets <- readxl::excel_sheets(path)
+    dfs <- lapply(sheets, function(nm) as.data.frame(read_excel_sheet(path, nm),
+                                                       stringsAsFactors = FALSE))
+    roles <- vapply(seq_along(dfs), function(i) classify_sheet_role(dfs[[i]], sheets[[i]])$role,
+                    character(1))
+    i <- which(roles == "metadata")[1L]
+    if (is.na(i)) i <- 1L
+    return(dfs[[i]])
+  }
+  first <- readLines(path, n = 1L, warn = FALSE, encoding = "UTF-8")
+  sep <- detect_delimiter(path, line = first)
+  utils::read.table(path, header = TRUE, sep = sep, check.names = FALSE,
+                    stringsAsFactors = FALSE, encoding = "UTF-8",
+                    quote = if (identical(sep, "\t")) "" else "\"",
+                    dec = if (identical(sep, ";")) "," else ".",
+                    comment.char = "", fill = TRUE, strip.white = TRUE)
 }
 
 # Roles the caller may assign, checked before any file is opened so a typo
@@ -154,8 +209,8 @@ guard_archive <- function(path,
   too_big <- function(bytes, what) {
     stop(sprintf(paste(
       "This %s unpacks to %s, more than the %s this server reads.",
-      "If the file is genuine, split it or raise",
-      "options(omicsCore.max_unpacked_mb)."),
+      "Save the matrix as CSV (which needs far less memory) and upload that,",
+      "or raise options(omicsCore.max_unpacked_mb)."),
       what, format_mb(bytes), format_mb(limit)), call. = FALSE)
   }
   if (length(magic) >= 4L && identical(magic[1:4], as.raw(c(0x50, 0x4b, 0x03, 0x04)))) {
@@ -482,7 +537,13 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   }
 
   orient <- sheet_table$orientation[sheet_table$name == matrix_sheet]
-  orient_conf <- detect_orientation(sheets[[matrix_sheet]])$confidence
+  # Judged on the identifiers and the numbers only. A "Genes" annotation
+  # column beside the samples broke the sample-name test and put a
+  # "check the orientation" warning on nearly every ordinary file.
+  block <- numeric_block(select_sample_columns(sheets[[matrix_sheet]])$df)
+  od <- detect_orientation(block)
+  orient_conf <- od$confidence
+  if (is.null(orientation) && od$confidence >= 0.6) orient <- od$orientation
   if (!is.null(orientation)) {
     orient <- orientation
     sheet_table$orientation[sheet_table$name == matrix_sheet] <- orientation
@@ -500,8 +561,22 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   cols <- select_sample_columns(sheets[[matrix_sheet]])
   for (note in cols$notes) report <- add_import_warning(report, note)
   mat <- materialize_matrix(cols$df, orient)
-  for (note in attr(mat, "notes")) report <- add_import_warning(report, note)
+  mat_notes <- attr(mat, "notes")
   attr(mat, "notes") <- NULL
+  # With samples in rows, the text columns of the matrix sheet describe
+  # samples (an Olink table's Disease, Sex) -- they are the sample
+  # sheet, not feature annotation to throw away.
+  side_meta <- NULL
+  if (identical(orient, "samples_in_rows") && is.null(metadata_sheet)) {
+    side_meta <- side_sample_columns(sheets[[matrix_sheet]])
+    if (!is.null(side_meta)) {
+      mat_notes <- mat_notes[!grepl("^Left out .* as annotation", mat_notes)]
+      mat_notes <- c(mat_notes, sprintf(
+        "Read %d text column(s) beside the measurements as sample information: %s.",
+        ncol(side_meta) - 1L, paste(names(side_meta)[-1L], collapse = ", ")))
+    }
+  }
+  for (note in mat_notes) report <- add_import_warning(report, note)
   if (is.null(mat)) {
     report <- add_import_warning(report,
       "Could not coerce the picked matrix sheet to a numeric matrix.")
@@ -525,14 +600,29 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
     report <- add_import_warning(report, picked$note)
   }
 
-  meta <- materialize_metadata(if (is.null(metadata_sheet)) NULL
-                               else sheets[[metadata_sheet]],
-                               sample_ids = colnames(mat))
+  # A sample sheet the classifier could not place -- headings in Chinese,
+  # say, where it knows only English ones -- is still recognisable by its
+  # contents: one column names the matrix's samples.
+  if (is.null(metadata_sheet) && is.null(side_meta)) {
+    found <- find_sample_sheet(sheets, sheet_table, matrix_sheet, colnames(mat))
+    if (!is.null(found)) {
+      metadata_sheet <- found
+      sheet_table$role[sheet_table$name == found] <- "metadata"
+      sheet_table$notes[sheet_table$name == found] <- "names the samples of the matrix"
+      report$sheets <- sheet_table
+      report <- add_import_warning(report, sprintf(
+        "Sheet '%s' was not recognised from its headings, but one of its columns names the samples, so it was read as the sample sheet.",
+        found))
+    }
+  }
+  meta_source <- if (!is.null(metadata_sheet)) sheets[[metadata_sheet]] else side_meta
+  meta <- materialize_metadata(meta_source, sample_ids = colnames(mat))
   for (note in attr(meta, "notes")) report <- add_import_warning(report, note)
   attr(meta, "notes") <- NULL
   # A separate annotation sheet wins; failing that, the annotation
   # columns the matrix sheet itself carried.
-  feat_source <- if (!is.null(feature_sheet)) sheets[[feature_sheet]] else cols$annotation
+  feat_source <- if (!is.null(feature_sheet)) sheets[[feature_sheet]]
+                 else if (is.null(side_meta)) cols$annotation
   feat <- materialize_feature_annot(feat_source, feature_ids = rownames(mat))
 
   # An Ensembl-keyed matrix needs symbols before any pathway database can
@@ -865,6 +955,14 @@ strip_vendor_decoration <- function(x) {
   x <- sub("^.*[\\\\/]", "", x)
   x <- sub("\\.(PG|PEP|EG|FG)\\.[A-Za-z]+$", "", x)
   x <- sub("\\.(raw|d|wiff|mzML|mzXML|bam|sam|cram)$", "", x, ignore.case = TRUE)
+  # What aligners and BAM tools append before the extension: STAR's
+  # "Aligned.sortedByCoord.out", samtools' ".sorted", Picard's ".dedup".
+  # "ctrl_1.sorted" no longer matched "ctrl_1" in the sample sheet.
+  for (i in 1:3) {
+    x <- sub(paste0("[._-]?(Aligned\\.sortedByCoord\\.out|Aligned\\.out|sortedByCoord|",
+                    "sorted|dedup|markdup|rmdup|filtered|uniq|unique)$"), "", x,
+             ignore.case = TRUE)
+  }
   x
 }
 
@@ -1153,4 +1251,50 @@ read_excel_sheet <- function(path, sheet, ...) {
   args <- list(path, sheet = sheet, ...)
   if (is.null(args$guess_max)) args$guess_max <- 1e6
   suppressWarnings(do.call(readxl::read_excel, args))
+}
+
+# The identifier column and the numeric columns of a sheet: what the
+# orientation is judged on.
+numeric_block <- function(df) {
+  if (!is.data.frame(df) || ncol(df) < 3L) return(df)
+  num <- vapply(df[-1L], function(c) {
+    if (is.numeric(c)) return(TRUE)
+    v <- suppressWarnings(as.numeric(as.character(c)))
+    mean(!is.na(v[!is.na(c)])) >= 0.9 && any(!is.na(c))
+  }, logical(1))
+  if (sum(num) < 2L) return(df)
+  df[, c(TRUE, num), drop = FALSE]
+}
+
+# Text columns of a samples-in-rows sheet, keyed by its first column.
+side_sample_columns <- function(df) {
+  if (!is.data.frame(df) || ncol(df) < 3L) return(NULL)
+  text <- vapply(df[-1L], function(c) {
+    if (is.numeric(c) || is.logical(c)) return(FALSE)
+    v <- suppressWarnings(as.numeric(as.character(c)))
+    mean(is.na(v[!is.na(c)])) > 0.5
+  }, logical(1))
+  if (!any(text)) return(NULL)
+  out <- df[, c(TRUE, text), drop = FALSE]
+  names(out)[1L] <- "sample_id"
+  out
+}
+
+# A sheet (not the matrix) one of whose columns covers most sample names.
+find_sample_sheet <- function(sheets, sheet_table, matrix_sheet, sample_ids) {
+  key <- function(x) tolower(gsub("[^[:alnum:]]", "", trimws(as.character(x))))
+  ids <- key(sample_ids)
+  cand <- sheet_table$name[sheet_table$role %in% c("unknown", "feature_annot", "ignore") &
+                             sheet_table$name != matrix_sheet &
+                             sheet_table$name %in% names(sheets)]
+  for (nm in cand) {
+    df <- sheets[[nm]]
+    if (!is.data.frame(df) || nrow(df) < 2L) next
+    hit <- vapply(df, function(col) {
+      v <- unique(key(stats::na.omit(col)))
+      length(v) >= 2L && mean(ids %in% v) >= 0.8
+    }, logical(1))
+    if (any(hit)) return(nm)
+  }
+  NULL
 }

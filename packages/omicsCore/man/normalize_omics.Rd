@@ -12,8 +12,9 @@ linear intensities.}
 
 \item{method}{\code{"vsn"} (default) or \code{"log2"}.}
 
-\item{offset}{Added before the log for \code{method = "log2"}, so that zeros
-survive. Ignored by \code{"vsn"}.}
+\item{offset}{Added before the log for \code{method = "log2"}. Zeros and
+negative values are treated as not detected and become \code{NA} first, so
+the offset only shifts the observed values. Ignored by \code{"vsn"}.}
 }
 \value{
 The \code{omics_input} with \code{expr_mat} normalized, \code{raw_mat} holding the

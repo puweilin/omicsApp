@@ -155,7 +155,8 @@ test_that("the volcano is two-coloured at a stated cut, and the sliders do not t
     # Drawn at the default cut: the dashed line sits at -log10(0.05).
     # (ggplotly does not carry the caption over, so the line is the
     # evidence of the threshold the figure was drawn at.)
-    expect_match(volcano_before, "yintercept: 1.30103", fixed = TRUE)
+    # (The hover shows the gene, so the line is found by its y.)
+    expect_match(volcano_before, '"y":[1.30102999566398', fixed = TRUE)
     expect_match(volcano_before, "-log10(adj_p_value)", fixed = TRUE)
     expect_identical(diff_view$thresholds()$p_cutoff, 0.05)
 

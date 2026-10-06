@@ -34,7 +34,9 @@ $sidebar-hover: #1F2433;
 
 $fg-1:           #0F1320;
 $fg-2:           #3F4654;
-$fg-3:           #6B7280;
+// Darker than the mockup's #6B7280, which read at 4.47:1 on the page
+// background -- under the 4.5:1 that small text needs (axe color-contrast).
+$fg-3:           #5F6673;
 $fg-on-dark:     #E8EAF0;
 $fg-on-dark-muted: #8A93A6;
 
@@ -116,6 +118,7 @@ $status-info:  #3B82F6;
 
 .project-picker {
   display: inline-flex; align-items: center; gap: 10px;
+  max-width: 100%; min-width: 0;
   padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -252,6 +255,16 @@ $status-info:  #3B82F6;
 .row-grid.r-6-6 { grid-template-columns: 6fr 6fr; }
 .row-grid.r-4-8 { grid-template-columns: 4fr 8fr; }
 .row-grid.r-3-9 { grid-template-columns: 3fr 9fr; }
+// A grid track cannot shrink below its content's minimum width, and a
+// plot already drawn at 860 px is that minimum: after a resize, or with
+// several comparisons, the Differential view overflowed sideways and the
+// parameter column was squeezed to 165 px.
+.row-grid > *, .stat-grid > * { min-width: 0; }
+@media (max-width: 900px) {
+  .row-grid.r-7-5, .row-grid.r-6-6, .row-grid.r-4-8, .row-grid.r-3-9 {
+    grid-template-columns: 1fr;
+  }
+}
 
 // =============================================================
 // Tables
@@ -283,14 +296,14 @@ table.tbl td.num, table.tbl th.num {
 .pill-up   { background: var(--omics-up-50);   color: var(--omics-up); }
 .pill-down { background: var(--omics-down-50); color: var(--omics-down); }
 .pill-ns   { background: #EEF0F4;              color: var(--fg-3); }
-.pill-ok   { background: var(--accent-100);    color: var(--accent-600); }
+.pill-ok   { background: var(--accent-100);    color: #0B6B58; }
 .pill-warn { background: #FEF3C7;              color: #A66400; }
 .pill-info { background: var(--brand-100);     color: var(--brand-600); }
 
 // =============================================================
 // Steps (multi-step wizard header — Import view)
 // =============================================================
-.steps { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; }
+.steps { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 18px; }
 .step {
   display: flex; align-items: center; gap: 10px; flex: 1;
   padding: 12px 16px;
@@ -515,3 +528,15 @@ table.tbl td.num, table.tbl th.num {
                         margin: 8px 0 4px; overflow: hidden; }
 .async-progress-bar { height: 100%; background: var(--brand-600); transition: width 1s linear; }
 .async-cancel { padding: 0; font-size: 12px; }
+
+// A long project name is cut with an ellipsis (the full name is in the
+// tooltip); 60 characters made the page 612 px wide on a phone.
+.project-picker > div { min-width: 0; }
+.project-picker .project-name {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 48vw;
+}
+.visually-hidden-label {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}

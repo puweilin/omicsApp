@@ -51,10 +51,17 @@ plot_volcano <- function(
   df$.label <- ifelse(df$feature_id %in% unique(c(top_ids, forced_ids)),
                       df$feature_symbol, NA_character_)
 
+  # What an interactive viewer (plotly) shows on hover: the gene first.
+  # The static figure ignores it.
+  df$.hover <- sprintf("%s<br>effect: %.3f<br>%s: %.3g",
+                       ifelse(is.na(df$feature_symbol) | !nzchar(df$feature_symbol),
+                              df$feature_id, df$feature_symbol),
+                       df$effect, p_col, df[[p_col]])
   p <- ggplot2::ggplot(df,
                        ggplot2::aes(x = .data$effect,
                                     y = .data$.neglog10p,
-                                    color = .data$.sig)) +
+                                    color = .data$.sig,
+                                    text = .data$.hover)) +
     ggplot2::geom_point(alpha = 0.75, size = 1.6, na.rm = TRUE) +
     ggplot2::scale_color_manual(
       values = c(ns = omics_colors$ns, significant = omics_colors$up),

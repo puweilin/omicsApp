@@ -32,6 +32,13 @@
 | 备份 | `deploy/scripts/backup.sh`：`set -Eeuo pipefail`；按日期的快照（`--link-dest` 硬链接去重），14 天日备 + 8 周周备；`pg_dump` 先写临时文件并校验后才替换；配置/证书/cron/基因集缓存一并备份；`MANIFEST.sha256` 与镜像 digest；`BACKUP_REMOTE` 异地复制（保留历史）；任何失败经 webhook/邮件/syslog 告警并非零退出；`restore_check.sh` 每周演练（备份时效、校验和、在临时 Postgres 中恢复账户库并计数、用镜像打开一个项目、核对异地副本） | `test-deploy-contract.R`（含端到端运行） |
 | CI 与生产镜像一致 | 新增 `.github/workflows/production-image.yaml`：PR/主干/每周构建 `deploy/docker/Dockerfile`（GHA 缓存），启动容器做服务冒烟测试，并在镜像内运行两个包的全部测试 | `test-deploy-contract.R` |
 
+## 1.2 第四轮系统测试后的进展（2026-10）
+
+第四轮从准确性、效率、UI、用户体验四个视角做了完整测试，详见 [review-2026-10-round4.md](./review-2026-10-round4.md)。
+本计划中的以下条目已一并完成：恢复项目后视图重建结果（2.5 P1）、QC 默认同时运行三种离群检测与按图层排除样本（2.2）、
+RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项目文件瘦身（2.6 P1 中 4 项）、配对设计与连续变量进入界面、
+单独样本表上传、物种选择、完整结果表下载、面向生物学用户的报告、导出脚本连同数据下载。
+
 ---
 
 ## 2. 已知问题（确认但未修复）

@@ -234,8 +234,10 @@ loop_case_groups <- function(fun, input, args) {
 #'
 #' @return An [`analysis_bundle`][is_analysis_bundle()] with
 #'   `results$diff_result_df` (standardized schema), `results$diff_raw_df`
-#'   (backend-native), and `results$diff_object` (fitted model, may be
-#'   `NULL`).
+#'   (backend-native), and `results$diff_object` (the fitted model for
+#'   limma, t-test and lm; `NULL` for DESeq2 and edgeR unless
+#'   `options(omicsCore.keep_count_models = TRUE)` -- see
+#'   `keep_model_object()`).
 #' @export
 #' @family diff
 #' @examples
@@ -390,7 +392,7 @@ run_diff <- function(
     results = list(
       diff_result_df = backend_result$results_std,
       diff_raw_df = backend_result$results_raw,
-      diff_object = backend_result$model_object
+      diff_object = keep_model_object(backend_result$model_object)
     ),
     warnings = c(pre$warnings, backend_result$analysis_info$warnings)
   )
@@ -595,12 +597,15 @@ prepare_diff_scale <- function(input, method) {
     lib <- colSums(m, na.rm = TRUE)
     nf <- rep(1, ncol(m))
     if (is_installed("edgeR")) {
-      nf <- tryCatch(edgeR::calcNormFactors(edgeR::DGEList(counts = m))$samples$norm.factors,
+      nf <- tryCatch(cached_tmm(m),
                      error = function(e) rep(1, ncol(m)))
     }
     eff <- lib * nf
     eff[!is.finite(eff) | eff <= 0] <- NA_real_
-    input$expr_mat <- log2(sweep(m, 2L, eff / 1e6, "/") + 0.5)
+    # voom's log-CPM: half a read added to each count and one read to
+    # each library. log2(CPM + 0.5) added half a CPM -- ten reads at 20M
+    # depth -- and shrank a true 2-fold change on a 10-read gene to 1.5.
+    input$expr_mat <- log2(sweep(m + 0.5, 2L, (eff + 1) / 1e6, "/"))
     input$assay_type <- "logcpm"
     return(list(input = input, note = sprintf(
       "Raw counts were converted to log2-CPM%s for method = '%s'; DESeq2 or edgeR model counts directly.",
@@ -715,4 +720,16 @@ prune_backend_args <- function(method, analysis_type, args) {
     drop <- c(drop, "paired_col")
   }
   args[setdiff(names(args), drop)]
+}
+
+# The fitted model kept in the bundle. DESeq2's DESeqDataSet and edgeR's
+# fit are dropped: they were 56-314 MB per bundle at 30k-60k genes,
+# nothing reads them, and every bundle is sent back from the worker and
+# written by every autosave (a project of two layers went from 69 to
+# 18 MB without them). limma's fit is a few MB and stays.
+keep_model_object <- function(obj) {
+  heavy <- inherits(obj, c("DESeqDataSet", "DGEGLM", "DGELRT", "DGEList")) ||
+    (is.list(obj) && !is.object(obj) && length(obj) &&
+       all(vapply(obj, inherits, logical(1), c("DESeqDataSet", "DGEGLM", "DGELRT", "DGEList"))))
+  if (heavy && !isTRUE(getOption("omicsCore.keep_count_models", FALSE))) NULL else obj
 }

@@ -236,6 +236,16 @@ RUN printf '%s\n' \
       cat(paste0("  ", v, " = ", got), sep = "\n"); \
       if (!all(got == "1")) stop("Renviron.site override did not take effect")'
 
+# A workbook's unpacked size times ~16 is what readxl needs in memory: a
+# 62 MB .xlsx that unpacks to 497 MB peaked at 8.2 GB and would be killed
+# in this container. 300 MB unpacked (~5 GB peak) is the most that fits;
+# bigger matrices import as CSV, which needs about 1 GB.
+# Written where setup_repos.R wrote the repositories (R_PROFILE wins over
+# etc/Rprofile.site when the base image sets it).
+RUN R -q -e 'p <- Sys.getenv("R_PROFILE", unset = file.path(R.home("etc"), "Rprofile.site")); \
+      cat("\noptions(omicsCore.max_unpacked_mb = 300)\n", file = p, append = TRUE)' \
+ && R -q --no-echo -e 'stopifnot(identical(getOption("omicsCore.max_unpacked_mb"), 300))'
+
 USER omics
 WORKDIR /home/omics
 EXPOSE 3838

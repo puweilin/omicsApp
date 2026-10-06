@@ -97,10 +97,11 @@ run_limma_group <- function(
     if (any(is.na(target_meta[[paired_col]]))) {
       stop("`paired_col` contains missing values after group filtering: ", paired_col)
     }
-    block_var <- factor(target_meta[[paired_col]])
-    corfit <- limma::duplicateCorrelation(expr_sub, design, block = block_var)
-    fit <- limma::lmFit(expr_sub, design, block = block_var, correlation = corfit$consensus)
+    bf <- limma_blocked_fit(expr_sub, design, target_meta[[paired_col]])
+    fit <- bf$fit
+    design <- bf$design
   } else {
+    bf <- NULL
     fit <- limma::lmFit(expr_sub, design)
   }
 
@@ -141,7 +142,9 @@ run_limma_group <- function(
       analysis_type = "group",
       comparison = comparisons,
       covariates = covariates,
-      paired_col = paired_col
+      paired_col = paired_col,
+      pairing = bf$how,
+      warnings = bf$note
     )
   )
 }
@@ -213,12 +216,10 @@ run_limma_continuous <- function(
     if (any(is.na(meta_df[[paired_col]]))) {
       stop("`paired_col` contains missing values: ", paired_col)
     }
-    block_var <- factor(meta_df[[paired_col]])
-    corfit <- limma::duplicateCorrelation(expr_mat, design, block = block_var)
-    fit <- limma::eBayes(limma::lmFit(
-      expr_mat, design, block = block_var, correlation = corfit$consensus
-    ))
+    bf <- limma_blocked_fit(expr_mat, design, meta_df[[paired_col]])
+    fit <- limma::eBayes(bf$fit)
   } else {
+    bf <- NULL
     fit <- limma::eBayes(limma::lmFit(expr_mat, design))
   }
 
@@ -240,44 +241,12 @@ run_limma_continuous <- function(
   adjustment_terms <- if (length(adj_cols)) paste0(".adj", seq_along(adj_cols)) else character(0)
   names(adj_df) <- adjustment_terms
 
-  adj_r2 <- apply(expr_mat, 1L, function(y) {
-    model_df <- data.frame(y = y, cont = cont_vals, adj_df, check.names = FALSE)
-    if (method == "spline") {
-      f <- if (length(adjustment_terms) > 0L) {
-        stats::as.formula(paste(
-          "y ~ splines::ns(cont, df =", df, ") +",
-          paste(adjustment_terms, collapse = " + ")
-        ))
-      } else {
-        stats::as.formula(paste("y ~ splines::ns(cont, df =", df, ")"))
-      }
-    } else {
-      f <- if (length(adjustment_terms) > 0L) {
-        stats::as.formula(paste("y ~ cont +", paste(adjustment_terms, collapse = " + ")))
-      } else {
-        stats::as.formula("y ~ cont")
-      }
-    }
-    summary(stats::lm(f, data = model_df))$adj.r.squared
-  })
-
-  rho <- apply(expr_mat, 1L, function(y) {
-    if (length(adjustment_terms) == 0L) {
-      return(suppressWarnings(
-        stats::cor.test(y, cont_vals, method = "spearman", exact = FALSE)$estimate
-      ))
-    }
-    model_df <- data.frame(y = y, cont = cont_vals, adj_df, check.names = FALSE)
-    y_resid <- stats::residuals(stats::lm(
-      stats::as.formula(paste("y ~", paste(adjustment_terms, collapse = " + "))),
-      data = model_df
-    ))
-    cont_resid <- stats::residuals(stats::lm(
-      stats::as.formula(paste("cont ~", paste(adjustment_terms, collapse = " + "))),
-      data = model_df
-    ))
-    suppressWarnings(stats::cor.test(y_resid, cont_resid, method = "spearman", exact = FALSE)$estimate)
-  })
+  # Model fit and rank correlation for every feature at once. The
+  # apply() loops this replaces had no guard: one all-missing protein
+  # stopped the whole run with "0 (non-NA) cases".
+  ex <- limma_continuous_extras(expr_mat, cont_vals, adj_df, method, df)
+  adj_r2 <- ex$adj_r2
+  rho <- ex$rho
 
   raw_df$adj_r_squared <- unname(adj_r2[raw_df$feature_id])
   raw_df$spearman_rho <- unname(rho[raw_df$feature_id])
@@ -299,7 +268,9 @@ run_limma_continuous <- function(
       analysis_type = if (method == "spline") "continuous_spline" else "continuous_linear",
       comparison = continuous_col,
       covariates = covariates,
-      paired_col = paired_col
+      paired_col = paired_col,
+      pairing = bf$how,
+      warnings = bf$note
     )
   )
 }
@@ -373,17 +344,19 @@ run_limma_anova <- function(
     if (any(is.na(target_meta[[paired_col]]))) {
       stop("`paired_col` contains missing values after group filtering: ", paired_col)
     }
-    block_var <- factor(target_meta[[paired_col]])
-    corfit <- limma::duplicateCorrelation(expr_sub, design, block = block_var)
-    fit <- limma::eBayes(limma::lmFit(
-      expr_sub, design, block = block_var, correlation = corfit$consensus
-    ))
+    bf <- limma_blocked_fit(expr_sub, design, target_meta[[paired_col]])
+    fit <- limma::eBayes(bf$fit)
   } else {
+    bf <- NULL
     fit <- limma::eBayes(limma::lmFit(expr_sub, design))
   }
 
   coef_idx <- 1L + seq_len(nlevels(target_meta[[group_col]]) - 1L)
   raw_df <- limma::topTable(fit, coef = coef_idx, number = Inf, sort.by = "none")
+  # Two groups make one coefficient, and topTable() then reports t, not
+  # F; the run stopped on "Column `F` not found". F on one numerator
+  # degree of freedom is t squared.
+  if (!"F" %in% names(raw_df) && "t" %in% names(raw_df)) raw_df$F <- raw_df$t^2
   raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
 
   feature_df <- prep_feature_df_for_standardize(feature_df)
@@ -420,7 +393,45 @@ run_limma_anova <- function(
       comparison = group_col,
       covariates = covariates,
       selected_groups = selected_groups,
-      paired_col = paired_col
+      paired_col = paired_col,
+      pairing = bf$how,
+      warnings = bf$note
     )
   )
+}
+
+# Pairs (or repeated measures) as limma models them.
+#
+# As a fixed block -- the pair as a factor in the design, limma's own
+# recommendation for paired samples -- whenever that design can be fitted:
+# every pair has at least two samples, and no covariate is constant
+# within pairs. duplicateCorrelation(), which this always used, assumes
+# one within-pair correlation shared by every feature; on data where it
+# varies (most data), the paired test was anticonservative: 1.8% of null
+# features under p < 0.01 instead of 1%, and an observed FDR of 0.46 at
+# n = 4 pairs against a nominal 0.05. The random-effect fit remains for
+# the designs only it can estimate (a subject-level covariate such as
+# sex, or pairs with one sample), and says so.
+limma_blocked_fit <- function(expr, design, block) {
+  block <- factor(block)
+  if (nlevels(block) >= 2L && all(table(block) >= 2L)) {
+    bm <- stats::model.matrix(~ block)[, -1L, drop = FALSE]
+    colnames(bm) <- paste0(".blk", seq_len(ncol(bm)))
+    full <- cbind(design, bm)
+    if (qr(full)$rank == ncol(full)) {
+      return(list(fit = limma::lmFit(expr, full), design = full,
+                  how = "fixed_block", note = NULL))
+    }
+  }
+  corfit <- limma::duplicateCorrelation(expr, design, block = block)
+  why <- if (any(table(block) < 2L)) "some pairs have a single sample"
+         else "a covariate does not vary within pairs"
+  list(
+    fit = limma::lmFit(expr, design, block = block, correlation = corfit$consensus),
+    design = design, how = "random_block",
+    note = sprintf(paste(
+      "Pairs entered limma as a random effect (duplicateCorrelation, consensus",
+      "correlation %.2f) because %s; this assumes one within-pair correlation",
+      "for every feature, and p-values can be optimistic."),
+      corfit$consensus, why))
 }

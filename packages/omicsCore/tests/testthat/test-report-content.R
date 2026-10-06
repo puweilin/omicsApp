@@ -25,13 +25,14 @@ test_that("the report names every layer with its shape and label", {
   html <- report_html(p)
   expect_match(html, "Report project", fixed = TRUE)
   for (tag in c("proteomics", "rnaseq")) expect_match(html, tag, fixed = TRUE)
-  expect_match(html, "normalized_intensity", fixed = TRUE)
-  expect_match(html, "raw_count", fixed = TRUE)
+  # In words, not internal labels.
+  expect_match(html, "log2 intensities", fixed = TRUE)
+  expect_match(html, "raw read counts", fixed = TRUE)
   expect_match(html, as.character(nrow(inp$expr_mat)), fixed = TRUE)
   expect_match(html, as.character(ncol(inp$expr_mat)), fixed = TRUE)
 })
 
-test_that("the report carries each analysis and the head of its result table", {
+test_that("the report describes the analysis and lists its strongest hits", {
   skip_if_no_report()
   inp <- realistic_input(n_per_group = 3L)
   diff <- run_diff(inp, method = "ttest", analysis_type = "group",
@@ -39,22 +40,25 @@ test_that("the report carries each analysis and the head of its result table", {
   p <- omics_project("With results", experiments = list(proteomics = inp))
   p$bundles <- list(diff = diff)
   html <- report_html(p)
-  expect_match(html, "run_diff", fixed = TRUE)
-  expect_match(html, "diff_result_df", fixed = TRUE)
-  expect_match(html, diff$params$comparison, fixed = TRUE)
-  # The first rows of the result table are printed; the first feature
-  # and its symbol must be there, verbatim.
-  head_rows <- utils::head(diff$results$diff_result_df, 10L)
-  expect_match(html, head_rows$feature_id[[1L]], fixed = TRUE)
-  expect_match(html, head_rows$feature_symbol[[1L]], fixed = TRUE)
-  expect_false(grepl("No analysis_bundle objects", html, fixed = TRUE))
+  expect_match(html, "Methods", fixed = TRUE)
+  expect_match(html, "t-test", fixed = TRUE)
+  expect_match(html, "G2 vs G1", fixed = TRUE)
+  # The top hits are the most significant features, not the first rows
+  # of the table in file order.
+  df <- diff$results$diff_result_df
+  best <- df$feature_symbol[which.min(df$p_value)]
+  expect_match(html, best, fixed = TRUE)
+  expect_match(html, "Top features by p-value", fixed = TRUE)
+  # And p-values are written out, never rounded to 0.
+  expect_false(grepl("<td[^>]*>0</td>", html))
+  expect_false(grepl("No analyses have been run yet", html, fixed = TRUE))
 })
 
 test_that("a project with no analyses says so rather than rendering nothing", {
   skip_if_no_report()
   p <- omics_project("Empty", experiments = list(proteomics = realistic_input(n_per_group = 3L)))
   html <- report_html(p)
-  expect_match(html, "No analysis_bundle objects", fixed = TRUE)
+  expect_match(html, "No analyses have been run yet", fixed = TRUE)
 })
 
 test_that("a restored project reports the same as the live one", {
@@ -70,7 +74,7 @@ test_that("a restored project reports the same as the live one", {
   live <- report_html(p)
   restored <- report_html(load_project(f))
   # Everything but the timestamp and session info
-  strip <- function(html) sub("Session info.*$", "", html)
+  strip <- function(html) gsub("<img[^>]*>", "", sub("Software versions.*$", "", html))
   strip_dates <- function(html) gsub("[0-9]{4}-[0-9]{2}-[0-9]{2}[^<]*", "", html)
   expect_identical(strip_dates(strip(live)), strip_dates(strip(restored)))
 })

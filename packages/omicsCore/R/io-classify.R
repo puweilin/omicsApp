@@ -150,7 +150,10 @@ detect_orientation <- function(df) {
                 notes = "column labels share a sample-name stem"))
   }
   if (!is.na(shape_hint)) {
-    return(list(orientation = shape_hint, confidence = 0.55,
+    # Ten times more of one than the other is how an omics matrix looks
+    # (800 genes x 12 samples); merely twice as many is a guess.
+    lopsided <- max(nrow(body), ncol(body)) >= 10L * min(nrow(body), ncol(body))
+    return(list(orientation = shape_hint, confidence = if (lopsided) 0.7 else 0.55,
                 notes = "decided by row vs column count"))
   }
   list(orientation = "features_in_rows", confidence = 0.4,

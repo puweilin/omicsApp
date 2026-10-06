@@ -156,5 +156,7 @@ tutorial_project <- function() {
     experiments = list(proteomics = proteomics, rnaseq = rnaseq)
   )
   proj$bundles <- list()
+  # Nothing visited yet, so the Workflow card walks through every step.
+  proj$visited_steps <- character(0)
   .example_cache$tutorial <- proj
 }

@@ -29,7 +29,9 @@ complete-case analysis.
 minimum (MNAR). The default for proteomics.
 \item \code{"MinDet"} — a low quantile of the observed values, deterministic (MNAR).
 \item \code{"QRILC"} — quantile regression for left-censored data (MNAR).
-\item \code{"min"} — the observed minimum of that feature (MNAR).
+\item \code{"min"} — the observed minimum of that feature (MNAR); a feature with
+no observed value gets 0. (DEP's \code{"min"} uses the minimum of the whole
+matrix instead.)
 \item \code{"zero"} — zero (MNAR). Offered for parity; it distorts variance.
 \item \code{"knn"} — k-nearest neighbours (MAR).
 \item \code{"MLE"} — maximum likelihood (MAR).
@@ -43,15 +45,15 @@ imputes on. On linear intensities they will place imputed values on a
 scale the observed values are not on.
 }
 \seealso{
-Other qc: 
+Other qc:
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
-\code{\link{plot_qc}()},
-\code{\link{qc_depth}()},
-\code{\link{qc_depth_outliers}()},
-\code{\link{qc_missingness}()},
-\code{\link{qc_outliers}()},
-\code{\link{resolve_impute_method}()},
-\code{\link{run_qc}()},
-\code{\link{winsorize_counts}()}
+\code{\link[=plot_qc]{plot_qc()}},
+\code{\link[=qc_depth]{qc_depth()}},
+\code{\link[=qc_depth_outliers]{qc_depth_outliers()}},
+\code{\link[=qc_missingness]{qc_missingness()}},
+\code{\link[=qc_outliers]{qc_outliers()}},
+\code{\link[=resolve_impute_method]{resolve_impute_method()}},
+\code{\link[=run_qc]{run_qc()}},
+\code{\link[=winsorize_counts]{winsorize_counts()}}
 }
 \concept{qc}

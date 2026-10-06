@@ -89,6 +89,9 @@ test_that("the checklist follows what has been run", {
   p <- tutorial_project()
   expect_identical(WORKFLOW_STEPS$id[workflow_progress(p)$next_step], "qc")
   p$bundles <- list(qc = 1, diff = 1)
+  # A result that appeared on its own does not tick a step not visited.
+  expect_identical(WORKFLOW_STEPS$id[workflow_progress(p)$next_step], "qc")
+  p$visited_steps <- c("qc", "diff", "enrich", "integration")
   expect_identical(WORKFLOW_STEPS$id[workflow_progress(p)$next_step], "enrich")
   p$bundles <- list(qc = 1, diff = 1, enrich = 1)
   expect_identical(WORKFLOW_STEPS$id[workflow_progress(p)$next_step], "integration")

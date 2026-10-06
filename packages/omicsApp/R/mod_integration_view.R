@@ -113,7 +113,12 @@ integration_view_server <- function(id,
       bundle <- diff_bundle()
       if (is.null(bundle)) return(list(ok = FALSE, reason = "diff"))
       params <- bundle$params
-      gc <- params$group_col
+      gc_primary <- params$group_col
+      # The partner's own name for the column: "Group" on one layer and
+      # "group" on the other blocked the run, although the partner's
+      # recorded design said which column it was.
+      gc <- match_partner_col(gc_primary, sec)
+      if (is.null(gc)) gc <- gc_primary
       ctrl <- params$control_group
       case <- params$case_group
       spec <- params$contrasts
@@ -153,7 +158,8 @@ integration_view_server <- function(id,
           covariates     = setdiff(params$covariates, setdiff(params$covariates, names(sec$meta_df))),
           dropped_covs   = setdiff(params$covariates, names(sec$meta_df)),
           primary_method = params$method %||% "auto",
-          primary_omics  = bundle$input_info$omics_type
+          primary_omics  = bundle$input_info$omics_type,
+          paired_col     = match_partner_col(params$paired_col, sec)
         ), base))
       }
       if (is.null(gc) || is.null(ctrl) || is.null(case)) {
@@ -189,7 +195,8 @@ integration_view_server <- function(id,
         covariates     = setdiff(covs, dropped_covs),
         dropped_covs   = dropped_covs,
         primary_method = params$method %||% "auto",
-        primary_omics  = bundle$input_info$omics_type
+        primary_omics  = bundle$input_info$omics_type,
+        paired_col     = match_partner_col(params$paired_col, sec)
       ), base)
     })
 
@@ -240,9 +247,9 @@ integration_view_server <- function(id,
             "layer came from the same person. Add a `donor` column to ",
             "each layer's sample metadata and re-import those layers, or ",
             "rename the samples so they share a leading id \u2014 RD001-C ",
-            "and RD001_Folli both give RD001. Nothing already computed ",
-            "has to be re-run: donor is read by Integration and by ",
-            "nothing else. Fold-change concordance does not need a pairing."),
+            "and RD001_Folli both give RD001. Re-importing a layer clears ",
+            "the results computed on it, so do this before the other ",
+            "analyses if you can. Fold-change concordance does not need a pairing."),
           kind = "warn"))
       }
       n_donor <- length(unique(p$pairs$donor_id))
@@ -376,7 +383,7 @@ integration_view_server <- function(id,
         paste(info$secondary_tag,
               info$secondary$source_fingerprint %||% paste(dim(info$secondary$expr_mat), collapse = "x"),
               info$group_col, info$control, paste(info$all_cases, collapse = ","),
-              paste(info$covariates, collapse = ","), info$primary_method,
+              paste(info$covariates, collapse = ","), info$paired_col %||% "", info$primary_method,
               paste(info$contrasts, collapse = ";"),
               sep = "|")
       }
@@ -410,7 +417,8 @@ integration_view_server <- function(id,
                   analysis_type = "group",
                   group_col     = info$group_col,
                   contrasts     = info$contrasts,
-                  covariates    = if (length(info$covariates)) info$covariates else NULL
+                  covariates    = if (length(info$covariates)) info$covariates else NULL,
+                  paired_col    = info$paired_col
                 )
               } else {
                 omicsCore::run_diff(
@@ -420,7 +428,8 @@ integration_view_server <- function(id,
                   group_col     = info$group_col,
                   control_group = info$control,
                   case_group    = info$all_cases,
-                  covariates    = if (length(info$covariates)) info$covariates else NULL
+                  covariates    = if (length(info$covariates)) info$covariates else NULL,
+                  paired_col    = info$paired_col
                 )
               }
               sec_diff <- omicsCore::select_comparison(
@@ -627,25 +636,25 @@ integration_view_server <- function(id,
       }
     })
 
-    output$dual <- shiny::renderPlot({
+    output$dual <- shiny::renderPlot(alt = "Volcano plots of the two layers side by side", {
       b <- plot_bundle()
       shiny::req(b, identical(b$params$method, "concordance"))
       omicsCore::plot_integration(b, view = "dual_volcano")
     })
 
-    output$scatter <- shiny::renderPlot({
+    output$scatter <- shiny::renderPlot(alt = "Effect in one layer against the effect in the other", {
       b <- plot_bundle()
       shiny::req(b, identical(b$params$method, "concordance"))
       omicsCore::plot_integration(b, view = "effect_pair")
     })
 
-    output$cor_scatter <- shiny::renderPlot({
+    output$cor_scatter <- shiny::renderPlot(alt = "Per-feature correlation between the layers across paired samples", {
       b <- plot_bundle()
       shiny::req(b, identical(b$params$method, "correlation"))
       omicsCore::plot_integration(b, view = "scatter")
     })
 
-    output$ap_dot <- shiny::renderPlot({
+    output$ap_dot <- shiny::renderPlot(alt = "Pathways found by combining the two layers", {
       b <- plot_bundle()
       shiny::req(b, identical(b$params$method, "active_pathways"))
       omicsCore::plot_integration(b, view = "dotplot")
@@ -908,4 +917,18 @@ integration_ap_card <- function(ns) {
       DT::DTOutput(ns("ap_table"))
     )
   )
+}
+
+# A metadata column of the partner layer matching `col`: the same name,
+# the same name in another case, or -- for the group column -- the
+# column the partner's recorded study design names.
+match_partner_col <- function(col, partner) {
+  if (is.null(col) || !nzchar(col)) return(NULL)
+  nms <- names(partner$meta_df)
+  if (col %in% nms) return(col)
+  ci <- nms[tolower(nms) == tolower(col)]
+  if (length(ci)) return(ci[[1L]])
+  d <- tryCatch(omicsCore::study_design(partner), error = function(e) NULL)
+  if (!is.null(d$group_col) && d$group_col %in% nms) return(d$group_col)
+  NULL
 }

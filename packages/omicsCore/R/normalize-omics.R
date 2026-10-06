@@ -32,8 +32,9 @@ ensure_vsn <- function() {
 #' @param input An `omics_input` with `omics_type = "proteomics"` carrying
 #'   linear intensities.
 #' @param method `"vsn"` (default) or `"log2"`.
-#' @param offset Added before the log for `method = "log2"`, so that zeros
-#'   survive. Ignored by `"vsn"`.
+#' @param offset Added before the log for `method = "log2"`. Zeros and
+#'   negative values are treated as not detected and become `NA` first, so
+#'   the offset only shifts the observed values. Ignored by `"vsn"`.
 #'
 #' @return The `omics_input` with `expr_mat` normalized, `raw_mat` holding the
 #'   input matrix, and `assay_type` set to `"normalized_intensity"`.

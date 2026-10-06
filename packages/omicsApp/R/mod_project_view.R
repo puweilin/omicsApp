@@ -403,7 +403,8 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         slug      = project_slug(input$save_name %||% ""),
         overwrite = isTRUE(input$save_overwrite)
       )
-      shiny::showNotification(res$message,
+      # The name as typed, not its file-safe slug.
+      shiny::showNotification(if (isTRUE(res$ok) && nzchar(nm)) sprintf("Saved '%s'.", nm) else res$message,
                               type = if (isTRUE(res$ok)) "message" else "error",
                               duration = if (isTRUE(res$ok)) 5 else NULL)
       if (isTRUE(res$ok)) bump_store()
@@ -582,10 +583,17 @@ workflow_progress <- function(proj) {
   steps <- WORKFLOW_STEPS
   have <- names(proj$bundles %||% list())
   n_layers <- length(proj$experiments)
+  # A step is done when its result exists and the user has been to it.
+  # Results that appear on their own -- QC on import, Enrichment and
+  # Integration after a differential run -- used to tick their steps,
+  # and the tutorial skipped the tips for three of its six steps.
+  # Projects saved before visits were recorded count results alone.
+  visited <- proj$visited_steps
   done <- vapply(seq_len(nrow(steps)), function(i) {
     if (steps$id[i] == "import") return(n_layers > 0L)
     if (steps$id[i] == "report") return(FALSE)
-    !is.na(steps$bundle[i]) && steps$bundle[i] %in% have
+    !is.na(steps$bundle[i]) && steps$bundle[i] %in% have &&
+      (is.null(visited) || steps$id[i] %in% visited)
   }, logical(1))
   skip <- steps$id == "integration" & n_layers < 2L
   nxt <- which(!done & !skip)[1L]

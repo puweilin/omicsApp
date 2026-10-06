@@ -20,9 +20,12 @@ app_ui <- function() {
     theme = app_theme(),
     fillable = FALSE,
     window_title = "omicsApp",
+    lang = "en",
     sidebar = bslib::sidebar(
       id = "main_sidebar",
-      open = "always",
+      # Always open on a desktop; on a phone a toggle, so the navigation
+      # is not stacked below the whole page (it sat at y = 2695).
+      open = list(desktop = "always", mobile = "closed"),
       width = 232,
       bg = "#161A26",
       padding = c(14, 12, 14, 12),

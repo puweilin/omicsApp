@@ -89,6 +89,18 @@ run_enrichment <- function(
   direction <- match.arg(direction)
   p_preference <- match.arg(p_preference)
 
+  # A global test (ANOVA, LRT) or a spline fit says *whether* a feature
+  # changes, not which way. GSEA on it ranked by an unsigned score, so
+  # "down" meant "least variable"; ORA "up"/"down" split nothing.
+  at <- unique(stats::na.omit(diff_bundle$results$diff_result_df$analysis_type))
+  undirected <- any(at %in% c("anova", "continuous_spline"))
+  if (undirected && (type == "gsea" || direction != "both")) {
+    stop("This differential result (", paste(at, collapse = ", "), ") has no ",
+         "direction: it says which features change, not which way. Use ORA ",
+         "with direction = \"both\", or enrich a pairwise comparison.",
+         call. = FALSE)
+  }
+
   # Accept a single value or vector and coerce through normalization.
   if (missing(database)) database <- "hallmark"
   assert_names(database, "database")

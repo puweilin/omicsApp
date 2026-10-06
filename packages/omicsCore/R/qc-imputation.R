@@ -92,7 +92,9 @@ resolve_impute_method <- function(omics_type) {
 #'   minimum (MNAR). The default for proteomics.
 #' * `"MinDet"` — a low quantile of the observed values, deterministic (MNAR).
 #' * `"QRILC"` — quantile regression for left-censored data (MNAR).
-#' * `"min"` — the observed minimum of that feature (MNAR).
+#' * `"min"` — the observed minimum of that feature (MNAR); a feature with
+#'   no observed value gets 0. (DEP's `"min"` uses the minimum of the whole
+#'   matrix instead.)
 #' * `"zero"` — zero (MNAR). Offered for parity; it distorts variance.
 #' * `"knn"` — k-nearest neighbours (MAR).
 #' * `"MLE"` — maximum likelihood (MAR).

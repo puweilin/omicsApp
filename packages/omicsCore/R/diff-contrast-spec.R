@@ -185,7 +185,18 @@ normalize_contrast_label <- function(spec) {
 contrast_matrix_from_specs <- function(specs, levels) {
   m <- vapply(specs, function(s) {
     w <- stats::setNames(rep(0, length(levels)), levels)
-    w[names(s$weights)] <- s$weights
+    # The parsed weights may name every level of the column, with zeros
+    # for the groups a contrast leaves out; only the fitted levels have a
+    # row here. Assigning all of them grew the vector, and any contrast
+    # not touching every group ("TreatA - Control" beside a TreatB)
+    # failed with "values must be length 2".
+    sw <- s$weights[abs(s$weights) > 0]
+    missing <- setdiff(names(sw), levels)
+    if (length(missing)) {
+      stop("The contrast \"", s$label, "\" uses group(s) that are not in the fit: ",
+           paste(missing, collapse = ", "), ".", call. = FALSE)
+    }
+    w[names(sw)] <- sw
     w
   }, numeric(length(levels)))
   m <- matrix(m, nrow = length(levels),

@@ -111,16 +111,16 @@ run_edger_group <- function(
   if (!is.null(txi_info$length) &&
       identical(txi_info$counts_from_abundance %||% "no", "no")) {
     length_sub <- txi_info$length[rownames(count_sub), colnames(count_sub), drop = FALSE]
-    lib_sizes <- colSums(count_sub)
-    log_length <- log(length_sub + 1)
-    log_lib <- matrix(
-      log(lib_sizes),
-      nrow = nrow(count_sub),
-      ncol = ncol(count_sub),
-      byrow = TRUE
-    )
-    offsets <- log_length + log_lib
-    y <- edgeR::scaleOffset(y, offset = offsets)
+    # The tximport vignette's recipe: length factors centred per gene,
+    # then TMM on the length-corrected counts. The offsets used to be
+    # log(length) + log(library size) with no TMM at all, so a group in
+    # which a tenth of the genes went up 8-fold had nearly every other
+    # gene called "down" (1449 of 1774 unchanged genes).
+    norm_mat <- length_sub / exp(rowMeans(log(length_sub)))
+    norm_cts <- count_sub / norm_mat
+    eff_lib <- edgeR::calcNormFactors(norm_cts) * colSums(norm_cts)
+    norm_mat <- log(sweep(norm_mat, 2L, eff_lib, "*"))
+    y <- edgeR::scaleOffset(y, offset = norm_mat)
   } else {
     y <- edgeR::calcNormFactors(y)
   }

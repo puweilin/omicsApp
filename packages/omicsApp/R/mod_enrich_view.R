@@ -47,7 +47,8 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                                diff_layer = shiny::reactive(NULL),
                                invalidate = shiny::reactiveVal(0L),
                                navigate = NULL,
-                               diff_all = shiny::reactive(NULL)) {
+                               diff_all = shiny::reactive(NULL),
+                               current_project = shiny::reactive(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
 
     # ---- every comparison side by side --------------------------------
@@ -115,7 +116,8 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       thr <- diff_thresholds()
       type <- input$type %||% "ora"
       args <- list(type = type, database = input$database %||% "hallmark",
-                   direction = input$direction %||% "both")
+                   direction = input$direction %||% "both",
+                   organism = organism())
       if (identical(type, "ora")) {
         args <- c(args, list(p_cutoff = thr$p_cutoff,
                              p_preference = thr$p_preference,
@@ -140,7 +142,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       )
     })
 
-    output$compare_plot <- shiny::renderPlot({
+    output$compare_plot <- shiny::renderPlot(alt = "Pathways enriched in each comparison, side by side", {
       b <- compare_bundle()
       shiny::req(b)
       omicsCore::plot_enrichment_comparison(
@@ -149,9 +151,32 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
 
     have_cp <- has_pkg("clusterProfiler")
 
+    # The species the gene sets come from. Suggested from the symbols --
+    # mouse genes are written Trp53, human TP53 -- because the default
+    # human sets matched no mouse gene, and the result was an empty table
+    # with no word of why.
+    suggested_organism <- shiny::reactive({
+      b <- diff_bundle()
+      if (is.null(b)) return("Hs")
+      guess_organism(b$results$diff_result_df$feature_symbol)
+    })
+    organism <- shiny::reactive(input$organism %||% suggested_organism())
+    output$ui_organism <- shiny::renderUI({
+      sel <- shiny::isolate(input$organism) %||% suggested_organism()
+      shiny::selectInput(session$ns("organism"), label = "Species",
+                         choices = c("Human" = "Hs", "Mouse" = "Mm"), selected = sel)
+    })
+    shiny::observeEvent(suggested_organism(), {
+      shiny::updateSelectInput(session, "organism", selected = suggested_organism())
+    }, ignoreInit = TRUE)
+
     enrich_bundle <- shiny::reactiveVal(NULL)
     enrich_error  <- shiny::reactiveVal(NULL)
     is_demo       <- shiny::reactiveVal(TRUE)
+    # No demo pathways once the user has a project of their own.
+    shiny::observeEvent(current_project(), {
+      if (is.null(enrich_bundle())) is_demo(is.null(current_project()) || !have_cp)
+    }, ignoreNULL = FALSE)
 
     # The layer the upstream diff was computed on has been replaced, so
     # this enrichment is no longer about anything in the project. Back
@@ -162,7 +187,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       compare_epoch$bump()
       enrich_bundle(NULL)
       enrich_error(NULL)
-      is_demo(TRUE)
+      is_demo(is.null(current_project()))
       compare_bundle(NULL)
     }, ignoreInit = TRUE)
 
@@ -181,7 +206,9 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                  "fixture. Install with `omicsCore::install_optional",
                  "('enrichment')`.")
         } else NULL)
-        is_demo(TRUE)
+        # The demo only when there is no project of the user's: its
+        # pathways under a restored project read as the user's result.
+        is_demo(is.null(current_project()) || !have_cp)
         enrich_bundle(NULL)
         return(invisible())
       }
@@ -207,6 +234,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                 diff_bundle   = bundle,
                 type          = type,
                 database      = db_arg,
+                organism      = org,
                 direction     = dir_,
                 p_cutoff      = thr$p_cutoff,
                 p_preference  = thr$p_preference,
@@ -217,12 +245,13 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                 diff_bundle = bundle,
                 type        = type,
                 database    = db_arg,
+                organism    = org,
                 direction   = dir_
               )
             }
           },
           bundle = bundle, type = type, db_arg = db_arg, dir_ = dir_,
-          thr = thr
+          thr = thr, org = organism()
         ),
         on_success = function(result) {
           if (!enrich_epoch$is_current(my_run)) return(invisible())
@@ -248,8 +277,34 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     # with ignoreNULL the old enrichment stayed on screen, now labelled
     # with the new layer, and went into the project without its diff.
     shiny::observeEvent(diff_bundle(), {
+      # A project opened or restored brings its enrichment with it: shown
+      # as it was saved, not recomputed at whatever the controls say.
+      saved <- current_project()$bundles$enrich
+      b <- diff_bundle()
+      if (!is.null(saved) && !is.null(b) && is.null(enrich_bundle()) &&
+          identical(saved$params$comparison, b$params$comparison) &&
+          identical(saved$input_info$omics_type, b$input_info$omics_type)) {
+        enrich_epoch$bump()
+        restore_controls(saved$params)
+        enrich_error(NULL)
+        is_demo(FALSE)
+        enrich_bundle(saved)
+        sc <- current_project()$bundles$enrich_compare
+        if (!is.null(sc) && is.null(compare_bundle())) compare_bundle(sc)
+        return(invisible())
+      }
       do_run()
     }, ignoreInit = TRUE, ignoreNULL = FALSE)
+
+    restore_controls <- function(params) {
+      if (!is.null(params$type)) shiny::updateRadioButtons(session, "type", selected = params$type)
+      if (!is.null(params$database)) shiny::updateSelectInput(session, "database",
+                                                              selected = params$database[[1L]])
+      if (!is.null(params$direction)) shiny::updateRadioButtons(session, "direction",
+                                                                selected = params$direction)
+      org <- switch(params$organism %||% "", "Mus musculus" = "Mm", "Homo sapiens" = "Hs", NULL)
+      if (!is.null(org)) shiny::updateSelectInput(session, "organism", selected = org)
+    }
     shiny::observeEvent(input$rerun, do_run())
     if (is.function(navigate)) {
       shiny::observeEvent(input$go_next, navigate("integration"))
@@ -348,7 +403,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       if (!identical(input$type %||% "ora", "ora")) {
         rankable <- !is.na(df$effect) & !is.na(df$feature_symbol)
         return(list(gsea = TRUE, n = sum(rankable), total = nrow(df),
-                    mapped = sum(rankable & df$feature_symbol != df$feature_id)))
+                    mapped = sum(rankable & is_gene_symbol(df$feature_symbol))))
       }
       pcol <- if (identical(thr$p_preference, "raw")) "p_value" else "adj_p_value"
       pv <- df[[pcol]]
@@ -359,8 +414,10 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       list(gsea = FALSE, n = sum(keep), total = nrow(df), p_col = pcol,
            p_cutoff = thr$p_cutoff %||% 0.05,
            effect_cutoff = thr$effect_cutoff,
-           mapped = sum(keep & !is.na(df$feature_symbol) &
-                          df$feature_symbol != df$feature_id))
+           # A symbol is a symbol whether or not it is also the id: a
+           # matrix keyed by gene symbols was told "none carry a gene
+           # symbol" beside the pathways it had just found.
+           mapped = sum(keep & is_gene_symbol(df$feature_symbol)))
     })
 
     output$input_summary <- shiny::renderUI({
@@ -431,12 +488,29 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
           tagged,
           notice(
             title  = "Run a differential analysis first",
-            detail = paste0("This view enriches the top hits from the ",
-                            "Differential view. Showing the demo fixture ",
-                            "until a real result arrives."),
+            detail = if (is.null(current_project()))
+              paste0("This view enriches the top hits from the ",
+                     "Differential view. Showing the demo fixture ",
+                     "until a real result arrives.")
+            else "This view enriches the hits of the Differential view; run it there and the pathways appear here.",
             kind   = "info"
           )
         )
+      }
+      # Nothing found: say the likely reason instead of an empty table.
+      eb <- enrich_bundle()
+      if (!is.null(eb) && !isTRUE(is_demo()) &&
+          nrow(eb$results$enrich_result_df %||% data.frame()) == 0L) {
+        guess <- guess_organism(diff_bundle()$results$diff_result_df$feature_symbol)
+        used <- if (identical(eb$params$organism, "Mus musculus")) "Mm" else "Hs"
+        tagged <- htmltools::tagAppendChild(tagged, notice(
+          title = "No pathway was found",
+          detail = if (!identical(guess, used))
+            sprintf("The gene names look %s, but %s gene sets were used. Switch Species and re-run.",
+                    if (guess == "Mm") "like mouse genes (e.g. Trp53)" else "like human genes (e.g. TP53)",
+                    if (used == "Mm") "mouse" else "human")
+          else "None of the sets passed the threshold. Try GSEA, another database, or looser Differential thresholds.",
+          kind = "warn"))
       }
       tagged
     })
@@ -462,7 +536,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       if (is.null(v) || !is.finite(v) || v <= 0 || v > 1) 0.05 else v
     })
 
-    output$dot <- shiny::renderPlot({
+    output$dot <- shiny::renderPlot(alt = "Dot plot of the most enriched pathways", {
       b <- plot_bundle()
       shiny::req(b)
       omicsCore::plot_enrichment(b, view = "dot", top_n = 12L,
@@ -493,6 +567,10 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       )
       names(out)[names(out) == "P"] <-
         if (identical(show_p(), "raw")) "p" else "adj.P"
+      # ORA has no enrichment score, and a direction only when it was
+      # run on one direction; columns of NA said nothing.
+      if (all(is.na(df$effect))) out$NES <- NULL
+      if (all(is.na(df$direction))) out$Direction <- NULL
       DT::datatable(
         out,
         rownames  = FALSE,
@@ -576,9 +654,15 @@ enrich_params_card <- function(ns) {
           )
         ),
         param_group(
+          "Species",
+          help = "Which species' gene sets to use. Suggested from how the gene names are written.",
+          shiny::uiOutput(ns("ui_organism"))
+        ),
+        param_group(
           "Database",
           shiny::selectInput(
-            ns("database"), label = NULL,
+            ns("database"),
+            label = htmltools::tags$span(class = "visually-hidden-label", "Database"),
             choices  = c("MSigDB Hallmark" = "hallmark",
                          "KEGG" = "kegg",
                          "Reactome" = "reactome",
@@ -611,7 +695,8 @@ enrich_params_card <- function(ns) {
             selected = "adjusted", inline = TRUE
           ),
           shiny::numericInput(
-            ns("show_cutoff"), label = NULL,
+            ns("show_cutoff"),
+            label = htmltools::tags$span(class = "visually-hidden-label", "Display p cutoff"),
             value = 0.05, min = 0, max = 1, step = 0.01
           )
         ),
@@ -664,3 +749,20 @@ enrich_hits_card <- function(ns) {
 # Supplied to the worker function's environment by detached_call(), which
 # codetools cannot see.
 utils::globalVariables("bundle")
+
+# Which species a set of gene symbols most likely comes from: mouse and
+# rat symbols are capitalised (Trp53), human ones upper case (TP53).
+guess_organism <- function(symbols) {
+  x <- symbols[is_gene_symbol(symbols)]
+  if (length(x) < 10L) return("Hs")
+  mouse_like <- mean(grepl("^[A-Z][a-z0-9]+[a-z0-9-]*$", x) & grepl("[a-z]", x))
+  human_like <- mean(x == toupper(x))
+  if (mouse_like > 0.5 && mouse_like > human_like) "Mm" else "Hs"
+}
+
+# Values that look like gene symbols rather than accessions or blanks.
+is_gene_symbol <- function(x) {
+  x <- as.character(x)
+  !is.na(x) & nzchar(x) & grepl("^[A-Za-z][A-Za-z0-9.-]{0,19}$", x) &
+    !grepl("^(ENS[A-Z]*[0-9]{6,}|[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9][A-Z][A-Z0-9]{2}[0-9]|N[MRP]_|X[MR]_)", x)
+}

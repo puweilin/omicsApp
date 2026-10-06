@@ -110,7 +110,11 @@ gsea_rank_vector <- function(result_df, feature_col) {
   stat <- result_df$statistic
   eff <- result_df$effect
   if (length(st) == 1L && st %in% c("t", "wald") && any(is.finite(stat))) {
-    metric <- sign(eff) * abs(stat)
+    # The statistic carries its own sign. sign(effect) is not always the
+    # same thing: a continuous fit reports Spearman's rho as the effect
+    # and the slope's t as the statistic, and they disagree for ~9% of
+    # features.
+    metric <- stat
     label <- "signed test statistic"
   } else if (length(st) == 1L && st == "F" && any(is.finite(stat))) {
     # A one-degree-of-freedom F (edgeR's QL test) is a squared t.

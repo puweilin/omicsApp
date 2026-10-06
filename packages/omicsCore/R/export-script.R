@@ -296,7 +296,9 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
         params = list(omics_type = exp$omics_type,
                       assay_type = file_assay,
                       sheet_roles = exp$sheet_roles,
-                      orientation = exp$orientation),
+                      orientation = exp$orientation,
+                      sample_sheet = if (!is.null(exp$sample_sheet_path))
+                        file.path("raw", basename(exp$sample_sheet_path))),
         arg_names = script_arg_names(read_omics),
         assign_to = var
       )
@@ -317,6 +319,12 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
                           assign_to = var)
         lines <- c(lines, nc$lines)
         notes <- c(notes, nc$notes)
+      }
+      if (length(exp$excluded_samples)) {
+        lines <- c(lines,
+                   "# Samples excluded in QC:",
+                   sprintf("%s <- subset_omics(%s, samples = setdiff(colnames(%s$expr_mat), %s))",
+                           var, var, var, render_value(as.character(exp$excluded_samples))))
       }
       if (!is.null(exp$design$group_col)) {
         dc <- render_call("set_study_design", var,

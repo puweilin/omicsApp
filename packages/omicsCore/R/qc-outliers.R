@@ -126,11 +126,7 @@ qc_outliers_connectivity <- function(expr_mat, sd_threshold) {
   # Pairwise-complete correlation is one pass per pair of samples and
   # took most of a minute on 60k x 300; without missing values the plain
   # matrix product gives the same answer.
-  cor_mat <- if (anyNA(expr_mat)) {
-    stats::cor(expr_mat, use = "pairwise.complete.obs", method = "pearson")
-  } else {
-    stats::cor(expr_mat)
-  }
+  cor_mat <- if (anyNA(expr_mat)) pairwise_cor(expr_mat) else stats::cor(expr_mat)
   diag(cor_mat) <- NA_real_
   mean_cor <- colMeans(cor_mat, na.rm = TRUE)
   z_score <- safe_z(mean_cor)

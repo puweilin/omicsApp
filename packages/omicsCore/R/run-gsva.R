@@ -65,6 +65,21 @@ run_gsva <- function(
   # deepest library the most "active" in every set), linear intensities
   # log2(x + 1).
   expr_mat <- as.matrix(prepare_diff_scale(input, "limma")$input$expr_mat)
+  # GSVA has no notion of a missing value: one NA in one gene made that
+  # gene's every pathway NA in every sample. Features with any missing
+  # value are left out, and the bundle says how many.
+  notes <- character(0)
+  na_rows <- rowSums(is.na(expr_mat)) > 0L
+  if (any(na_rows)) {
+    notes <- c(notes, sprintf(paste(
+      "%d of %d features with missing values were left out of GSVA, which",
+      "cannot score them; impute in QC first to keep them."),
+      sum(na_rows), nrow(expr_mat)))
+    expr_mat <- expr_mat[!na_rows, , drop = FALSE]
+    if (!nrow(expr_mat)) {
+      stop("Every feature has a missing value; impute in QC before GSVA.", call. = FALSE)
+    }
+  }
 
   # Replace expression rownames with feature_symbol so the gene-set lookup
   # works against HGNC symbols (the space msigdbr returns).
@@ -162,6 +177,7 @@ run_gsva <- function(
     results = list(
       gsva_matrix = gsva_mat,
       gsva_gene_sets = gene_sets
-    )
+    ),
+    warnings = notes
   )
 }

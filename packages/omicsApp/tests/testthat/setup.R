@@ -40,3 +40,7 @@ suppressPackageStartupMessages({
 render_html <- function(tag) {
   htmltools::renderTags(tag)$html
 }
+
+# Server-side tests set an input and read the result in the same flush;
+# the QC slider's debounce would defer it.
+options(omicsApp.qc_debounce_ms = 0)

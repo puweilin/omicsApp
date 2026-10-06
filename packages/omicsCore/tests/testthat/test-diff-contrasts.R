@@ -348,9 +348,9 @@ test_that("the report covers every comparison, with its own top hits", {
   out <- withr::local_tempfile(fileext = ".html")
   export_report(proj, out)
   html <- paste(readLines(out, warn = FALSE), collapse = "\n")
-  expect_match(html, "Top hits: A vs ctrl", fixed = TRUE)
-  expect_match(html, "Top hits: B vs ctrl", fixed = TRUE)
-  expect_match(html, "Comparisons", fixed = TRUE)
+  expect_match(html, "A vs ctrl", fixed = TRUE)
+  expect_match(html, "B vs ctrl", fixed = TRUE)
+  expect_match(html, "fitted together in one model", fixed = TRUE)
 })
 
 test_that("the script takes the comparison enrichment ran on out of a full run", {

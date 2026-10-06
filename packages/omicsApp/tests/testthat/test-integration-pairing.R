@@ -68,9 +68,10 @@ test_that("no pairing says what to do instead of failing later", {
     expect_equal(nrow(pairing()$pairs), 0L)
     html <- note_text(output$pairing_note)
     expect_match(html, "donor", fixed = TRUE)
-    # The reassurance matters as much as the instruction: without it the
-    # user assumes a re-import.
-    expect_match(html, "re-run", ignore.case = TRUE)
+    # And what the remedy costs: re-importing a layer clears what was
+    # computed on it. (This said "nothing has to be re-run", which was
+    # not true.)
+    expect_match(html, "clears the results", ignore.case = TRUE)
   })
 })
 

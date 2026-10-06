@@ -116,7 +116,8 @@ import_view_server <- function(id,
                   omics_type = omics_type,
                   assay_type = assay_type,
                   sheet_roles = roles,
-                  orientation = orientation
+                  orientation = orientation,
+                  sample_sheet = sample_sheet
                 ),
                 warning = function(w) {
                   if (grepl("implies (linear|log-scale) values", conditionMessage(w))) {
@@ -142,7 +143,8 @@ import_view_server <- function(id,
             out
           },
           datapath = f$datapath, name = f$name, omics_type = omics_type,
-          roles = role_overrides(), orientation = orientation_override()
+          roles = role_overrides(), orientation = orientation_override(),
+          sample_sheet = input$sample_file$datapath
         ),
         on_success = function(out) {
           if (!parse_epoch$is_current(my_parse)) return(invisible())
@@ -189,6 +191,11 @@ import_view_server <- function(id,
       do_parse()
     })
     shiny::observeEvent(input$omics_type, do_parse(), ignoreInit = TRUE)
+    # A sample sheet for a matrix file that has none (counts.txt beside
+    # samples.csv): the two are read together.
+    shiny::observeEvent(input$sample_file, {
+      if (!is.null(input$file)) do_parse()
+    }, ignoreInit = TRUE)
 
     # ---- assay type: inferred, then owned by the user -----------------
     # The picker is rendered only once there is a matrix to infer from, so
@@ -323,6 +330,19 @@ import_view_server <- function(id,
       cand <- parsed()
       if (is.null(cand) || is.null(cand$input)) return(NULL)
       src <- attr(cand$input$feature_df, "symbol_column") %||% NA_character_
+      syms <- cand$input$feature_df$feature_symbol
+      share <- if (length(syms)) mean(is_gene_symbol(syms)) else 0
+      # Judged on the values, not on whether a column was named like a
+      # gene column: ids that are gene symbols, or Ensembl ids mapped to
+      # symbols, were told enrichment "will return nothing".
+      if (is.na(src) && share >= 0.5) {
+        example <- utils::head(syms[is_gene_symbol(syms)], 3L)
+        return(htmltools::tags$div(
+          class = "muted", style = "font-size:12.5px;margin:4px 0 12px",
+          htmltools::tags$strong("Gene symbol"), htmltools::HTML(" &middot; "),
+          sprintf("%.0f%% of features carry a gene symbol ", 100 * share),
+          htmltools::tags$span(class = "text-mono", paste(example, collapse = ", "))))
+      }
 
       if (is.na(src)) {
         return(htmltools::tags$div(
@@ -356,6 +376,25 @@ import_view_server <- function(id,
       )
     })
 
+    # Integer values with gene ids imported as proteomics: almost always
+    # RNA-seq counts on the wrong radio button, which then go through vsn
+    # and limma as intensities.
+    output$omics_hint <- shiny::renderUI({
+      cand <- parsed()
+      if (is.null(cand) || is.null(cand$input)) return(NULL)
+      if (!identical(input$omics_type %||% "proteomics", "proteomics")) return(NULL)
+      m <- cand$input$expr_mat
+      v <- m[!is.na(m)]
+      v <- v[seq_len(min(length(v), 20000L))]
+      ids <- utils::head(rownames(m), 200L)
+      if (length(v) && all(v >= 0) && all(v == round(v)) && max(v) > 100 &&
+          mean(grepl("^ENS[A-Z]*G[0-9]+", ids)) > 0.5) {
+        notice(title = "This looks like RNA-seq counts",
+               detail = "Whole-number values on Ensembl gene ids. If these are read counts, choose RNA-seq above so they are modelled as counts.",
+               kind = "warn")
+      }
+    })
+
     output$confirm_matrix_preview <- shiny::renderTable({
       cand <- parsed()
       shiny::req(cand, cand$input)
@@ -369,11 +408,22 @@ import_view_server <- function(id,
       meta <- cand$input$meta_df
       cands <- grouping_candidates(meta)
       if (!length(cands)) {
+        info_cols <- setdiff(names(meta), "sample_id")
+        msg <- if (!length(info_cols)) {
+          paste("This file has no sample information, so there are no groups to",
+                "compare. Add a sample sheet above (one row per sample, a column",
+                "naming its group), or put it in a second sheet of the workbook.")
+        } else {
+          counts <- lapply(meta[info_cols], function(x) table(as.character(x)))
+          single <- unique(unlist(lapply(counts, function(t) names(t)[t < 2L])))
+          paste0("No column splits the samples into groups of two or more",
+                 if (length(single)) sprintf(" (only one sample in: %s)",
+                                             paste(utils::head(single, 5L), collapse = ", ")),
+                 ". A group needs at least two samples to be compared.")
+        }
         return(htmltools::tags$div(
-          class = "muted", style = "font-size:12px;margin:6px 0 10px",
-          "No metadata column has at least two samples in every group, so no ",
-          "grouping is recorded; the Differential view can still be pointed ",
-          "at any column."))
+          class = "notice notice-warn", style = "font-size:12.5px;margin:6px 0 10px",
+          msg))
       }
       sel <- shiny::isolate(input$design_group)
       if (is.null(sel) || !sel %in% c(cands, "")) sel <- cands[[1L]]
@@ -669,6 +719,12 @@ import_view_server <- function(id,
       cand$source_fingerprint <- input_fingerprint(
         f$datapath, cand$omics_type, cand$assay_type,
         normalize = pending_normalize_method())
+      # A different sample sheet is different data.
+      sf <- input$sample_file
+      if (!is.null(sf)) {
+        cand$source_fingerprint <- paste0(cand$source_fingerprint, ":sheet=",
+                                          unname(tools::md5sum(sf$datapath)))
+      }
       cand
     }
 
@@ -716,6 +772,12 @@ import_view_server <- function(id,
         } else if (grepl("quota", res$message, fixed = TRUE)) {
           shiny::showNotification(res$message, type = "warning", duration = 8)
         }
+      }
+      sf <- input$sample_file
+      if (!is.null(sf) && !is.null(cand$sample_sheet_path)) {
+        res <- store_raw_upload(sf$datapath, sf$name,
+                                unname(tools::md5sum(sf$datapath)))
+        cand$sample_sheet_path <- if (isTRUE(res$ok)) res$path else NULL
       }
       confirmed_input(cand)
     }
@@ -854,7 +916,7 @@ import_upload_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Upload"),
       htmltools::tags$span(class = "card-sub",
-                           "single file \u00B7 one omics layer")
+                           "one omics layer \u00B7 data file + optional sample sheet")
     ),
     bslib::card_body(
       shiny::fileInput(
@@ -863,6 +925,16 @@ import_upload_card <- function(ns) {
         multiple = FALSE,
         accept = c(".xlsx", ".xls", ".csv", ".tsv", ".txt", ".rds"),
         placeholder = "Drop or browse \u2026"
+      ),
+      # Optional: for a matrix that carries no sample information, such as
+      # a featureCounts table or a CSV export. Without it there were no
+      # groups to compare and nowhere to add them.
+      shiny::fileInput(
+        ns("sample_file"),
+        label = "Sample sheet (optional)",
+        multiple = FALSE,
+        accept = c(".xlsx", ".xls", ".csv", ".tsv", ".txt"),
+        placeholder = "samples.csv: one row per sample, with a group column"
       ),
       shiny::radioButtons(
         ns("omics_type"),
@@ -876,6 +948,7 @@ import_upload_card <- function(ns) {
       # guess is filled in from the data; this is where it gets corrected.
       shiny::uiOutput(ns("assay_type_picker")),
       shiny::uiOutput(ns("scale_notice")),
+      shiny::uiOutput(ns("omics_hint")),
       shiny::uiOutput(ns("normalize_controls")),
       shiny::uiOutput(ns("upload_status")),
 
@@ -1061,7 +1134,9 @@ confirm_roles_ui <- function(ns, report, gen = 0L) {
         sprintf("%s x %s", sheets$n_rows[i], sheets$n_cols[i])
       ),
       shiny::selectInput(
-        ns(role_input_id(gen, i)), label = NULL, choices = choices,
+        ns(role_input_id(gen, i)),
+        label = htmltools::tags$span(class = "visually-hidden-label", sprintf("Role of sheet %s", nm)),
+        choices = choices,
         selected = sheets$role[i], width = "180px"
       ),
       if (low_conf) {
@@ -1101,4 +1176,4 @@ preview_metadata <- function(meta, n_row = 5L) {
 }
 
 # Bound by detached_call() in do_parse(), not visible to R CMD check.
-utils::globalVariables(c("datapath", "name", "orientation", "roles"))
+utils::globalVariables(c("datapath", "name", "orientation", "roles", "sample_sheet"))

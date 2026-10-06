@@ -152,7 +152,7 @@ select_complete_cases <- function(omics_input, feature_missing_cutoff = 1) {
 
 carry_input_provenance <- function(out, from) {
   for (nm in c("design", "source_path", "source_fingerprint",
-               "normalization", "sheet_roles", "orientation")) {
+               "normalization", "sheet_roles", "orientation", "sample_sheet_path", "excluded_samples")) {
     out[[nm]] <- from[[nm]]
   }
   out

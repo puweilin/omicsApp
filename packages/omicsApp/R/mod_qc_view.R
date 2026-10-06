@@ -210,10 +210,21 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                          choices = choices, selected = sel)
     })
 
+    # The slider, debounced: QC runs on the main process, and each tick of
+    # a drag used to queue a full run_qc() -- 62 s of frozen session for
+    # a five-tick drag on 8,000 x 300. (Tests set the delay to 0.)
+    qc_delay <- getOption("omicsApp.qc_debounce_ms", 400)
+    thr_in <- shiny::reactive(input$missing_threshold %||% 0.5)
+    thr_r <- if (isTRUE(qc_delay > 0)) shiny::debounce(thr_in, qc_delay) else thr_in
+
     shiny::observe({
       a <- active()
-      thr   <- input$missing_threshold %||% 0.5
-      out_m <- input$outlier_method   %||% "iqr"
+      thr   <- thr_r()
+      out_m <- input$outlier_method   %||% "all"
+      # All three by default: after vsn the per-sample means are equal,
+      # and the IQR test on them -- the old default -- could not see a
+      # sample that PCA and connectivity both flagged.
+      if (identical(out_m, "all")) out_m <- c("pca", "connectivity", "iqr")
       # Read here rather than trusted from the input: the control is
       # hidden when the layer is not proteomics, but Shiny keeps an
       # input's last value, so switching from a proteomics layer with
@@ -286,13 +297,74 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       }
       # What run_qc() did to the data on the way (a log scale for the
       # outlier tests, imputation on log2, samples flagged and kept).
-      notes <- last_bundle()$warnings
-      if (!length(notes)) return(NULL)
-      notice(
-        title  = "About these QC results",
-        detail = htmltools::tags$ul(lapply(notes, htmltools::tags$li)),
-        kind   = "info"
-      )
+      b <- last_bundle()
+      notes <- b$warnings
+      flagged <- b$results$qc_summary$outliers$flagged_samples
+      # In the app's words: the engine's note names R arguments.
+      notes <- notes[!grepl("^Flagged as outlier", notes)]
+      notes <- sub("`raw_count` values were put on a log2 scale \\(log2-CPM\\) for outlier detection.",
+                   "Counts were converted to log2 counts-per-million for the outlier checks.", notes)
+      out <- htmltools::tagList()
+      if (length(flagged) && !active()$is_demo) {
+        out <- htmltools::tagAppendChild(out, notice(
+          title = sprintf("Possible outlier%s: %s", if (length(flagged) > 1L) "s" else "",
+                          paste(flagged, collapse = ", ")),
+          detail = htmltools::tagList(
+            "Kept in the analysis. Look at the PCA: if the sample is broken (a failed run, a swap) rather than biologically different, exclude it. ",
+            shiny::actionButton(session$ns("exclude_flagged"),
+                                "Exclude from this layer\u2026",
+                                class = "btn btn-sm btn-outline-danger")),
+          kind = "warn"))
+      }
+      if (length(notes)) {
+        out <- htmltools::tagAppendChild(out, notice(
+          title  = "About these QC results",
+          detail = htmltools::tags$ul(lapply(notes, htmltools::tags$li)),
+          kind   = "info"
+        ))
+      }
+      out
+    })
+
+    # Excluding a sample replaces the layer by its subset. Results computed
+    # with the sample are cleared, and the script repeats the exclusion.
+    shiny::observeEvent(input$exclude_flagged, {
+      flagged <- last_bundle()$results$qc_summary$outliers$flagged_samples
+      shiny::req(length(flagged))
+      shiny::showModal(shiny::modalDialog(
+        title = "Exclude these samples?",
+        htmltools::tags$p(sprintf("%s will be removed from layer '%s'.",
+                                  paste(flagged, collapse = ", "), active()$tag)),
+        htmltools::tags$p("Results already computed on this layer are cleared and must be re-run. The original file is unchanged."),
+        footer = htmltools::tagList(
+          shiny::modalButton("Cancel"),
+          shiny::actionButton(session$ns("confirm_exclude"), "Exclude",
+                              class = "btn btn-danger")),
+        easyClose = TRUE))
+    })
+    shiny::observeEvent(input$confirm_exclude, {
+      shiny::removeModal()
+      proj <- current_project()
+      tag <- active()$tag
+      flagged <- last_bundle()$results$qc_summary$outliers$flagged_samples
+      shiny::req(proj, tag, length(flagged))
+      inp <- proj$experiments[[tag]]
+      keep <- setdiff(colnames(inp$expr_mat), flagged)
+      new <- tryCatch(omicsCore::subset_omics(inp, samples = keep), error = function(e) e)
+      if (inherits(new, "error")) {
+        shiny::showNotification(conditionMessage(new), type = "error")
+        return()
+      }
+      new$excluded_samples <- unique(c(inp$excluded_samples, intersect(flagged, colnames(inp$expr_mat))))
+      # A new identity, so every view lets go of results computed with
+      # the samples still in.
+      new$source_fingerprint <- paste0(inp$source_fingerprint %||% "", ":excluded=",
+                                       paste(sort(new$excluded_samples), collapse = ","))
+      proj$experiments[[tag]] <- new
+      proj$bundles <- drop_layer_bundles(proj$bundles, tag)
+      current_project(proj)
+      shiny::showNotification(sprintf("Excluded %s from '%s'.", paste(flagged, collapse = ", "), tag),
+                              type = "message")
     })
 
     output$stats <- shiny::renderUI({
@@ -334,7 +406,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         ),
         stat_card(
           label  = "Outlier method",
-          value  = summary$outliers$method,
+          value  = paste(summary$outliers$method, collapse = " + "),
           trend  = sprintf("threshold = %g",
                            bundle$params$outlier_sd_threshold %||% 3),
           accent = "ok"
@@ -383,7 +455,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                            width = "220px"))
     })
 
-    output$pca <- shiny::renderPlot({
+    output$pca <- shiny::renderPlot(alt = "Principal component plot of the samples", {
       bundle <- last_bundle()
       shiny::req(bundle)
       ch <- pca_color_choices()
@@ -443,7 +515,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         selected = sel, inline = TRUE)
     })
 
-    output$missing <- shiny::renderPlot({
+    output$missing <- shiny::renderPlot(alt = "Missing values per sample and per feature", {
       bundle <- last_bundle()
       shiny::req(bundle)
       omicsCore::plot_qc(bundle, view = quality_view())
@@ -468,10 +540,17 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       } else if (a$is_demo) {
         "Demo fixture: ~5% of cells set to NA at random."
       } else {
+        raw <- a$input$expr_mat
+        raw_pct <- 100 * mean(is.na(raw))
         n_na <- sum(is.na(bundle$results$cleaned_input$expr_mat))
         n_cells <- length(bundle$results$cleaned_input$expr_mat)
-        sprintf("Live layer: %d / %d cells missing (%.1f%%).",
-                n_na, n_cells, 100 * n_na / max(n_cells, 1L))
+        if (!is.null(bundle$results$qc_summary$imputation)) {
+          sprintf("Imported layer: %.1f%% of cells missing; after imputation for this view: %.1f%%.",
+                  raw_pct, 100 * n_na / max(n_cells, 1L))
+        } else {
+          sprintf("Imported layer: %d / %d cells missing (%.1f%%).",
+                  sum(is.na(raw)), length(raw), raw_pct)
+        }
       }
       htmltools::tags$div(
         class = "muted",
@@ -519,10 +598,11 @@ qc_controls_card <- function(ns) {
           label   = htmltools::tagList(
             "Outlier detection",
             info_tip("How samples are flagged: IQR of per-sample summaries, distance in PCA space, or low connectivity (correlation) to the other samples.")),
-          choices = c("IQR" = "iqr",
+          choices = c("All three" = "all",
+                      "IQR" = "iqr",
                       "PCA" = "pca",
                       "Connectivity" = "connectivity"),
-          selected = "iqr",
+          selected = "all",
           inline   = TRUE
         )
       ),

@@ -11,6 +11,7 @@ read_omics(
   assay_type = NULL,
   sheet_roles = NULL,
   orientation = NULL,
+  sample_sheet = NULL,
   ...
 )
 }
@@ -38,6 +39,12 @@ for the matrix sheet, overriding the guess. The guess is reported
 with its confidence; below 0.6 the report says it was a guess, and
 this is how the caller corrects it (an Olink NPX table has samples in
 rows and protein names that look like gene symbols on both axes).}
+
+\item{sample_sheet}{Optional path to a separate sample sheet (Excel or
+CSV/TSV), for a matrix file that carries no sample information --
+a featureCounts table beside a samples.csv, the usual RNA-seq
+layout. Its rows are matched to the matrix's samples by name and
+replace any sample information found in \code{path}.}
 
 \item{...}{Forwarded to the underlying reader (\code{readxl::read_excel},
 \code{utils::read.csv}).}

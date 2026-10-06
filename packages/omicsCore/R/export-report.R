@@ -75,7 +75,9 @@ export_report <- function(
   }
 
   output_format <- switch(format,
-    html = rmarkdown::html_document(self_contained = TRUE),
+    # mathjax = NULL: the report has no equations, and the default
+    # makes pandoc print a deprecation warning on every render.
+    html = rmarkdown::html_document(self_contained = TRUE, mathjax = NULL),
     pdf  = rmarkdown::pdf_document()
   )
 

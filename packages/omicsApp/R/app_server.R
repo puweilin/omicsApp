@@ -35,6 +35,17 @@ app_server <- function(input, output, session) {
   shiny::observeEvent(input$nav_integration, set_view("integration"))
   shiny::observeEvent(input$nav_report,      set_view("report"))
 
+  # Which views the user has opened, kept with the project so the
+  # Workflow card ticks a step only once it has been looked at.
+  shiny::observeEvent(current_view(), {
+    proj <- shiny::isolate(current_project())
+    v <- current_view()
+    if (!is.null(proj) && !is.null(proj$visited_steps) && !v %in% proj$visited_steps) {
+      proj$visited_steps <- c(proj$visited_steps, v)
+      current_project(proj)
+    }
+  }, ignoreInit = TRUE, priority = 5L)
+
   shiny::observeEvent(current_view(), {
     v <- current_view()
     shiny::updateTabsetPanel(session, "view", selected = v)
@@ -73,7 +84,7 @@ app_server <- function(input, output, session) {
       icon,
       htmltools::tags$div(
         htmltools::tags$span(class = "label-sm", "Project"),
-        htmltools::tags$span(name)
+        htmltools::tags$span(class = "project-name", title = name, name)
       )
     )
   })
@@ -116,7 +127,8 @@ app_server <- function(input, output, session) {
                                       diff_thresholds = diff_view$thresholds,
                                       diff_layer = diff_view$layer,
                                       invalidate = layer_generation,
-                                      navigate = set_view)
+                                      navigate = set_view,
+                                      current_project = current_project)
   enrich_bundle <- enrich_view$bundle
   # Integration repeats the diff's contrast on the partner layer, on the
   # layer the diff actually ran on, at the thresholds its hits are read at.
@@ -194,6 +206,7 @@ app_server <- function(input, output, session) {
       # Every comparison of the run; the views downstream get the one on
       # screen through `diff_bundle`.
       diff        = diff_view$project_bundle(),
+      anova       = diff_view$anova(),
       enrich      = enrich_bundle(),
       enrich_compare = enrich_view$compare(),
       integration = integration_bundle()
@@ -235,6 +248,7 @@ app_server <- function(input, output, session) {
         experiments = stats::setNames(list(inp), tag)
       )
       proj$bundles <- list()
+      proj$visited_steps <- "import"
     } else {
       # `add_experiment()` rejects duplicate tags, so drop any
       # existing layer of this omics_type first. Bundles computed on
