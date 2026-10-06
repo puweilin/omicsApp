@@ -23,6 +23,7 @@ reference:
   desc: Smart input parser and import report
   contents:
   - read_omics
+  - read_quant_files
   - omics_input
   - is_omics_input
   - new_omics_input

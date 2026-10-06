@@ -46,11 +46,13 @@ test_that("an already-log2 proteomics upload is labelled normalized_intensity", 
   })
 })
 
-test_that("RNA-seq is labelled raw_count and never offered normalization", {
+test_that("RNA-seq counts are labelled raw_count and never offered normalization", {
   skip_unless_xlsx()
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
-  write_tiny_omics_xlsx(xlsx, scale = "linear")
+  # Whole numbers: fractional RNA-seq values are now read as FPKM-like
+  # (see test-import-quant-scale.R).
+  write_tiny_omics_xlsx(xlsx, scale = "counts")
 
   shiny::testServer(import_view_server, {
     session$setInputs(omics_type = "rnaseq", file = tiny_upload(xlsx))
@@ -166,7 +168,7 @@ test_that("RNA-seq counts are committed without transformation", {
   skip_unless_xlsx()
   xlsx <- tempfile(fileext = ".xlsx")
   on.exit(unlink(xlsx), add = TRUE)
-  write_tiny_omics_xlsx(xlsx, scale = "linear")
+  write_tiny_omics_xlsx(xlsx, scale = "counts")
 
   shiny::testServer(import_view_server, {
     session$setInputs(omics_type = "rnaseq", file = tiny_upload(xlsx))

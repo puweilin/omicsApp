@@ -4,27 +4,49 @@
 \alias{infer_assay_type}
 \title{Guess an assay type from the values}
 \usage{
-infer_assay_type(expr_mat, omics_type)
+infer_assay_type(expr_mat, omics_type, explain = FALSE)
 }
 \arguments{
 \item{expr_mat}{Expression matrix.}
 
 \item{omics_type}{Omics modality.}
+
+\item{explain}{If \code{TRUE}, return the reason alongside the guess.}
 }
 \value{
 A single assay type from \link{SUPPORTED_ASSAY_TYPES}, or \code{NA_character_}
-for a modality with no vocabulary.
+for a modality with no vocabulary. With \code{explain = TRUE}, a list with
+\code{assay_type} and \code{reason}, a sentence saying what in the values led to
+the guess.
 }
 \description{
-A starting point for an import wizard, not a verdict: it separates linear
-proteomics intensities from already-transformed ones by magnitude, the same
-heuristic \code{\link[=check_assay_scale]{check_assay_scale()}} uses, and assumes counts for RNA-seq because
-that is what gets uploaded. The caller is expected to show the guess and let
-the user correct it -- nothing else recovers the scale if this is wrong.
+A starting point for an import wizard, not a verdict. Proteomics
+intensities are separated into linear and already-transformed by
+magnitude, the same heuristic \code{\link[=check_assay_scale]{check_assay_scale()}} uses; RNA-seq by
+whether the values are whole, negative, small, or add up to a million
+per sample.
+}
+\details{
+For RNA-seq:
+\itemize{
+\item any negative value, or fractional values that stay below 30:
+\code{"logcpm"} (log-scale expression);
+\item non-negative whole numbers: \code{"raw_count"};
+\item fractional values whose columns each add up to about a million:
+\code{"tpm"};
+\item fractional values with library-sized column totals (estimated counts
+from Salmon, RSEM or kallisto): \code{"raw_count"};
+\item other fractional values: \code{"fpkm"}.
+}
+
+The caller is expected to show the guess and let the user correct it --
+nothing else recovers the scale if this is wrong, and it decides which
+differential methods are offered (see \code{\link[=applicable_diff_methods]{applicable_diff_methods()}}).
 }
 \examples{
 infer_assay_type(matrix(2^rnorm(40, 20, 2), nrow = 10), "proteomics")
 infer_assay_type(matrix(rpois(40, 200), nrow = 10), "rnaseq")
+infer_assay_type(matrix(rnorm(40, 6), nrow = 10), "rnaseq", explain = TRUE)
 }
 \seealso{
 Other omics_input:

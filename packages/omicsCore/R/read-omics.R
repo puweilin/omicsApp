@@ -117,6 +117,9 @@ attach_sample_sheet <- function(out, path) {
       if (inherits(sheet, "error")) paste0(": ", conditionMessage(sheet)) else ".", ""))
     return(out)
   }
+  note <- encoding_note(attr(sheet, "encoding"), "The sample sheet")
+  if (!is.null(note)) out$report <- add_import_warning(out$report, note)
+  attr(sheet, "encoding") <- NULL
   meta <- materialize_metadata(sheet, sample_ids = colnames(out$input$expr_mat))
   for (note in attr(meta, "notes")) out$report <- add_import_warning(out$report, note)
   attr(meta, "notes") <- NULL
@@ -140,13 +143,21 @@ read_sample_table <- function(path) {
     if (is.na(i)) i <- 1L
     return(dfs[[i]])
   }
-  first <- readLines(path, n = 1L, warn = FALSE, encoding = "UTF-8")
-  sep <- detect_delimiter(path, line = first)
-  utils::read.table(path, header = TRUE, sep = sep, check.names = FALSE,
-                    stringsAsFactors = FALSE, encoding = "UTF-8",
-                    quote = if (identical(sep, "\t")) "" else "\"",
-                    dec = if (identical(sep, ";")) "," else ".",
-                    comment.char = "", fill = TRUE, strip.white = TRUE)
+  # The same decoding as the matrix file: a sample sheet typed in Excel
+  # on a Chinese or Western Windows machine is the commonest non-UTF-8
+  # file there is. What it was read as travels on attribute "encoding".
+  text <- utf8_text_file(path)
+  if (isTRUE(text$converted)) on.exit(unlink(text$path), add = TRUE)
+  first <- readLines(text$path, n = 1L, warn = FALSE, encoding = "UTF-8")
+  sep <- detect_delimiter(text$path, line = first)
+  out <- utils::read.table(text$path, header = TRUE, sep = sep, check.names = FALSE,
+                           stringsAsFactors = FALSE, encoding = "UTF-8",
+                           quote = if (identical(sep, "\t")) "" else "\"",
+                           dec = if (identical(sep, ";")) "," else ".",
+                           comment.char = "", fill = TRUE, strip.white = TRUE)
+  if (ncol(out) > 0L) colnames(out) <- strip_bom(colnames(out))
+  attr(out, "encoding") <- text$encoding
+  out
 }
 
 # Roles the caller may assign, checked before any file is opened so a typo
@@ -266,6 +277,9 @@ detect_file_type <- function(path) {
     csv  = "csv",
     tsv  = "csv",
     txt  = "csv",
+    # Salmon's quant.sf and RSEM's *.results are tab-separated text.
+    sf      = "csv",
+    results = "csv",
     rds  = "rds",
     stop("Cannot auto-detect file type for extension: ", ext)
   )
@@ -522,6 +536,17 @@ file_has_byte_after <- function(path, byte, offset = 0) {
 # The delimited table as read.table reads it, with the header's repeated
 # names alongside (read_omics_csv() reports them).
 read_delimited_table <- function(path, ...) {
+  # Decoded to UTF-8 first unless the caller said how to decode it; a
+  # Windows-1252 or GBK file used to stop the import with "invalid
+  # UTF-8" (see io-encoding.R).
+  dots <- list(...)
+  encoding <- "UTF-8"
+  if (is.null(dots$fileEncoding) && is.null(dots$encoding)) {
+    text <- utf8_text_file(path)
+    if (isTRUE(text$converted)) on.exit(unlink(text$path), add = TRUE)
+    path <- text$path
+    encoding <- text$encoding
+  }
   skip <- count_leading_comment_lines(path)
   header_line <- tryCatch(
     readLines(path, n = skip + 1L, warn = FALSE, encoding = "UTF-8")[skip + 1L],
@@ -582,13 +607,24 @@ read_delimited_table <- function(path, ...) {
   if (is.null(df)) df <- do.call(utils::read.table, args)
   # A byte-order mark is not part of the first column's name.
   if (ncol(df) > 0L) colnames(df) <- strip_bom(colnames(df))
-  list(df = df, duplicated_headers = duplicated_headers)
+  list(df = df, duplicated_headers = duplicated_headers, encoding = encoding)
 }
 
 read_omics_csv <- function(path, omics_type, assay_type,
                            sheet_roles = NULL, orientation = NULL, ...) {
   read <- read_delimited_table(path, ...)
   df <- read$df
+  # One sample's Salmon / RSEM / kallisto output: its Length, TPM and
+  # read columns are not four samples (see io-quant.R).
+  if (!is.na(detect_quant_format(df))) {
+    out <- read_quant_files(path)
+    if (!is.null(omics_type) && !identical(omics_type, "rnaseq")) {
+      out$report <- add_import_warning(out$report, sprintf(
+        "Quantification files hold RNA-seq reads, so this was read as RNA-seq, not %s.",
+        omics_type))
+    }
+    return(out)
+  }
   duplicated_headers <- read$duplicated_headers
   nm <- tools::file_path_sans_ext(basename(path))
   cls <- classify_sheet_role(df, name = nm)
@@ -605,6 +641,11 @@ read_omics_csv <- function(path, omics_type, assay_type,
   out <- build_input_from_sheets(sheets, sheet_table, source = path,
                                  omics_type = omics_type, assay_type = assay_type,
                                  orientation = orientation)
+  note <- encoding_note(read$encoding)
+  if (!is.null(note)) {
+    out$report <- add_import_warning(out$report, note)
+    out$report$suggested_input$encoding <- read$encoding
+  }
   # read.table renames a repeated column quietly ("S01.1"); a sample
   # sheet will not match the new name, and the user should know why.
   if (length(duplicated_headers) > 0L) {
@@ -1008,6 +1049,144 @@ first_column_is_id <- function(df) {
 # Rows a spreadsheet adds under the data and a pipeline never would.
 SUMMARY_ROW_RE <- "^(total|totals|sum|mean|average|grand total)$"
 
+# Summary columns: what a spreadsheet adds beside the samples. Names
+# map to the statistic the column should then hold.
+SUMMARY_COLUMN_STATS <- c(
+  total = "sum", totals = "sum", sum = "sum", `grand total` = "sum",
+  mean = "mean", average = "mean", avg = "mean", median = "median",
+  sd = "sd", stdev = "sd", stddev = "sd", `std dev` = "sd", std = "sd",
+  `standard deviation` = "sd", min = "min", minimum = "min",
+  max = "max", maximum = "max", count = "count", n = "count", cv = "cv"
+)
+
+# Words a summary column's name may carry around the statistic: "Mean
+# intensity", "Row total", "Total counts", "Sum of samples". Only these;
+# "Control_Mean1" or "Total_RNA_1" is a sample with a name, not a summary.
+SUMMARY_COLUMN_QUALIFIERS <- c(
+  "row", "overall", "all", "intensity", "intensities", "count", "counts",
+  "expression", "value", "values", "reads", "abundance", "signal", "area",
+  "lfq", "tpm", "fpkm", "cpm", "of samples", "across samples",
+  "of all samples", "all samples"
+)
+
+# Bare words that are also plausible sample or protein names -- "N" for
+# a normal sample beside "T", the MAX protein in a samples-in-rows table.
+# Dropped only when the values say they are the statistic.
+SUMMARY_COLUMN_AMBIGUOUS <- c("n", "count", "min", "max", "minimum", "maximum")
+
+# The statistic each column name announces (NA for none), and whether
+# the name was the bare word with no qualifier.
+summary_column_stat <- function(nm) {
+  x <- tolower(trimws(nm))
+  x <- trimws(gsub("[^a-z0-9]+", " ", x))
+  longest_first <- function(v) paste(v[order(-nchar(v))], collapse = "|")
+  re <- sprintf("^(?:(?:%s) )?(%s)(?: (?:%s))?$",
+                longest_first(SUMMARY_COLUMN_QUALIFIERS),
+                longest_first(names(SUMMARY_COLUMN_STATS)),
+                longest_first(SUMMARY_COLUMN_QUALIFIERS))
+  hit <- regmatches(x, regexec(re, x, perl = TRUE))
+  word <- vapply(hit, function(h) if (length(h) >= 2L) h[[2L]] else NA_character_,
+                 character(1))
+  list(stat = unname(SUMMARY_COLUMN_STATS[word]),
+       bare = !is.na(word) & word == x,
+       word = word)
+}
+
+# Row-wise statistics of `base`, under the names a summary column takes.
+row_summaries <- function(base) {
+  mu <- rowMeans(base, na.rm = TRUE)
+  sdv <- apply(base, 1L, stats::sd, na.rm = TRUE)
+  list(
+    sum = rowSums(base, na.rm = TRUE), mean = mu,
+    median = apply(base, 1L, stats::median, na.rm = TRUE), sd = sdv,
+    min = suppressWarnings(apply(base, 1L, min, na.rm = TRUE)),
+    max = suppressWarnings(apply(base, 1L, max, na.rm = TRUE)),
+    # "Count" is either how many samples have a value or how many
+    # detected the feature.
+    count = rowSums(!is.na(base)), count = rowSums(base > 0, na.rm = TRUE),
+    cv = sdv / mu, cv = 100 * sdv / mu)
+}
+
+# Which columns of `mat` (features in rows, samples in columns) are
+# summaries of the others. Two signals, the values the stronger:
+#   * the name is a summary word, alone or with a qualifier from the list
+#     above -- enough on its own, except for the ambiguous bare words;
+#   * the column equals a statistic of the other columns row by row, on
+#     at least 95% of the rows where those differ (a summary rounded to
+#     two decimals still matches). A column equal to the row sum or mean
+#     of three or more other columns is a summary whatever it is called;
+#     no measured sample lands there.
+find_summary_columns <- function(mat) {
+  n <- ncol(mat)
+  none <- rep(FALSE, n)
+  if (is.null(colnames(mat)) || n < 3L || nrow(mat) < 3L) return(none)
+  named <- summary_column_stat(colnames(mat))
+  flagged <- !is.na(named$stat)
+  by_name <- flagged & !(named$bare & named$word %in% SUMMARY_COLUMN_AMBIGUOUS)
+  close_enough <- function(x, target, rows) {
+    ok <- rows & is.finite(x) & is.finite(target)
+    sum(ok) >= 3L &&
+      mean(abs(x[ok] - target[ok]) <= 0.0051 + 1e-3 * abs(target[ok])) >= 0.95
+  }
+  # Rows where the columns compared against are all equal say nothing
+  # (zero everywhere, say), and are left out of every comparison.
+  varying_rows <- function(base) {
+    cols <- lapply(seq_len(ncol(base)), function(k) base[, k])
+    v <- do.call(pmax, c(cols, na.rm = TRUE)) > do.call(pmin, c(cols, na.rm = TRUE))
+    v & !is.na(v)
+  }
+
+  # Sum and mean of the *other* columns, for every column the name did
+  # not flag. One pass over the matrix, and a first look at a few
+  # hundred rows that rules a real sample out at once: a 60k x 250
+  # table is checked in well under a second.
+  by_value <- none
+  base_cols <- which(!flagged)
+  if (length(base_cols) >= 4L) {
+    base <- if (length(base_cols) == n) mat else mat[, base_cols, drop = FALSE]
+    tot <- rowSums(base, na.rm = TRUE)
+    cnt <- if (anyNA(base)) rowSums(!is.na(base)) else rep(ncol(base), nrow(base))
+    head_rows <- seq_len(min(nrow(base), 2000L))
+    probe <- utils::head(head_rows[varying_rows(base[head_rows, , drop = FALSE])], 300L)
+    varies <- NULL
+    candidate <- function(k, rows, sel) {
+      x <- base[rows, k]
+      miss <- is.na(x)
+      rest <- tot[rows] - ifelse(miss, 0, x)
+      close_enough(x, rest, sel) ||
+        close_enough(x, rest / (cnt[rows] - !miss), sel)
+    }
+    for (k in seq_along(base_cols)) {
+      if (!candidate(k, probe, rep(TRUE, length(probe)))) next
+      if (is.null(varies)) varies <- varying_rows(base)
+      if (candidate(k, seq_len(nrow(base)), varies)) by_value[[base_cols[[k]]]] <- TRUE
+    }
+  }
+
+  # Every statistic, for the bare ambiguous names, which are all the
+  # name alone does not settle. Compared against the columns that are
+  # neither named nor found as summaries, so "N" counts the samples and
+  # not the samples and "Total".
+  by_name_and_value <- none
+  ambiguous <- which(flagged & !by_name)
+  sample_cols <- which(!flagged & !by_value)
+  if (length(ambiguous) && length(sample_cols) >= 2L) {
+    base <- mat[, sample_cols, drop = FALSE]
+    varies <- varying_rows(base)
+    st <- row_summaries(base)
+    for (j in ambiguous) {
+      by_name_and_value[[j]] <- any(vapply(st, function(t) close_enough(mat[, j], t, varies),
+                                           logical(1)))
+    }
+  }
+
+  drop <- by_name | by_name_and_value | by_value
+  # Never every column: a file of nothing but summaries is not one this
+  # can make sense of, and an empty matrix explains nothing.
+  if (all(drop)) return(none)
+  drop
+}
+
 materialize_matrix <- function(df, orientation) {
   if (is.null(df)) return(NULL)
   if (!is.data.frame(df) || nrow(df) == 0L || ncol(df) == 0L) return(NULL)
@@ -1071,6 +1250,16 @@ materialize_matrix <- function(df, orientation) {
     notes <- c(notes, sprintf("Dropped %d column(s) with no values: %s.",
                               sum(empty), paste(colnames(mat)[empty], collapse = ", ")))
     mat <- mat[, !empty, drop = FALSE]
+  }
+  # A "Total" or "Mean" column beside the samples is the same thing
+  # turned sideways, and it used to become a sample -- one that sits at
+  # the centre of every PCA and correlates with everything.
+  summary_col <- find_summary_columns(mat)
+  if (any(summary_col)) {
+    notes <- c(notes, sprintf("Dropped %d summary column(s): %s.",
+                              sum(summary_col),
+                              paste(colnames(mat)[summary_col], collapse = ", ")))
+    mat <- mat[, !summary_col, drop = FALSE]
   }
   # And a "Total" row is a spreadsheet's sum, not a feature.
   summary_row <- grepl(SUMMARY_ROW_RE, tolower(trimws(rownames(mat))))

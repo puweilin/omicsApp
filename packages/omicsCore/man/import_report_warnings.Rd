@@ -23,6 +23,7 @@ Other io:
 \code{\link{import_report_sheets}()},
 \code{\link{is_import_report}()},
 \code{\link{new_import_report}()},
-\code{\link{read_omics}()}
+\code{\link{read_omics}()},
+\code{\link{read_quant_files}()}
 }
 \concept{io}

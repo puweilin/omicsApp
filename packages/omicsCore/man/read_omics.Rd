@@ -75,6 +75,7 @@ Other io:
 \code{\link[=import_report_sheets]{import_report_sheets()}},
 \code{\link[=import_report_warnings]{import_report_warnings()}},
 \code{\link[=is_import_report]{is_import_report()}},
-\code{\link[=new_import_report]{new_import_report()}}
+\code{\link[=new_import_report]{new_import_report()}},
+\code{\link[=read_quant_files]{read_quant_files()}}
 }
 \concept{io}

@@ -151,7 +151,9 @@ select_complete_cases <- function(omics_input, feature_missing_cutoff = 1) {
 }
 
 carry_input_provenance <- function(out, from) {
-  for (nm in c("design", "source_path", "source_fingerprint",
+  # `misc` holds the tximport lengths DESeq2 and edgeR correct with; a
+  # layer that lost them on a QC exclusion was modelled without them.
+  for (nm in c("design", "source_path", "source_fingerprint", "misc",
                "normalization", "sheet_roles", "orientation", "sample_sheet_path", "excluded_samples")) {
     out[[nm]] <- from[[nm]]
   }

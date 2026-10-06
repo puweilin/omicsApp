@@ -233,37 +233,125 @@ canonical_assay_type <- function(assay_type) {
 
 #' Guess an assay type from the values
 #'
-#' A starting point for an import wizard, not a verdict: it separates linear
-#' proteomics intensities from already-transformed ones by magnitude, the same
-#' heuristic [check_assay_scale()] uses, and assumes counts for RNA-seq because
-#' that is what gets uploaded. The caller is expected to show the guess and let
-#' the user correct it -- nothing else recovers the scale if this is wrong.
+#' A starting point for an import wizard, not a verdict. Proteomics
+#' intensities are separated into linear and already-transformed by
+#' magnitude, the same heuristic [check_assay_scale()] uses; RNA-seq by
+#' whether the values are whole, negative, small, or add up to a million
+#' per sample.
+#'
+#' For RNA-seq:
+#'
+#' * any negative value, or fractional values that stay below 30:
+#'   `"logcpm"` (log-scale expression);
+#' * non-negative whole numbers: `"raw_count"`;
+#' * fractional values whose columns each add up to about a million:
+#'   `"tpm"`;
+#' * fractional values with library-sized column totals (estimated counts
+#'   from Salmon, RSEM or kallisto): `"raw_count"`;
+#' * other fractional values: `"fpkm"`.
+#'
+#' The caller is expected to show the guess and let the user correct it --
+#' nothing else recovers the scale if this is wrong, and it decides which
+#' differential methods are offered (see [applicable_diff_methods()]).
 #'
 #' @param expr_mat Expression matrix.
 #' @param omics_type Omics modality.
+#' @param explain If `TRUE`, return the reason alongside the guess.
 #'
 #' @return A single assay type from [SUPPORTED_ASSAY_TYPES], or `NA_character_`
-#'   for a modality with no vocabulary.
+#'   for a modality with no vocabulary. With `explain = TRUE`, a list with
+#'   `assay_type` and `reason`, a sentence saying what in the values led to
+#'   the guess.
 #' @export
 #' @family omics_input
 #' @examples
 #' infer_assay_type(matrix(2^rnorm(40, 20, 2), nrow = 10), "proteomics")
 #' infer_assay_type(matrix(rpois(40, 200), nrow = 10), "rnaseq")
-infer_assay_type <- function(expr_mat, omics_type) {
+#' infer_assay_type(matrix(rnorm(40, 6), nrow = 10), "rnaseq", explain = TRUE)
+infer_assay_type <- function(expr_mat, omics_type, explain = FALSE) {
   if (!is.matrix(expr_mat) && !is.data.frame(expr_mat)) {
     arg_stop("expr_mat", "a matrix or data.frame", expr_mat)
   }
-  if (identical(omics_type, "rnaseq")) return("raw_count")
-  if (!identical(omics_type, "proteomics")) return(NA_character_)
-
-  max_value <- suppressWarnings(max(as.matrix(expr_mat), na.rm = TRUE))
-  if (!is.finite(max_value)) return(NA_character_)
-
-  if (max_value > MAX_PLAUSIBLE_LOG_SCALE_VALUE) {
-    "raw_intensity"
+  guess <- if (identical(omics_type, "rnaseq")) {
+    infer_rnaseq_assay(expr_mat)
+  } else if (identical(omics_type, "proteomics")) {
+    infer_proteomics_assay(expr_mat)
   } else {
-    "normalized_intensity"
+    list(assay_type = NA_character_, reason = NA_character_)
   }
+  if (isTRUE(explain)) guess else guess$assay_type
+}
+
+# Magnitude alone: log2 intensities top out near 35, linear ones run to
+# millions.
+infer_proteomics_assay <- function(expr_mat) {
+  max_value <- suppressWarnings(max(as.matrix(expr_mat), na.rm = TRUE))
+  if (!is.finite(max_value)) {
+    return(list(assay_type = NA_character_, reason = NA_character_))
+  }
+  if (max_value > MAX_PLAUSIBLE_LOG_SCALE_VALUE) {
+    list(assay_type = "raw_intensity", reason = sprintf(
+      "Values reach %s, so they are linear intensities.", format(max_value, digits = 3)))
+  } else {
+    list(assay_type = "normalized_intensity", reason = sprintf(
+      "Values stay below %s, so they are already on a log scale.",
+      MAX_PLAUSIBLE_LOG_SCALE_VALUE))
+  }
+}
+
+# RNA-seq used to be called raw counts whatever it held, which offered
+# DESeq2 and edgeR a TPM table -- they round it and report p-values for
+# a model it never fitted -- and handed log values to the t-test as
+# counts to be logged again. In order:
+#   * a negative value can only be log-scale;
+#   * whole numbers are read counts;
+#   * fractional values that never reach 30 are log-scale too (log2 of
+#     a million is 20; counts and TPM of expressed genes run far past);
+#   * fractional values whose columns each add up to about a million are
+#     TPM (or CPM, which is treated the same) -- a little under a
+#     million when low genes were filtered out first (FPKM columns add
+#     up to a few hundred thousand, for transcripts of a few kb);
+#   * fractional values with library-sized column totals are estimated
+#     counts (Salmon, RSEM, kallisto), which the count models take;
+#   * anything else fractional is FPKM-like normalised expression.
+infer_rnaseq_assay <- function(expr_mat) {
+  m <- as.matrix(expr_mat)
+  if (!is.numeric(m)) m <- suppressWarnings(array(as.numeric(m), dim(m)))
+  v <- m[is.finite(m)]
+  if (!length(v)) {
+    return(list(assay_type = "raw_count",
+                reason = "No values to judge from; assumed read counts."))
+  }
+  if (any(v < 0)) {
+    return(list(assay_type = "logcpm", reason = paste(
+      "Some values are negative, so these are log-scale expression values,",
+      "not counts.")))
+  }
+  if (all(abs(v - round(v)) < 1e-8)) {
+    return(list(assay_type = "raw_count",
+                reason = "Every value is a whole number, so these are read counts."))
+  }
+  if (max(v) < 30) {
+    return(list(assay_type = "logcpm", reason = sprintf(paste(
+      "Values are fractional and never reach 30 (the largest is %s), so",
+      "these are log-scale expression values, not counts."),
+      format(max(v), digits = 3))))
+  }
+  sums <- colSums(m, na.rm = TRUE)
+  sums <- sums[sums > 0]
+  if (length(sums) && all(sums >= 8e5 & sums <= 1.01e6) && max(sums) / min(sums) <= 1.2) {
+    return(list(assay_type = "tpm", reason = paste(
+      "Values are fractional and each sample adds up to about a million,",
+      "so these are TPM (or CPM), not counts.")))
+  }
+  if (length(sums) && stats::median(sums) >= 2e6) {
+    return(list(assay_type = "raw_count", reason = paste(
+      "Values are fractional but each sample adds up to millions of reads,",
+      "so these are estimated counts (as Salmon, RSEM or kallisto write).")))
+  }
+  list(assay_type = "fpkm", reason = paste(
+    "Values are fractional and do not add up to a million per sample, so",
+    "these are normalised expression values (FPKM or similar), not counts."))
 }
 
 #' Check that the assay values look like the declared scale

@@ -161,9 +161,14 @@ test_that("the file-writing functions hold the same line", {
     features = prot$feature_df), xlsx)
   omp <- file.path(dir, "p.omp")
   save_project(proj, omp)
+  quant <- file.path(dir, "s1.quant.sf")
+  utils::write.table(data.frame(Name = paste0("T", 1:5), Length = 1000, EffectiveLength = 850,
+                                TPM = 2e5, NumReads = 1:5 + 0.5),
+                     quant, sep = "\t", quote = FALSE, row.names = FALSE)
   offences <- sweep_contract(list(
     read_omics = list(path = xlsx, omics_type = "proteomics",
                       assay_type = "normalized_intensity"),
+    read_quant_files = list(paths = quant),
     export_bundle = list(bundle = db, dir = file.path(dir, "bundle"), formats = "tsv"),
     save_project = list(project = proj, path = file.path(dir, "q.omp"), overwrite = TRUE),
     load_project = list(path = omp)

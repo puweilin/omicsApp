@@ -2,7 +2,9 @@
 #'
 #' Phase 3 slice 3A: real upload + smart-parse. The view accepts a
 #' single Excel / CSV / TSV / RDS file via `shiny::fileInput()`,
-#' hands the path to [omicsCore::read_omics()], renders the resulting
+#' hands the path to [omicsCore::read_omics()] (or several per-sample
+#' Salmon / RSEM / kallisto files to [omicsCore::read_quant_files()],
+#' merged into one layer), renders the resulting
 #' `ImportReport` (per-sheet classifier table + warnings strip), and
 #' exposes an [omicsCore::omics_input()] via the module's return
 #' value once the user clicks "Confirm".
@@ -103,6 +105,14 @@ import_view_server <- function(id,
             # needs *an* assay_type, and the data it would be inferred
             # from does not exist until it returns.
             assay_type <- if (omics_type == "rnaseq") "raw_count" else "raw_intensity"
+            # Several files are one sample each -- Salmon, RSEM or
+            # kallisto output -- and are merged into one layer. Named by
+            # the names the browser sent, not by their temporary copies.
+            several <- length(datapath) > 1L
+            read_quant <- function() {
+              omicsCore::read_quant_files(datapath, file_names = name,
+                                          sample_sheet = sample_sheet)
+            }
             out <- tryCatch(
               # The scale check inside omics_input() is muffled for this
               # one call and nothing else: the label handed in here is
@@ -111,14 +121,28 @@ import_view_server <- function(id,
               # about to be corrected only trains people to ignore the
               # warning that matters, the one at confirm time.
               withCallingHandlers(
-                omicsCore::read_omics(
-                  datapath,
-                  omics_type = omics_type,
-                  assay_type = assay_type,
-                  sheet_roles = roles,
-                  orientation = orientation,
-                  sample_sheet = sample_sheet
-                ),
+                if (several) {
+                  read_quant()
+                } else {
+                  res <- omicsCore::read_omics(
+                    datapath,
+                    omics_type = omics_type,
+                    assay_type = assay_type,
+                    sheet_roles = roles,
+                    orientation = orientation,
+                    sample_sheet = sample_sheet
+                  )
+                  # One quantification file: read again so its sample is
+                  # named after the uploaded file, not "0".
+                  if (!is.null(res$report$suggested_input$quant_format)) {
+                    single <- read_quant()
+                    single$report$warnings <- unique(c(
+                      single$report$warnings,
+                      grep("read as RNA-seq, not", res$report$warnings, value = TRUE)))
+                    res <- single
+                  }
+                  res
+                },
                 warning = function(w) {
                   if (grepl("implies (linear|log-scale) values", conditionMessage(w))) {
                     invokeRestart("muffleWarning")
@@ -129,16 +153,31 @@ import_view_server <- function(id,
                 list(
                   input = NULL,
                   report = omicsCore::new_import_report(
-                    warnings = paste0("The file could not be read: ",
-                                      conditionMessage(e)),
-                    source = name
+                    warnings = paste0(
+                      if (several) paste("Several files can be imported together only",
+                                         "when each is one sample's Salmon, RSEM or",
+                                         "kallisto quantification: ")
+                      else "The file could not be read: ",
+                      conditionMessage(e)),
+                    source = paste(name, collapse = ", ")
                   )
                 )
               }
             )
             if (!is.null(out$input)) {
-              inferred <- omicsCore::infer_assay_type(out$input$expr_mat, omics_type)
-              if (!is.na(inferred)) out$input$assay_type <- inferred
+              if (!is.null(out$report$suggested_input$quant_format)) {
+                # Estimated reads with their lengths, whatever their totals.
+                out$assay_guess <- list(
+                  assay_type = "raw_count",
+                  reason = "Estimated read counts from the quantification files.")
+              } else {
+                guess <- omicsCore::infer_assay_type(out$input$expr_mat, omics_type,
+                                                     explain = TRUE)
+                if (!is.na(guess$assay_type)) {
+                  out$input$assay_type <- guess$assay_type
+                  out$assay_guess <- guess
+                }
+              }
             }
             out
           },
@@ -150,7 +189,13 @@ import_view_server <- function(id,
           if (!parse_epoch$is_current(my_parse)) return(invisible())
           # Stamp the user-visible source name so the schema card shows
           # the original filename, not the tempfile path Shiny gave us.
-          out$report$source <- f$name
+          out$report$source <- paste(f$name, collapse = ", ")
+          # Quantification files are RNA-seq whatever the radio said; the
+          # radio follows, so the scale choices and the layer name agree.
+          if (!is.null(out$report$suggested_input$quant_format) &&
+              !identical(omics_type, "rnaseq")) {
+            shiny::updateRadioButtons(session, "omics_type", selected = "rnaseq")
+          }
           if (!is.null(out$input)) {
             # Fingerprint the upload so Confirm can tell a genuinely new
             # dataset from the same file picked twice.
@@ -166,9 +211,10 @@ import_view_server <- function(id,
           if (!parse_epoch$is_current(my_parse)) return(invisible())
           parsed(list(input = NULL, report = omicsCore::new_import_report(
             warnings = paste0("The file could not be read: ", msg),
-            source = f$name)))
+            source = paste(f$name, collapse = ", "))))
         },
-        message = sprintf("Reading %s...", f$name)
+        message = if (length(f$name) > 1L) sprintf("Reading %d files...", length(f$name))
+                  else sprintf("Reading %s...", f$name)
       )
     }
 
@@ -207,11 +253,32 @@ import_view_server <- function(id,
       choices <- omicsCore::SUPPORTED_ASSAY_TYPES[[omics_type]]
       if (is.null(choices)) return(NULL)
 
-      shiny::selectInput(
-        ns("assay_type"),
-        label = "Value scale",
-        choices = stats::setNames(choices, gsub("_", " ", choices)),
-        selected = parsed()$input$assay_type
+      chosen <- parsed()$input$assay_type
+      guess <- parsed()$assay_guess
+      htmltools::tagList(
+        shiny::selectInput(
+          ns("assay_type"),
+          label = "Value scale",
+          choices = stats::setNames(choices, gsub("_", " ", choices)),
+          selected = chosen
+        ),
+        # Why this was preselected, so the user can judge the guess rather
+        # than take it on trust; and, for RNA-seq, what it decides.
+        htmltools::tags$div(
+          class = "muted", style = "font-size:12px;margin:-8px 0 10px",
+          if (!is.null(guess$reason)) {
+            if (identical(chosen, guess$assay_type)) {
+              paste("Guessed from the values:", guess$reason)
+            } else {
+              sprintf("Guessed '%s' from the values; you changed it.",
+                      gsub("_", " ", guess$assay_type))
+            }
+          },
+          if (identical(omics_type, "rnaseq") && !identical(chosen, "raw_count")) {
+            paste(" DESeq2 and edgeR need read counts, so Differential will offer",
+                  "limma, the t-test and lm for this layer.")
+          }
+        )
       )
     })
 
@@ -532,7 +599,9 @@ import_view_server <- function(id,
                else if (parse_ok())  "active"
                else                  "pending"
 
-      desc1 <- if (has_file()) input$file$name else "Excel / CSV / TSV / RDS"
+      desc1 <- if (!has_file()) "Excel / CSV / TSV / RDS"
+               else if (length(input$file$name) > 1L) sprintf("%d files", length(input$file$name))
+               else input$file$name
       desc2 <- if (has_file()) {
         rep <- parsed()$report
         if (parse_ok()) {
@@ -569,6 +638,15 @@ import_view_server <- function(id,
         ))
       }
       f <- input$file
+      if (length(f$name) > 1L) {
+        return(file_row(
+          name = sprintf("%d files: %s%s", length(f$name),
+                         paste(utils::head(f$name, 3L), collapse = ", "),
+                         if (length(f$name) > 3L) ", \u2026" else ""),
+          meta = sprintf("one sample each \u00B7 %s", input$omics_type %||% "proteomics"),
+          size = format_file_size(sum(f$size))
+        ))
+      }
       file_row(
         name = f$name,
         meta = sprintf("%s \u00B7 %s",
@@ -761,7 +839,10 @@ import_view_server <- function(id,
 
       cand <- apply_design(cand)
 
-      if (!is.null(f)) {
+      # One archived file per layer: a layer merged from several
+      # quantification files is not archived (export_script() then asks
+      # for the path), rather than archived as its first file alone.
+      if (!is.null(f) && length(f$datapath) == 1L) {
         res <- store_raw_upload(f$datapath, f$name, cand$source_fingerprint)
         if (isTRUE(res$ok)) {
           # Recorded so `omicsCore::export_script()` can point its
@@ -828,7 +909,10 @@ import_view_server <- function(id,
 # read as new data rather than as "nothing changed".
 input_fingerprint <- function(path, omics_type, assay_type, normalize = NULL) {
   digest <- unname(tools::md5sum(path))
-  if (is.na(digest)) return(NULL)
+  if (!length(digest) || anyNA(digest)) return(NULL)
+  # Several quantification files make one layer, and all of them are its
+  # identity.
+  digest <- paste(digest, collapse = "+")
   paste(digest, omics_type %||% "", assay_type %||% "",
         if (is.null(normalize)) "" else as.character(normalize), sep = ":")
 }
@@ -919,12 +1003,19 @@ import_upload_card <- function(ns) {
                            "one omics layer \u00B7 data file + optional sample sheet")
     ),
     bslib::card_body(
+      # Several files only for per-sample quantification output (Salmon's
+      # quant.sf, RSEM's .results, kallisto's abundance.tsv), which is
+      # merged into one layer; anything else is one file.
       shiny::fileInput(
         ns("file"),
         label = NULL,
-        multiple = FALSE,
-        accept = c(".xlsx", ".xls", ".csv", ".tsv", ".txt", ".rds"),
+        multiple = TRUE,
+        accept = c(".xlsx", ".xls", ".csv", ".tsv", ".txt", ".rds", ".sf", ".results"),
         placeholder = "Drop or browse \u2026"
+      ),
+      htmltools::tags$div(
+        class = "muted", style = "font-size:12px;margin:-8px 0 10px",
+        "Salmon, RSEM or kallisto output: select every sample's file at once."
       ),
       # Optional: for a matrix that carries no sample information, such as
       # a featureCounts table or a CSV export. Without it there were no
