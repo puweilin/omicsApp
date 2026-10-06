@@ -113,5 +113,6 @@ UI 审查的高危问题：自定义对比 bug（见上）；应用自己的错�
 
 ## 4. 测试
 
-- 新增回归测试：`omicsCore/tests/testthat/test-audit-round4.R`（15 项）、`omicsApp/tests/testthat/test-audit-round4-app.R`（13 项）；更新了因行为改进而失效的旧断言（报告内容、火山图悬停、教程进度、配对提示）。
+- 新增回归测试：`omicsCore/tests/testthat/test-audit-round4.R`（19 项）、`omicsApp/tests/testthat/test-audit-round4-app.R`（13 项）；更新了因行为改进而失效的旧断言（报告内容、火山图悬停、教程进度、配对提示）。
 - 所有修复都用审查中的复现脚本重新验证过（`scratchpad/r4/*/repro*`）。
+- 全量运行：omicsCore 全部通过；omicsApp 全量（含 shinytest2 浏览器测试）首轮发现 2 个失败——服务器未设置 `R_ZIPCMD` 时"下载脚本+数据"压缩包报错、一条基因符号测试使用了形似基因名的编号——均已修复并复测通过；同时消除了 WebGL 火山图每次渲染时的 `hoveron` 警告。
