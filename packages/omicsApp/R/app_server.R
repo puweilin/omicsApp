@@ -229,9 +229,9 @@ app_server <- function(input, output, session) {
   }, priority = -10L)
 
   # Every time the Import view confirms a fresh omics_input, fold it
-  # into the project under a tag derived from its omics_type. Repeated
-  # imports of the same omics_type replace the existing layer; new
-  # omics_types extend the project. The Project view re-renders
+  # into the project under the layer name chosen there. A name already in
+  # the project replaces that layer; a new name (a second proteomics
+  # batch, say) extends the project. The Project view re-renders
   # automatically because it observes `current_project`.
   #
   # `priority = 10` ensures this fires before the bundle-attach observer
@@ -241,7 +241,10 @@ app_server <- function(input, output, session) {
     inp <- imported_input()
     if (is.null(inp)) return()
     proj <- current_project()
-    tag <- inp$omics_type %||% "experiment"
+    # The name the user gave the layer in the Import view (the omics type
+    # unless they changed it); carried on the input only to get here.
+    tag <- inp$layer_tag %||% inp$omics_type %||% "experiment"
+    inp$layer_tag <- NULL
     if (is.null(proj)) {
       proj <- omicsCore::omics_project(
         name        = "User project",
@@ -251,7 +254,7 @@ app_server <- function(input, output, session) {
       proj$visited_steps <- "import"
     } else {
       # `add_experiment()` rejects duplicate tags, so drop any
-      # existing layer of this omics_type first. Bundles computed on
+      # existing layer of this name first. Bundles computed on
       # the replaced layer are also dropped since their input is now
       # gone — leaving them around shows stale results in the report.
       #
@@ -260,8 +263,9 @@ app_server <- function(input, output, session) {
       # observer would put it straight back. Bumping the generation is
       # what actually tells them to let go.
       if (tag %in% omicsCore::experiment_tags(proj)) {
+        # Only this layer's results go; another layer's stay with it.
+        if (!is.null(proj$bundles)) proj$bundles <- drop_layer_bundles(proj$bundles, tag, proj)
         proj <- omicsCore::remove_experiment(proj, tag)
-        if (!is.null(proj$bundles)) proj$bundles <- list()
         layer_generation(shiny::isolate(layer_generation()) + 1L)
       }
       proj <- omicsCore::add_experiment(proj, name = tag, input = inp)

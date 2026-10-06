@@ -612,7 +612,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           if (!diff_epoch$is_current(my_run)) return(invisible())
           diff_error(NULL)
           ran_with(snap)
-          diff_bundle(bundle)
+          diff_bundle(with_layer(bundle, a))
         },
         on_error = function(msg) {
           if (diff_epoch$is_last_started(my_run)) set_busy(FALSE)
@@ -656,7 +656,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           if (!diff_epoch$is_current(my_run)) return(invisible())
           diff_error(NULL)
           ran_with(snap)
-          diff_bundle(bundle)
+          diff_bundle(with_layer(bundle, a))
         },
         on_error = function(msg) {
           if (diff_epoch$is_last_started(my_run)) set_busy(FALSE)
@@ -699,9 +699,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # The control's first value, or a switch back to the layer the
       # result is about: nothing to clear.
       b <- diff_bundle()
-      exps <- (current_project() %||% example_project())$experiments
-      if (!is.null(b) && identical(exps[[input$layer]]$omics_type %||% NA,
-                                   b$input_info$omics_type)) return()
+      proj <- current_project() %||% example_project()
+      if (!is.null(b) && identical(omicsCore::bundle_layer(proj, b), input$layer)) return()
       diff_epoch$bump()
       anova_epoch$bump()
       diff_bundle(NULL)
@@ -718,8 +717,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       proj <- current_project()
       b <- proj$bundles$diff
       if (is.null(proj) || is.null(b) || !is.null(diff_bundle())) return()
-      types <- vapply(proj$experiments, function(e) e$omics_type %||% "", character(1))
-      tag <- names(proj$experiments)[types == (b$input_info$omics_type %||% "")][1L]
+      tag <- omicsCore::bundle_layer(proj, b)
       if (is.na(tag)) return()
       preferred_layer(tag)
       if (!is.null(input$layer) && !identical(input$layer, tag)) {
@@ -731,7 +729,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       ran_with(shiny::isolate(settings_now()))
       diff_bundle(b)
       a <- proj$bundles$anova
-      if (!is.null(a) && identical(a$input_info$omics_type, b$input_info$omics_type)) {
+      if (!is.null(a) && identical(omicsCore::bundle_layer(proj, a), tag)) {
         anova_bundle(a)
       }
     }, priority = -5, ignoreNULL = TRUE)
@@ -1154,7 +1152,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           if (anova_epoch$is_last_started(my_run)) set_button_busy("run_anova", FALSE, anova_running)
           if (!anova_epoch$is_current(my_run)) return(invisible())
           anova_error(NULL)
-          anova_bundle(bundle)
+          anova_bundle(with_layer(bundle, a))
         },
         on_error = function(msg) {
           if (anova_epoch$is_last_started(my_run)) set_button_busy("run_anova", FALSE, anova_running)
@@ -1582,4 +1580,16 @@ drop_hoveron <- function(fig) {
     tr
   })
   fig
+}
+
+# Results carry the name of the layer they were computed on: a project
+# can hold two proteomics layers, and matching a result to its layer by
+# omics type picked the first of them. The demo's layers are not the
+# user's, so its results carry none.
+with_layer <- function(bundle, active) {
+  if (omicsCore::is_analysis_bundle(bundle) && !isTRUE(active$is_demo) &&
+      length(active$tag) == 1L) {
+    bundle$input_info$layer <- active$tag
+  }
+  bundle
 }

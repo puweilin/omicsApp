@@ -367,7 +367,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       new$source_fingerprint <- paste0(inp$source_fingerprint %||% "", ":excluded=",
                                        paste(sort(new$excluded_samples), collapse = ","))
       proj$experiments[[tag]] <- new
-      proj$bundles <- drop_layer_bundles(proj$bundles, tag)
+      proj$bundles <- drop_layer_bundles(proj$bundles, tag, current_project())
       current_project(proj)
       shiny::showNotification(sprintf("Excluded %s from '%s'.", paste(flagged, collapse = ", "), tag),
                               type = "message")

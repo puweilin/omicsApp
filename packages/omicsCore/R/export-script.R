@@ -182,19 +182,14 @@ as_notes <- function(notes) {
   paste0("# NOTE: ", comment_text(notes))
 }
 
-# Find the experiment a bundle was computed on. Bundles record the
-# omics_type they ran against, which is also the tag app_server() files
-# experiments under, so this resolves in the common case and degrades to
-# the first experiment with a note otherwise.
+# Find the experiment a bundle was computed on (bundle_layer()), and
+# degrade to the first experiment, with a note elsewhere, when it is
+# about none of them.
 resolve_tag <- function(project, bundle) {
-  want <- bundle$input_info$omics_type
   tags <- names(project$experiments)
   if (length(tags) == 0L) return(NULL)
-  if (is.null(want)) return(tags[[1L]])
-  types <- vapply(project$experiments,
-                  function(e) e$omics_type %||% "", character(1))
-  hit <- tags[types %in% want]
-  if (length(hit) == 0L) tags[[1L]] else hit[[1L]]
+  hit <- bundle_layer(project, bundle)
+  if (is.na(hit)) tags[[1L]] else hit
 }
 
 # One variable per layer. Through make.names(): a tag is whatever the

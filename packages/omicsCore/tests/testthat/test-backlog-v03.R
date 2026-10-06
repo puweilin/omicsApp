@@ -159,3 +159,20 @@ test_that("DESeq2 in parallel, when asked for, gives the serial result", {
   expect_equal(par$results$diff_result_df$p_value, serial$results$diff_result_df$p_value,
                tolerance = 1e-8)
 })
+
+test_that("a result is matched to the layer it records, then by omics type", {
+  inp <- bl_diff(c("A", "B"))
+  proj <- omics_project("P", list(batch1 = inp, batch2 = inp))
+  b <- new_analysis_bundle("run_qc", input_info = list(omics_type = "proteomics"))
+  expect_identical(bundle_layer(proj, b), "batch1")       # legacy: first of its type
+  b$input_info$layer <- "batch2"
+  expect_identical(bundle_layer(proj, b), "batch2")
+  b$input_info$layer <- "gone"
+  expect_true(is.na(bundle_layer(proj, b)))
+  expect_true(is.na(bundle_layer(proj, new_analysis_bundle("x", input_info = list(omics_type = "rnaseq")))))
+  # Enrichment inherits the layer from the differential result it reads.
+  skip_if_not_installed("limma")
+  d <- run_diff(inp, method = "limma", group_col = "group", control_group = "A", case_group = "B")
+  d$input_info$layer <- "batch2"
+  expect_identical(resolve_tag(proj, d), "batch2")
+})

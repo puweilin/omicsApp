@@ -767,10 +767,37 @@ import_view_server <- function(id,
     layer_being_replaced <- function(cand) {
       proj <- current_project()
       if (is.null(proj) || is.null(cand)) return(NULL)
-      tag <- cand$omics_type %||% "experiment"
+      tag <- target_tag(cand)
       if (!tag %in% names(proj$experiments)) return(NULL)
       proj$experiments[[tag]]
     }
+
+    # The name the layer goes in under. A project can hold several layers
+    # of one omics type (two proteomics batches), so the name is the
+    # user's: it defaults to the omics type, and a name already in the
+    # project means "replace that layer".
+    target_tag <- function(cand) {
+      clean_layer_name(input$layer_name, cand$omics_type %||% "experiment")
+    }
+    output$layer_name_ui <- shiny::renderUI({
+      shiny::req(parse_ok())
+      default <- parsed()$input$omics_type %||% "experiment"
+      htmltools::tags$div(
+        class = "inline-control", style = "max-width:200px",
+        shiny::textInput(ns("layer_name"), label = "Layer name",
+                         value = shiny::isolate(input$layer_name) %||% default,
+                         placeholder = default)
+      )
+    })
+    # The omics type is the default name, and changes with the type
+    # control until the user writes a name of their own.
+    shiny::observeEvent(parsed()$input$omics_type, {
+      typ <- parsed()$input$omics_type
+      cur <- input$layer_name
+      if (is.null(cur) || !nzchar(trimws(cur)) || cur %in% c("proteomics", "rnaseq")) {
+        shiny::updateTextInput(session, "layer_name", value = typ)
+      }
+    }, ignoreInit = TRUE)
 
     # Archive the upload alongside the parsed input. Only on commit:
     # parsing happens on every file pick and radio change, most of which
@@ -806,7 +833,7 @@ import_view_server <- function(id,
       cand
     }
 
-    commit <- function(cand) {
+    commit <- function(cand, tag = target_tag(cand)) {
       method <- pending_normalize_method()
       do_normalize <- !identical(method, "none")
       cand <- stamp_fingerprint(cand)
@@ -860,6 +887,7 @@ import_view_server <- function(id,
                                 unname(tools::md5sum(sf$datapath)))
         cand$sample_sheet_path <- if (isTRUE(res$ok)) res$path else NULL
       }
+      cand$layer_tag <- tag
       confirmed_input(cand)
     }
 
@@ -879,9 +907,10 @@ import_view_server <- function(id,
         )
         return()
       }
+      tag <- target_tag(cand)
       shiny::showModal(
-        replace_layer_modal(ns, cand$omics_type %||% "experiment",
-                            current_project())
+        replace_layer_modal(ns, tag, current_project(),
+                            keep_both = next_free_tag(tag, names(current_project()$experiments)))
       )
     })
 
@@ -889,6 +918,16 @@ import_view_server <- function(id,
       shiny::removeModal()
       shiny::req(parse_ok())
       commit(parsed()$input)
+    })
+    # Both: the new data as a layer of its own beside the old one, whose
+    # results stay.
+    shiny::observeEvent(input$confirm_keep_both, {
+      shiny::removeModal()
+      shiny::req(parse_ok())
+      cand <- parsed()$input
+      tag <- next_free_tag(target_tag(cand), names(current_project()$experiments))
+      shiny::updateTextInput(session, "layer_name", value = tag)
+      commit(cand, tag = tag)
     })
 
     # ---- module return ------------------------------------------------
@@ -936,8 +975,34 @@ BUNDLE_LABELS <- c(
   integration = "Multi-omics integration"
 )
 
-replace_layer_modal <- function(ns, tag, project) {
-  bundles <- names(project$bundles %||% list())
+# A layer name as typed, made safe to file under: letters, digits and
+# `_ - .` (a space becomes `_`), at most 40 characters, the omics type
+# when nothing usable is left.
+clean_layer_name <- function(x, default) {
+  x <- trimws(as.character(x %||% ""))
+  if (!length(x) || !nzchar(x[[1L]])) return(default)
+  x <- gsub("[^[:alnum:]_.-]+", "_", x[[1L]], perl = TRUE)
+  x <- gsub("^_+|_+$", "", substr(x, 1L, 40L))
+  if (nzchar(x)) x else default
+}
+
+# `tag`, or `tag_2`, `tag_3`, ... -- the first name no layer has.
+next_free_tag <- function(tag, taken) {
+  if (!tag %in% taken) return(tag)
+  i <- 2L
+  while (paste0(tag, "_", i) %in% taken) i <- i + 1L
+  paste0(tag, "_", i)
+}
+
+replace_layer_modal <- function(ns, tag, project, keep_both = NULL) {
+  # The results on this layer, not every result in the project: another
+  # layer's analyses are not touched by replacing this one.
+  all_b <- project$bundles %||% list()
+  bundles <- names(all_b)[vapply(all_b, function(b) {
+    !omicsCore::is_analysis_bundle(b) ||
+      tag %in% (b$params$experiments %||% character(0)) ||
+      identical(omicsCore::bundle_layer(project, b), tag)
+  }, logical(1))]
   losing <- if (length(bundles) == 0L) {
     htmltools::tags$p(
       class = "muted",
@@ -967,6 +1032,11 @@ replace_layer_modal <- function(ns, tag, project) {
     easyClose = FALSE,
     footer = htmltools::tagList(
       shiny::modalButton("Cancel"),
+      if (!is.null(keep_both)) {
+        shiny::actionButton(ns("confirm_keep_both"),
+                            sprintf("Keep both (add as '%s')", keep_both),
+                            class = "btn btn-outline-primary")
+      },
       shiny::actionButton(ns("confirm_replace"), "Replace and clear",
                           class = "btn btn-danger")
     )
@@ -1077,6 +1147,7 @@ import_schema_card <- function(ns) {
       htmltools::tags$div(
         style = "display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:18px",
         shiny::uiOutput(ns("confirm_state"), inline = TRUE),
+        shiny::uiOutput(ns("layer_name_ui"), inline = TRUE),
         shiny::actionButton(
           ns("confirm"),
           "Import this layer",

@@ -69,11 +69,8 @@ integration_view_server <- function(id,
       tags <- names(proj$experiments)
       primary <- diff_layer()
       if (is.null(primary) || !primary %in% tags) {
-        b <- diff_bundle()
-        types <- vapply(proj$experiments, function(e) e$omics_type %||% "",
-                        character(1))
-        hit <- if (!is.null(b)) which(types == (b$input_info$omics_type %||% "")) else integer(0)
-        primary <- tags[if (length(hit)) hit[1L] else 1L]
+        hit <- omicsCore::bundle_layer(proj, diff_bundle())
+        primary <- if (is.na(hit)) tags[[1L]] else hit
       }
       others <- setdiff(tags, primary)
       want <- input$partner

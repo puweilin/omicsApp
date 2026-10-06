@@ -65,3 +65,66 @@ test_that("an enrichment whose controls or thresholds moved says so until re-run
     expect_false(stale())
   })
 })
+
+# ---- several layers of one omics type ------------------------------------
+
+p1_input <- function(fingerprint, shift = 0) {
+  set.seed(7)
+  mat <- matrix(stats::rnorm(40 * 6, 20, 0.3), 40,
+                dimnames = list(paste0("G", 1:40), paste0("s", 1:6)))
+  mat[1:8, 4:6] <- mat[1:8, 4:6] + 2 + shift
+  meta <- data.frame(group = rep(c("A", "B"), each = 3), row.names = paste0("s", 1:6))
+  omicsCore::omics_input(mat, meta, data.frame(feature_id = rownames(mat),
+                                               feature_symbol = rownames(mat)),
+                         omics_type = "proteomics", assay_type = "normalized_intensity",
+                         source_fingerprint = fingerprint)
+}
+
+test_that("a second file of the same type can be kept beside the first", {
+  proj <- shiny::reactiveVal(omicsCore::omics_project("P", list(proteomics = p1_input("fp-A"))))
+  shiny::testServer(import_view_server, args = list(current_project = proj), {
+    parsed(list(input = p1_input("fp-B"), report = NULL))
+    session$setInputs(confirm = 1)
+    expect_null(confirmed_input())          # asked first
+    session$setInputs(confirm_keep_both = 1)
+    expect_identical(confirmed_input()$layer_tag, "proteomics_2")
+  })
+})
+
+test_that("a layer named in the Import view goes in under that name", {
+  proj <- shiny::reactiveVal(omicsCore::omics_project("P", list(proteomics = p1_input("fp-A"))))
+  shiny::testServer(import_view_server, args = list(current_project = proj), {
+    parsed(list(input = p1_input("fp-B"), report = NULL))
+    session$setInputs(layer_name = "Batch 2 (May)", confirm = 1)
+    expect_identical(confirmed_input()$layer_tag, "Batch_2_May")
+  })
+  expect_identical(clean_layer_name("  ", "rnaseq"), "rnaseq")
+  expect_identical(next_free_tag("proteomics", c("proteomics", "proteomics_2")), "proteomics_3")
+})
+
+test_that("results remember their layer when two layers share an omics type", {
+  p <- omicsCore::omics_project("P", list(batch1 = p1_input("fp-A"),
+                                          batch2 = p1_input("fp-B", shift = 1)))
+  proj <- shiny::reactiveVal(p)
+  shiny::testServer(diff_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "batch2", group_col = "group", control = "A", case = "B",
+                      method = "limma", rerun = 1)
+    expect_identical(diff_bundle()$input_info$layer, "batch2")
+    expect_identical(omicsCore::bundle_layer(p, diff_bundle()), "batch2")
+  })
+  d2 <- omicsCore::run_diff(p$experiments$batch2, method = "limma", group_col = "group",
+                            control_group = "A", case_group = "B")
+  d2$input_info$layer <- "batch2"
+  p$bundles <- list(diff = d2)
+  # Removing the other layer keeps this result; removing its own drops it.
+  expect_identical(names(drop_layer_bundles(p$bundles, "batch1", p)), "diff")
+  expect_length(drop_layer_bundles(p$bundles, "batch2", p), 0L)
+  # Restored, it goes back on its own layer, not the first of its type.
+  proj2 <- shiny::reactiveVal(NULL)
+  shiny::testServer(diff_view_server, args = list(current_project = proj2), {
+    proj2(p)
+    session$flushReact()
+    expect_identical(active()$tag, "batch2")
+    expect_false(is.null(diff_bundle()))
+  })
+})

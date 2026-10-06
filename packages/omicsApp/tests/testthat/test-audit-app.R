@@ -40,9 +40,9 @@ test_that("removing a layer takes the results computed on it", {
                           params = list(experiments = c("proteomics", "rnaseq")),
                           input_info = list()),
                      class = class(diff_p))
-  kept <- drop_layer_bundles(list(diff = diff_p, integration = integ), "rnaseq")
+  kept <- drop_layer_bundles(list(diff = diff_p, integration = integ), "rnaseq", p)
   expect_identical(names(kept), "diff")
-  expect_length(drop_layer_bundles(list(diff = diff_p), "proteomics"), 0L)
+  expect_length(drop_layer_bundles(list(diff = diff_p), "proteomics", p), 0L)
 })
 
 test_that("a sample-ID column is never offered as the group", {

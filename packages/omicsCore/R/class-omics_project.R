@@ -193,3 +193,42 @@ validate_sample_link <- function(sample_link, tags) {
   }
   invisible(TRUE)
 }
+
+#' The layer of a project an analysis was computed on
+#'
+#' A project can hold several layers of the same omics type (two
+#' proteomics batches, say), so an analysis cannot be matched to its
+#' layer by type alone. The app records the layer's name in the result
+#' (`bundle$input_info$layer`); this reads it, and for results saved
+#' before that was recorded falls back to the first layer of the same
+#' omics type.
+#'
+#' @param project An `omics_project`.
+#' @param bundle An `analysis_bundle` (differential, enrichment, QC, ...).
+#' @return The layer's name in `project$experiments`, or `NA` when the
+#'   result is about none of them.
+#' @export
+#' @examples
+#' inp <- omics_input(
+#'   matrix(rnorm(40, 20), 10, dimnames = list(paste0("P", 1:10), paste0("S", 1:4))),
+#'   data.frame(group = c("a", "a", "b", "b"), row.names = paste0("S", 1:4)),
+#'   omics_type = "proteomics", assay_type = "normalized_intensity")
+#' proj <- omics_project("demo", list(batch1 = inp))
+#' b <- new_analysis_bundle("run_qc", input_info = list(omics_type = "proteomics",
+#'                                                      layer = "batch1"))
+#' bundle_layer(proj, b)
+bundle_layer <- function(project, bundle) {
+  tags <- names(project$experiments)
+  if (!length(tags) || is.null(bundle)) return(NA_character_)
+  info <- bundle$input_info %||% list()
+  layer <- info$layer
+  if (length(layer) == 1L && !is.na(layer) && layer %in% tags) return(layer)
+  # Recorded but gone (the layer was removed or renamed): about nothing
+  # in the project, rather than quietly about another layer of its type.
+  if (length(layer) == 1L && !is.na(layer)) return(NA_character_)
+  want <- info$omics_type
+  if (is.null(want)) return(NA_character_)
+  types <- vapply(project$experiments, function(e) e$omics_type %||% "", character(1))
+  hit <- tags[types %in% want]
+  if (length(hit)) hit[[1L]] else NA_character_
+}

@@ -38,6 +38,7 @@ reference:
   contents:
   - omics_project
   - is_omics_project
+  - bundle_layer
   - add_experiment
   - remove_experiment
   - experiment_tags

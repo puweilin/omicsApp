@@ -294,7 +294,8 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       b <- diff_bundle()
       if (!is.null(saved) && !is.null(b) && is.null(enrich_bundle()) &&
           identical(saved$params$comparison, b$params$comparison) &&
-          identical(saved$input_info$omics_type, b$input_info$omics_type)) {
+          identical(omicsCore::bundle_layer(current_project(), saved),
+                    omicsCore::bundle_layer(current_project(), b))) {
         enrich_epoch$bump()
         restore_controls(saved$params)
         enrich_error(NULL)

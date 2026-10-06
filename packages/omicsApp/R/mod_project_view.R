@@ -278,10 +278,10 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (is.null(proj) || is.null(tag) || !tag %in% names(proj$experiments)) {
         return()
       }
-      proj$experiments[[tag]] <- NULL
       # And the results computed on it: the report and the script
       # carried them as if the layer were still there.
-      proj$bundles <- drop_layer_bundles(proj$bundles, tag)
+      proj$bundles <- drop_layer_bundles(proj$bundles, tag, proj)
+      proj$experiments[[tag]] <- NULL
       # A link naming a layer that is gone would pair samples to nothing.
       if (!is.null(proj$sample_link) && nrow(proj$sample_link) > 0L) {
         proj$sample_link <- proj$sample_link[proj$sample_link$tag != tag, ,
@@ -832,15 +832,15 @@ project_activity_card <- function(project, is_demo = TRUE) {
   )
 }
 
-# The bundles computed on a layer: by the omics type they record (the
-# app tags a layer by its omics type), and for integration by the pair
-# of layers it names.
-drop_layer_bundles <- function(bundles, tag) {
+# The bundles computed on a layer: by the layer they record
+# (omicsCore::bundle_layer(), read against `project` as it was with the
+# layer still in it), and for integration by the pair of layers it names.
+drop_layer_bundles <- function(bundles, tag, project) {
   if (!length(bundles)) return(bundles)
   keep <- vapply(bundles, function(b) {
     if (!omicsCore::is_analysis_bundle(b)) return(TRUE)
     if (tag %in% (b$params$experiments %||% character(0))) return(FALSE)
-    !identical(b$input_info$omics_type %||% "", tag)
+    !identical(omicsCore::bundle_layer(project, b), tag)
   }, logical(1))
   bundles[keep]
 }
