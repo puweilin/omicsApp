@@ -28,11 +28,11 @@ Imports:
     scales,
     methods,
     rlang,
+    qs2
+Suggests:
     limma,
     clusterProfiler,
     msigdbr,
-    qs2
-Suggests:
     BiocParallel,
     data.table,
     DESeq2,
@@ -45,14 +45,10 @@ Suggests:
     ComplexHeatmap,
     circlize,
     ggrepel,
-    ggpubr,
     impute,
     imputeLCMD,
     pcaMethods,
     vsn,
-    tximport,
-    GenomicFeatures,
-    here,
     testthat (>= 3.0.0),
     withr,
     callr,

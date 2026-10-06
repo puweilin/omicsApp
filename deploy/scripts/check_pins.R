@@ -29,7 +29,7 @@ CRAN_PKGS <- c(
   "shinyWidgets", "shinyjs", "promises", "future",
   "tibble", "dplyr", "stringr", "readxl", "openxlsx", "jsonlite", "scales",
   "rlang", "msigdbr", "qs2",
-  "ggrepel", "patchwork", "circlize", "here", "knitr", "rmarkdown",
+  "ggrepel", "patchwork", "circlize", "knitr", "rmarkdown",
   "imputeLCMD", "ActivePathways", "pkgload", "data.table"
 )
 BIOC_PKGS <- c(

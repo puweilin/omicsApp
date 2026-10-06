@@ -11,7 +11,7 @@ OPTIONAL_GROUPS <- list(
   proteomics  = c("imputeLCMD", "pcaMethods", "vsn"),
   enrichment  = c("fgsea", "GSVA"),
   imputation  = c("imputeLCMD", "impute", "pcaMethods"),
-  viz         = c("ComplexHeatmap", "circlize", "ggrepel", "patchwork", "ggpubr"),
+  viz         = c("ComplexHeatmap", "circlize", "ggrepel", "patchwork"),
   persistence = character(0)
 )
 
