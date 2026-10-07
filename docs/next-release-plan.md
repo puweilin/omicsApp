@@ -99,6 +99,41 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 - 项目只保存一个差异结果槽位：在两个图层上分别做差异分析时，项目中保留最近一次。
 - 部署改动无法在本环境中对真实 nginx/Docker/ShinyProxy 验证，需要在服务器上执行 README 中的检查步骤。
 
+## 1.5 发布计划中全部 P2 完成情况（2026-10）
+
+第 2 节中所有 P2 条目均已完成（"QC 参数防抖"第四轮已完成，本次补标）。要点：
+
+**导入**
+- 支持 `.csv.gz` / `.tsv.gz` / `.txt.gz`（含定量文件的 .gz），边解压边计数，超过 `omicsCore.max_unpacked_mb` 即停止并提示；`.xlsm` 按普通工作簿读取（宏不会执行）。
+- 新函数 `read_summarized_experiment()`：SummarizedExperiment / DESeqDataSet（R 中传入或上传的 `.rds`）转为图层；优先使用 counts，保留 tximeta/DESeq2 的长度信息。上传的对象只读取 assays、colData、rowData 等数据槽位，逐项做"只含数据"检查，设计公式、离散度函数等不会被触碰。
+- 小鼠 ENSMUSG ID 通过 babelgene（msigdbr 生成小鼠基因集所用的同源表）映射为 MGI 基因名。
+- GENCODE `_PAR_Y` 行：全空的删除并提示，有数值的作为独立特征保留（不合并，以免对强度/对数值求和），且不重复赋予基因名。
+
+**QC 与归一化**
+- `winsorize_counts()` 只处理在至少 `min_expressed` 个样本中有表达的基因，分位数按非零值计算，零值不变，截断后取整；`legacy = TRUE` 可复现旧规则（金标准测试使用）。
+- MinProb 在可估计特征不足（< 2 个）时自动退回 MinDet，并在 QC 说明和报告中注明。
+- `normalize_omics(method = "log2", center = "median")`：各样本中位数对齐；导入页提供该选项，导出脚本可复现。
+- QC 结果不再保存整份清洗后的数据，只保存重建记录与绘图数据，`qc_cleaned_input(bundle, input)` 按需重建（与旧版完全一致，并校验输入未变）；8000×60 数据上 QC 结果从 15.1 MB 降到 1.5 MB（保存后 9.5 MB → 0.57 MB）。旧项目文件照常打开。
+
+**差异分析**
+- DESeq2 连续变量分析补全测试（与直接调用 DESeq2 一致到 1e-8），并修复：含文字的连续变量报错不清楚、配对内不变的变量使 DESeq2/edgeR 崩溃、计数数据连续模式下可选方法错误、limma 连续变量在有缺失值且有协变量/配对时崩溃、DESeq2 字符协变量警告。
+- 预过滤：实测在大样本组中 DESeq2 推荐的预过滤会丢失约三分之一显著结果，因此默认不启用，提供 `run_diff(prefilter = TRUE)`（30000×60 数据 DESeq2 约 20 s → 8 s）；被过滤的基因保留在结果表中标为未检验并给出说明。未开启时结果与之前逐字节一致。glmGamPoi 未安装，未采用。
+- 各方法的结果标准化函数与设计矩阵准备抽成公共工具，用快照测试证明输出逐字节不变。
+
+**富集与整合**
+- 蛋白—基因匹配：新增特征映射表（`read_feature_link()`、`feature_pairing_preview()`，项目中保存为 `feature_link`）；同一基因的多个蛋白（异构体）全部保留，每个蛋白—基因对单独一行；UniProt 异构体可通过主编号匹配；ActivePathways 对每个基因取最显著特征并做 Šidák 校正。整合页可上传映射表、显示匹配统计；导出脚本可复现；报告说明匹配方式并区分异构体行。
+- GSEA 透传 `eps`、`n_perm_simple`（默认值不变，记录在参数中供脚本复现）。
+
+**部署与 CI**
+- nginx：HSTS、X-Content-Type-Options、X-Frame-Options（SAMEORIGIN）、Referrer-Policy、Permissions-Policy、frame-ancestors CSP（完整 CSP 先以 report-only 方式启用，README 说明如何验证后强制）；登录与令牌接口限流（10 次/分钟），其他请求 20 次/秒（WebSocket 与本机不计）。已在本地 nginx 1.24 上用 `nginx -t` 和桩服务验证。
+- CI：所有分支推送和 PR 都运行；Ubuntu R release/oldrel + macOS 矩阵；shellcheck、hadolint、actionlint、Action SHA 固定检查（均阻断）；lintr（暂为报告模式）；covr 覆盖率；所有第三方 Action 固定到提交 SHA；dependabot 每月提议升级。
+- R CMD check 下被跳过的部署契约测试与 hygiene 测试，CI 通过 `OMICSAPP_REPO_ROOT` 从源码树运行，仍跳过即失败。
+- 每晚运行性能预算与参数模糊测试（也可手动触发）。
+
+**打包与可维护性**
+- 拆分过大的模块服务器、合并重复的 `%||%` 定义、测试只依赖已安装包：见下方合并说明。
+- 另修：`install_optional()` 的分组补上改为可选的 limma、clusterProfiler、msigdbr 等（此前缺包提示让用户安装的分组里并没有这些包）。
+
 ---
 
 ## 2. 已知问题清单（✅ = 已完成）
@@ -114,9 +149,9 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 | P1 ✅ | `Total`/`Mean` 等汇总**列**被当作样本（汇总行已处理） | 与汇总行同样识别并剔除 |
 | P1 ✅ | `infer_assay_type()` 对 RNA-seq 永远返回 `raw_count`；非整数（TPM、log 值）也被当作计数 | 依据整数性、取值范围、负值判断，并在导入页确认 |
 | P1 ✅ | RDS 导入的 `omics_input` 不重新校验 | 走 `validate_omics_input()` |
-| P2 | 不支持 `.gz`、`.xlsm`、`SummarizedExperiment`、`DESeqDataSet`、小鼠 ENSMUSG、`_PAR_Y` 后缀 | 逐项补充读取器与 ID 映射 |
-| P2 | `winsorize_counts()` 会把"开/关"型基因压成 0，并产生非整数 | 仅对表达基因、按整数截断 |
-| P2 | MinProb 在特征很少的数据上报错或无效 | 回退到 MinDet 并提示 |
+| P2 ✅ | 不支持 `.gz`、`.xlsm`、`SummarizedExperiment`、`DESeqDataSet`、小鼠 ENSMUSG、`_PAR_Y` 后缀 | 逐项补充读取器与 ID 映射 |
+| P2 ✅ | `winsorize_counts()` 会把"开/关"型基因压成 0，并产生非整数 | 仅对表达基因、按整数截断 |
+| P2 ✅ | MinProb 在特征很少的数据上报错或无效 | 回退到 MinDet 并提示 |
 
 ### 2.2 QC
 | 级别 | 问题 | 建议 |
@@ -124,7 +159,7 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 | P1 ✅ | 样本 ≤ 10 时 z 分数离群检测不可能触发（本轮已加说明，但没有替代方法） | 小样本用稳健方法：`rrcov::PcaHubert` 或基于留一法的 Grubbs 型检验 |
 | P1 ✅ | 缺失率过滤是全局的，不按组 | 增加"至少一组中 ≥ x% 有值"的过滤（蛋白组标准做法） |
 | P1 ✅ | QC 视图每次切换图层都用默认参数重算，覆盖恢复项目里保存的 QC 结果 | 有保存结果时先展示保存的结果，参数改变后再重算 |
-| P2 | log2 归一化没有中位数对齐选项 | `normalize_omics(method = "log2", center = "median")` |
+| P2 ✅ | log2 归一化没有中位数对齐选项 | `normalize_omics(method = "log2", center = "median")` |
 
 ### 2.3 差异分析
 | 级别 | 问题 | 建议 |
@@ -132,7 +167,7 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 | P1 ✅ | edgeR 结果的 `statistic` 是无符号 F，与 limma 的 t、DESeq2 的 Wald 含义不同 | 结果表增加带符号统计量列（GSEA 已在内部处理） |
 | P1 ✅ | 全局检验（edgeR/DESeq2）未使用 tximport offset | 与两组比较一致处理 |
 | P1 ✅ | 多个处理组时配对 t 检验要求过严 | 每个对比单独配对 |
-| P2 | DESeq2 连续变量分析没有测试覆盖 | 补测试 |
+| P2 ✅ | DESeq2 连续变量分析没有测试覆盖 | 补测试 |
 
 ### 2.4 富集与整合
 | 级别 | 问题 | 建议 |
@@ -142,8 +177,8 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 | P1 ✅ | 多数据库同时富集时没有跨库多重校正 | 提供跨库 BH 选项 |
 | P1 ✅ | ActivePathways 的结果没有方向（只说"显著"） | 使用 directional ActivePathways（`merge_method = "DPM"`） |
 | P1 ✅ | 非人物种依赖基因符号大小写，没有直系同源映射 | 引入 `msigdbr` 物种映射或 `babelgene` |
-| P2 | 蛋白—基因匹配只按 symbol，同一基因的多个蛋白异构体只保留一个 | 引入 UniProt ↔ Gene 映射表与 feature_link |
-| P2 | GSEA 未暴露 `eps` / `nPermSimple` | 透传参数 |
+| P2 ✅ | 蛋白—基因匹配只按 symbol，同一基因的多个蛋白异构体只保留一个 | 引入 UniProt ↔ Gene 映射表与 feature_link |
+| P2 ✅ | GSEA 未暴露 `eps` / `nPermSimple` | 透传参数 |
 
 ### 2.5 Shiny 应用
 | 级别 | 问题 | 建议 |
@@ -154,7 +189,7 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 | P1 ✅ | 一个组学类型只能有一个图层（图层名 = omics_type） | 允许多个同类型图层（如两批蛋白组），图层名由用户指定 |
 | P1 ✅ | 结果过期没有状态提示（改了参数但未重跑） | 控件变化后标记"结果对应旧参数" |
 | P1 ✅ | DESeq2 等长任务没有进度 | 分阶段进度（离散度/拟合/检验） |
-| P2 | QC 参数修改无防抖，大数据集上每动一次滑块就重算 | `debounce()` |
+| P2 ✅ | QC 参数修改无防抖，大数据集上每动一次滑块就重算 | `debounce()` |
 
 ### 2.6 性能（实测 8000×60 蛋白 / 30000×60 RNA）
 | 级别 | 热点 | 建议（已验证的加速） |
@@ -163,8 +198,8 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 | P1 ✅ | limma 连续变量分析逐特征 `lm` + `cor.test`：8.5 秒 | 闭式解，约 40 倍 |
 | P1 ✅ | t 检验 / lm 逐特征循环：0.7 秒 / 8.4 秒 | 向量化（t 检验 0.014 秒） |
 | P1 ✅ | QC 与 PCA 图每次都做完整 `prcomp`：RNA 5–7 秒 | Gram 矩阵特征分解（17 倍）或 `irlba`，并把得分缓存进 QC bundle |
-| P2 | DESeq2 24 秒、edgeR 8.8 秒 | 预过滤（DESeq2 → 13 秒）、`glmGamPoi` |
-| P2 | QC bundle 复制了一份 `cleaned_input`（25 MB） | 只存过滤/插补记录，按需重建 |
+| P2 ✅ | DESeq2 24 秒、edgeR 8.8 秒 | 预过滤（DESeq2 → 13 秒）、`glmGamPoi` |
+| P2 ✅ | QC bundle 复制了一份 `cleaned_input`（25 MB） | 只存过滤/插补记录，按需重建 |
 
 ### 2.7 部署与 CI
 | 级别 | 问题 | 建议 |
@@ -174,7 +209,7 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 | P1 ✅ | `/auth/admin` 在局域网可访问；容器无 `no-new-privileges`、pids 限制、出站限制；日志未持久化 | 反向代理屏蔽管理端点；容器加固；日志落盘/集中 |
 | P1 ✅ | 无回滚：镜像标签可变、基础镜像按标签引用、`.omp` 格式无迁移钩子 | 不可变标签 + digest 固定；`load_project()` 版本迁移 |
 | P1 ✅ | `load_project()` 反序列化不可信的 qs2 文件 | 只加载本服务写出的文件（签名/哈希），上传的项目先校验结构 |
-| P2 | 缺 HSTS/安全头/限流；CI 只在 main 触发、单一 OS/R 版本、42 分钟；无 lint/覆盖率/shellcheck/hadolint；actions 未固定 SHA；19 个部署契约测试与 8 个 hygiene 测试在 check 下被跳过；性能/模糊测试从不运行 | 逐项补齐；性能与 fuzz 放到 nightly |
+| P2 ✅ | 缺 HSTS/安全头/限流；CI 只在 main 触发、单一 OS/R 版本、42 分钟；无 lint/覆盖率/shellcheck/hadolint；actions 未固定 SHA；19 个部署契约测试与 8 个 hygiene 测试在 check 下被跳过；性能/模糊测试从不运行 | 逐项补齐；性能与 fuzz 放到 nightly |
 
 ### 2.8 打包与可维护性
 | 级别 | 问题 | 建议 |
@@ -182,9 +217,9 @@ RDS 输入重新校验（2.1 P1）、t 检验/lm/连续变量的向量化与项�
 | P1 ✅ | limma、clusterProfiler（约 120 个依赖）、msigdbr 在 Imports，与 README 所说"可选"不符 | 移到 Suggests，通过 `ensure_*()` 按需提示安装 |
 | P1 ✅ | 未使用的 Suggests（here、ggpubr、tximport、GenomicFeatures；app 中 GSVA、fgsea、enrichplot、ComplexHeatmap 等） | 清理 |
 | P1 ✅ | 版本号仍是 0.0.0.9000；README 停留在 "Phase 0"；`omicsApp-package.Rd` 过时；`inst/app/app.R` 使用 `:::` | 发布 v0.2.0 时统一更新 |
-| P2 | 模块服务器过大（diff 约 1100 行、import、integration 各 650+ 行） | 按卡片拆分子模块 |
-| P2 | `%||%` 定义了 8 次；各后端的设计矩阵准备与 8 个 standardize 函数大量重复 | 抽公共工具函数 |
-| P2 | 测试 `setup.R` 依赖 `load_all`，与安装后测试耦合 | 测试只依赖已安装包 |
+| P2 ✅ | 模块服务器过大（diff 约 1100 行、import、integration 各 650+ 行） | 按卡片拆分子模块 |
+| P2 ✅ | `%||%` 定义了 8 次；各后端的设计矩阵准备与 8 个 standardize 函数大量重复 | 抽公共工具函数 |
+| P2 ✅ | 测试 `setup.R` 依赖 `load_all`，与安装后测试耦合 | 测试只依赖已安装包 |
 
 ---
 
