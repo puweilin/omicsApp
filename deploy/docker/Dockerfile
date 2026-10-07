@@ -262,9 +262,19 @@ RUN R -q -e 'p <- Sys.getenv("R_PROFILE", unset = file.path(R.home("etc"), "Rpro
 # hand it root or a capability -- su, passwd, mount, ping and friends
 # become ordinary programs. The check after it fails the build if any
 # survived.
+#
+# bash with pipefail from here on, so a failure inside a pipeline fails
+# the layer instead of being hidden by the last command's status. Set
+# this late rather than at the top: SHELL is part of every later RUN's
+# cache key, and moving it up would rebuild the hour of Bioconductor
+# layers above for no change in what they do. getcap's own status is
+# deliberately ignored -- walking / it meets files it cannot read, and
+# what matters is that every capability it did list is removed and that
+# the check after it finds no setuid/setgid file left.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod ug-s {} + \
  && if command -v getcap >/dev/null 2>&1; then \
-      getcap -r / 2>/dev/null | awk '{print $1}' | xargs -r setcap -r; fi \
+      { getcap -r / 2>/dev/null || true; } | awk '{print $1}' | xargs -r setcap -r; fi \
  && left="$(find / -xdev -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null)" \
  && if [ -n "$left" ]; then echo "setuid/setgid files remain: $left"; exit 1; fi
 

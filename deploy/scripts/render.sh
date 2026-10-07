@@ -25,6 +25,13 @@
 # Unset, it is the server itself: 127.0.0.1, ::1 and the server's own
 # address (OMICSAPP_HOST, resolved when it is a name).
 #
+# @OMICSAPP_RATE_EXEMPT@ is the list of addresses nginx's rate limits do
+# not count: RATE_LIMIT_EXEMPT_CIDR in deploy/host.env, or
+# --rate-exempt, in the same form. Unset, it is the server itself, the
+# same default as above -- ShinyProxy fetches every user's tokens from
+# Keycloak through nginx from there, and must not be throttled as if it
+# were one browser.
+#
 # Nothing here reads a secret. application.yml still needs its
 # client-secret filled in on the server (keycloak/README.md).
 
@@ -37,13 +44,15 @@ die() { echo "render.sh: $*" >&2; exit 1; }
 
 HOST="${OMICSAPP_HOST:-}"
 ADMIN_ALLOW="${ADMIN_ALLOW_CIDR:-}"
+RATE_EXEMPT="${RATE_LIMIT_EXEMPT_CIDR:-}"
 OUT="$DEPLOY_DIR"
 while [ $# -gt 0 ]; do
     case "$1" in
         --host) [ $# -ge 2 ] || die "--host needs a value"; HOST="$2"; shift 2 ;;
         --admin-allow) [ $# -ge 2 ] || die "--admin-allow needs a value"; ADMIN_ALLOW="$2"; shift 2 ;;
         --out)  [ $# -ge 2 ] || die "--out needs a directory"; OUT="$2"; shift 2 ;;
-        -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+        --rate-exempt) [ $# -ge 2 ] || die "--rate-exempt needs a value"; RATE_EXEMPT="$2"; shift 2 ;;
+        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
@@ -62,6 +71,7 @@ if [ -z "$HOST" ]; then
     [ -n "$HOST" ] && [ "$HOST" != "REPLACE_ME" ] || die "OMICSAPP_HOST is not set in $ENV_FILE"
 fi
 [ -n "$ADMIN_ALLOW" ] || ADMIN_ALLOW="$(env_value ADMIN_ALLOW_CIDR)"
+[ -n "$RATE_EXEMPT" ] || RATE_EXEMPT="$(env_value RATE_LIMIT_EXEMPT_CIDR)"
 
 case "$HOST" in
     *[!A-Za-z0-9.-]*|"") die "OMICSAPP_HOST must be an IP address or a DNS name, without scheme, port or path: '$HOST'" ;;
@@ -72,30 +82,41 @@ else
     SAN="DNS:$HOST"
 fi
 
+# The server itself: 127.0.0.1, ::1 and its own address. The default for
+# both lists below.
+SELF="127.0.0.1 ::1"
+if [[ "$HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    SELF="$SELF $HOST"
+elif command -v getent >/dev/null 2>&1; then
+    # A name that does not resolve here simply adds nothing.
+    SELF="$SELF $({ getent ahosts "$HOST" 2>/dev/null || true; } | awk '{print $1}' | sort -u | tr '\n' ' ')"
+fi
+
 # The admin allow-list. The default is the server itself, including its
 # own address: a browser tunnelled through the server (ssh -D) arrives
 # from there, and anyone with a shell on the server can already reach
 # Keycloak directly on 127.0.0.1:8180, so this opens nothing new.
-if [ -z "$ADMIN_ALLOW" ]; then
-    ADMIN_ALLOW="127.0.0.1 ::1"
-    if [[ "$HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        ADMIN_ALLOW="$ADMIN_ALLOW $HOST"
-    elif command -v getent >/dev/null 2>&1; then
-        # A name that does not resolve here simply adds nothing.
-        ADMIN_ALLOW="$ADMIN_ALLOW $({ getent ahosts "$HOST" 2>/dev/null || true; } | awk '{print $1}' | sort -u | tr '\n' ' ')"
-    fi
-fi
-GEO=""
-for cidr in $(printf '%s' "$ADMIN_ALLOW" | tr ',' ' '); do
-    # Addresses and prefixes only: anything else would be nginx syntax
-    # written into the config.
-    [[ "$cidr" =~ ^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$ ]] && [[ "$cidr" =~ [0-9:] ]] \
-        || die "ADMIN_ALLOW_CIDR entries must be IP addresses or CIDRs (e.g. 127.0.0.1 or 203.0.113.0/24): '$cidr'"
-    case " $GEO " in *" $cidr 1; "*) continue ;; esac
-    GEO="$GEO$cidr 1; "
-done
-[ -n "$GEO" ] || die "ADMIN_ALLOW_CIDR is empty"
-GEO="${GEO% }"
+[ -n "$ADMIN_ALLOW" ] || ADMIN_ALLOW="$SELF"
+# The rate-limit exemptions. The same default, for the reason above.
+[ -n "$RATE_EXEMPT" ] || RATE_EXEMPT="$SELF"
+
+# geo_entries <variable name for messages> <list>: the list as the body
+# of an nginx geo block, "addr 1; addr 1;".
+geo_entries() {
+    local name="$1" list="$2" out="" cidr
+    for cidr in $(printf '%s' "$list" | tr ',' ' '); do
+        # Addresses and prefixes only: anything else would be nginx syntax
+        # written into the config.
+        [[ "$cidr" =~ ^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$ ]] && [[ "$cidr" =~ [0-9:] ]] \
+            || die "$name entries must be IP addresses or CIDRs (e.g. 127.0.0.1 or 203.0.113.0/24): '$cidr'"
+        case " $out " in *" $cidr 1; "*) continue ;; esac
+        out="$out$cidr 1; "
+    done
+    [ -n "$out" ] || die "$name is empty"
+    printf '%s' "${out% }"
+}
+GEO="$(geo_entries ADMIN_ALLOW_CIDR "$ADMIN_ALLOW")"
+GEO_RATE="$(geo_entries RATE_LIMIT_EXEMPT_CIDR "$RATE_EXEMPT")"
 
 # render <template relative to deploy/> <output relative to deploy/> <comment leader or ''>
 render() {
@@ -108,17 +129,17 @@ render() {
                 "$leader" "$(basename "$template")" "$HOST"
         fi
         sed -e "s|@OMICSAPP_HOST_SAN@|$SAN|g" -e "s|@OMICSAPP_HOST@|$HOST|g" \
-            -e "s|@OMICSAPP_ADMIN_ALLOW@|$GEO|g" "$template"
+            -e "s|@OMICSAPP_ADMIN_ALLOW@|$GEO|g" -e "s|@OMICSAPP_RATE_EXEMPT@|$GEO_RATE|g" "$template"
     } > "$out.tmp"
     if grep -q '@OMICSAPP_' "$out.tmp"; then
         rm -f "$out.tmp"
-        die "a token in $1 has no value; this script knows @OMICSAPP_HOST@, @OMICSAPP_HOST_SAN@ and @OMICSAPP_ADMIN_ALLOW@"
+        die "a token in $1 has no value; this script knows @OMICSAPP_HOST@, @OMICSAPP_HOST_SAN@, @OMICSAPP_ADMIN_ALLOW@ and @OMICSAPP_RATE_EXEMPT@"
     fi
     mv "$out.tmp" "$out"
     echo "  $out"
 }
 
-echo "Rendering for $HOST ($SAN); admin endpoints from: ${GEO// 1;/}"
+echo "Rendering for $HOST ($SAN); admin endpoints from: ${GEO// 1;/}; not rate-limited: ${GEO_RATE// 1;/}"
 render nginx/omicsapp.conf.template            nginx/omicsapp.conf            '#'
 render keycloak/docker-compose.yml.template    keycloak/docker-compose.yml    '#'
 render keycloak/omicsapp-realm.json.template   keycloak/omicsapp-realm.json   ''

@@ -1,31 +1,73 @@
-# Run R CMD check on both omicsCore and omicsApp in a single job.
+# R CMD check on every push and pull request, on more than one platform,
+# plus the tests that only run from the source tree.
 #
-# omicsCore is checked first; its installed dependencies are reused when
-# omicsCore + omicsApp deps are installed next, avoiding redundant
-# compilation and a second cache Post-step.
+# Every branch, not only main: a branch that breaks the check should say
+# so before it is merged, not after. Pull requests from forks run too.
+# A push to a branch with an open pull request runs both events; the
+# concurrency group cancels a run superseded by a newer push to the same
+# ref, which is what keeps that affordable.
 #
-# Suggests-not-installed is a NOTE (not WARNING) so we don't fail
-# when a Bioconductor Suggests temporarily won't install.
+# The matrix (about 25-35 minutes per job with a warm package cache):
+#
+#   ubuntu, R release   omicsCore + omicsApp   the main line
+#   ubuntu, R oldrel-1  omicsCore + omicsApp   the previous R minor, as
+#                                              users installing from
+#                                              source will often have
+#   macOS,  R release   omicsCore only         a second OS for the engine,
+#                                              which is the part people
+#                                              install outside the image
+#
+# The server's own R (4.4.2, Bioconductor 3.20, CRAN pinned to a date) is
+# tested by production-image.yaml, which builds the Dockerfile and runs
+# both suites inside it; setting r-version: 4.4.2 here would install
+# today's CRAN on that R, which is neither the server nor a combination
+# anyone uses.
+#
+# Package caching is setup-r-dependencies' own: keyed on OS, R version and
+# the dependency lock it writes, so a run whose DESCRIPTIONs did not
+# change restores the library instead of rebuilding Bioconductor. Bump
+# cache-version to start afresh.
+#
+# Suggests-not-installed is a NOTE (not WARNING) so we don't fail when a
+# Bioconductor Suggests temporarily won't install.
 name: R-CMD-check
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "packages/omicsCore/**"
-      - "packages/omicsApp/**"
-      - ".github/workflows/R-CMD-check.yaml"
+    branches: ["**"]
+    paths-ignore:
+      - "docs/**"
+      - "mockup/**"
+      - "README.md"
+      - "LICENSE"
   pull_request:
-    branches: [main]
-    paths:
-      - "packages/omicsCore/**"
-      - "packages/omicsApp/**"
-      - ".github/workflows/R-CMD-check.yaml"
+    paths-ignore:
+      - "docs/**"
+      - "mockup/**"
+      - "README.md"
+      - "LICENSE"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.config.os }} (R ${{ matrix.config.r }})${{ !matrix.config.app && ' omicsCore only' || '' }}
+    runs-on: ${{ matrix.config.os }}
+    timeout-minutes: 75
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { os: ubuntu-latest, r: release, app: true }
+          - { os: ubuntu-latest, r: oldrel-1, app: true }
+          - { os: macos-latest, r: release, app: false }
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -37,28 +79,36 @@ jobs:
       # exported script actually reproduces its analysis -- would be
       # silently skipped on every CI run.
       NOT_CRAN: true
+      # R CMD check runs the tests from a copy in <pkg>.Rcheck/, where
+      # the deploy/ directory and the package sources are not beside
+      # them. This names the checkout, so the deploy contract
+      # (test-deploy-contract.R) and the hygiene tests run under check
+      # instead of skipping; set, a missing checkout is an error, not a
+      # skip.
+      OMICSAPP_REPO_ROOT: ${{ github.workspace }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-pandoc@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
 
-      - uses: r-lib/actions/setup-r@v2
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
-          r-version: release
+          r-version: ${{ matrix.config.r }}
           use-public-rspm: true
 
-      # 1. Install omicsCore deps (limma, clusterProfiler, msigdbr, qs2, …)
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      # 1. Install omicsCore deps (limma, clusterProfiler, msigdbr, qs2, ...)
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           working-directory: packages/omicsCore
+          cache-version: 2
           extra-packages: |
             any::rcmdcheck
             any::devtools
           needs: check
 
       # 2. Check omicsCore
-      - uses: r-lib/actions/check-r-package@v2
+      - uses: r-lib/actions/check-r-package@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           working-directory: packages/omicsCore
           upload-snapshots: true
@@ -66,10 +116,12 @@ jobs:
 
       # 3. Now add omicsCore + omicsApp deps. omicsCore deps from step 1
       #    are already installed, so pak only builds omicsCore + omicsApp
-      #    additions (shiny, bslib, DT, plotly, …).
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      #    additions (shiny, bslib, DT, plotly, ...).
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        if: matrix.config.app
         with:
           working-directory: packages/omicsApp
+          cache-version: 2
           extra-packages: |
             local::../omicsCore
             any::rcmdcheck
@@ -77,8 +129,45 @@ jobs:
           needs: check
 
       # 4. Check omicsApp
-      - uses: r-lib/actions/check-r-package@v2
+      - uses: r-lib/actions/check-r-package@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        if: matrix.config.app
         with:
           working-directory: packages/omicsApp
           upload-snapshots: true
           args: 'c("--no-manual", "--as-cran")'
+
+  # The tests that read the repository rather than the installed package
+  # (the package sources, deploy/), run from the source tree the way
+  # devtools::test() runs them. Under R CMD check those that do not know
+  # OMICSAPP_REPO_ROOT still skip; here none may skip for that reason --
+  # see the script's header.
+  source-tree-tests:
+    name: source-tree tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      NOT_CRAN: true
+      OMICSAPP_REPO_ROOT: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: r-lib/actions/setup-pandoc@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          working-directory: packages/omicsApp
+          cache-version: 2
+          extra-packages: |
+            local::../omicsCore
+            any::devtools
+          needs: check
+
+      - name: Run the source-tree tests
+        run: Rscript .github/scripts/run-source-tests.R

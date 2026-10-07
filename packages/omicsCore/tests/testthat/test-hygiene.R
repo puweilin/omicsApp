@@ -250,8 +250,20 @@ test_that("the report renders nothing beside its template", {
 })
 
 test_that("package code seeds the stream only where it puts it back", {
-  r_dir <- if (dir.exists(file.path("..", "..", "R"))) file.path("..", "..", "R") else NULL
-  skip_if(is.null(r_dir), "package source is not beside the tests")
+  # Beside the tests in the source tree; under R CMD check the tests run
+  # from a copy with no R/ next to them, so CI names the checkout in
+  # OMICSAPP_REPO_ROOT (see test-deploy-contract.R in omicsApp). Set, it
+  # must hold the sources -- a skip there would hide the check again.
+  repo <- Sys.getenv("OMICSAPP_REPO_ROOT", "")
+  r_dir <- file.path("..", "..", "R")
+  if (!dir.exists(r_dir) && nzchar(repo)) {
+    r_dir <- file.path(repo, "packages", "omicsCore", "R")
+    if (!dir.exists(r_dir)) {
+      stop("OMICSAPP_REPO_ROOT is set to '", repo, "', but it has no packages/omicsCore/R.",
+           call. = FALSE)
+    }
+  }
+  skip_if_not(dir.exists(r_dir), "package source is not beside the tests")
   files <- list.files(r_dir, pattern = "\\.R$", full.names = TRUE)
   seeders <- Filter(function(f) {
     code <- grep("^\\s*#", readLines(f, warn = FALSE), value = TRUE, invert = TRUE)

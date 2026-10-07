@@ -30,7 +30,7 @@ memory cannot take anyone else down with it.
 | `scripts/render.sh` | Writes the four files that carry that address from their `.template` neighbours. |
 | `rsync.exclude` | What step 0's `rsync --delete` must leave alone on the server: the secrets, `host.env`, and the rendered files. |
 | `shinyproxy/application.yml.template` | Rendered to `application.yml`; copy that to the server and fill in the client secret. |
-| `nginx/omicsapp.conf.template` | Reverse proxy: TLS, the WebSocket headers Shiny needs, and Keycloak at `/auth`. Rendered to `omicsapp.conf`. |
+| `nginx/omicsapp.conf.template` | Reverse proxy: TLS, the WebSocket headers Shiny needs, Keycloak at `/auth`, security headers and rate limits. Rendered to `omicsapp.conf`. |
 | `nginx/nginx-limits.conf` | systemd drop-in raising nginx's file-descriptor limit. |
 | `keycloak/` | The identity provider: compose file and realm definition (both rendered from `.template`), and its own README. |
 | `cron/omicsapp-backup` | Runs the nightly backup and the weekly restore drill. |
@@ -79,6 +79,9 @@ addresses allowed to reach the administrative pages through nginx
 (Keycloak's admin console and master realm, ShinyProxy's `/admin`).
 Empty, it is the server itself — `127.0.0.1`, `::1` and `OMICSAPP_HOST`.
 See [The admin console is not on the LAN](#the-admin-console-is-not-on-the-lan).
+A third, `RATE_LIMIT_EXEMPT_CIDR`, lists the addresses nginx's rate
+limits do not count, with the same default; see
+[Security headers and rate limits](#security-headers-and-rate-limits).
 
 Everything else below is the same on any machine.
 
@@ -417,6 +420,19 @@ workstation, not the server:
 curl -sk -o /dev/null -w '%{http_code}\n' https://<server-ip>/auth/admin/          # 403
 curl -sk -o /dev/null -w '%{http_code}\n' https://<server-ip>/auth/realms/master/  # 403
 curl -sk -o /dev/null -w '%{http_code}\n' https://<server-ip>/auth/realms/omicsapp/account  # 200 or 302
+```
+
+And that the security headers arrive, once each:
+
+```bash
+curl -skI https://<server-ip>/ | grep -iE 'strict-transport|x-frame|x-content-type|referrer|permissions|content-security'
+# Strict-Transport-Security: max-age=31536000
+# X-Content-Type-Options: nosniff
+# X-Frame-Options: SAMEORIGIN
+# Referrer-Policy: same-origin
+# Permissions-Policy: camera=(), ...
+# Content-Security-Policy: frame-ancestors 'self'; object-src 'none'; base-uri 'self'
+# Content-Security-Policy-Report-Only: default-src 'self'; ...
 ```
 
 `<lan-cidr>` is the network's real prefix, read from `ip -br addr` on
@@ -1002,6 +1018,77 @@ The default list is the server itself. To use the console:
 `add_user.sh` and `list_users.sh` talk to Keycloak on 127.0.0.1:8180
 directly and are unaffected.
 
+### Security headers and rate limits
+
+nginx adds these to every HTTPS response, error pages included
+(`nginx/omicsapp.conf.template` explains each in place):
+
+| Header | Value | Why |
+|---|---|---|
+| `Strict-Transport-Security` | `max-age=31536000` | After one visit the browser goes straight to `https://` for a year. No `includeSubDomains` (the server does not own its parent domain's other names) and no `preload` (months to undo). Browsers ignore it on a bare IP address and over a certificate they were told to accept, so on a LAN with a self-signed certificate it does nothing until a real certificate is in place. |
+| `X-Content-Type-Options` | `nosniff` | A file is only ever run as what the server said it is. |
+| `X-Frame-Options` | `SAMEORIGIN` | ShinyProxy shows the app in an iframe of its own page on the same origin; no other site may frame it. |
+| `Referrer-Policy` | `same-origin` | Links out of the app (a pathway database, say) do not carry the app's internal URLs with them. |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=()` | Nothing here uses them. |
+| `Content-Security-Policy` | `frame-ancestors 'self'; object-src 'none'; base-uri 'self'` | Enforced: the part known to be safe for Shiny and ShinyProxy. |
+| `Content-Security-Policy-Report-Only` | `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; ...` | **Not enforced** — see below. |
+
+ShinyProxy and Keycloak send some of these themselves, with other
+values (both send HSTS with `includeSubDomains`; Spring's default
+framing rule is `DENY`). nginx hides theirs and sends its own, so the
+browser sees each header once. Under `/auth/` it leaves Keycloak's
+`X-Frame-Options`, `Content-Security-Policy` and `Referrer-Policy` alone:
+Keycloak tunes those per realm (*Realm settings → Security defenses*)
+to what its login pages and admin console need.
+
+**The full Content-Security-Policy is report-only.** Shiny needs inline
+scripts and styles, the table and plot widgets evaluate JavaScript from
+strings, and ShinyProxy's own pages carry inline script, so a policy
+that allows all of that is still not proven to allow everything — and
+an enforced policy that misses one thing gives a page that loads and
+then does nothing. In report-only mode the browser blocks nothing and
+writes what it *would* have blocked to the developer console
+(F12 → Console, "Content-Security-Policy-Report-Only"). To enforce it:
+go through a full session — sign in, import, run each analysis, open
+and download a report, sign out — with the console open; if nothing is
+reported, rename `Content-Security-Policy-Report-Only` to
+`Content-Security-Policy` in the template (merging it with the
+enforced one), re-render, re-copy the site and reload nginx.
+
+Rate limits, per client address, answered with `429` when spent:
+
+| Budget | What | Rate | Burst |
+|---|---|---|---|
+| `omicsapp_login` | Keycloak's password form (`/auth/realms/*/login-actions/`) and token endpoint | 10 a minute | 10 |
+| `omicsapp_general` | every other request | 20 a second | 200, no delay |
+
+A person signing in uses two or three login requests; opening the app
+fetches a few dozen files at once, which the burst absorbs. Keycloak's
+own brute-force lockout (`bruteForceProtected` in the realm) still
+applies on top — that one is per account, this one per address.
+
+Two things are never counted:
+
+* **Shiny's WebSocket.** It is one request that then carries the whole
+  session, so its traffic is not counted anyway; the upgrade itself is
+  exempt too, so a tab reconnecting in a loop after a network blip does
+  not spend its user's budget and grey out the app with a 429 nobody
+  sees.
+* **The server itself.** ShinyProxy fetches every user's tokens from
+  Keycloak through nginx (its `token-url` is the public address), from
+  the server's own address. Counted, that one address would lock
+  everyone out of signing in together. The list is
+  `RATE_LIMIT_EXEMPT_CIDR` in `host.env`; empty, it is `127.0.0.1`,
+  `::1` and `OMICSAPP_HOST`. If `OMICSAPP_HOST` is a name that resolves
+  differently on the server than for users, put the server's real
+  address there.
+
+Users behind one NAT share one budget. At this deployment's size that
+is still far from the limit; if 429s ever appear in
+`/var/log/nginx/omicsapp.error.log` ("limiting requests") during normal
+use, raise the burst in the template rather than exempting the NAT,
+which would exempt everyone behind it.
+
 ### What confines an app container
 
 | | How | Where |
@@ -1079,3 +1166,48 @@ docker run --rm --network omicsapp-net "$TAG" \
 With Docker's opt-in nftables firewall backend there is no
 `DOCKER-USER` chain; the script says so, and the equivalent rule goes
 into Docker's nftables setup instead.
+
+## What CI checks
+
+Everything in this directory is checked on every push, to any branch,
+and on every pull request — not only on `main`. The workflows are in
+`.github/workflows/`:
+
+| Workflow | What | Blocking |
+|---|---|---|
+| `R-CMD-check.yaml` | `R CMD check --as-cran` on Ubuntu with R release and the previous R minor (both packages) and on macOS with R release (omicsCore); then the tests that read the repository rather than the installed package, run from the source tree | yes |
+| `production-image.yaml` | Builds `docker/Dockerfile`, smoke-tests it confined, runs both suites inside it (R 4.4.2, Bioconductor 3.20, the pinned CRAN snapshot) | yes |
+| `lint.yaml` | `shellcheck` on `scripts/*.sh`; `hadolint` on the Dockerfile (ignored rules and their reasons in `.hadolint.yaml` at the repository root); `actionlint` on the workflows; every action pinned to a commit SHA; `lintr` on both packages | all but `lintr` |
+| `coverage.yaml` | omicsCore's test coverage: a per-file table on the run's summary page and `coverage.xml` (Cobertura) as an artifact. No secrets, no threshold | no |
+| `nightly.yaml` | 02:37 UTC and on demand: the performance budget (`OMICSCORE_PERF_TESTS=1`) and the heavy-engine fuzz sweep (`OMICSCORE_FUZZ_TESTS=1`) | — |
+
+**The deploy contract runs under check.** `test-deploy-contract.R`
+(in omicsApp) reads this directory, and the hygiene tests read the
+package sources; R CMD check runs tests from a copy in
+`<pkg>.Rcheck/`, where neither is beside them, so they used to skip on
+every CI run. CI sets `OMICSAPP_REPO_ROOT` to the checkout and they run;
+set to a path without the repository, it is an error rather than a
+skip. Unset — an install from a tarball, CRAN-style — they still skip
+cleanly. `.github/scripts/run-source-tests.R` runs the remaining
+source-reading tests from the source tree and fails if any of them
+skipped for want of it. To run the contract locally:
+
+```bash
+Rscript -e 'devtools::load_all("packages/omicsApp"); testthat::test_file("packages/omicsApp/tests/testthat/test-deploy-contract.R")'
+```
+
+**lintr reports but does not fail yet.** It had never been run over this
+code, so its first runs list a backlog, not regressions; the findings
+appear as annotations on a pull request's changed lines. `.lintr` at the
+repository root allows 120-character lines and turns off the linters
+that disagree with the existing style or need the package loaded
+(object names, object usage, indentation, commented code). Once the
+backlog is cleared, set `LINTR_ERROR_ON_LINT: "true"` in `lint.yaml`.
+
+**Actions are pinned to commit SHAs**, with the release in a comment
+(`actions/checkout@<sha> # v4.4.0`): a tag can be moved to other code, a
+SHA cannot. Dependabot (`.github/dependabot.yml`) proposes updates
+monthly, SHA and comment together. `.github/scripts/pin-actions.sh`
+checks that each SHA is what its tag says; `--update` re-pins from the
+tags. The linters themselves are fixed versions checked against
+recorded SHA-256 sums (`.github/scripts/install-lint-tools.sh`).

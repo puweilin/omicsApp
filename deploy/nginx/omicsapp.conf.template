@@ -79,6 +79,61 @@ map "$omicsapp_admin_path:$omicsapp_admin_client" $omicsapp_admin_denied {
     "1:0"   1;
 }
 
+# ---- rate limits --------------------------------------------------------
+# Two budgets per client address, both answered with 429 when spent:
+#
+#   omicsapp_login    the password form (Keycloak's login-actions) and
+#                     the token endpoint: 10 a minute after a burst of
+#                     10. A person signing in uses two or three; a script
+#                     guessing passwords is slowed to a crawl before
+#                     Keycloak's own lockout (bruteForceProtected in the
+#                     realm) even counts it. That lockout is per account;
+#                     this is per address, so it also covers guessing
+#                     across many accounts.
+#   omicsapp_general  everything else: 20 a second after a burst of 200,
+#                     with no delay inside the burst. Opening the app
+#                     fetches some dozens of scripts and stylesheets at
+#                     once, which the burst absorbs; only a flood
+#                     notices the limit.
+#
+# Shiny's WebSocket is exempt. limit_req counts requests, and a
+# WebSocket is one request (the upgrade) that then carries every input
+# and every update for hours, so its traffic is never counted anyway --
+# but a tab that reconnects in a loop after a network blip would spend
+# the budget of the person using it, and the result would be a greyed-out
+# app with a 429 nobody sees. Upgrades therefore get an empty key, which
+# nginx does not count.
+#
+# The server itself is exempt too: ShinyProxy fetches tokens and signing
+# keys from Keycloak through this nginx (its token-url is the public
+# https:// address), from the server's own address, on behalf of every
+# user at once. Counting that against one address would lock everyone
+# out of signing in together. The list is RATE_LIMIT_EXEMPT_CIDR in
+# deploy/host.env, rendered by deploy/scripts/render.sh; unset, it is
+# 127.0.0.1, ::1 and the server's own address.
+geo $omicsapp_rate_exempt {
+    default 0;
+    @OMICSAPP_RATE_EXEMPT@
+}
+
+map $http_upgrade $omicsapp_is_upgrade {
+    default 1;
+    ""      0;
+}
+
+map $omicsapp_rate_exempt $omicsapp_login_key {
+    default $binary_remote_addr;
+    1       "";
+}
+
+map "$omicsapp_rate_exempt:$omicsapp_is_upgrade" $omicsapp_general_key {
+    default "";
+    "0:0"   $binary_remote_addr;
+}
+
+limit_req_zone $omicsapp_login_key   zone=omicsapp_login:10m   rate=10r/m;
+limit_req_zone $omicsapp_general_key zone=omicsapp_general:10m rate=20r/s;
+
 server {
     listen 80;
     server_name omics.local omics @OMICSAPP_HOST@;
@@ -131,6 +186,38 @@ server {
         return 403;
     }
 
+    # The general budget (see "rate limits" at the top). Server-level, so
+    # it covers every location that does not set limit_req itself -- nginx
+    # inherits limit_req only into blocks that have none of their own,
+    # which is why the login location below repeats it.
+    limit_req zone=omicsapp_general burst=200 nodelay;
+    limit_req_status 429;
+    limit_req_log_level warn;
+
+    # No nginx version in error pages and the Server header.
+    server_tokens off;
+
+    # ---- security headers ---------------------------------------------
+    # Repeated in each location below rather than set here, on purpose:
+    # nginx drops every server-level add_header in a location that has
+    # an add_header of its own, so a header written once here would
+    # silently vanish from both. test-deploy-contract.R checks that the
+    # two locations agree. `always` adds them to error responses (403,
+    # 429, 502) too.
+    #
+    # Strict-Transport-Security: a browser that has seen it goes straight
+    # to https:// for a year, so a link or a typed http:// address can no
+    # longer be intercepted on the way to the redirect. No
+    # includeSubDomains and no preload: this server does not own its
+    # parent domain's other names, and a preload entry takes months to
+    # undo. Browsers ignore the header on a bare IP address and over a
+    # certificate they had to be told to accept, so on a LAN with a
+    # self-signed certificate it does nothing until a real certificate
+    # is in place -- which is when it starts to matter. ShinyProxy
+    # (Spring Security) and Keycloak each send their own, with
+    # includeSubDomains; proxy_hide_header drops theirs so the browser
+    # sees exactly one policy, this one.
+
     # Omics workbooks are large; the app accepts up to 500 MB
     # (omicsApp::launch(max_upload_mb =)), so nginx must not cut in
     # below that.
@@ -170,6 +257,32 @@ server {
         # header size.
         proxy_buffer_size   16k;
         proxy_buffers       8 16k;
+
+        # Security headers (see above the locations). Keycloak sets its
+        # own X-Frame-Options, Content-Security-Policy and
+        # Referrer-Policy per realm (Realm settings > Security defenses),
+        # tuned to what its login pages and admin console need, so those
+        # are left to it; nginx adds only what Keycloak does not, and
+        # replaces its HSTS so there is one policy for the whole site.
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Permissions-Policy;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+
+        # The password form and the token endpoint get the tight login
+        # budget as well as the general one (see "rate limits" at the
+        # top). Nested, so it inherits the proxy settings and headers
+        # above; only proxy_pass is not inherited, and in a regex
+        # location it may not carry a path -- none is needed, the path is
+        # the same on both sides. Loading the login page is not limited:
+        # posting the password is what is counted.
+        location ~ ^/auth/realms/[^/]+/(login-actions/|protocol/openid-connect/token) {
+            limit_req zone=omicsapp_login burst=10 nodelay;
+            limit_req zone=omicsapp_general burst=200 nodelay;
+            proxy_pass http://127.0.0.1:8180;
+        }
     }
 
     # ---- ShinyProxy -------------------------------------------------
@@ -197,5 +310,42 @@ server {
         # make progress indicators arrive all at once at the end.
         proxy_buffering off;
         proxy_redirect off;
+
+        # Security headers (see above the locations). The upstream's own
+        # copies are hidden so each header is sent once, with one value.
+        #
+        # Framing: ShinyProxy shows each app inside an iframe of its own
+        # page (/app/<id> frames /app_proxy/<container>/), on this same
+        # origin, so SAMEORIGIN -- DENY would leave a blank page under
+        # the navigation bar. No other site may frame any of it, which is
+        # what stops a page elsewhere from overlaying the app and
+        # steering clicks.
+        #
+        # The Content-Security-Policy is in two parts. The enforced one
+        # holds only what is known to be safe for Shiny and ShinyProxy:
+        # framing by this origin, no plugins, no <base> rewriting. The
+        # full policy is Report-Only: browsers block nothing and log what
+        # it would have blocked in the developer console. Shiny needs
+        # inline scripts and styles, htmlwidgets (DT, plotly) evaluate
+        # JavaScript from strings, and ShinyProxy's pages carry inline
+        # script of their own, so the policy needs 'unsafe-inline' and
+        # 'unsafe-eval' and may still miss something -- enforcing it
+        # untested would risk a page that loads and then does nothing.
+        # Once the console stays clean through a full session (import,
+        # analyses, report download, sign out), drop the -Report-Only;
+        # see "Security headers and rate limits" in deploy/README.md.
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header Referrer-Policy;
+        proxy_hide_header Permissions-Policy;
+        proxy_hide_header Content-Security-Policy;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "same-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+        add_header Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'self'" always;
+        add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss:; worker-src 'self' blob:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" always;
     }
 }

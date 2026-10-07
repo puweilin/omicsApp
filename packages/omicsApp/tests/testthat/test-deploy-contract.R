@@ -8,8 +8,27 @@
 #
 # These read the deploy/ directory at the repository root, so they run
 # from the source tree and skip from an installed package.
+#
+# R CMD check runs the tests from a copy (<pkg>.Rcheck/tests), which may
+# sit anywhere -- rcmdcheck puts it in a temporary directory by default
+# -- so walking up from there finds no repository and every test here
+# skipped, silently, on every check. CI therefore names the checkout in
+# OMICSAPP_REPO_ROOT. When it is set the tests must run: a wrong value is
+# an error, not a skip, because a skip is exactly the failure this is
+# here to prevent. Unset, a CRAN-like install without the repository
+# still skips cleanly.
 
 deploy_root <- function() {
+  env <- Sys.getenv("OMICSAPP_REPO_ROOT", "")
+  if (nzchar(env)) {
+    candidate <- file.path(env, "deploy")
+    if (!file.exists(file.path(candidate, "docker", "Dockerfile"))) {
+      stop("OMICSAPP_REPO_ROOT is set to '", env, "', but ", candidate,
+           "/docker/Dockerfile does not exist. Point it at the repository checkout ",
+           "or unset it.", call. = FALSE)
+    }
+    return(normalizePath(candidate, winslash = "/"))
+  }
   dir <- normalizePath(getwd(), winslash = "/", mustWork = FALSE)
   repeat {
     candidate <- file.path(dir, "deploy")
@@ -27,6 +46,12 @@ skip_unless_deploy <- function() {
 }
 
 read_deploy <- function(root, ...) readLines(file.path(root, ...), warn = FALSE)
+
+# The port nginx forwards /auth/ to: Keycloak's.
+keycloak_port <- function(nginx) {
+  line <- grep("proxy_pass http://127\\.0\\.0\\.1:[0-9]+/auth/;", nginx, value = TRUE)
+  sub(".*127\\.0\\.0\\.1:([0-9]+)/auth/;.*", "\\1", line[1L])
+}
 
 # `key: value` from a YAML-ish file, ignoring comments. Good enough for
 # the flat settings asserted here; a YAML parser would be another
@@ -103,10 +128,29 @@ test_that("nginx forwards to the port ShinyProxy listens on", {
   nginx <- read_deploy(root, "nginx", "omicsapp.conf.template")
   port <- yaml_value(sp, "port")
   expect_match(port, "^[0-9]+$")
+  # Keycloak is forwarded to twice -- /auth/ and, without a path, the
+  # rate-limited login location nested in it -- so its port is read from
+  # the /auth/ line and set aside; what remains is ShinyProxy.
+  kc_port <- keycloak_port(nginx)
   forwarded <- grep("proxy_pass http://127\\.0\\.0\\.1:[0-9]+;", nginx, value = TRUE)
-  forwarded <- forwarded[!grepl("/auth/", forwarded)]
+  forwarded <- forwarded[!grepl(paste0(":", kc_port, ";"), forwarded, fixed = TRUE)]
   expect_length(forwarded, 1L)
   expect_match(forwarded, paste0(":", port, ";"), fixed = TRUE)
+})
+
+test_that("every Keycloak location in nginx forwards to the one Keycloak port", {
+  root <- skip_unless_deploy()
+  nginx <- read_deploy(root, "nginx", "omicsapp.conf.template")
+  nginx <- nginx[!grepl("^\\s*#", nginx)]
+  kc_port <- keycloak_port(nginx)
+  expect_match(kc_port, "^[0-9]+$")
+  compose <- read_deploy(root, "keycloak", "docker-compose.yml.template")
+  expect_true(any(grepl(sprintf("127.0.0.1:%s:", kc_port), compose, fixed = TRUE)))
+  # The nested login location must reach the same Keycloak, path intact.
+  login <- grep("location ~ \\^/auth/realms/", nginx)
+  expect_length(login, 1L)
+  block <- nginx[login:(login + grep("^\\s*}", nginx[login:length(nginx)])[[1L]] - 1L)]
+  expect_true(any(grepl(sprintf("proxy_pass http://127.0.0.1:%s;", kc_port), block, fixed = TRUE)))
 })
 
 test_that("ShinyProxy's two servers use different ports, both on localhost", {
@@ -879,4 +923,291 @@ test_that("every image with a recorded digest is referenced by that digest", {
   }
   # Nothing recorded that is no longer used.
   expect_length(setdiff(names(recorded), sub("@sha256:.*$", "", refs)), 0L)
+})
+
+# ---- security headers and rate limits ------------------------------------------
+
+# The lines of the block that opens on the first line matching `pattern`,
+# up to its closing brace, counting nested braces.
+nginx_block <- function(lines, pattern) {
+  start <- grep(pattern, lines)[[1L]]
+  depth <- 0L
+  for (i in start:length(lines)) {
+    depth <- depth + lengths(regmatches(lines[[i]], gregexpr("\\{", lines[[i]]))) -
+      lengths(regmatches(lines[[i]], gregexpr("\\}", lines[[i]])))
+    if (depth == 0L && i > start) return(lines[start:i])
+  }
+  stop("unbalanced block at ", pattern)
+}
+
+# The server block that contains `listen`.
+server_block <- function(lines, listen) {
+  servers <- grep("^server \\{$", lines)
+  at <- grep(listen, lines, fixed = TRUE)[[1L]]
+  nginx_block(lines[max(servers[servers < at]):length(lines)], "^server \\{$")
+}
+
+# add_header name -> value (quotes stripped) for the directives written
+# directly in `lines` (not in nested blocks the caller left in).
+added_headers <- function(lines) {
+  hits <- grep("^\\s*add_header\\s", lines, value = TRUE)
+  stats::setNames(sub('^\\s*add_header\\s+\\S+\\s+"(.*)"\\s+always;\\s*$', "\\1", hits),
+                  sub("^\\s*add_header\\s+(\\S+)\\s.*$", "\\1", hits))
+}
+
+test_that("nginx sends the security headers from both locations, once each and always", {
+  root <- skip_unless_deploy()
+  nginx <- uncommented(read_deploy(root, "nginx", "omicsapp.conf.template"))
+  https <- server_block(nginx, "listen 443 ssl;")
+  plain <- server_block(nginx, "listen 80;")
+  # HSTS over HTTPS only: on port 80 it is meaningless and browsers drop it.
+  expect_false(any(grepl("add_header", plain)))
+
+  auth <- nginx_block(https, "location /auth/ \\{")
+  app <- nginx_block(https, "location / \\{")
+  # Every add_header carries `always`, so 403/429/502 responses have them too.
+  for (block in list(auth, app)) {
+    adds <- grep("^\\s*add_header\\s", block, value = TRUE)
+    expect_gte(length(adds), 3L)
+    expect_true(all(grepl("\\salways;\\s*$", adds)))
+  }
+  a <- added_headers(auth)
+  p <- added_headers(app)
+  # The headers both locations send are the same, value for value.
+  shared <- c("Strict-Transport-Security", "X-Content-Type-Options", "Permissions-Policy")
+  expect_true(all(shared %in% names(a)))
+  expect_identical(a[shared], p[shared])
+  expect_false(anyDuplicated(names(a)) > 0L)
+  expect_false(anyDuplicated(names(p)) > 0L)
+
+  # A year or more of HSTS, and neither preload nor includeSubDomains by default.
+  max_age <- as.numeric(sub(".*max-age=([0-9]+).*", "\\1", p[["Strict-Transport-Security"]]))
+  expect_gte(max_age, 31536000)
+  expect_false(grepl("preload|includeSubDomains", p[["Strict-Transport-Security"]]))
+  expect_identical(p[["X-Content-Type-Options"]], "nosniff")
+
+  # ShinyProxy frames the app on its own page, same origin: SAMEORIGIN,
+  # and frame-ancestors 'self' in the enforced policy.
+  expect_identical(p[["X-Frame-Options"]], "SAMEORIGIN")
+  expect_match(p[["Content-Security-Policy"]], "frame-ancestors 'self'", fixed = TRUE)
+  expect_true(nzchar(p[["Referrer-Policy"]]))
+  # The full policy is report-only until a session has been watched
+  # through (deploy/README.md); Shiny needs these to work at all.
+  ro <- p[["Content-Security-Policy-Report-Only"]]
+  for (piece in c("default-src 'self'", "'unsafe-inline'", "'unsafe-eval'", "connect-src 'self'")) {
+    expect_match(ro, piece, fixed = TRUE)
+  }
+  expect_false(grepl("unsafe", p[["Content-Security-Policy"]]))
+
+  # Each header nginx sets in front of ShinyProxy hides the upstream's
+  # copy, so the browser never sees two different values.
+  hidden <- sub("^\\s*proxy_hide_header\\s+(\\S+);.*$", "\\1",
+                grep("^\\s*proxy_hide_header\\s", app, value = TRUE))
+  expect_setequal(setdiff(names(p), "Content-Security-Policy-Report-Only"), hidden)
+  # Under /auth/ Keycloak keeps its own framing and CSP, tuned per realm.
+  expect_false(any(c("X-Frame-Options", "Content-Security-Policy") %in% names(a)))
+})
+
+test_that("nginx rate-limits sign-in tightly, everything else loosely, and never the WebSocket", {
+  root <- skip_unless_deploy()
+  nginx <- uncommented(read_deploy(root, "nginx", "omicsapp.conf.template"))
+  zones <- grep("^limit_req_zone ", nginx, value = TRUE)
+  expect_length(zones, 2L)
+  rate <- function(zone) sub(".*rate=([0-9]+r/[sm]);.*", "\\1",
+                             grep(paste0("zone=", zone, ":"), zones, value = TRUE))
+  expect_identical(rate("omicsapp_login"), "10r/m")
+  expect_identical(rate("omicsapp_general"), "20r/s")
+
+  # The general key is empty -- not counted -- for an upgrade (Shiny's
+  # WebSocket) and for the server itself (ShinyProxy's token calls).
+  expect_true(any(grepl('^map \\$http_upgrade \\$omicsapp_is_upgrade', nginx)))
+  general_map <- nginx_block(nginx, "^map .*\\$omicsapp_general_key \\{")
+  expect_true(any(grepl('default\\s+"";', general_map)))
+  expect_true(any(grepl('"0:0"\\s+\\$binary_remote_addr;', general_map)))
+  login_map <- nginx_block(nginx, "^map .*\\$omicsapp_login_key \\{")
+  expect_true(any(grepl('^\\s*1\\s+"";', login_map)))
+  geo <- nginx_block(nginx, "^geo \\$omicsapp_rate_exempt \\{")
+  expect_true(any(grepl("default 0;", geo, fixed = TRUE)))
+  expect_true(any(grepl("@OMICSAPP_RATE_EXEMPT@", geo, fixed = TRUE)))
+
+  https <- server_block(nginx, "listen 443 ssl;")
+  expect_true(any(grepl("^\\s{4}limit_req zone=omicsapp_general burst=[0-9]+ nodelay;", https)))
+  expect_true(any(grepl("limit_req_status 429;", https, fixed = TRUE)))
+  burst <- as.integer(sub(".*omicsapp_general burst=([0-9]+).*", "\\1",
+                          grep("zone=omicsapp_general burst", https, value = TRUE)))
+  # Opening the app fetches dozens of files at once; the burst must
+  # absorb a page load, everywhere it is written.
+  expect_true(all(burst >= 100L))
+
+  # The password form and the token endpoint, nested in /auth/ so they
+  # keep its proxy settings, with both budgets (limit_req is inherited
+  # only into blocks that set none of their own).
+  auth <- nginx_block(https, "location /auth/ \\{")
+  login <- nginx_block(auth, "location ~ \\^/auth/realms/")
+  pattern <- sub("^\\s*location ~ (\\S+) \\{.*$", "\\1", login[[1L]])
+  hits <- c("/auth/realms/omicsapp/login-actions/authenticate",
+            "/auth/realms/omicsapp/protocol/openid-connect/token")
+  misses <- c("/auth/realms/omicsapp/protocol/openid-connect/auth",
+              "/auth/realms/omicsapp/account", "/auth/resources/x.css")
+  expect_true(all(grepl(pattern, hits, perl = TRUE)))
+  expect_false(any(grepl(pattern, misses, perl = TRUE)))
+  expect_true(any(grepl("limit_req zone=omicsapp_login burst=[0-9]+ nodelay;", login)))
+  expect_true(any(grepl("limit_req zone=omicsapp_general burst=[0-9]+ nodelay;", login)))
+  # A regex location's proxy_pass may not carry a path; the path is the
+  # same on both sides, so none is needed.
+  expect_true(any(grepl("^\\s*proxy_pass http://127\\.0\\.0\\.1:[0-9]+;$", login)))
+
+  # The location in front of ShinyProxy sets no limit of its own, so the
+  # loose server-level one applies to it.
+  app <- nginx_block(https, "location / \\{")
+  expect_false(any(grepl("limit_req", app)))
+})
+
+test_that("render.sh writes the rate-limit exemptions: the server itself by default, or what is set", {
+  root <- skip_unless_deploy()
+  skip_unless_bash()
+  geo_line <- function(out) {
+    nginx <- readLines(file.path(out, "nginx", "omicsapp.conf"), warn = FALSE)
+    trimws(nginx[grep("^geo \\$omicsapp_rate_exempt", nginx) + 2L])
+  }
+  render <- function(out, ...) {
+    system2("bash", c(render_script(root), "--host", "203.0.113.7", "--out", out, ...),
+            stdout = FALSE, stderr = FALSE)
+  }
+  withr::local_envvar(ADMIN_ALLOW_CIDR = NA, RATE_LIMIT_EXEMPT_CIDR = NA)
+  out <- withr::local_tempdir()
+  expect_identical(render(out), 0L)
+  expect_identical(geo_line(out), "127.0.0.1 1; ::1 1; 203.0.113.7 1;")
+
+  # Independent of the admin list.
+  out2 <- withr::local_tempdir()
+  expect_identical(render(out2, "--admin-allow", "192.0.2.1",
+                          "--rate-exempt", shQuote("198.51.100.0/24, 2001:db8::1")), 0L)
+  expect_identical(geo_line(out2), "198.51.100.0/24 1; 2001:db8::1 1;")
+
+  out3 <- withr::local_tempdir()
+  withr::with_envvar(c(RATE_LIMIT_EXEMPT_CIDR = "192.0.2.10"), expect_identical(render(out3), 0L))
+  expect_identical(geo_line(out3), "192.0.2.10 1;")
+
+  out4 <- withr::local_tempdir()
+  for (bad in c("1.2.3.4;deny", "all", "example.org")) {
+    expect_false(identical(render(out4, "--rate-exempt", shQuote(bad)), 0L), info = bad)
+  }
+  expect_length(list.files(out4, recursive = TRUE), 0L)
+  expect_true(any(grepl("^RATE_LIMIT_EXEMPT_CIDR=", read_deploy(root, "host.env.template"))))
+})
+
+test_that("deploy/README.md documents the headers and the limits the template sets", {
+  root <- skip_unless_deploy()
+  readme <- read_deploy(root, "README.md")
+  expect_true(any(grepl("^### Security headers and rate limits$", readme)))
+  nginx <- uncommented(read_deploy(root, "nginx", "omicsapp.conf.template"))
+  for (h in unique(names(added_headers(nginx)))) {
+    expect_true(any(grepl(paste0("`", h, "`"), readme, fixed = TRUE)), info = h)
+  }
+  for (z in c("omicsapp_login", "omicsapp_general", "RATE_LIMIT_EXEMPT_CIDR")) {
+    expect_true(any(grepl(z, readme, fixed = TRUE)), info = z)
+  }
+})
+
+# ---- CI: where these tests run, and what else runs ------------------------------
+
+workflow <- function(root, name) {
+  wf <- file.path(dirname(root), ".github", "workflows", name)
+  skip_if(!file.exists(wf), "workflows not present")
+  readLines(wf, warn = FALSE)
+}
+
+test_that("deploy_root() finds the checkout through OMICSAPP_REPO_ROOT, and a wrong value is an error", {
+  root <- skip_unless_deploy()
+  elsewhere <- withr::local_tempdir()
+  # Under R CMD check the tests run from a copy far from the checkout.
+  withr::with_dir(elsewhere, withr::with_envvar(c(OMICSAPP_REPO_ROOT = dirname(root)), {
+    expect_identical(deploy_root(), normalizePath(root, winslash = "/"))
+  }))
+  # A CRAN-like install, no checkout and nothing set: skip, cleanly.
+  withr::with_dir(elsewhere, withr::with_envvar(c(OMICSAPP_REPO_ROOT = NA), {
+    expect_true(is.na(deploy_root()))
+  }))
+  # Set but wrong is the silent skip this exists to prevent: an error.
+  withr::with_envvar(c(OMICSAPP_REPO_ROOT = elsewhere), {
+    expect_error(deploy_root(), "OMICSAPP_REPO_ROOT")
+  })
+})
+
+test_that("R CMD check runs on every branch and pull request, on two R versions and two systems", {
+  root <- skip_unless_deploy()
+  wf <- uncommented(workflow(root, "R-CMD-check.yaml"))
+  # Read as lines, like the other workflow checks here: a YAML parser
+  # would be an undeclared test dependency, which R CMD check warns on.
+  on <- wf[seq_len(grep("^jobs:", wf)[[1L]])]
+  push <- grep("^  push:", on)
+  expect_length(push, 1L)
+  expect_match(on[[push + 1L]], '^\\s+branches: \\["\\*\\*"\\]$')
+  expect_true(any(grepl("^  pull_request:", on)))
+  configs <- grep("^\\s+- \\{ os: ", wf, value = TRUE)
+  field <- function(name) unique(sub(sprintf(".*\\b%s: ([^,}]+).*", name), "\\1", configs, perl = TRUE))
+  expect_gte(length(field("r")), 2L)
+  expect_gte(length(field("os")), 2L)
+  # The tests here and the hygiene tests run under check, not skip.
+  expect_true(any(grepl("^\\s+OMICSAPP_REPO_ROOT: \\$\\{\\{ github.workspace \\}\\}$", wf)))
+  expect_true(any(grepl("^\\s+source-tree-tests:", wf)))
+  expect_true(any(grepl("run: Rscript .github/scripts/run-source-tests.R", wf, fixed = TRUE)))
+  expect_true(file.exists(file.path(dirname(root), ".github", "scripts", "run-source-tests.R")))
+})
+
+test_that("CI lints the shell scripts, the Dockerfile, the workflows and the R code, and measures coverage", {
+  root <- skip_unless_deploy()
+  lint <- workflow(root, "lint.yaml")
+  expect_true(any(grepl("shellcheck deploy/scripts/*.sh", lint, fixed = TRUE)))
+  expect_true(any(grepl("hadolint --config .hadolint.yaml deploy/docker/Dockerfile", lint, fixed = TRUE)))
+  expect_true(any(grepl("actionlint", lint, fixed = TRUE)))
+  expect_true(any(grepl("lintr::lint_package", lint, fixed = TRUE)))
+  repo <- dirname(root)
+  expect_true(file.exists(file.path(repo, ".lintr")))
+  # Every rule hadolint is told to ignore says why, in a comment above it.
+  hl <- readLines(file.path(repo, ".hadolint.yaml"), warn = FALSE)
+  rules <- grep("^\\s*- DL[0-9]+", hl)
+  expect_gte(length(rules), 1L)
+  expect_true(all(grepl("^\\s*#", hl[rules - 1L])))
+  # The linters are fixed versions checked against recorded checksums.
+  tools <- readLines(file.path(repo, ".github", "scripts", "install-lint-tools.sh"), warn = FALSE)
+  expect_length(grep("^[A-Z]+_SHA256=[0-9a-f]{64}$", tools), 3L)
+  expect_true(any(grepl("sha256sum -c", tools, fixed = TRUE)))
+
+  cov <- workflow(root, "coverage.yaml")
+  expect_true(any(grepl("covr::package_coverage", cov, fixed = TRUE)))
+  expect_true(any(grepl("upload-artifact", cov, fixed = TRUE)))
+})
+
+test_that("the perf budget and the fuzz sweep run nightly, and on demand", {
+  root <- skip_unless_deploy()
+  nightly <- workflow(root, "nightly.yaml")
+  expect_true(any(grepl("^\\s+- cron:", nightly)))
+  expect_true(any(grepl("^\\s+workflow_dispatch:", nightly)))
+  for (flag in c("OMICSCORE_PERF_TESTS", "OMICSCORE_FUZZ_TESTS")) {
+    expect_true(any(grepl(flag, nightly, fixed = TRUE)), info = flag)
+  }
+  # ...and the flags are the ones the tests read.
+  tests <- file.path(dirname(root), "packages", "omicsCore", "tests", "testthat")
+  expect_true(any(grepl("OMICSCORE_PERF_TESTS", readLines(file.path(tests, "test-perf-budget.R")))))
+  expect_true(any(grepl("OMICSCORE_FUZZ_TESTS", readLines(file.path(tests, "test-api-contract.R")))))
+})
+
+test_that("every third-party action is pinned to a full commit SHA, with its version beside it", {
+  root <- skip_unless_deploy()
+  dir <- file.path(dirname(root), ".github", "workflows")
+  skip_if(!dir.exists(dir), "workflows not present")
+  files <- list.files(dir, pattern = "\\.ya?ml$", full.names = TRUE)
+  expect_gte(length(files), 5L)
+  for (f in files) {
+    uses <- grep("^[[:space:]-]*uses:", readLines(f, warn = FALSE), value = TRUE)
+    uses <- uses[!grepl("uses:\\s*\\./", uses)]
+    pinned <- grepl("uses:\\s*[^@\\s]+@[0-9a-f]{40}\\s+#\\s*v[0-9]", uses, perl = TRUE)
+    expect_true(all(pinned), info = paste(basename(f), uses[!pinned], collapse = "\n"))
+  }
+  # Dependabot keeps them current, SHA and comment together.
+  dependabot <- file.path(dirname(root), ".github", "dependabot.yml")
+  expect_true(file.exists(dependabot))
+  expect_true(any(grepl("github-actions", readLines(dependabot, warn = FALSE), fixed = TRUE)))
 })

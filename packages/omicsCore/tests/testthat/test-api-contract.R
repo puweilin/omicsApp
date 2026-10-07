@@ -183,12 +183,17 @@ test_that("the file-writing functions hold the same line", {
 })
 
 # The engines that take seconds per call, and every argument of every
-# function. Run with OMICSCORE_FUZZ_TESTS=1.
+# function. Run with OMICSCORE_FUZZ_TESTS=1; the nightly workflow
+# (.github/workflows/nightly.yaml) does. Empty, 0, false or no is off.
 test_that("the heavy engines hold the same line", {
-  skip_if(!nzchar(Sys.getenv("OMICSCORE_FUZZ_TESTS", "")),
+  skip_if(tolower(Sys.getenv("OMICSCORE_FUZZ_TESTS", "")) %in% c("", "0", "false", "no"),
           "set OMICSCORE_FUZZ_TESTS=1 to sweep the heavy engines")
   skip_if_not_installed("clusterProfiler")
   skip_if_not_installed("edgeR")
+  # The sweep hands export_report() a path of "x", which it honours by
+  # writing x.html into the working directory -- the package's tests/
+  # folder, unless the sweep runs somewhere disposable.
+  withr::local_dir(withr::local_tempdir())
   dbe <- run_diff(rna, method = "edger", analysis_type = "group", group_col = "group",
                   control_group = "G1", case_group = "G2")
   enr <- run_enrichment(db, type = "ora", database = "hallmark")

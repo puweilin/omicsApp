@@ -1,0 +1,15 @@
+# Keeps the workflows' third-party actions current. Each is pinned to a
+# full commit SHA with its release in a trailing comment; Dependabot
+# understands that form and updates the SHA and the comment together, in
+# a pull request that the usual checks then run on. Monthly, grouped
+# into one pull request, so it is a small regular chore rather than a
+# stream of them.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

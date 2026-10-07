@@ -72,7 +72,8 @@ done
 case "$TARGET" in
     *:latest|latest) die "'latest' is not something you can roll back to; give an immutable tag ($0 --list)" ;;
     *[!A-Za-z0-9._:/@-]*) die "not an image reference: '$TARGET'" ;;
-    *:*|*@sha256:*) ;;
+    # A tag (name:tag) or a digest (name@sha256:...) -- both contain a colon.
+    *:*) ;;
     *) die "give the full reference with its tag, e.g. ${IMAGE_REPO}:<version>-<commit>" ;;
 esac
 [ -f "$SP_CONF" ] || die "no ShinyProxy configuration at $SP_CONF"

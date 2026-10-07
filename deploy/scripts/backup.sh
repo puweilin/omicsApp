@@ -83,7 +83,8 @@ LATEST="$BACKUP_ROOT/latest"
 log() { printf '%s backup: %s\n' "$(date '+%F %T')" "$*" >&2; }
 
 alert() {
-  local msg="omicsApp backup on $(hostname): $*"
+  local msg
+  msg="omicsApp backup on $(hostname): $*"
   log "ALERT: $*"
   command -v logger >/dev/null 2>&1 && logger -t omicsapp-backup -p user.err "$msg" || true
   if [ -n "$ALERT_WEBHOOK" ]; then
@@ -189,6 +190,9 @@ done
   > "$WORK/IMAGE" 2>/dev/null || echo "unknown $APP_IMAGE" > "$WORK/IMAGE"
 
 # ---- 4. checksums, then publish the snapshot atomically -----------------
+# The manifest is excluded from what it lists, so writing it while find
+# walks the tree reads nothing it writes.
+# shellcheck disable=SC2094
 (cd "$WORK" && find . -type f ! -name MANIFEST.sha256 -print0 | sort -z |
    xargs -0 -r sha256sum > MANIFEST.sha256)
 mv "$WORK" "$FINAL"

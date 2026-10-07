@@ -48,7 +48,8 @@ failures=0
 log() { printf '%s restore-check: %s\n' "$(date '+%F %T')" "$*" >&2; }
 fail() {
   failures=$((failures + 1))
-  local msg="omicsApp restore check on $(hostname): $*"
+  local msg
+  msg="omicsApp restore check on $(hostname): $*"
   log "FAIL: $*"
   command -v logger >/dev/null 2>&1 && logger -t omicsapp-backup -p user.err "$msg" || true
   if [ -n "$ALERT_WEBHOOK" ]; then

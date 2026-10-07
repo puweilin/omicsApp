@@ -1,0 +1,81 @@
+# Test coverage of omicsCore, as a report: a per-file table on the run's
+# summary page and a Cobertura XML artifact (coverage.xml) that most
+# coverage viewers and IDE plugins read.
+#
+# Nothing here needs a secret, so it works on forks and pull requests
+# alike. No percentage gate either: the number is for finding untested
+# code, and a threshold would fail a pull request for deleting a
+# well-tested function.
+#
+# omicsCore only. omicsApp's suite drives a headless browser for half an
+# hour, and covr instruments every line it runs; the engine is where the
+# analysis results come from, and where coverage says the most.
+name: coverage
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "packages/omicsCore/**"
+      - ".github/workflows/coverage.yaml"
+  pull_request:
+    paths:
+      - "packages/omicsCore/**"
+      - ".github/workflows/coverage.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      NOT_CRAN: true
+      OMICSAPP_REPO_ROOT: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: r-lib/actions/setup-pandoc@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          working-directory: packages/omicsCore
+          cache-version: 2
+          extra-packages: |
+            any::covr
+            any::xml2
+          needs: coverage
+
+      - name: Measure coverage
+        shell: Rscript {0}
+        run: |
+          cov <- covr::package_coverage("packages/omicsCore", quiet = FALSE)
+          covr::to_cobertura(cov, "coverage.xml")
+          total <- covr::percent_coverage(cov)
+          by_file <- covr::coverage_to_list(cov)$filecoverage
+          by_file <- sort(by_file)
+          rows <- sprintf("| `%s` | %.1f%% |", names(by_file), by_file)
+          summary <- c(sprintf("## omicsCore test coverage: %.1f%%", total), "",
+                       "Least covered first.", "", "| File | Coverage |", "|---|---|", rows)
+          cat(summary, sep = "\n", file = Sys.getenv("GITHUB_STEP_SUMMARY"), append = TRUE)
+          print(cov)
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: coverage-omicsCore
+          path: coverage.xml
+          if-no-files-found: warn
