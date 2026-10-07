@@ -21,3 +21,21 @@ First versioned release. Highlights since the development snapshots:
   are on and can be cancelled.
 * `shiny_app()` returns the application object; `inst/app/app.R` no longer
   reaches into the namespace.
+
+## Added during the 0.2.0 release work
+
+* Several layers of one omics type, named by the user; replacing a layer
+  can keep both; results stay with their own layer.
+* The Differential and Enrichment views say when the controls no longer
+  match the result on screen.
+* Import accepts several Salmon/RSEM/kallisto files at once, `.gz` text,
+  `.xlsm` and SummarizedExperiment/DESeqDataSet `.rds` files, shows the
+  file encoding and the guessed value scale.
+* QC: four outlier tests (leave-one-out added), group-aware missing-value
+  filter, saved QC results restored with their settings.
+* Enrichment: up/down lists separately by default, more species.
+* Integration: directional ActivePathways, an optional protein-to-gene
+  mapping table.
+* Project files are signed and checked before they are opened.
+* Internals: module servers split by card; tests use installed packages
+  unless omicsApp itself runs from source (`OMICSAPP_TEST_CORE`).

@@ -20,3 +20,39 @@ First versioned release.
   long computations report their steps through
   `options(omicsCore.progress = )`; optional parallel DESeq2 via
   `options(omicsCore.deseq2_workers = )`.
+
+## Added during the 0.2.0 release work
+
+* Import: non-UTF-8 text (Windows-1252, GBK/GB18030), gzip-compressed
+  text, `.xlsm`, Salmon/RSEM/kallisto files (`read_quant_files()`, with
+  tximport-style length offsets and tx2gene summarising),
+  SummarizedExperiment/DESeqDataSet (`read_summarized_experiment()`),
+  summary columns dropped, RNA-seq value scale inferred from the values,
+  mouse Ensembl ids mapped to MGI symbols, GENCODE `_PAR_Y` rows handled;
+  uploaded `.rds` files checked to hold data only.
+* QC: a leave-one-out outlier test that works from 4 samples; group-aware
+  missing-value filter (`missing_filter`); `winsorize_counts()` leaves
+  on/off genes alone and keeps counts whole (`legacy = TRUE` for the old
+  rule); MinProb falls back to MinDet when it cannot be estimated; QC
+  results store a rebuild record instead of the cleaned matrix
+  (`qc_cleaned_input()`), about 94% smaller.
+* Normalisation: `normalize_omics(method = "log2", center = "median")`.
+* Differential: a signed test statistic for every engine (`signed_stat`);
+  edgeR global tests use tximport offsets; paired t-tests pair each
+  comparison on its own; optional DESeq2 pre-filter (`prefilter = TRUE`);
+  DESeq2 continuous analysis tested and several design errors explained;
+  shared standardisation code.
+* Enrichment: ORA tests up- and down-regulated genes separately by
+  default (`direction = "both"` keeps the pooled test); optional
+  correction across databases (`p_adjust_scope = "all"`); more species
+  (`enrichment_species()`) with a case-insensitive fallback; GSEA `eps`
+  and `n_perm_simple`.
+* Integration: directional ActivePathways (DPM); a protein-to-gene
+  feature link (`read_feature_link()`, `feature_pairing_preview()`) that
+  keeps every isoform.
+* Projects: results record their layer (`bundle_layer()`); `.omp` files
+  carry a format version with migrations, and can be signed
+  (`save_project(signing_key =)`, `load_project(untrusted = TRUE)`,
+  `sign_project_file()`).
+* `install_optional()` groups cover the packages moved to Suggests
+  (limma, clusterProfiler, msigdbr) and a new `"io"` group.

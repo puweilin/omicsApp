@@ -65,7 +65,7 @@ plot_integration <- function(
   }
 
   if (nrow(df) == 0L) {
-    return(empty_integration_plot("No integration rows to plot."))
+    return(empty_plot("No integration rows to plot."))
   }
 
   switch(view,
@@ -90,13 +90,6 @@ integration_result_from_bundle <- function(bundle) {
   df
 }
 
-empty_integration_plot <- function(label) {
-  ggplot2::ggplot() +
-    ggplot2::theme_void() +
-    ggplot2::annotate("text", x = 0.5, y = 0.5, label = label,
-                      color = "#4D4D4D", size = 4) +
-    ggplot2::xlim(0, 1) + ggplot2::ylim(0, 1)
-}
 
 integration_axis_label <- function(bundle, side) {
   exps <- bundle$params$experiments
@@ -222,7 +215,7 @@ plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_c
 plot_integration_effect_pair <- function(df, bundle) {
   df <- integration_fill_effects(df)
   if (all(is.na(df$effect_a)) || all(is.na(df$effect_b))) {
-    return(empty_integration_plot(paste(
+    return(empty_plot(paste(
       "This integration result does not carry the per-layer effects.",
       "Re-run the integration to draw them.", sep = "\n")))
   }
@@ -322,7 +315,7 @@ plot_integration_dotplot <- function(df, bundle, top_n) {
   df <- df[order(df$adj_p_value), , drop = FALSE]
   df <- utils::head(df, top_n)
   if (nrow(df) == 0L) {
-    return(empty_integration_plot("No pathways to plot."))
+    return(empty_plot("No pathways to plot."))
   }
   df$.label <- truncate_pathway_name(prettify_gene_set_name(df$feature_symbol))
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df$adj_p_value)]))

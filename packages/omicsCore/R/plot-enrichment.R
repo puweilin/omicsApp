@@ -48,7 +48,7 @@ plot_enrichment <- function(
     df <- filter_enrich_results(df, p_cutoff = p_cutoff, p_preference = p_preference)
   }
   if (nrow(df) == 0L) {
-    return(empty_enrich_plot("No pathways to plot."))
+    return(empty_plot("No pathways to plot."))
   }
 
   p_col <- resolve_enrich_p_col(df, p_preference)
@@ -174,13 +174,6 @@ enrich_facets <- function(df, scales) {
   }
 }
 
-empty_enrich_plot <- function(label) {
-  ggplot2::ggplot() +
-    ggplot2::theme_void() +
-    ggplot2::annotate("text", x = 0.5, y = 0.5, label = label,
-                      color = "#4D4D4D", size = 4) +
-    ggplot2::xlim(0, 1) + ggplot2::ylim(0, 1)
-}
 
 plot_enrich_dot <- function(df, p_col) {
   if (ora_list_facet(df)) df <- with_list_label(df)
