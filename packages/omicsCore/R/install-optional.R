@@ -3,30 +3,34 @@
 # Bioconductor packages live here (not in Imports) so that a fresh
 # `install.packages("omicsCore")` stays slim on restricted environments.
 #
-# Note: `limma`, `clusterProfiler`, `msigdbr`, and `qs2` are now in Imports
-# (auto-installed with omicsCore) — they are required by the default
-# differential-expression, enrichment, and persistence paths.
+# Every package a gate's error message sends the user here for must be in
+# the group it names: ensure_limma() says install_optional("proteomics"),
+# ensure_enrichment_deps() says "enrichment". When limma, clusterProfiler
+# and msigdbr moved from Imports to Suggests they were in no group, so the
+# advice installed everything except the package that was missing.
 OPTIONAL_GROUPS <- list(
-  rnaseq      = c("DESeq2", "edgeR", "tximport", "GenomicFeatures"),
-  proteomics  = c("imputeLCMD", "pcaMethods", "vsn"),
-  enrichment  = c("fgsea", "GSVA"),
+  rnaseq      = c("DESeq2", "edgeR", "SummarizedExperiment", "BiocParallel"),
+  proteomics  = c("limma", "imputeLCMD", "pcaMethods", "vsn"),
+  enrichment  = c("clusterProfiler", "msigdbr", "babelgene", "fgsea", "GSVA",
+                  "enrichplot", "ActivePathways"),
   imputation  = c("imputeLCMD", "impute", "pcaMethods"),
   viz         = c("ComplexHeatmap", "circlize", "ggrepel", "patchwork"),
-  persistence = character(0)
+  io          = c("data.table"),
+  persistence = c("openssl")
 )
 
 # Packages we expect to find on Bioconductor (rather than CRAN). Used to
 # pick the right installer when `pak` is not available.
 BIOC_PACKAGES <- c(
-  "DESeq2", "edgeR", "tximport", "GenomicFeatures",
-  "fgsea", "GSVA", "ComplexHeatmap", "pcaMethods", "vsn",
-  "impute"
+  "DESeq2", "edgeR", "SummarizedExperiment", "BiocParallel", "limma",
+  "clusterProfiler", "enrichplot", "fgsea", "GSVA", "ComplexHeatmap",
+  "pcaMethods", "vsn", "impute"
 )
 
 #' Resolve a Suggests group into its package list
 #'
 #' @param group One of `"rnaseq"`, `"proteomics"`, `"enrichment"`,
-#'   `"imputation"`, `"viz"`, `"persistence"`, `"all"`.
+#'   `"imputation"`, `"viz"`, `"io"`, `"persistence"`, `"all"`.
 #'
 #' @return Character vector of package names.
 #' @keywords internal
@@ -53,8 +57,10 @@ resolve_install_group <- function(group) {
 #' stay small on restricted environments where Docker / system installs are
 #' not available. Users opt in to heavy backends only when they need them.
 #'
-#' @param group One of `"rnaseq"`, `"proteomics"`, `"enrichment"`,
-#'   `"imputation"`, `"viz"`, `"persistence"`, or `"all"`.
+#' @param group One of `"rnaseq"` (DESeq2, edgeR), `"proteomics"` (limma,
+#'   imputation, vsn), `"enrichment"` (clusterProfiler, msigdbr, fgsea,
+#'   GSVA, ActivePathways), `"imputation"`, `"viz"`, `"io"` (fast text
+#'   reading), `"persistence"` (signed project files), or `"all"`.
 #' @param ask If `TRUE` (default in interactive sessions), prompt before
 #'   installing.
 #' @param upgrade If `TRUE`, allow upgrading already-installed packages.
@@ -71,7 +77,7 @@ resolve_install_group <- function(group) {
 #' }
 install_optional <- function(
   group = c("rnaseq", "proteomics", "enrichment", "imputation", "viz",
-            "persistence", "all"),
+            "io", "persistence", "all"),
   ask = interactive(),
   upgrade = FALSE
 ) {
@@ -121,7 +127,7 @@ install_optional <- function(
 #' @family install
 check_install <- function(
   features = c("rnaseq", "proteomics", "enrichment", "imputation", "viz",
-               "persistence")
+               "io", "persistence")
 ) {
   assert_names(features, "features")
   rows <- lapply(features, function(g) {

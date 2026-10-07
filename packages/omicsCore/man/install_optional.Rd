@@ -5,15 +5,17 @@
 \title{Install optional dependency groups}
 \usage{
 install_optional(
-  group = c("rnaseq", "proteomics", "enrichment", "imputation", "viz", "persistence",
-    "all"),
+  group = c("rnaseq", "proteomics", "enrichment", "imputation", "viz", "io",
+    "persistence", "all"),
   ask = interactive(),
   upgrade = FALSE
 )
 }
 \arguments{
-\item{group}{One of \code{"rnaseq"}, \code{"proteomics"}, \code{"enrichment"},
-\code{"imputation"}, \code{"viz"}, \code{"persistence"}, or \code{"all"}.}
+\item{group}{One of \code{"rnaseq"} (DESeq2, edgeR), \code{"proteomics"} (limma,
+imputation, vsn), \code{"enrichment"} (clusterProfiler, msigdbr, fgsea,
+GSVA, ActivePathways), \code{"imputation"}, \code{"viz"}, \code{"io"} (fast text
+reading), \code{"persistence"} (signed project files), or \code{"all"}.}
 
 \item{ask}{If \code{TRUE} (default in interactive sessions), prompt before
 installing.}
@@ -43,7 +45,7 @@ not available. Users opt in to heavy backends only when they need them.
 }
 }
 \seealso{
-Other install: 
-\code{\link{check_install}()}
+Other install:
+\code{\link[=check_install]{check_install()}}
 }
 \concept{install}
