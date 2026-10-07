@@ -358,6 +358,18 @@ if (!is.null(ib)) {
                 fmt_n(info$n_significant_both %||% 0), fmt_n(info$n_concordant %||% 0),
                 fmt_n(info$n_discordant %||% 0)))
   }
+  # How the two layers' features were put together: by gene symbol, or
+  # by a table the user supplied (proteins to genes, isoforms included).
+  fp <- info$feature_pairing
+  src <- ip$feature_link_source$source %||% "symbol"
+  if (!is.null(fp$n_pairs)) {
+    cat(sprintf("Features were matched across layers %s: %s pairs%s.\n\n",
+                if (src %in% c("project", "supplied")) "with the mapping table supplied for this project"
+                else "by gene symbol",
+                fmt_n(fp$n_pairs),
+                if (isTRUE(fp$n_a_sharing > 0)) sprintf(", %s features sharing their gene with another",
+                                                       fmt_n(fp$n_a_sharing)) else ""))
+  }
   link <- project$sample_link
   if (identical(ip$method, "correlation")) {
     cat(sprintf("Samples were paired across layers %s.\n\n",
@@ -378,8 +390,16 @@ if (!is.null(ib)) {
   }
   if (is.data.frame(df) && nrow(df)) {
     df <- utils::head(df[order(df$adj_p_value, na.last = NA), , drop = FALSE], 15L)
+    # The gene's name, unless several proteins of one gene each have a
+    # row: then the row's own id ("TP53 (P04637-2)"), or the table would
+    # list the same gene twice with nothing to tell the rows apart.
+    feat <- df$feature_symbol %||% df$feature_id
+    if (!is.null(df$feature_symbol) && !is.null(df$feature_id)) {
+      dup <- !is.na(feat) & (duplicated(feat) | duplicated(feat, fromLast = TRUE))
+      feat[dup] <- df$feature_id[dup]
+    }
     tab <- data.frame(
-      Feature = df$feature_symbol %||% df$feature_id,
+      Feature = feat,
       Effect = formatC(df$effect, digits = 3, format = "f"),
       `adjusted p` = fmt_p(df$adj_p_value),
       Class = df$direction %||% "", check.names = FALSE, stringsAsFactors = FALSE)

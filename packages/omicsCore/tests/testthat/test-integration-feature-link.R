@@ -308,3 +308,20 @@ test_that("a small link from no file is written out; a large one is asked for", 
   p$bundles$integration <- b0
   expect_false(any(grepl("feature_link", export_script(p, include_plots = FALSE))))
 })
+
+test_that("the report says how features were matched and tells isoform rows apart", {
+  skip_if_not_installed("rmarkdown")
+  skip_if_not(rmarkdown::pandoc_available())
+  p <- fl_project()
+  d <- fl_diffs(p)
+  b <- run_integration(p, "concordance", c("prot", "rna"), diff_bundles = d)
+  p$bundles <- list(integration = b)
+  out <- withr::local_tempfile(fileext = ".html")
+  export_report(p, out, overwrite = TRUE)
+  html <- paste(readLines(out, warn = FALSE), collapse = "\n")
+  expect_match(html, "matched across layers by gene symbol: 12 pairs", fixed = TRUE)
+  expect_match(html, "sharing their gene with another", fixed = TRUE)
+  # Neither TP53 row is a bare "TP53" in the top table.
+  expect_true(grepl("TP53 (P04637-2)", html, fixed = TRUE) ||
+                !grepl(">TP53<", html, fixed = TRUE))
+})
