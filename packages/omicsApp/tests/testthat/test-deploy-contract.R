@@ -1156,6 +1156,24 @@ test_that("R CMD check runs on every branch and pull request, on two R versions 
   expect_true(file.exists(file.path(dirname(root), ".github", "scripts", "run-source-tests.R")))
 })
 
+test_that("R CMD check tests omicsApp against the omicsCore of the same commit", {
+  root <- skip_unless_deploy()
+  wf <- uncommented(workflow(root, "R-CMD-check.yaml"))
+  # Under check omicsApp's tests use the installed omicsCore (setup.R), so
+  # it is installed from the checkout before omicsApp is checked, and
+  # not left to whatever the package cache restored.
+  install <- grep("run: R CMD INSTALL --no-docs packages/omicsCore", wf, fixed = TRUE)
+  checks <- grep("uses: r-lib/actions/check-r-package@", wf, fixed = TRUE)
+  app_check <- checks[vapply(checks, function(i) {
+    any(grepl("working-directory: packages/omicsApp", wf[i:min(i + 8L, length(wf))], fixed = TRUE))
+  }, logical(1))]
+  expect_length(install, 1L)
+  expect_length(app_check, 1L)
+  expect_lt(install, app_check)
+  expect_true(any(grepl("OMICSAPP_TEST_CORE: installed",
+                        wf[app_check:min(app_check + 8L, length(wf))], fixed = TRUE)))
+})
+
 test_that("CI lints the shell scripts, the Dockerfile, the workflows and the R code, and measures coverage", {
   root <- skip_unless_deploy()
   lint <- workflow(root, "lint.yaml")

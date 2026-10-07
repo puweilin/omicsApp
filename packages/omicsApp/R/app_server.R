@@ -288,7 +288,3 @@ app_server <- function(input, output, session) {
   # Under this session's own id, so a second tab does not overwrite it.
   wire_autosave(current_project, id = session_autosave_id(session))
 }
-
-# ---- internal helpers ------------------------------------------------
-
-`%||%` <- function(a, b) if (is.null(a)) b else a

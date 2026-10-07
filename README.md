@@ -52,12 +52,28 @@ pipeline. It looks for `data/SkinProteomics/Proteomics_Data.xlsx` by walking
 up from the working directory, or wherever `OMICSAPP_PROTEOMICS_XLSX` points; it
 skips when the file is absent, so a clone without the data still runs green.
 
-The omicsApp suite tests the omicsCore *source tree* beside it, not the
-installed copy (`tests/testthat/setup.R` loads `packages/omicsCore` with
-pkgload), and the shinytest2 smoke test boots `inst/app` from source with
-both packages loaded the same way (`OMICSAPP_DEV_ROOT`, see
-`inst/app/app.R`). Neither test therefore depends on when
-`install_local()` was last run.
+Which omicsCore the omicsApp suite tests depends on how omicsApp itself
+is loaded (`packages/omicsApp/tests/testthat/setup.R`):
+
+- **From source** (`devtools::test()`, `testthat::test_local()`,
+  `load_all()`): the omicsCore *source tree* beside it, loaded with
+  pkgload, not the installed copy, so a development run does not depend
+  on when `install_local()` was last run. The shinytest2 tests boot
+  `inst/app` from source with both packages loaded the same way
+  (`OMICSAPP_DEV_ROOT`, see `inst/app/app.R`).
+- **Installed** (`R CMD check`, `testthat::test_check()` or
+  `test_package()`): the installed packages only; no source is ever
+  loaded, and the browser tests run the installed app. Install omicsCore
+  from the same checkout first, as CI does (`R CMD INSTALL
+  packages/omicsCore` in `.github/workflows/R-CMD-check.yaml`).
+
+`OMICSAPP_TEST_CORE=installed` or `OMICSAPP_TEST_CORE=source` forces one or
+the other, e.g. to run the development suite against an installed
+omicsCore:
+
+```sh
+OMICSAPP_TEST_CORE=installed NOT_CRAN=true Rscript -e 'devtools::test("packages/omicsApp")'
+```
 
 A few suites are deliberately opt-in:
 

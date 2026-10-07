@@ -533,7 +533,3 @@ print.omics_input <- function(x, ...) {
       sprintf("%.2f", mean(is.na(x$expr_mat)) * 100), "\n")
   invisible(x)
 }
-
-# Local null-coalescing helper. Kept package-local so we do not depend on
-# rlang's `%||%` re-export through `@importFrom rlang %||%`.
-`%||%` <- function(a, b) if (is.null(a)) b else a

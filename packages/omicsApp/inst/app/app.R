@@ -10,10 +10,15 @@
 # from the library. The shinytest2 harness sets it, because otherwise a
 # browser test exercises whatever was last installed -- which was four
 # months old the day this was added -- and its verdict says nothing
-# about the code being changed.
+# about the code being changed. omicsCore stays the installed one when
+# the test suite settled on that (OMICSAPP_TEST_CORE=installed, see
+# tests/testthat/setup.R), so the browser tests and the rest of the
+# suite test the same omicsCore.
 dev_root <- Sys.getenv("OMICSAPP_DEV_ROOT", "")
 if (nzchar(dev_root)) {
-  pkgload::load_all(file.path(dev_root, "omicsCore"), quiet = TRUE)
+  if (!identical(Sys.getenv("OMICSAPP_TEST_CORE"), "installed")) {
+    pkgload::load_all(file.path(dev_root, "omicsCore"), quiet = TRUE)
+  }
   pkgload::load_all(file.path(dev_root, "omicsApp"), quiet = TRUE)
 }
 

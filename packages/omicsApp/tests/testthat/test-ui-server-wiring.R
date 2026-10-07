@@ -15,11 +15,17 @@
 # function whose formals are `input, output, session` is a server, and
 # any other function with an `input` formal hides the Shiny one.
 
+# The module files, grouped by module. A module may span several files
+# (mod_diff_view.R, mod_diff_params.R, ...): its server calls functions
+# from the others with its own input and output, so they are read as one.
 module_files <- function() {
   r_dir <- file.path("..", "..", "R")
   skip_if_not(dir.exists(r_dir), "package source is not beside the tests")
-  list.files(r_dir, pattern = "^mod_.*\\.R$", full.names = TRUE)
+  files <- list.files(r_dir, pattern = "^mod_.*\\.R$", full.names = TRUE)
+  split(files, sub("^mod_([a-z]+)_.*$", "\\1", basename(files)))
 }
+
+module_ids <- function(files) unique(do.call(rbind, lapply(files, collect_ids)))
 
 # One row per reference: kind = input / output / ns, the id, and the
 # name of the call the reference sits in.
@@ -79,7 +85,7 @@ collect_ids <- function(file) {
 # literal to match. Named here so the check stays exact everywhere else.
 dynamic_ids <- list(
   # The report's download buttons come from a helper that takes the id.
-  mod_report_view.R = c("download_html", "download_pdf")
+  report = c("download_html", "download_pdf")
 )
 
 control_re <- "(Input|Button|Buttons|Link|Switch|Slider|Checkbox|Picker)$"
@@ -87,30 +93,33 @@ download_re <- "^download(Button|Link)$"
 output_re <- "Output$"
 
 test_that("every input a module reads is a control it draws", {
-  for (file in module_files()) {
-    ids <- collect_ids(file)
-    declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[basename(file)]])
+  mods <- module_files()
+  for (mod in names(mods)) {
+    ids <- module_ids(mods[[mod]])
+    declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[mod]])
     read <- unique(ids$id[ids$kind == "input"])
     missing <- setdiff(read, declared)
     expect_identical(missing, character(0),
-                     label = sprintf("%s reads inputs it never declares", basename(file)))
+                     label = sprintf("%s reads inputs it never declares", mod))
   }
 })
 
 test_that("every output a module assigns has a placeholder", {
-  for (file in module_files()) {
-    ids <- collect_ids(file)
-    declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[basename(file)]])
+  mods <- module_files()
+  for (mod in names(mods)) {
+    ids <- module_ids(mods[[mod]])
+    declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[mod]])
     assigned <- unique(ids$id[ids$kind == "output"])
     missing <- setdiff(assigned, declared)
     expect_identical(missing, character(0),
-                     label = sprintf("%s assigns outputs it never places", basename(file)))
+                     label = sprintf("%s assigns outputs it never places", mod))
   }
 })
 
 test_that("every control a module draws is read back, and every placeholder filled", {
-  for (file in module_files()) {
-    ids <- collect_ids(file)
+  mods <- module_files()
+  for (mod in names(mods)) {
+    ids <- module_ids(mods[[mod]])
     ns_ids <- ids[ids$kind == "ns", , drop = FALSE]
     is_download <- grepl(download_re, ns_ids$caller)
     controls <- ns_ids$id[grepl(control_re, ns_ids$caller) & !is_download]
@@ -118,9 +127,9 @@ test_that("every control a module draws is read back, and every placeholder fill
     read <- ids$id[ids$kind == "input"]
     assigned <- ids$id[ids$kind == "output"]
     expect_identical(setdiff(controls, read), character(0),
-                     label = sprintf("%s draws controls nothing reads", basename(file)))
+                     label = sprintf("%s draws controls nothing reads", mod))
     expect_identical(setdiff(placeholders, assigned), character(0),
-                     label = sprintf("%s places outputs nothing fills", basename(file)))
+                     label = sprintf("%s places outputs nothing fills", mod))
   }
 })
 

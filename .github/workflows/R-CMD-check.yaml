@@ -128,9 +128,21 @@ jobs:
             any::devtools
           needs: check
 
+      # 3b. omicsCore from this checkout, again, whatever the package cache
+      #     restored in step 3. Under R CMD check omicsApp's tests use the
+      #     installed omicsCore and never its sources
+      #     (tests/testthat/setup.R), so the installed copy has to be this
+      #     commit's. R CMD INSTALL reinstalls unconditionally.
+      - name: Install omicsCore from this checkout
+        if: matrix.config.app
+        run: R CMD INSTALL --no-docs packages/omicsCore
+
       # 4. Check omicsApp
       - uses: r-lib/actions/check-r-package@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         if: matrix.config.app
+        env:
+          # What setup.R would decide under check anyway, said outright.
+          OMICSAPP_TEST_CORE: installed
         with:
           working-directory: packages/omicsApp
           upload-snapshots: true
