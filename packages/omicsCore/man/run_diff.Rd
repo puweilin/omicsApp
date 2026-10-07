@@ -16,6 +16,7 @@ run_diff(
   paired_col = NULL,
   selected_groups = NULL,
   contrasts = NULL,
+  prefilter = NULL,
   ...
 )
 }
@@ -54,14 +55,31 @@ is not a plain word goes in backticks, \code{"`Drug A` - Control"}), or
 All groups named are fitted in one model. Weighted contrasts need
 limma, DESeq2 or edgeR.}
 
+\item{prefilter}{Whether DESeq2 or edgeR set aside genes with too few
+counts to test before fitting the model. \code{NULL} (the default) keeps
+each engine's own default: edgeR filters with \code{edgeR::filterByExpr()},
+DESeq2 fits every gene and leaves weak ones to its independent
+filtering, which withholds their adjusted p-values after the fit.
+\code{TRUE} filters with either engine -- DESeq2 then keeps genes with at
+least 10 reads in at least as many samples as the smallest group, its
+vignette's recommendation. That makes DESeq2 faster in proportion to
+the genes removed, but with large groups it also removes low-count
+genes DESeq2 could have called (on a simulated 30,000 x 60 set it
+lost about a third of the significant genes), so it is not the
+default. \code{FALSE} fits every gene with either engine. Genes set aside
+stay in the result with no p-value, and the bundle's warnings say how
+many. Ignored, with a warning, by the other methods.}
+
 \item{...}{Extra arguments forwarded to the backend, e.g. \code{var_equal} for
 t-test, or \verb{model = "spline", df = 3} for a limma spline fit.}
 }
 \value{
 An \code{\link[=is_analysis_bundle]{analysis_bundle}} with
 \code{results$diff_result_df} (standardized schema), \code{results$diff_raw_df}
-(backend-native), and \code{results$diff_object} (fitted model, may be
-\code{NULL}).
+(backend-native), and \code{results$diff_object} (the fitted model for
+limma, t-test and lm; \code{NULL} for DESeq2 and edgeR unless
+\code{options(omicsCore.keep_count_models = TRUE)} -- see
+\code{keep_model_object()}).
 }
 \description{
 Single entry point for proteomics and RNA-seq differential analysis.
@@ -99,6 +117,7 @@ Other diff:
 \code{\link[=contrast_labels]{contrast_labels()}},
 \code{\link[=diff_comparisons]{diff_comparisons()}},
 \code{\link[=diff_hit_sets]{diff_hit_sets()}},
+\code{\link[=effect_label]{effect_label()}},
 \code{\link[=filter_diff_results]{filter_diff_results()}},
 \code{\link[=make_ranked_features]{make_ranked_features()}},
 \code{\link[=pairwise_contrasts]{pairwise_contrasts()}},

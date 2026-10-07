@@ -56,9 +56,12 @@ applicable_diff_methods <- function(input, analysis_type = "group") {
   is_counts <- identical(input$omics_type, "rnaseq") &&
     identical(input$assay_type, "raw_count")
   methods <- if (is_counts) c("deseq2", "edger") else c("limma", "ttest", "lm")
-  # Only the regression backends carry a continuous predictor.
+  # Only the regression backends carry a continuous predictor: limma and
+  # lm, and for counts DESeq2's GLM. Raw counts used to be offered
+  # nothing but "auto" here -- which then ran DESeq2, the engine this
+  # list had just hidden.
   if (identical(analysis_type, "continuous")) {
-    methods <- intersect(methods, c("limma", "lm"))
+    methods <- intersect(methods, c("limma", "lm", "deseq2"))
   }
   c("auto", methods)
 }
@@ -280,6 +283,20 @@ paired_comparisons_note <- function(specs, used, left_out, paired_col) {
 #' @param covariates Optional character vector of covariate column names.
 #' @param paired_col Optional pairing/block column.
 #' @param selected_groups Optional subset of groups to retain (anova only).
+#' @param prefilter Whether DESeq2 or edgeR set aside genes with too few
+#'   counts to test before fitting the model. `NULL` (the default) keeps
+#'   each engine's own default: edgeR filters with `edgeR::filterByExpr()`,
+#'   DESeq2 fits every gene and leaves weak ones to its independent
+#'   filtering, which withholds their adjusted p-values after the fit.
+#'   `TRUE` filters with either engine -- DESeq2 then keeps genes with at
+#'   least 10 reads in at least as many samples as the smallest group, its
+#'   vignette's recommendation. That makes DESeq2 faster in proportion to
+#'   the genes removed, but with large groups it also removes low-count
+#'   genes DESeq2 could have called (on a simulated 30,000 x 60 set it
+#'   lost about a third of the significant genes), so it is not the
+#'   default. `FALSE` fits every gene with either engine. Genes set aside
+#'   stay in the result with no p-value, and the bundle's warnings say how
+#'   many. Ignored, with a warning, by the other methods.
 #' @param ... Extra arguments forwarded to the backend, e.g. `var_equal` for
 #'   t-test, or `model = "spline", df = 3` for a limma spline fit.
 #'
@@ -312,6 +329,7 @@ run_diff <- function(
   paired_col = NULL,
   selected_groups = NULL,
   contrasts = NULL,
+  prefilter = NULL,
   ...
 ) {
   validate_omics_input(input)
@@ -329,6 +347,7 @@ run_diff <- function(
   assert_string(paired_col, "paired_col", allow_null = TRUE)
   assert_names(selected_groups, "selected_groups", allow_null = TRUE)
   assert_character(contrasts, "contrasts", allow_null = TRUE)
+  assert_flag(prefilter, "prefilter", allow_null = TRUE)
   if (length(contrasts) == 0L) contrasts <- NULL
   if (!is.null(contrasts) && analysis_type != "group") {
     stop("`contrasts` applies to analysis_type = 'group' only.", call. = FALSE)
@@ -360,6 +379,9 @@ run_diff <- function(
       paired_col = paired_col
     )
   )
+  # Only when given, so a call without it records (and an exported
+  # script repeats) exactly what it did before the option existed.
+  if (!is.null(prefilter)) backend_args$prefilter <- prefilter
 
   validate_diff_args(analysis_type, method, backend_args)
   # Contrasts are parsed against the levels actually in the column, and
@@ -574,6 +596,25 @@ validate_diff_design <- function(input, analysis_type, args, specs = NULL,
     primary <- values
   }
 
+  # DESeq2 and edgeR fit a pairing block as fixed effects, so what is
+  # tested has to vary within the blocks. A dose given once per subject,
+  # with the subject as the block (or subjects nested in the groups of a
+  # global test), stopped DESeq2 with "the model matrix is not full rank".
+  # A group comparison's pairs are checked by the backend, which names
+  # the incomplete pair.
+  pblock <- args$paired_col
+  if (analysis_type %in% c("continuous", "anova") && !is.null(pblock) &&
+      isTRUE(method %in% c("deseq2", "edger")) && pblock %in% colnames(sub)) {
+    pdf <- data.frame(.primary = primary, .block = factor(sub[[pblock]]))
+    pmm <- stats::model.matrix(~ .block + .primary, data = pdf)
+    if (qr(pmm)$rank < ncol(pmm)) {
+      what <- if (analysis_type == "anova") args$group_col else args$continuous_col
+      stop(sprintf(
+        "`%s` does not vary within the blocks of `%s`, so with the pairing in the model its effect cannot be estimated. Remove the pairing, or use method = 'limma', which models the pairing as a correlation.",
+        what, pblock), call. = FALSE)
+    }
+  }
+
   covariates <- args$covariates
   if (is.null(covariates) || length(covariates) == 0L) return(invisible(TRUE))
   # A pairing block absorbs anything constant within a block (a subject's
@@ -769,6 +810,10 @@ prune_backend_args <- function(method, analysis_type, args) {
   }
   if (method == "lm") {
     drop <- c(drop, "paired_col")
+  }
+  # Setting low-count genes aside is a count-model step.
+  if (!method %in% c("deseq2", "edger")) {
+    drop <- c(drop, "prefilter")
   }
   args[setdiff(names(args), drop)]
 }

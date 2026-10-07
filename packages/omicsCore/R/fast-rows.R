@@ -204,8 +204,19 @@ limma_continuous_extras <- function(expr_mat, cont_vals, adj_df, method, df) {
   } else {
     Xa <- stats::model.matrix(stats::as.formula(paste("~", paste(adjustment_terms, collapse = " + "))), data = base)
     cont_res <- unname(stats::lm.fit(Xa, cont_vals)$residuals)
-    yres <- t(qr.resid(qr(Xa), t(expr_mat)))     # complete data only (original errors otherwise)
-    rho <- spearman_rows(yres, cont_res)
+    # Residualising needs every sample, so the partial correlation is
+    # given for the features observed in all of them and NA for the rest,
+    # as run_lm_continuous() does. qr.resid() over the whole matrix
+    # stopped the run at the first missing value ("NA/NaN/Inf in foreign
+    # function call"): any proteomics layer with a gap, adjusted for a
+    # covariate or paired, could not be analysed against a continuous
+    # variable at all.
+    full <- rowSums(is.na(expr_mat)) == 0L
+    rho <- rep(NA_real_, nrow(expr_mat))
+    if (any(full)) {
+      yres <- t(qr.resid(qr(Xa), t(expr_mat[full, , drop = FALSE])))
+      rho[full] <- spearman_rows(yres, cont_res)
+    }
   }
   names(rho) <- rownames(expr_mat)
   list(adj_r2 = adj_r2, rho = rho)

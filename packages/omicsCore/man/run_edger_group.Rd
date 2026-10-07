@@ -11,7 +11,8 @@ run_edger_group(
   case_group,
   covariates = NULL,
   paired_col = NULL,
-  contrasts = NULL
+  contrasts = NULL,
+  prefilter = TRUE
 )
 }
 \arguments{
@@ -29,6 +30,9 @@ run_edger_group(
 
 \item{contrasts}{Parsed contrast specs (from \code{run_diff(contrasts = )}); when
 given, every group they name is fitted and each contrast read off the fit.}
+
+\item{prefilter}{Whether to set aside genes with too few counts before
+fitting, with \code{edgeR::filterByExpr()}. On by default; see \code{\link[=run_diff]{run_diff()}}.}
 }
 \value{
 List with \code{results_raw}, \code{results_std}, \code{model_object}

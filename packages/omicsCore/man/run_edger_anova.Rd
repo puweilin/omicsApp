@@ -9,7 +9,8 @@ run_edger_anova(
   group_col,
   covariates = NULL,
   selected_groups = NULL,
-  paired_col = NULL
+  paired_col = NULL,
+  prefilter = TRUE
 )
 }
 \arguments{
@@ -22,6 +23,9 @@ run_edger_anova(
 \item{selected_groups}{Optional subset of groups to retain.}
 
 \item{paired_col}{Optional pairing/block column.}
+
+\item{prefilter}{Whether to set aside genes with too few counts before
+fitting, with \code{edgeR::filterByExpr()}. On by default; see \code{\link[=run_diff]{run_diff()}}.}
 }
 \value{
 List with \code{results_raw}, \code{results_std}, \code{model_object}, and

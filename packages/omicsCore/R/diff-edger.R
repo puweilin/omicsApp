@@ -22,6 +22,8 @@ ensure_edger <- function() {
 #' @param paired_col Optional pairing column.
 #' @param contrasts Parsed contrast specs (from `run_diff(contrasts = )`); when
 #'   given, every group they name is fitted and each contrast read off the fit.
+#' @param prefilter Whether to set aside genes with too few counts before
+#'   fitting, with `edgeR::filterByExpr()`. On by default; see [run_diff()].
 #'
 #' @return List with `results_raw`, `results_std`, `model_object`
 #'   (`DGEGLM`), and `analysis_info`.
@@ -33,7 +35,8 @@ run_edger_group <- function(
   case_group,
   covariates = NULL,
   paired_col = NULL,
-  contrasts = NULL
+  contrasts = NULL,
+  prefilter = TRUE
 ) {
   validate_omics_input(input)
   if (input$omics_type != "rnaseq") {
@@ -67,7 +70,7 @@ run_edger_group <- function(
   names(grp_cols) <- levels(target_meta[[group_col]])[-1L]
 
   all_features <- rownames(count_sub)
-  ef <- edger_ql_fit(count_sub, design_mat, input)
+  ef <- edger_ql_fit(count_sub, design_mat, input, prefilter = prefilter)
   fit <- ef$fit
   filter_note <- ef$filter_note
 
@@ -132,10 +135,11 @@ run_edger_group <- function(
 # The quasi-likelihood fit both edgeR tests share (the pairwise
 # contrasts and the global test): low-count genes set aside, library
 # sizes (with tximport's gene lengths when present), dispersions, fit.
-# Returns the fit and the note naming the genes set aside, if any.
-edger_ql_fit <- function(counts, design, input) {
+# `prefilter = FALSE` fits every gene. Returns the fit and the note
+# naming the genes set aside, if any.
+edger_ql_fit <- function(counts, design, input, prefilter = TRUE) {
   y <- edgeR::DGEList(counts = counts)
-  y <- edger_filter(y, design)
+  if (isTRUE(prefilter)) y <- edger_filter(y, design)
   filter_note <- attr(y, "filter_note")
   report_progress("Normalising library sizes (1 of 4)")
   y <- edger_normalise(y, input)

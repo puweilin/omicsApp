@@ -28,8 +28,8 @@ List with \code{results_raw}, \code{results_std}, \code{model_object}, and
 \code{analysis_info}.
 }
 \description{
-Builds the standardized diff schema in place (no shared standardizer) so
-that F-statistic and AveExpr fields are passed through cleanly. Internal —
+Moderated F-test on all group coefficients together, standardized with
+the other global tests (the F stands in for the effect). Internal —
 call via \code{\link[=run_diff]{run_diff()}} with \code{analysis_type = "anova"}.
 }
 \keyword{internal}

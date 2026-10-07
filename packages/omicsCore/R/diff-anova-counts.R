@@ -44,11 +44,14 @@ anova_counts_design <- function(input, group_col, covariates, selected_groups,
 #' call via `run_diff(method = "edger", analysis_type = "anova")`.
 #'
 #' @inheritParams run_limma_anova
+#' @param prefilter Whether to set aside genes with too few counts before
+#'   fitting, with `edgeR::filterByExpr()`. On by default; see [run_diff()].
 #' @return List with `results_raw`, `results_std`, `model_object`, and
 #'   `analysis_info`.
 #' @keywords internal
 run_edger_anova <- function(input, group_col, covariates = NULL,
-                            selected_groups = NULL, paired_col = NULL) {
+                            selected_groups = NULL, paired_col = NULL,
+                            prefilter = TRUE) {
   ensure_edger()
   d <- anova_counts_design(input, group_col, covariates, selected_groups,
                            paired_col, "run_edger_anova")
@@ -60,7 +63,7 @@ run_edger_anova <- function(input, group_col, covariates = NULL,
   grp_cols <- which(attr(design, "assign") == term)
   # With tximport's gene lengths when the input has them, as the
   # pairwise fit uses (edger_ql_fit(), diff-edger.R).
-  ef <- edger_ql_fit(d$counts, design, input)
+  ef <- edger_ql_fit(d$counts, design, input, prefilter = prefilter)
   fit <- ef$fit
   filter_note <- ef$filter_note
   report_progress("Testing (4 of 4)")
@@ -87,11 +90,15 @@ run_edger_anova <- function(input, group_col, covariates = NULL,
 #' `run_diff(method = "deseq2", analysis_type = "anova")`.
 #'
 #' @inheritParams run_limma_anova
+#' @param prefilter Whether to set aside genes with too few reads before
+#'   fitting (DESeq2's recommended pre-filter: at least 10 reads in at least
+#'   as many samples as the smallest group). Off by default; see [run_diff()].
 #' @return List with `results_raw`, `results_std`, `model_object`, and
 #'   `analysis_info`.
 #' @keywords internal
 run_deseq2_anova <- function(input, group_col, covariates = NULL,
-                             selected_groups = NULL, paired_col = NULL) {
+                             selected_groups = NULL, paired_col = NULL,
+                             prefilter = FALSE) {
   ensure_deseq2()
   d <- anova_counts_design(input, group_col, covariates, selected_groups,
                            paired_col, "run_deseq2_anova")
@@ -100,7 +107,8 @@ run_deseq2_anova <- function(input, group_col, covariates = NULL,
   reduced <- stats::as.formula(paste("~", if (length(red)) paste(red, collapse = " + ") else "1"))
   # The pairwise fit's dataset builder, so tximport's gene lengths become
   # normalisation factors here too (DESeqDataSetFromTximport).
-  dds <- build_deseq_dataset(input, d$counts, safe$col_data, safe$formula)
+  pf <- deseq2_prefilter(d$counts, safe, prefilter)
+  dds <- build_deseq_dataset(input, pf$counts, safe$col_data, safe$formula)
   bp <- deseq2_bpparam()
   dds <- with_fixed_seed(1L, with_deseq2_progress(
     if (is.null(bp)) DESeq2::DESeq(dds, test = "LRT", reduced = reduced, quiet = FALSE)
@@ -108,6 +116,7 @@ run_deseq2_anova <- function(input, group_col, covariates = NULL,
                        parallel = TRUE, BPPARAM = bp)))
   raw_df <- as.data.frame(DESeq2::results(dds)) |>
     tibble::rownames_to_column("feature_id")
+  raw_df <- pad_untested(raw_df, rownames(d$counts))
   std <- standardize_global_test_results(
     raw_df, input$feature_df, group_col, input$omics_type, method = "deseq2",
     stat = "stat", stat_type = "LRT", p = "pvalue", padj = "padj", base_mean = "baseMean")
@@ -116,5 +125,6 @@ run_deseq2_anova <- function(input, group_col, covariates = NULL,
                             analysis_type = "anova", comparison = group_col,
                             covariates = covariates,
                             selected_groups = selected_groups,
-                            paired_col = paired_col))
+                            paired_col = paired_col,
+                            warnings = pf$note))
 }

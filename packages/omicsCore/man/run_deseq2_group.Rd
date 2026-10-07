@@ -11,7 +11,8 @@ run_deseq2_group(
   case_group,
   covariates = NULL,
   paired_col = NULL,
-  contrasts = NULL
+  contrasts = NULL,
+  prefilter = FALSE
 )
 }
 \arguments{
@@ -29,6 +30,10 @@ run_deseq2_group(
 
 \item{contrasts}{Parsed contrast specs (from \code{run_diff(contrasts = )}); when
 given, every group they name is fitted and each contrast read off the fit.}
+
+\item{prefilter}{Whether to set aside genes with too few reads before
+fitting (DESeq2's recommended pre-filter: at least 10 reads in at least
+as many samples as the smallest group). Off by default; see \code{\link[=run_diff]{run_diff()}}.}
 }
 \value{
 List with \code{results_raw}, \code{results_std}, \code{model_object} (\code{DESeqDataSet}),

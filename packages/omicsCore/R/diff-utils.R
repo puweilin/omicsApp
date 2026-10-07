@@ -96,11 +96,24 @@ resolve_p_col <- function(result_df, p_preference = c("adjusted", "raw")) {
 # Coerce a metadata column to numeric. Used by continuous-mode backends to
 # accept character-formatted age / dose / etc. columns without a hard
 # dependency on readr::parse_number.
+#
+# A value that is there but is not a number ("high", "10 mg") is named.
+# It used to become a missing value, so a column of words stopped with
+# "must be numeric or coercible to numeric" and a column with one typo
+# with "has missing values in 1 sample(s)" -- about a sample whose value
+# was not missing at all. A blank cell is still a missing value.
 coerce_continuous_col <- function(x, col_name) {
   if (is.numeric(x)) return(x)
-  parsed <- suppressWarnings(as.numeric(as.character(x)))
-  if (all(is.na(parsed))) {
-    stop("`", col_name, "` must be numeric or coercible to numeric.")
+  chr <- trimws(as.character(x))
+  parsed <- suppressWarnings(as.numeric(chr))
+  bad <- !is.na(chr) & nzchar(chr) & is.na(parsed)
+  if (any(bad)) {
+    vals <- unique(chr[bad])
+    shown <- paste(sprintf("'%s'", utils::head(vals, 3L)), collapse = ", ")
+    if (length(vals) > 3L) shown <- paste0(shown, ", ...")
+    stop(sprintf(
+      "`%s` must hold numbers to be used as a continuous variable; %d sample(s) have values that are not numbers: %s.",
+      col_name, sum(bad), shown), call. = FALSE)
   }
   parsed
 }
