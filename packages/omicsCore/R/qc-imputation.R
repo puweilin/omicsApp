@@ -106,6 +106,14 @@ resolve_impute_method <- function(omics_type) {
 #' imputes on. On linear intensities they will place imputed values on a
 #' scale the observed values are not on.
 #'
+#' MinProb estimates the spread of its draws from the features measured in
+#' more than half of the samples, and needs at least two of them. With
+#' fewer -- a small panel, or a matrix that is mostly missing -- imputeLCMD
+#' either stops with an error (one such feature) or returns the matrix with
+#' every gap still empty (none). `impute_matrix()` then imputes with MinDet,
+#' the same low quantile of each sample without the random spread, and
+#' says so in a warning of class `omics_impute_fallback`.
+#'
 #' @param mat A numeric matrix, features in rows.
 #' @param method One of [IMPUTE_METHODS].
 #' @param ... Forwarded to the backend (`q` for MinProb/MinDet, `k` for
@@ -119,6 +127,19 @@ impute_matrix <- function(mat, method = IMPUTE_METHODS, ...) {
   mat <- assert_numeric_matrix(mat, "mat")
   if (method == "none" || !anyNA(mat)) {
     return(mat)
+  }
+
+  if (method == "MinProb") {
+    why <- minprob_unestimable(mat)
+    if (!is.null(why)) {
+      warning(impute_fallback_condition(why))
+      # MinDet takes `q` and nothing else MinProb does.
+      args <- list(...)
+      args <- args[intersect(names(args), c("q", "seed"))]
+      out <- do.call(lcmd_call, c(list("impute.MinDet", mat), args))
+      dimnames(out) <- dimnames(mat)
+      return(out)
+    }
   }
 
   out <- switch(method,
@@ -135,6 +156,37 @@ impute_matrix <- function(mat, method = IMPUTE_METHODS, ...) {
   )
   dimnames(out) <- dimnames(mat)
   out
+}
+
+# Why MinProb cannot be estimated on `mat`, or NULL when it can.
+#
+# Mirrors imputeLCMD::impute.MinProb(): the sd of its draws is the median
+# per-feature sd over the features observed in more than half of the
+# samples. One such feature and it subsets the matrix to a vector and
+# stops ("dim(X) must have a positive length"); none, or none with a
+# finite sd, and the sd is NA, rnorm() returns NA, and every gap stays
+# empty without a word. Two is the least that works, so two is the test.
+minprob_unestimable <- function(mat) {
+  well_seen <- rowMeans(!is.na(mat)) > 0.5
+  n_seen <- sum(well_seen)
+  if (n_seen >= 2L) {
+    sds <- apply(mat[well_seen, , drop = FALSE], 1L, stats::sd, na.rm = TRUE)
+    if (is.finite(stats::median(sds, na.rm = TRUE))) return(NULL)
+  }
+  sprintf(paste(
+    "MinProb could not be used: it estimates how widely to spread its",
+    "values from features measured in more than half of the samples, and",
+    "needs at least two such features (this data has %d). Missing values",
+    "were imputed with MinDet instead, which fills each gap with a value",
+    "near the lowest observed in that sample, without the random spread."),
+    n_seen)
+}
+
+impute_fallback_condition <- function(message) {
+  structure(
+    class = c("omics_impute_fallback", "warning", "condition"),
+    list(message = message, call = NULL, used_method = "MinDet")
+  )
 }
 
 # ---- backends ----------------------------------------------------------

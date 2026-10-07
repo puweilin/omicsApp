@@ -126,6 +126,6 @@ test_that("run_qc accepts loo and keeps its per-modality defaults", {
   b <- run_qc(inp, outlier_method = c("pca", "connectivity", "iqr", "loo"),
               impute_method = "none")
   expect_true("s3" %in% b$results$qc_summary$outliers$flagged_samples)
-  expect_true("s3" %in% colnames(b$results$cleaned_input$expr_mat))
+  expect_true("s3" %in% colnames(qc_cleaned_input(b, inp)$expr_mat))
   expect_identical(run_qc(inp, impute_method = "none")$params$outlier_method, "pca")
 })

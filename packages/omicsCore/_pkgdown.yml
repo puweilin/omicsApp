@@ -88,6 +88,7 @@ reference:
   desc: Run QC, differential, enrichment, and integration
   contents:
   - run_qc
+  - qc_cleaned_input
   - run_diff
   - run_diff_continuous
   - run_enrichment

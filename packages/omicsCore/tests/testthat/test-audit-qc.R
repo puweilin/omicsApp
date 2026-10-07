@@ -38,12 +38,12 @@ test_that("flagged samples are kept unless removal is asked for", {
   b <- run_qc(inp, outlier_method = "iqr", outlier_sd_threshold = 1.5,
               impute_method = "none")
   expect_identical(b$results$qc_summary$recommended_filters$remove_samples, "S1")
-  expect_true("S1" %in% colnames(b$results$cleaned_input$expr_mat))
+  expect_true("S1" %in% colnames(qc_cleaned_input(b, inp)$expr_mat))
   expect_match(b$warnings, "kept", all = FALSE)
 
   b2 <- run_qc(inp, outlier_method = "iqr", outlier_sd_threshold = 1.5,
                impute_method = "none", remove_outliers = TRUE)
-  expect_false("S1" %in% colnames(b2$results$cleaned_input$expr_mat))
+  expect_false("S1" %in% colnames(qc_cleaned_input(b2, inp)$expr_mat))
 })
 
 test_that("a z-score threshold no sample size can reach says so", {
@@ -58,13 +58,13 @@ test_that("imputing linear intensities gives positive values on the same scale",
   na <- is.na(inp$expr_mat)
   b <- run_qc(inp, outlier_method = "none", impute_method = "MinProb",
               missing_threshold = 1)
-  out <- b$results$cleaned_input$expr_mat
+  out <- qc_cleaned_input(b, inp)$expr_mat
   expect_false(anyNA(out))
   expect_true(all(out[na] > 0))
   # Left-censored: below what was observed, but on the same scale.
   expect_lt(stats::median(out[na]), stats::median(out[!na]))
   expect_gt(stats::median(out[na]), stats::median(out[!na]) / 100)
-  expect_identical(b$results$cleaned_input$assay_type, "raw_intensity")
+  expect_identical(qc_cleaned_input(b, inp)$assay_type, "raw_intensity")
   expect_match(b$warnings, "log2 scale", all = FALSE)
 })
 
@@ -72,7 +72,7 @@ test_that("imputed log intensities are labelled, and the plot compares observed 
   inp <- aq_prot()
   b <- run_qc(inp, outlier_method = "none", impute_method = "min",
               missing_threshold = 1)
-  expect_identical(b$results$cleaned_input$assay_type, "imputed_intensity")
+  expect_identical(qc_cleaned_input(b, inp)$assay_type, "imputed_intensity")
   imp <- b$results$qc_summary$imputation
   expect_identical(imp$n_imputed, 150L)
   p <- plot_qc(b, view = "imputation")

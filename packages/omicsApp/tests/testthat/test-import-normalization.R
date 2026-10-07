@@ -130,6 +130,36 @@ test_that("normalization keeps the pre-normalization matrix", {
   })
 })
 
+test_that("log2 with the samples aligned on their medians is offered and applied", {
+  skip_unless_xlsx()
+  xlsx <- tempfile(fileext = ".xlsx")
+  on.exit(unlink(xlsx), add = TRUE)
+  write_tiny_omics_xlsx(xlsx, scale = "linear")
+  expect_true("log2_median" %in% NORMALIZE_CHOICES)
+
+  shiny::testServer(import_view_server, {
+    session$setInputs(omics_type = "proteomics", file = tiny_upload(xlsx))
+    session$setInputs(normalize = TRUE, normalize_method = "log2_median")
+    session$setInputs(confirm = 1)
+
+    inp <- session$returned()
+    expect_identical(inp$assay_type, "normalized_intensity")
+    # What export_script() reads to repeat it
+    expect_identical(inp$normalization$method, "log2")
+    expect_identical(inp$normalization$center, "median")
+    med <- apply(inp$expr_mat, 2, stats::median, na.rm = TRUE)
+    expect_equal(unname(med), rep(stats::median(med), length(med)))
+    expect_identical(inp$expr_mat,
+                     suppressMessages(omicsCore::normalize_omics(
+                       parsed()$input, method = "log2", center = "median"))$expr_mat)
+  })
+
+  # A different normalisation of the same file is different data
+  expect_false(identical(
+    input_fingerprint(xlsx, "proteomics", "raw_intensity", "log2"),
+    input_fingerprint(xlsx, "proteomics", "raw_intensity", "log2_median")))
+})
+
 test_that("unticking normalize imports the linear values unchanged", {
   skip_unless_xlsx()
   xlsx <- tempfile(fileext = ".xlsx")

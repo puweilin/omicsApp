@@ -341,8 +341,12 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
                  call$lines)
       notes <- c(notes, call$notes)
       if (!is.null(norm)) {
+        # `center` only when it was used, so a script for an uncentred
+        # layer reads as it always has (and runs on older omicsCore).
+        norm_args <- norm[c("method", "offset")]
+        if (!identical(norm$center %||% "none", "none")) norm_args$center <- norm$center
         nc <- render_call("normalize_omics", var,
-                          params = norm[c("method", "offset")],
+                          params = norm_args,
                           arg_names = script_arg_names(normalize_omics),
                           assign_to = var)
         lines <- c(lines, nc$lines)

@@ -116,8 +116,8 @@ test_that("run_qc returns an analysis_bundle with the expected slots", {
               outlier_method = "iqr", outlier_sd_threshold = 3)
   expect_true(is_analysis_bundle(b))
   expect_equal(b$analysis_name, "run_qc")
-  expect_named(b$results, c("qc_summary", "cleaned_input"))
-  expect_true(is_omics_input(b$results$cleaned_input))
+  expect_named(b$results, c("qc_summary", "cleaning", "plot_data"))
+  expect_true(is_omics_input(qc_cleaned_input(b, x)))
 })
 
 test_that("run_qc removes flagged samples, when asked, and features", {
@@ -127,7 +127,7 @@ test_that("run_qc removes flagged samples, when asked, and features", {
   b <- run_qc(x, missing_threshold = 0.5,
               outlier_method = "iqr", outlier_sd_threshold = 1.5,
               remove_outliers = TRUE)
-  cleaned <- b$results$cleaned_input
+  cleaned <- qc_cleaned_input(b, x)
   expect_false("g1" %in% rownames(cleaned$expr_mat))
   expect_false("s1" %in% colnames(cleaned$expr_mat))
 })
@@ -137,8 +137,8 @@ test_that("run_qc with impute_method='min' fills NAs in cleaned input", {
   b <- run_qc(x, missing_threshold = 1,             # keep all features
               outlier_method = "none",
               impute_method = "min")
-  expect_false(anyNA(b$results$cleaned_input$expr_mat))
-  expect_true(!is.null(b$results$cleaned_input$raw_mat))
+  expect_false(anyNA(qc_cleaned_input(b, x)$expr_mat))
+  expect_true(!is.null(qc_cleaned_input(b, x)$raw_mat))
 })
 
 test_that("run_qc errors when filters wipe out the input", {

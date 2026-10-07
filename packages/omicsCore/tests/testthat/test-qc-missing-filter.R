@@ -58,8 +58,8 @@ test_that("run_qc filters by group and records the resolved group column", {
   # From the recorded study design.
   expect_identical(b$params$group_col, "group")
   expect_setequal(b$results$qc_summary$recommended_filters$remove_features, "sparse")
-  expect_false("sparse" %in% rownames(b$results$cleaned_input$expr_mat))
-  expect_true("on_off" %in% rownames(b$results$cleaned_input$expr_mat))
+  expect_false("sparse" %in% rownames(qc_cleaned_input(b, inp)$expr_mat))
+  expect_true("on_off" %in% rownames(qc_cleaned_input(b, inp)$expr_mat))
 
   b2 <- run_qc(inp, missing_threshold = 0.4, missing_filter = "all_groups",
                group_col = "batch", outlier_method = "none", impute_method = "none")
@@ -78,7 +78,7 @@ test_that("the default stays global and gives the old result", {
   # A group column given to the global rule changes nothing.
   b2 <- run_qc(inp, missing_threshold = 0.4, outlier_method = "none",
                impute_method = "none", group_col = "batch")
-  expect_identical(b2$results$cleaned_input$expr_mat, b$results$cleaned_input$expr_mat)
+  expect_identical(qc_cleaned_input(b2, inp)$expr_mat, qc_cleaned_input(b, inp)$expr_mat)
   expect_null(b2$params$group_col)
 })
 
@@ -110,8 +110,8 @@ test_that("the exported script repeats the group filter and reproduces it", {
   env <- new.env(parent = asNamespace("omicsCore"))
   env$input <- inp
   eval(parse(text = call), envir = env)
-  expect_identical(rownames(env$qc$results$cleaned_input$expr_mat),
-                   rownames(original$results$cleaned_input$expr_mat))
+  expect_identical(rownames(qc_cleaned_input(env$qc, inp)$expr_mat),
+                   rownames(qc_cleaned_input(original, inp)$expr_mat))
   expect_identical(env$qc$params, original$params)
 
   # A bundle from before the option existed has no missing_filter, and

@@ -558,6 +558,9 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       n_flagged_samp <- length(summary$recommended_filters$remove_samples)
       n_flagged_feat <- length(summary$recommended_filters$remove_features)
       impute <- bundle$params$impute_method %||% "none"
+      # The method that ran: MinProb falls back to MinDet when the data
+      # cannot support it, and the notices say why.
+      impute_used <- summary$imputation$method %||% impute
       htmltools::tags$div(
         class = "stat-grid",
         stat_card(
@@ -587,8 +590,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         ),
         stat_card(
           label = "Imputation",
-          value = impute,
+          value = impute_used,
           trend = if (impute == "none") "NAs left visible"
+                  else if (!identical(impute_used, impute))
+                    sprintf("in place of %s (see the note above)", impute)
                   else "expression matrix imputed"
         ),
         stat_card(
@@ -611,11 +616,15 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     pca_color_choices <- shiny::reactive({
       bundle <- last_bundle()
       shiny::req(bundle)
-      meta <- bundle$results$cleaned_input$meta_df
+      meta <- qc_bundle_meta(bundle)
       if (is.null(meta) || !ncol(meta)) return(character(0))
       cands <- grouping_candidates(meta)
-      design <- tryCatch(omicsCore::study_design(bundle$results$cleaned_input),
-                         error = function(e) NULL)
+      # Results saved before run_qc() stopped storing the cleaned input
+      # carry its design; otherwise the layer's is the one.
+      design <- if (!is.null(bundle$results$cleaned_input)) {
+        tryCatch(omicsCore::study_design(bundle$results$cleaned_input),
+                 error = function(e) NULL)
+      }
       if (is.null(design)) {
         design <- tryCatch(omicsCore::study_design(active()$input),
                            error = function(e) NULL)
@@ -729,8 +738,8 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       } else {
         raw <- a$input$expr_mat
         raw_pct <- 100 * mean(is.na(raw))
-        n_na <- sum(is.na(bundle$results$cleaned_input$expr_mat))
-        n_cells <- length(bundle$results$cleaned_input$expr_mat)
+        n_na <- qc_missing_after(bundle)
+        n_cells <- bundle$input_info$n_features_out * bundle$input_info$n_samples_out
         if (!is.null(bundle$results$qc_summary$imputation)) {
           sprintf("Imported layer: %.1f%% of cells missing; after imputation for this view: %.1f%%.",
                   raw_pct, 100 * n_na / max(n_cells, 1L))
@@ -848,7 +857,7 @@ qc_outlier_choice <- function(methods) {
 # then about data the project no longer holds.
 qc_bundle_layer <- function(exps, bundle) {
   info <- bundle$input_info
-  kept <- colnames(bundle$results$cleaned_input$expr_mat)
+  kept <- qc_kept_samples(bundle)
   fits <- function(e) {
     identical(e$omics_type %||% "", info$omics_type %||% "") &&
       isTRUE(ncol(e$expr_mat) == info$n_samples_in) &&
@@ -871,6 +880,27 @@ qc_bundle_layer <- function(exps, bundle) {
     }
   }
   NULL
+}
+
+# What a QC result says about the cleaned input, read from the record
+# run_qc() keeps -- or, for results saved before it stopped storing the
+# cleaned input, from that copy.
+qc_kept_samples <- function(bundle) {
+  bundle$results$cleaning$kept_samples %||%
+    colnames(bundle$results$cleaned_input$expr_mat)
+}
+
+qc_bundle_meta <- function(bundle) {
+  bundle$results$plot_data$meta_df %||% bundle$results$cleaned_input$meta_df
+}
+
+# Cells still missing after imputation: the ones the method could not fill.
+qc_missing_after <- function(bundle) {
+  if (!is.null(bundle$results$cleaning)) {
+    sum(is.na(bundle$results$cleaning$imputed_values))
+  } else {
+    sum(is.na(bundle$results$cleaned_input$expr_mat))
+  }
 }
 
 # The outlier methods as the control names them.

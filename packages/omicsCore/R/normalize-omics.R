@@ -29,15 +29,27 @@ ensure_vsn <- function() {
 #' The original matrix is kept in `raw_mat`, so the un-normalized values remain
 #' available for QC views.
 #'
+#' `"log2"` on its own only changes the scale: a sample that was loaded
+#' with more material stays brighter across the board, and every fold
+#' change between groups carries that difference. `center = "median"`
+#' removes it the usual way -- each sample's median log2 intensity is
+#' subtracted -- and then adds back the median of those sample medians, so
+#' the values stay on a recognisable log2-intensity scale rather than
+#' being centred on zero.
+#'
 #' @param input An `omics_input` with `omics_type = "proteomics"` carrying
 #'   linear intensities.
 #' @param method `"vsn"` (default) or `"log2"`.
 #' @param offset Added before the log for `method = "log2"`. Zeros and
 #'   negative values are treated as not detected and become `NA` first, so
 #'   the offset only shifts the observed values. Ignored by `"vsn"`.
+#' @param center `"none"` (default) or `"median"`: after the log2
+#'   transform, align the samples on their medians (see Details). Only for
+#'   `method = "log2"`; vsn calibrates the samples itself.
 #'
 #' @return The `omics_input` with `expr_mat` normalized, `raw_mat` holding the
-#'   input matrix, and `assay_type` set to `"normalized_intensity"`.
+#'   input matrix, `assay_type` set to `"normalized_intensity"`, and
+#'   `normalization` recording the method, offset and centring.
 #' @export
 #' @family omics_input
 #' @examples
@@ -50,14 +62,22 @@ ensure_vsn <- function() {
 #'                      assay_type = "raw_intensity")
 #' normalized <- normalize_omics(input, method = "log2")
 #' normalized$assay_type
+#' centred <- normalize_omics(input, method = "log2", center = "median")
+#' apply(centred$expr_mat, 2, median)
 normalize_omics <- function(
   input,
   method = c("vsn", "log2"),
-  offset = 1
+  offset = 1,
+  center = c("none", "median")
 ) {
   assert_number(offset, "offset", lower = 0)
   validate_omics_input(input)
   method <- match.arg(method)
+  center <- match.arg(center)
+  if (identical(center, "median") && !identical(method, "log2")) {
+    stop("`center = \"median\"` goes with `method = \"log2\"`; vsn already ",
+         "calibrates the samples against each other.", call. = FALSE)
+  }
 
   if (!identical(input$omics_type, "proteomics")) {
     stop(
@@ -108,10 +128,12 @@ normalize_omics <- function(
     log2 = log2(mat + offset)
   )
   dimnames(normalized) <- dimnames(input$expr_mat)
+  if (identical(center, "median")) normalized <- center_on_medians(normalized)
 
   message(
     "Normalized ", nrow(normalized), " features x ", ncol(normalized),
     " samples with ", method,
+    if (identical(center, "median")) ", centred on the sample medians" else "",
     if (n_zero > 0) paste0(" (", n_zero, " zero(s) set to NA)") else ""
   )
 
@@ -123,9 +145,19 @@ normalize_omics <- function(
   out$assay_type <- "normalized_intensity"
   # What was done, so export_script() can do it again: the file on disk
   # holds the values from before this call.
-  out$normalization <- list(method = method, offset = offset,
+  out$normalization <- list(method = method, offset = offset, center = center,
                             from_assay_type = input$assay_type)
 
   validate_omics_input(out)
   out
+}
+
+# Each sample moved so its median is the median of the sample medians.
+# Medians of the observed values: a missing value is not a low one.
+center_on_medians <- function(mat) {
+  med <- apply(mat, 2L, stats::median, na.rm = TRUE)
+  target <- stats::median(med, na.rm = TRUE)
+  shift <- med - target
+  shift[!is.finite(shift)] <- 0
+  sweep(mat, 2L, shift, check.margin = FALSE)
 }

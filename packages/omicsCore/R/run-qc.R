@@ -2,9 +2,10 @@
 #'
 #' End-to-end QC for an [omics_input()]. Computes missingness, detects
 #' sample-level outliers, optionally imputes the expression matrix, and
-#' returns an [analysis_bundle][is_analysis_bundle()] containing the cleaned
-#' input plus the QC summary so the result can be plotted by [plot_qc()] or
-#' consumed directly by downstream analysis functions.
+#' returns an [analysis_bundle][is_analysis_bundle()] holding the QC
+#' summary and a record of how the input was cleaned, so the result can be
+#' plotted by [plot_qc()] and the cleaned input rebuilt by
+#' [qc_cleaned_input()] for downstream analysis functions.
 #'
 #' Sensible defaults:
 #'
@@ -30,7 +31,10 @@
 #' Imputation on a linear scale (raw intensities) runs on log2 values and
 #' is transformed back: the left-censored methods draw from a normal
 #' distribution, which only fits intensities after logging, and on the
-#' raw scale they returned negative intensities.
+#' raw scale they returned negative intensities. Only missing cells take
+#' an imputed value. When MinProb cannot be estimated (fewer than two
+#' features measured in more than half of the samples) MinDet is used
+#' instead, and a note says so; see [impute_matrix()].
 #'
 #' The feature filter is global by default. `missing_filter = "any_group"`
 #' applies `missing_threshold` within each group of `group_col` and keeps
@@ -41,7 +45,7 @@
 #'
 #' @param input An `omics_input`.
 #' @param missing_threshold Feature missing-rate cutoff in `[0, 1]`. Features
-#'   above this are flagged and removed from `cleaned_input`. Default `0.5`.
+#'   above this are flagged and removed from the cleaned input. Default `0.5`.
 #' @param missing_filter Where `missing_threshold` is applied: `"global"`
 #'   (default; over all samples), `"any_group"` (within each group; kept
 #'   when at least one group passes) or `"all_groups"` (kept when every
@@ -52,7 +56,7 @@
 #' @param sample_missing_threshold Optional sample missing-rate cutoff.
 #'   Samples above this are flagged and removed.
 #' @param impute_method One of [IMPUTE_METHODS] -- DEP's method set.
-#'   Applied to the expression matrix of `cleaned_input` after filtering.
+#'   Applied to the cleaned expression matrix after filtering.
 #'   `NULL` (the default) resolves per modality via
 #'   [resolve_impute_method()]: `"MinProb"` for proteomics, `"none"` for
 #'   counts.
@@ -63,7 +67,7 @@
 #' @param outlier_sd_threshold Z-score / IQR multiplier passed to
 #'   [qc_outliers()]. Default `3`.
 #' @param remove_outliers Remove the samples [qc_outliers()] flags from
-#'   `cleaned_input`. Default `FALSE`: they are listed in
+#'   the cleaned input. Default `FALSE`: they are listed in
 #'   `recommended_filters$remove_samples` and kept.
 #' @param ... Forwarded to the imputation backend.
 #'
@@ -71,13 +75,24 @@
 #'   \describe{
 #'     \item{`qc_summary`}{List with `missingness`, `depth`, `outliers`,
 #'       `recommended_filters` (sample/feature IDs to remove), and, when
-#'       values were imputed, `imputation` (the method and the positions of
-#'       the imputed cells in `cleaned_input$expr_mat`).}
-#'     \item{`cleaned_input`}{`omics_input` with flagged features (and
-#'       samples, see above) removed and an (optionally) imputed expression
-#'       matrix. `raw_mat` carries the pre-imputation matrix when
-#'       imputation occurred and the input had none.}
+#'       values were imputed, `imputation` (the method used, the positions
+#'       of the imputed cells in the cleaned expression matrix, and
+#'       `requested_method` when MinProb fell back to MinDet).}
+#'     \item{`cleaning`}{What was done to the input: the samples kept, the
+#'       features dropped, the values put into the imputed cells, the
+#'       resulting `assay_type`, and a checksum of the input's expression
+#'       matrix. [qc_cleaned_input()] rebuilds the cleaned input from it.}
+#'     \item{`plot_data`}{What [plot_qc()] draws, computed from the
+#'       cleaned input.}
 #'   }
+#'   The cleaned input is not stored: it is as large as the input, and
+#'   [qc_cleaned_input()] rebuilds it exactly -- flagged features (and
+#'   samples, see above) removed, the expression matrix (optionally)
+#'   imputed, and `raw_mat` holding the pre-imputation matrix when
+#'   imputation occurred and the input had none. Results from before this
+#'   change carry it as `results$cleaned_input`, and
+#'   [qc_cleaned_input()] returns that.
+#'
 #'   Notes about what was done to the data are in `warnings`.
 #' @export
 #' @family qc
@@ -201,35 +216,53 @@ run_qc <- function(
 
   # ---- imputation ----
   imputation <- NULL
+  imputed_values <- NULL
   if (impute_method != "none" && anyNA(cleaned$expr_mat)) {
     report_progress("Imputing missing values")
     na_cells <- which(is.na(cleaned$expr_mat))
-    cleaned$raw_mat <- cleaned$raw_mat %||% cleaned$expr_mat
+    used_method <- impute_method
+    # MinProb cannot always be estimated (too few well-measured features);
+    # impute_matrix() then uses MinDet and says why. The reason is kept as
+    # a note on the result rather than left as a console warning.
+    impute <- function(m) withCallingHandlers(
+      impute_matrix(m, method = impute_method, ...),
+      omics_impute_fallback = function(w) {
+        used_method <<- w$used_method %||% "MinDet"
+        notes <<- c(notes, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      })
     linear <- !is.null(cleaned$assay_type) &&
       !cleaned$assay_type %in% LOG_SCALE_ASSAY_TYPES &&
       !impute_method %in% c("zero", "min")
     if (linear) {
       m <- cleaned$expr_mat
       m[m <= 0] <- NA_real_
-      imputed <- 2^impute_matrix(log2(m), method = impute_method, ...)
-      # Only the cells that were missing take the imputed value; a zero
-      # that was observed stays zero.
-      out <- cleaned$expr_mat
-      out[na_cells] <- imputed[na_cells]
-      cleaned$expr_mat <- out
+      imputed_values <- (2^impute(log2(m)))[na_cells]
       notes <- c(notes, sprintf(
         "`%s` values were imputed on a log2 scale and transformed back.",
         cleaned$assay_type))
     } else {
-      cleaned$expr_mat <- impute_matrix(cleaned$expr_mat, method = impute_method, ...)
-      if (identical(cleaned$omics_type, "proteomics") &&
-          isTRUE(cleaned$assay_type %in% c("normalized_intensity", "filtered_intensity"))) {
-        cleaned$assay_type <- "imputed_intensity"
-      }
+      imputed_values <- impute(cleaned$expr_mat)[na_cells]
     }
-    imputation <- list(method = impute_method, imputed_cells = na_cells,
+    imputation <- list(method = used_method, imputed_cells = na_cells,
                        n_imputed = length(na_cells))
+    if (!identical(used_method, impute_method)) {
+      imputation$requested_method <- impute_method
+    }
   }
+  # Only the cells that were missing take the imputed value -- a zero
+  # that was observed stays zero -- and the matrix is put together the way
+  # qc_cleaned_input() puts it together again later, so the two cannot
+  # drift apart.
+  cleaning <- list(
+    version = 1L,
+    input_hash = rlang::hash(input$expr_mat),
+    kept_samples = keep_samples,
+    dropped_features = setdiff(rownames(input$expr_mat), keep_features),
+    imputed_values = imputed_values,
+    assay_type = qc_cleaned_assay_type(cleaned, imputation)
+  )
+  cleaned <- qc_apply_cleaning(cleaned, cleaning, imputation)
 
   bundle <- new_analysis_bundle(
     analysis_name = "run_qc",
@@ -262,9 +295,171 @@ run_qc <- function(
         ),
         imputation = imputation
       ),
-      cleaned_input = cleaned
+      cleaning = cleaning,
+      plot_data = qc_plot_data(cleaned, imputation, outliers,
+                               outlier_sd_threshold)
     ),
     warnings = as.character(notes)
   )
   bundle
+}
+
+# ---- the cleaned input, rebuilt -----------------------------------------
+#
+# The bundle used to carry the cleaned input itself: a second copy of the
+# layer's matrices (expression, raw and normalised, plus feature
+# annotation and tximport lengths), 14 MB in memory for 8,000 x 60 and
+# 25 MB on real data -- in every saved project and every autosave, for a
+# result whose only job downstream is to be looked at. Everything in it
+# follows from the layer and a short record of what QC did: which samples
+# were kept, which features were dropped, and the values that went into
+# the missing cells. So the record is what is kept (`results$cleaning`),
+# what the plots draw is computed once (`results$plot_data`), and
+# qc_cleaned_input() rebuilds the rest from the layer when it is asked
+# for.
+
+#' The cleaned input of a QC result
+#'
+#' Rebuilds the `omics_input` that [run_qc()] cleaned -- flagged features
+#' (and samples) removed, missing values imputed -- from the input it was
+#' run on and the record kept in the bundle. The bundle does not carry a
+#' copy of the cleaned matrix, which on real data is as large as the
+#' layer itself.
+#'
+#' The input must be the one QC ran on: the bundle remembers a checksum of
+#' its expression matrix and refuses any other.
+#'
+#' Results saved before the record existed carry the cleaned input itself
+#' (`results$cleaned_input`); it is returned as it is, and `input` is then
+#' not needed.
+#'
+#' @param bundle An `analysis_bundle` from [run_qc()].
+#' @param input The `omics_input` passed to [run_qc()].
+#'
+#' @return An `omics_input`: the cleaned input.
+#' @export
+#' @family qc
+#' @examples
+#' set.seed(1)
+#' expr <- matrix(rnorm(60, 20), nrow = 10,
+#'                dimnames = list(paste0("p", 1:10), paste0("s", 1:6)))
+#' expr[1, 1:5] <- NA
+#' meta <- data.frame(group = rep(c("A", "B"), each = 3),
+#'                    row.names = colnames(expr))
+#' feat <- data.frame(feature_id = rownames(expr), row.names = rownames(expr))
+#' input <- omics_input(expr, meta, feat, omics_type = "proteomics",
+#'                      assay_type = "normalized_intensity")
+#' qc <- run_qc(input, impute_method = "min", outlier_method = "none")
+#' cleaned <- qc_cleaned_input(qc, input)
+#' dim(cleaned$expr_mat)
+qc_cleaned_input <- function(bundle, input = NULL) {
+  if (!is_analysis_bundle(bundle) || !identical(bundle$analysis_name, "run_qc")) {
+    stop("`bundle` must be an analysis_bundle from run_qc().", call. = FALSE)
+  }
+  old <- bundle$results$cleaned_input
+  if (!is.null(old)) return(old)
+  rec <- bundle$results$cleaning
+  if (is.null(rec)) {
+    stop("This QC result carries neither its cleaned input nor the record ",
+         "to rebuild it; run run_qc() again.", call. = FALSE)
+  }
+  if (is.null(input)) {
+    stop("The cleaned input is rebuilt from the input QC ran on; pass it as ",
+         "`input` (qc_cleaned_input(bundle, input)).", call. = FALSE)
+  }
+  validate_omics_input(input)
+  if (!identical(rlang::hash(input$expr_mat), rec$input_hash)) {
+    stop("`input` is not the data this QC result was computed on (its ",
+         "values, features or samples differ). Pass the same input, or run ",
+         "run_qc() again on this one.", call. = FALSE)
+  }
+  features <- setdiff(rownames(input$expr_mat), rec$dropped_features)
+  cleaned <- subset_omics(input, samples = rec$kept_samples, features = features)
+  qc_apply_cleaning(cleaned, rec, bundle$results$qc_summary$imputation)
+}
+
+# What an imputed layer is labelled. Proteomics log intensities that had
+# their gaps filled are `imputed_intensity`; anything else keeps its
+# label (a linear scale was imputed on log2 and transformed back).
+qc_cleaned_assay_type <- function(cleaned, imputation) {
+  at <- cleaned$assay_type
+  if (!is.null(imputation) && identical(cleaned$omics_type, "proteomics") &&
+      isTRUE(at %in% c("normalized_intensity", "filtered_intensity"))) {
+    return("imputed_intensity")
+  }
+  at
+}
+
+# `cleaned` is the input with the kept samples and features. The record
+# says what went into its missing cells.
+qc_apply_cleaning <- function(cleaned, rec, imputation) {
+  if (!is.null(imputation)) {
+    # The matrix before imputation, unless the input already carried one
+    # (after normalize_omics() it holds the linear values).
+    cleaned$raw_mat <- cleaned$raw_mat %||% cleaned$expr_mat
+    m <- cleaned$expr_mat
+    m[imputation$imputed_cells] <- rec$imputed_values
+    cleaned$expr_mat <- m
+  }
+  cleaned$assay_type <- rec$assay_type
+  cleaned
+}
+
+# What plot_qc() draws, computed once from the cleaned input, so the plots
+# need neither the cleaned input nor the layer. Each part is small: a few
+# numbers per sample, and for the imputation view a summary of the
+# observed values (the imputed ones are in the cleaning record).
+qc_plot_data <- function(cleaned, imputation, outliers, sd_threshold) {
+  log_mat <- qc_log_scale(cleaned)$mat
+  out <- list(meta_df = cleaned$meta_df)
+
+  out$pca <- tryCatch({
+    mat <- mean_impute_rows(log_mat)
+    if (ncol(mat) < 2L) stop("Need at least 2 samples to draw a PCA scatter.")
+    pca <- pca_over_samples(mat)
+    list(scores = pca$x[, 1:2, drop = FALSE],
+         var_pct = (pca$sdev^2) / sum(pca$sdev^2) * 100,
+         n_features = nrow(mat),
+         n_dropped = attr(pca, "n_dropped") %||% 0L)
+  }, error = function(e) list(error = conditionMessage(e)))
+
+  # Connectivity is drawn from the outlier test when it ran; otherwise it
+  # is worked out here, as the plot used to do on the cleaned input.
+  # Quietly: a sample with no spread (every value imputed to one number)
+  # makes cor() warn, and this is a panel nobody may open -- it shows the
+  # missing correlation as a missing bar.
+  if (is.null(qc_connectivity_from_outliers(outliers))) {
+    out$connectivity <- tryCatch(
+      suppressWarnings(
+        qc_outliers_connectivity(log_mat, sd_threshold = sd_threshold)$stats),
+      error = function(e) list(error = conditionMessage(e)))
+  }
+
+  if (!is.null(imputation)) {
+    # Observed against imputed values, on the log scale. Every observed
+    # value would be the matrix again; a thousand quantiles draw the same
+    # curve, with the smoothing the full set would have had.
+    mat <- cleaned$expr_mat
+    if (!cleaned$assay_type %in% LOG_SCALE_ASSAY_TYPES) mat <- log2(mat)
+    observed <- as.numeric(mat[-imputation$imputed_cells])
+    observed <- observed[is.finite(observed)]
+    out$imputation <- if (length(observed) >= 2L) {
+      list(observed_quantiles = stats::quantile(
+             observed, probs = seq(0, 1, length.out = 1001L), names = FALSE),
+           observed_bw = stats::bw.nrd0(observed),
+           n_observed = length(observed))
+    } else {
+      list(observed_quantiles = observed, observed_bw = NA_real_,
+           n_observed = length(observed))
+    }
+  }
+  out
+}
+
+qc_connectivity_from_outliers <- function(out) {
+  if (!is.null(out$by_method) && "connectivity" %in% names(out$by_method)) {
+    out$by_method$connectivity$stats
+  } else if (identical(out$method, "connectivity")) {
+    out$stats
+  }
 }

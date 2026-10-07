@@ -76,6 +76,7 @@ Other qc:
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link[=impute_matrix]{impute_matrix()}},
 \code{\link[=plot_qc]{plot_qc()}},
+\code{\link[=qc_cleaned_input]{qc_cleaned_input()}},
 \code{\link[=qc_depth]{qc_depth()}},
 \code{\link[=qc_depth_outliers]{qc_depth_outliers()}},
 \code{\link[=qc_missingness]{qc_missingness()}},

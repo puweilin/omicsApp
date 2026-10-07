@@ -583,7 +583,7 @@ import_view_server <- function(id,
           shiny::selectInput(
             ns("normalize_method"),
             label = "Method",
-            choices = c("vsn (variance stabilising)" = "vsn", "log2" = "log2"),
+            choices = NORMALIZE_CHOICES,
             selected = "vsn"
           )
         )
@@ -848,7 +848,8 @@ import_view_server <- function(id,
 
       if (do_normalize) {
         normalized <- tryCatch(
-          suppressMessages(omicsCore::normalize_omics(cand, method = method)),
+          suppressMessages(do.call(omicsCore::normalize_omics,
+                                   c(list(cand), normalize_args(method)))),
           error = function(e) e
         )
         if (inherits(normalized, "error")) {
@@ -865,7 +866,8 @@ import_view_server <- function(id,
           cand <- normalized
           shiny::showNotification(
             sprintf("Normalized with %s; values are now '%s'.",
-                    method, cand$assay_type),
+                    names(NORMALIZE_CHOICES)[NORMALIZE_CHOICES == method],
+                    cand$assay_type),
             type = "message", duration = 6
           )
         }
@@ -959,6 +961,23 @@ import_view_server <- function(id,
 
 # Tiny `%||%` so the module doesn't pull rlang in just for one operator.
 `%||%` <- function(a, b) if (is.null(a)) b else a
+
+# The normalisations offered on import. "log2, samples aligned on their
+# medians" is log2 followed by subtracting each sample's median and adding
+# back the overall median: it takes out a sample that was simply loaded
+# with more material, and keeps the values on a log2-intensity scale.
+NORMALIZE_CHOICES <- c(
+  "vsn (variance stabilising)" = "vsn",
+  "log2" = "log2",
+  "log2, samples aligned on their medians" = "log2_median"
+)
+
+# A choice above as the arguments normalize_omics() takes.
+normalize_args <- function(choice) {
+  switch(choice,
+         log2_median = list(method = "log2", center = "median"),
+         list(method = choice))
+}
 
 # Identity of an upload. The file digest alone is not enough: the same
 # workbook imported as proteomics and as RNA-seq yields two different

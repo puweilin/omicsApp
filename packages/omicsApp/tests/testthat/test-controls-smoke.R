@@ -229,14 +229,14 @@ test_that("the imputation control reaches run_qc and changes the result", {
     session$flushReact()
     b <- last_bundle()
     expect_identical(b$params$impute_method, "none")
-    expect_true(anyNA(b$results$cleaned_input$expr_mat))
+    expect_true(anyNA(omicsCore::qc_cleaned_input(b, current_project()$experiments$prot)$expr_mat))
 
     session$setInputs(impute_method = "MinDet")
     session$flushReact()
     b <- last_bundle()
     expect_identical(b$params$impute_method, "MinDet")
     # The point of the control: the NAs are gone afterwards.
-    expect_false(anyNA(b$results$cleaned_input$expr_mat))
+    expect_false(anyNA(omicsCore::qc_cleaned_input(b, current_project()$experiments$prot)$expr_mat))
   })
 })
 

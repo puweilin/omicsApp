@@ -21,13 +21,13 @@ run_qc(
 \item{input}{An \code{omics_input}.}
 
 \item{missing_threshold}{Feature missing-rate cutoff in \verb{[0, 1]}. Features
-above this are flagged and removed from \code{cleaned_input}. Default \code{0.5}.}
+above this are flagged and removed from the cleaned input. Default \code{0.5}.}
 
 \item{sample_missing_threshold}{Optional sample missing-rate cutoff.
 Samples above this are flagged and removed.}
 
 \item{impute_method}{One of \link{IMPUTE_METHODS} -- DEP's method set.
-Applied to the expression matrix of \code{cleaned_input} after filtering.
+Applied to the cleaned expression matrix after filtering.
 \code{NULL} (the default) resolves per modality via
 \code{\link[=resolve_impute_method]{resolve_impute_method()}}: \code{"MinProb"} for proteomics, \code{"none"} for
 counts.}
@@ -41,7 +41,7 @@ that can flag a sample in a study of ten or fewer.}
 \code{\link[=qc_outliers]{qc_outliers()}}. Default \code{3}.}
 
 \item{remove_outliers}{Remove the samples \code{\link[=qc_outliers]{qc_outliers()}} flags from
-\code{cleaned_input}. Default \code{FALSE}: they are listed in
+the cleaned input. Default \code{FALSE}: they are listed in
 \code{recommended_filters$remove_samples} and kept.}
 
 \item{missing_filter}{Where \code{missing_threshold} is applied: \code{"global"}
@@ -60,21 +60,33 @@ An \code{analysis_bundle} with the following fields under \code{results}:
 \describe{
 \item{\code{qc_summary}}{List with \code{missingness}, \code{depth}, \code{outliers},
 \code{recommended_filters} (sample/feature IDs to remove), and, when
-values were imputed, \code{imputation} (the method and the positions of
-the imputed cells in \code{cleaned_input$expr_mat}).}
-\item{\code{cleaned_input}}{\code{omics_input} with flagged features (and
-samples, see above) removed and an (optionally) imputed expression
-matrix. \code{raw_mat} carries the pre-imputation matrix when
-imputation occurred and the input had none.}
+values were imputed, \code{imputation} (the method used, the positions
+of the imputed cells in the cleaned expression matrix, and
+\code{requested_method} when MinProb fell back to MinDet).}
+\item{\code{cleaning}}{What was done to the input: the samples kept, the
+features dropped, the values put into the imputed cells, the
+resulting \code{assay_type}, and a checksum of the input's expression
+matrix. \code{\link[=qc_cleaned_input]{qc_cleaned_input()}} rebuilds the cleaned input from it.}
+\item{\code{plot_data}}{What \code{\link[=plot_qc]{plot_qc()}} draws, computed from the
+cleaned input.}
 }
+The cleaned input is not stored: it is as large as the input, and
+\code{\link[=qc_cleaned_input]{qc_cleaned_input()}} rebuilds it exactly -- flagged features (and
+samples, see above) removed, the expression matrix (optionally)
+imputed, and \code{raw_mat} holding the pre-imputation matrix when
+imputation occurred and the input had none. Results from before this
+change carry it as \code{results$cleaned_input}, and
+\code{\link[=qc_cleaned_input]{qc_cleaned_input()}} returns that.
+
 Notes about what was done to the data are in \code{warnings}.
 }
 \description{
 End-to-end QC for an \code{\link[=omics_input]{omics_input()}}. Computes missingness, detects
 sample-level outliers, optionally imputes the expression matrix, and
-returns an \link[=is_analysis_bundle]{analysis_bundle} containing the cleaned
-input plus the QC summary so the result can be plotted by \code{\link[=plot_qc]{plot_qc()}} or
-consumed directly by downstream analysis functions.
+returns an \link[=is_analysis_bundle]{analysis_bundle} holding the QC
+summary and a record of how the input was cleaned, so the result can be
+plotted by \code{\link[=plot_qc]{plot_qc()}} and the cleaned input rebuilt by
+\code{\link[=qc_cleaned_input]{qc_cleaned_input()}} for downstream analysis functions.
 }
 \details{
 Sensible defaults:
@@ -102,7 +114,10 @@ for.
 Imputation on a linear scale (raw intensities) runs on log2 values and
 is transformed back: the left-censored methods draw from a normal
 distribution, which only fits intensities after logging, and on the
-raw scale they returned negative intensities.
+raw scale they returned negative intensities. Only missing cells take
+an imputed value. When MinProb cannot be estimated (fewer than two
+features measured in more than half of the samples) MinDet is used
+instead, and a note says so; see \code{\link[=impute_matrix]{impute_matrix()}}.
 
 The feature filter is global by default. \code{missing_filter = "any_group"}
 applies \code{missing_threshold} within each group of \code{group_col} and keeps
@@ -130,6 +145,7 @@ Other qc:
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link[=impute_matrix]{impute_matrix()}},
 \code{\link[=plot_qc]{plot_qc()}},
+\code{\link[=qc_cleaned_input]{qc_cleaned_input()}},
 \code{\link[=qc_depth]{qc_depth()}},
 \code{\link[=qc_depth_outliers]{qc_depth_outliers()}},
 \code{\link[=qc_missingness]{qc_missingness()}},

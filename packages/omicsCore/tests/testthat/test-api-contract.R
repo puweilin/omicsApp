@@ -90,6 +90,7 @@ light_calls <- list(
   select_complete_cases = list(omics_input = prot, feature_missing_cutoff = 0.5),
   drop_meta_na = list(omics_input = prot, cols = "group"),
   run_qc = list(input = prot),
+  qc_cleaned_input = list(bundle = qcb, input = prot),
   qc_missingness = list(input = prot),
   qc_outliers = list(input = prot),
   qc_depth = list(input = rna),

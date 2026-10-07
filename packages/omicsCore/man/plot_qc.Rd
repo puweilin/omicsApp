@@ -25,12 +25,15 @@ used to color samples in the \code{"pca"} view.}
 A \code{ggplot} object.
 }
 \description{
-Builds standard ggplot panels from a \code{\link[=run_qc]{run_qc()}} bundle.
+Builds standard ggplot panels from a \code{\link[=run_qc]{run_qc()}} bundle. They are drawn
+from what \code{\link[=run_qc]{run_qc()}} stored in it, so neither the input nor the cleaned
+input is needed.
 }
 \seealso{
 Other qc: 
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link{impute_matrix}()},
+\code{\link{qc_cleaned_input}()},
 \code{\link{qc_depth}()},
 \code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},

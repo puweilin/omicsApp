@@ -80,7 +80,11 @@ follicle_prepared <- function(p) {
   keep_expr <- edgeR::filterByExpr(edgeR::DGEList(counts = counts), design = design)
   counts <- counts[keep_nonzero & keep_expr, , drop = FALSE]
 
-  wins <- winsorize_counts(counts, k = 20)
+  # legacy = TRUE: this test reproduces the legacy pipeline, whose rule
+  # took the quartiles over all counts and clipped to the unrounded bound
+  # (rounded just below). winsorize_counts() now defaults to the
+  # expressed-genes rule, which would not match the stored table.
+  wins <- winsorize_counts(counts, k = 20, legacy = TRUE)
   clipped <- round(wins$count_mat)
   storage.mode(clipped) <- "integer"
 

@@ -135,10 +135,13 @@ for (t in exp_tags) {
                esc(t), fmt_n(nrow(x$expr_mat)), fmt_n(ncol(x$expr_mat)),
                scale_label(x$normalization$from_assay_type %||% x$assay_type))
   if (!is.null(x$normalization)) {
-    s <- paste0(s, sprintf(" and normalised with %s",
+    s <- paste0(s, sprintf(" and normalised with %s%s",
                            if (identical(x$normalization$method, "vsn"))
                              "variance-stabilising normalisation (vsn)"
-                           else sprintf("log2(x + %s)", x$normalization$offset)))
+                           else sprintf("log2(x + %s)", x$normalization$offset),
+                           if (identical(x$normalization$center, "median"))
+                             ", with each sample's median aligned to the median of all samples"
+                           else ""))
   }
   if (length(x$excluded_samples)) {
     s <- paste0(s, sprintf("; %s excluded after quality control",
@@ -148,13 +151,19 @@ for (t in exp_tags) {
 }
 if (!is.null(bundles$qc)) {
   q <- bundles$qc$params
+  # The method that ran: MinProb falls back to MinDet when it cannot be
+  # estimated, and the result records that.
+  imp_used <- bundles$qc$results$qc_summary$imputation$method %||% q$impute_method
   para <- c(para, sprintf(paste(
     "Quality control flagged features missing in more than %.0f%% of samples and",
     "screened samples for outliers by %s (threshold %s)%s."),
     100 * (q$missing_threshold %||% 0.5),
     and_list(q$outlier_method %||% "none"), q$outlier_sd_threshold %||% 3,
     if (!identical(q$impute_method %||% "none", "none"))
-      sprintf("; missing values were imputed with %s for the QC views", q$impute_method) else ""))
+      sprintf("; missing values were imputed with %s for the QC views%s", imp_used,
+              if (!identical(imp_used, q$impute_method))
+                sprintf(" (%s could not be estimated on these data)", q$impute_method)
+              else "") else ""))
 }
 if (!is.null(diff_b)) {
   d <- diff_b$params

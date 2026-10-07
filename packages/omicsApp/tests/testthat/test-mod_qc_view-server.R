@@ -323,3 +323,74 @@ test_that("a broken sample in a small layer is flagged and explained in plain wo
     }
   })
 })
+
+# ---- the cleaning record ------------------------------------------------
+# run_qc() no longer stores a copy of the cleaned input; the view reads the
+# record instead, and results saved with the copy keep working.
+
+test_that("the view reads kept samples, colours and missing cells from the record", {
+  p <- tutorial_project()
+  inp <- p$experiments$proteomics
+  inp$expr_mat[1:3, 1:2] <- NA
+  p$experiments <- list(proteomics = inp)
+  shiny::testServer(qc_view_server, args = list(current_project = shiny::reactiveVal(p)), {
+    session$setInputs(missing_threshold = 0.5, outlier_method = "pca", impute_method = "min")
+    b <- last_bundle()
+    expect_null(b$results$cleaned_input)
+    expect_identical(qc_kept_samples(b), colnames(inp$expr_mat))
+    expect_identical(qc_bundle_layer(current_project()$experiments, b), "proteomics")
+    expect_true("group" %in% pca_color_choices())
+    expect_identical(qc_missing_after(b), 0L)
+    caption <- paste(unlist(output$missing_caption), collapse = " ")
+    expect_match(caption, "after imputation for this view: 0.0%", fixed = TRUE)
+    expect_s3_class(omicsCore::plot_qc(b, view = "pca", color_by = "group"), "ggplot")
+  })
+})
+
+test_that("a QC result saved with its cleaned input still restores and draws", {
+  p <- tutorial_project()
+  inp <- p$experiments$proteomics
+  b <- omicsCore::run_qc(inp, missing_threshold = 0.3, outlier_method = "iqr",
+                         impute_method = "none")
+  old <- b
+  old$results <- list(qc_summary = b$results$qc_summary,
+                      cleaned_input = omicsCore::qc_cleaned_input(b, inp))
+  old$input_info$layer <- "proteomics"
+  p$bundles <- list(qc = old)
+  calls <- count_run_qc()
+  testthat::local_mocked_bindings(qc_restore_controls = function(session, vals) NULL,
+                                  .package = "omicsApp")
+  shiny::testServer(qc_view_server, args = list(current_project = shiny::reactiveVal(p)), {
+    session$flushReact()
+    expect_identical(calls$n, 0L)
+    expect_identical(last_bundle(), old)
+    expect_identical(qc_kept_samples(old), colnames(inp$expr_mat))
+    expect_true("group" %in% pca_color_choices())
+    expect_match(paste(unlist(output$stats), collapse = " "), "Samples kept", fixed = TRUE)
+    for (v in c("pca", "missing", "connectivity")) {
+      expect_s3_class(omicsCore::plot_qc(old, view = v), "ggplot")
+    }
+  })
+})
+
+test_that("MinProb that cannot be estimated is said in plain words", {
+  testthat::skip_if_not_installed("imputeLCMD")
+  set.seed(5)
+  x <- matrix(stats::rnorm(36, 20), 6, dimnames = list(paste0("p", 1:6), paste0("s", 1:6)))
+  x[2:6, 1:3] <- NA
+  inp <- omicsCore::omics_input(x, data.frame(group = rep(c("a", "b"), 3), row.names = colnames(x)),
+                                data.frame(feature_id = rownames(x), row.names = rownames(x)),
+                                omics_type = "proteomics", assay_type = "normalized_intensity")
+  p <- omicsCore::omics_project("few", experiments = list(proteomics = inp))
+  shiny::testServer(qc_view_server, args = list(current_project = shiny::reactiveVal(p)), {
+    session$setInputs(missing_threshold = 1, outlier_method = "pca", impute_method = "MinProb")
+    expect_null(last_error())
+    b <- last_bundle()
+    expect_identical(b$results$qc_summary$imputation$method, "MinDet")
+    stats_html <- paste(unlist(output$stats), collapse = " ")
+    expect_match(stats_html, "MinDet", fixed = TRUE)
+    expect_match(stats_html, "in place of MinProb", fixed = TRUE)
+    notes <- paste(unlist(output$notices), collapse = " ")
+    expect_match(notes, "MinProb could not be used", fixed = TRUE)
+  })
+})

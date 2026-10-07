@@ -43,11 +43,20 @@ matrix instead.)
 MNAR methods assume log-scale data, which is the scale DEP's workflow
 imputes on. On linear intensities they will place imputed values on a
 scale the observed values are not on.
+
+MinProb estimates the spread of its draws from the features measured in
+more than half of the samples, and needs at least two of them. With
+fewer -- a small panel, or a matrix that is mostly missing -- imputeLCMD
+either stops with an error (one such feature) or returns the matrix with
+every gap still empty (none). \code{impute_matrix()} then imputes with MinDet,
+the same low quantile of each sample without the random spread, and
+says so in a warning of class \code{omics_impute_fallback}.
 }
 \seealso{
 Other qc:
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link[=plot_qc]{plot_qc()}},
+\code{\link[=qc_cleaned_input]{qc_cleaned_input()}},
 \code{\link[=qc_depth]{qc_depth()}},
 \code{\link[=qc_depth_outliers]{qc_depth_outliers()}},
 \code{\link[=qc_missingness]{qc_missingness()}},

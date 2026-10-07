@@ -23,7 +23,7 @@ omicsCore::install_optional("all")
 library(omicsCore)
 inp  <- read_omics("proteomics.xlsx", omics_type = "proteomics")
 qc   <- run_qc(inp)
-diff <- run_diff(qc$results$cleaned_input, method = "limma",
+diff <- run_diff(qc_cleaned_input(qc, inp), method = "limma",
                  group_col = "group", control_group = "Control",
                  case_group = c("TreatA", "TreatB"))
 plot_volcano(select_comparison(diff, "TreatA_vs_Control"))

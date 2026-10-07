@@ -1,6 +1,8 @@
 #' QC visualizations
 #'
-#' Builds standard ggplot panels from a [run_qc()] bundle.
+#' Builds standard ggplot panels from a [run_qc()] bundle. They are drawn
+#' from what [run_qc()] stored in it, so neither the input nor the cleaned
+#' input is needed.
 #'
 #' @param bundle An `analysis_bundle` produced by [run_qc()].
 #' @param view One of `"missing"`, `"pca"`, `"connectivity"`, `"imputation"`.
@@ -196,26 +198,21 @@ plot_missing_by_feature <- function(feature_df, upper = 1) {
 }
 
 plot_qc_pca <- function(bundle, color_by = NULL) {
-  cleaned <- bundle$results$cleaned_input
-  # On the scale qc_outliers() used, so the plot shows what was tested:
-  # a PCA of raw counts is a plot of library size and a few huge genes.
-  mat <- mean_impute_rows(qc_log_scale(cleaned)$mat)
-  if (ncol(mat) < 2L) {
-    stop("Need at least 2 samples to draw a PCA scatter.")
-  }
-  pca <- pca_over_samples(mat)
-  scores <- as.data.frame(pca$x[, 1:2, drop = FALSE])
+  pd <- qc_pca_data(bundle)
+  if (!is.null(pd$error)) stop(pd$error, call. = FALSE)
+  scores <- as.data.frame(pd$scores)
   scores$sample_id <- rownames(scores)
   rownames(scores) <- NULL
+  meta <- pd$meta_df
 
   if (!is.null(color_by)) {
-    if (!color_by %in% colnames(cleaned$meta_df)) {
-      stop("`color_by` not found in cleaned_input$meta_df: ", color_by)
+    if (!color_by %in% colnames(meta)) {
+      stop("`color_by` not found in the cleaned input's meta_df: ", color_by)
     }
-    scores[[color_by]] <- cleaned$meta_df[scores$sample_id, color_by]
+    scores[[color_by]] <- meta[scores$sample_id, color_by]
   }
 
-  var_pct <- (pca$sdev^2) / sum(pca$sdev^2) * 100
+  var_pct <- pd$var_pct
 
   group_vals <- if (is.null(color_by)) NULL else scores[[color_by]]
   mapping <- if (is.null(color_by)) {
@@ -232,10 +229,10 @@ plot_qc_pca <- function(bundle, color_by = NULL) {
   # every annotated gene, so a fifth of them being zero in every sample
   # is ordinary -- but "PCA of 63,241 features" and "PCA of the 49,000
   # that vary" are different claims, and only one of them is true.
-  dropped <- attr(pca, "n_dropped") %||% 0L
+  dropped <- pd$n_dropped %||% 0L
   subtitle <- if (dropped > 0L) {
     sprintf("%s features; %s constant across all samples, excluded",
-            format(nrow(mat), big.mark = ","),
+            format(pd$n_features, big.mark = ","),
             format(dropped, big.mark = ","))
   } else NULL
 
@@ -252,18 +249,17 @@ plot_qc_pca <- function(bundle, color_by = NULL) {
 }
 
 plot_qc_connectivity <- function(bundle) {
-  out <- bundle$results$qc_summary$outliers
-  stats_df <- if (!is.null(out$by_method) && "connectivity" %in% names(out$by_method)) {
-    out$by_method$connectivity$stats
-  } else if (identical(out$method, "connectivity")) {
-    out$stats
-  } else {
-    # outlier_method was something else; recompute connectivity on the
-    # cleaned input so users always see this view.
+  stats_df <- qc_connectivity_from_outliers(bundle$results$qc_summary$outliers) %||%
+    bundle$results$plot_data$connectivity
+  if (is.null(stats_df)) {
+    # outlier_method was something else, in a result saved before
+    # run_qc() worked this out itself: recompute it on the cleaned input
+    # so users always see this view.
     cleaned <- bundle$results$cleaned_input
-    qc_outliers_connectivity(qc_log_scale(cleaned)$mat,
-                             sd_threshold = bundle$params$outlier_sd_threshold)$stats
+    stats_df <- qc_outliers_connectivity(qc_log_scale(cleaned)$mat,
+                                         sd_threshold = bundle$params$outlier_sd_threshold)$stats
   }
+  if (!is.data.frame(stats_df)) stop(stats_df$error, call. = FALSE)
   stats_df <- stats_df[order(stats_df$mean_correlation), , drop = FALSE]
   stats_df$sample_id <- factor(stats_df$sample_id, levels = stats_df$sample_id)
 
@@ -285,37 +281,45 @@ plot_qc_connectivity <- function(bundle) {
 }
 
 plot_qc_imputation <- function(bundle) {
-  cleaned <- bundle$results$cleaned_input
   imp <- bundle$results$qc_summary$imputation
+  cleaned <- bundle$results$cleaned_input
+  pd <- bundle$results$plot_data$imputation
   if (is.null(imp) && is.null(cleaned$raw_mat)) {
     stop("This bundle has no imputation step (run_qc was called with impute_method='none').")
   }
-  if (!is.null(imp)) {
+  if (!is.null(pd)) {
     # Observed against imputed values, both from the matrix that goes
-    # downstream. `raw_mat` was the wrong "before": after
-    # normalize_omics() it holds the linear values, so the two curves
-    # were on different scales.
-    mat <- cleaned$expr_mat
-    if (!cleaned$assay_type %in% LOG_SCALE_ASSAY_TYPES) mat <- log2(mat)
-    before <- as.numeric(mat[-imp$imputed_cells])
-    after <- as.numeric(mat[imp$imputed_cells])
-    labels <- c("observed", "imputed")
+    # downstream, on the log scale. The observed side is a summary of
+    # every observed value (see qc_plot_data()), smoothed as the full set
+    # would have been.
+    imputed <- bundle$results$cleaning$imputed_values
+    at <- bundle$results$cleaning$assay_type
+    if (!isTRUE(at %in% LOG_SCALE_ASSAY_TYPES)) imputed <- log2(imputed)
+    curves <- rbind(
+      density_curve(pd$observed_quantiles, "observed", bw = pd$observed_bw),
+      density_curve(imputed, "imputed"))
   } else {
-    # Bundles from before the imputation record.
-    before <- as.numeric(cleaned$raw_mat)
-    after <- as.numeric(cleaned$expr_mat)
-    labels <- c("raw", "imputed")
+    if (!is.null(imp)) {
+      # `raw_mat` was the wrong "before": after normalize_omics() it holds
+      # the linear values, so the two curves were on different scales.
+      mat <- cleaned$expr_mat
+      if (!cleaned$assay_type %in% LOG_SCALE_ASSAY_TYPES) mat <- log2(mat)
+      before <- as.numeric(mat[-imp$imputed_cells])
+      after <- as.numeric(mat[imp$imputed_cells])
+      first <- "observed"
+    } else {
+      # Bundles from before the imputation record.
+      before <- as.numeric(cleaned$raw_mat)
+      after <- as.numeric(cleaned$expr_mat)
+      first <- "raw"
+    }
+    curves <- rbind(density_curve(before, first), density_curve(after, "imputed"))
   }
-  df <- data.frame(
-    value = c(before, after),
-    type  = c(rep(labels[1L], length(before)), rep("imputed", length(after))),
-    stringsAsFactors = FALSE
-  )
-  df <- df[is.finite(df$value), , drop = FALSE]
 
-  ggplot2::ggplot(df,
-                  ggplot2::aes(x = .data$value, fill = .data$type, color = .data$type)) +
-    ggplot2::geom_density(alpha = 0.35) +
+  ggplot2::ggplot(curves,
+                  ggplot2::aes(x = .data$value, y = .data$density,
+                               fill = .data$type, color = .data$type)) +
+    ggplot2::geom_area(alpha = 0.35, position = "identity") +
     ggplot2::scale_fill_manual(values = c(raw = "#9AA3AE", observed = "#9AA3AE",
                                           imputed = "#1FBF9E")) +
     ggplot2::scale_color_manual(values = c(raw = "#9AA3AE", observed = "#9AA3AE",
@@ -327,6 +331,49 @@ plot_qc_imputation <- function(bundle) {
       fill = NULL, color = NULL
     ) +
     theme_omicsCore()
+}
+
+# A kernel density as a data frame, the way geom_density() would have drawn
+# it. Computed here so a curve can be drawn from a summary of the values,
+# with the bandwidth the full set had. Fewer than two finite values have no
+# density, and draw nothing.
+density_curve <- function(x, type, bw = NULL) {
+  x <- x[is.finite(x)]
+  if (length(x) < 2L) {
+    return(data.frame(value = numeric(0), density = numeric(0),
+                      type = character(0), stringsAsFactors = FALSE))
+  }
+  if (is.null(bw) || !is.finite(bw) || bw <= 0) bw <- "nrd0"
+  d <- tryCatch(stats::density(x, bw = bw), error = function(e) NULL)
+  if (is.null(d)) {
+    return(data.frame(value = numeric(0), density = numeric(0),
+                      type = character(0), stringsAsFactors = FALSE))
+  }
+  data.frame(value = d$x, density = d$y, type = type, stringsAsFactors = FALSE)
+}
+
+# What the PCA panel draws: stored by run_qc(), or -- for results saved
+# before it stored it -- worked out from the cleaned input they carry.
+qc_pca_data <- function(bundle) {
+  pd <- bundle$results$plot_data
+  if (!is.null(pd$pca)) return(c(pd$pca, list(meta_df = pd$meta_df)))
+  cleaned <- bundle$results$cleaned_input
+  if (is.null(cleaned)) {
+    stop("This QC result carries nothing to draw a PCA from; run run_qc() again.",
+         call. = FALSE)
+  }
+  # On the scale qc_outliers() used, so the plot shows what was tested:
+  # a PCA of raw counts is a plot of library size and a few huge genes.
+  mat <- mean_impute_rows(qc_log_scale(cleaned)$mat)
+  if (ncol(mat) < 2L) {
+    return(list(error = "Need at least 2 samples to draw a PCA scatter."))
+  }
+  pca <- pca_over_samples(mat)
+  list(scores = pca$x[, 1:2, drop = FALSE],
+       var_pct = (pca$sdev^2) / sum(pca$sdev^2) * 100,
+       n_features = nrow(mat),
+       n_dropped = attr(pca, "n_dropped") %||% 0L,
+       meta_df = cleaned$meta_df)
 }
 
 #' Project-standard ggplot2 theme
