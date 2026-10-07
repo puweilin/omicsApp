@@ -18,6 +18,8 @@ run_enrichment(
   p_adjust_scope = c("database", "all"),
   min_size = 10L,
   max_size = 500L,
+  eps = 1e-10,
+  n_perm_simple = 1000L,
   ...
 )
 }
@@ -59,6 +61,17 @@ database, or \code{"all"} to correct across all queried databases
 together. Makes a difference only with more than one database.}
 
 \item{min_size, max_size}{Min/max gene-set sizes, for ORA and GSEA alike.}
+
+\item{eps}{GSEA only: the smallest p-value fgsea estimates (its \code{eps}).
+A pathway stronger than this is reported at \code{eps} rather than at its
+true, smaller p-value. The default, \code{1e-10}, is what
+\code{clusterProfiler::GSEA()} uses; \code{0} estimates p-values however small
+they are, at some cost in time.}
+
+\item{n_perm_simple}{GSEA only: the number of permutations in fgsea's
+first stage (its \code{nPermSimple}, default \code{1000}). Raise it when fgsea
+warns that some p-values may be inaccurate, or for steadier p-values
+of modestly enriched pathways.}
 
 \item{...}{Reserved for backend-specific extensions.}
 }

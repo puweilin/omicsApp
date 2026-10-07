@@ -287,6 +287,10 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         proj$sample_link <- proj$sample_link[proj$sample_link$tag != tag, ,
                                              drop = FALSE]
       }
+      # Likewise a feature mapping table with a column for that layer.
+      if (!is.null(proj$feature_link) && tag %in% names(proj$feature_link)) {
+        proj$feature_link <- NULL
+      }
       current_project(proj)
       pending_drop(NULL)
       shiny::showNotification(sprintf("Removed layer '%s'.", tag),

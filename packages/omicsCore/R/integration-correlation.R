@@ -1,5 +1,7 @@
 # Per-feature correlation across paired samples between two omics layers.
-# For each gene/protein pair that appears in both experiments, computes a
+# For each protein-gene pair the two experiments share (by symbol or by a
+# feature link; a gene measured by two proteins gives two pairs, each
+# correlated on its own and each a row of the result), computes a
 # Pearson or Spearman correlation across the donors that have data in
 # both layers (after `build_sample_pairs()` alignment). Returns the full
 # integration schema with `effect = r`, `statistic_type = "spearman"` /
@@ -12,7 +14,8 @@ run_integration_correlation <- function(
   by = "feature_symbol",
   p_adjust_method = "BH",
   min_samples = 4L,
-  p_cutoff = 0.05
+  p_cutoff = 0.05,
+  link = NULL
 ) {
   experiments <- resolve_experiment_pair(project, experiments)
   method <- match.arg(method)
@@ -25,7 +28,7 @@ run_integration_correlation <- function(
          nrow(sample_pairs), ".")
   }
 
-  feature_pairs <- build_feature_pairs(project, tag_a, tag_b, by = by)
+  feature_pairs <- build_feature_pairs(project, tag_a, tag_b, by = by, link = link)
 
   mat_a <- project$experiments[[tag_a]]$expr_mat[feature_pairs$feature_a,
                                                   sample_pairs[[tag_a]], drop = FALSE]
@@ -102,6 +105,9 @@ run_integration_correlation <- function(
     quadrant = NA_character_,
     is_significant = !is.na(adj) & adj < p_cutoff,
     source_label = paste0("integration_correlation_", tag_a, "_", tag_b),
+    # Beyond the schema: the two features each row correlates.
+    feature_id_a = feature_pairs$feature_a,
+    feature_id_b = feature_pairs$feature_b,
     stringsAsFactors = FALSE
   )
   rownames(out) <- NULL
@@ -114,7 +120,8 @@ run_integration_correlation <- function(
       n_features = n_feat,
       n_samples = nrow(sample_pairs),
       pairing_source = attr(sample_pairs, "source") %||% NA_character_,
-      n_ambiguous_samples = attr(sample_pairs, "n_ambiguous") %||% 0L
+      n_ambiguous_samples = attr(sample_pairs, "n_ambiguous") %||% 0L,
+      feature_pairing = attr(feature_pairs, "info")
     )
   )
 }

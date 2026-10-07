@@ -49,6 +49,8 @@ reference:
   - suggest_sample_link
   - derive_sample_link
   - sample_pairing_preview
+  - read_feature_link
+  - feature_pairing_preview
 
 - title: Vocabularies
   desc: Assay types, differential backends and imputation methods, as the package names them

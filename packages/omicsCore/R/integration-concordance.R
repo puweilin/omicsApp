@@ -1,7 +1,14 @@
-# Per-feature concordance between two diff_bundles. For each gene/protein
-# that appears in both layers, joins the standardized effect, direction,
+# Per-feature concordance between two diff_bundles. For each protein-gene
+# pair the two layers share, joins the standardized effect, direction,
 # and (adjusted) p-value, classifies the (dir_a, dir_b) pair into a
 # quadrant, and computes a combined-p (Fisher's method).
+#
+# Pairs come from link_features(): by symbol, or by a feature link. Where
+# a gene is measured by several proteins each protein-gene pair is a row
+# of its own, with its own quadrant and combined p, and the combined p is
+# corrected across pairs. Keeping only one protein per gene (as before)
+# threw away isoforms that can move differently; reporting each lets the
+# reader see that they do.
 
 run_integration_concordance <- function(
   project,
@@ -11,7 +18,8 @@ run_integration_concordance <- function(
   p_preference = c("adjusted", "raw"),
   p_cutoff = 0.05,
   p_adjust_method = "BH",
-  effect_cutoff = 0
+  effect_cutoff = 0,
+  link = NULL
 ) {
   experiments <- resolve_experiment_pair(project, experiments)
   p_preference <- match.arg(p_preference)
@@ -26,7 +34,7 @@ run_integration_concordance <- function(
   check_diff_result_schema(res_a)
   check_diff_result_schema(res_b)
 
-  if (!by %in% colnames(res_a) || !by %in% colnames(res_b)) {
+  if (is.null(link) && (!by %in% colnames(res_a) || !by %in% colnames(res_b))) {
     stop("`", by, "` must be a column in both diff_result_df's.")
   }
   for (side in list(list(res_a, tag_a), list(res_b, tag_b))) {
@@ -38,16 +46,11 @@ run_integration_concordance <- function(
     }
   }
 
-  build_side <- function(df, side) {
-    key <- integration_join_key(df[[by]])
-    keep <- !is.na(key)
-    df <- df[keep, , drop = FALSE]
-    key <- key[keep]
-    idx <- dedupe_by_key(key, df$base_mean)
+  pairs <- link_features(res_a$feature_id, res_a[[by]],
+                         res_b$feature_id, res_b[[by]], link = link)
+  side_cols <- function(df, idx) {
     df <- df[idx, , drop = FALSE]
-    out <- data.frame(
-      key = key[idx],
-      symbol = as.character(df[[by]]),
+    data.frame(
       feature_id = as.character(df$feature_id),
       effect = as.numeric(df$effect),
       direction = direction_sign(df$direction, df$effect),
@@ -55,19 +58,21 @@ run_integration_concordance <- function(
       padj = as.numeric(df$adj_p_value),
       stringsAsFactors = FALSE
     )
-    names(out)[-1L] <- paste0(names(out)[-1L], "_", side)
-    out
   }
-
-  joined <- merge(build_side(res_a, "a"), build_side(res_b, "b"), by = "key")
+  sa <- side_cols(res_a, pairs$i_a)
+  sb <- side_cols(res_b, pairs$i_b)
+  names(sa) <- paste0(names(sa), "_a")
+  names(sb) <- paste0(names(sb), "_b")
+  joined <- cbind(data.frame(id = pairs$feature_id, symbol = pairs$label,
+                             stringsAsFactors = FALSE), sa, sb)
   if (nrow(joined) == 0L) {
     return(list(
       std = new_integration_result_template(),
       info = list(experiments = experiments, n_features = 0L,
-                  p_preference = p_preference)
+                  p_preference = p_preference,
+                  feature_pairing = attr(pairs, "info"))
     ))
   }
-  joined <- joined[order(joined$key), , drop = FALSE]
 
   quadrant <- classify_concordance_quadrant(joined$direction_a, joined$direction_b)
   direction <- ifelse(
@@ -107,8 +112,8 @@ run_integration_concordance <- function(
   is_sig <- sig_a & sig_b & !is.na(direction) & direction == "concordant"
 
   out <- data.frame(
-    feature_id = joined$symbol_a,
-    feature_symbol = joined$symbol_a,
+    feature_id = joined$id,
+    feature_symbol = joined$symbol,
     result_type = "concordance",
     experiments = paste(tag_a, "vs", tag_b),
     comparison = paste(
@@ -159,7 +164,8 @@ run_integration_concordance <- function(
       n_significant_b = sum(sig_b),
       n_significant_both = sum(both),
       n_concordant = sum(is_sig),
-      n_discordant = sum(both & direction %in% "discordant")
+      n_discordant = sum(both & direction %in% "discordant"),
+      feature_pairing = attr(pairs, "info")
     )
   )
 }

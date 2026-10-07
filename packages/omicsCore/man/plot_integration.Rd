@@ -57,6 +57,8 @@ directional method carry no direction and are coloured by adjusted p.
 }
 \seealso{
 Other integration:
+\code{\link[=feature_pairing_preview]{feature_pairing_preview()}},
+\code{\link[=read_feature_link]{read_feature_link()}},
 \code{\link[=run_integration]{run_integration()}}
 }
 \concept{integration}

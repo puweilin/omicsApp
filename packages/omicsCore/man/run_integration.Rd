@@ -10,6 +10,7 @@ run_integration(
   experiments = NULL,
   diff_bundles = NULL,
   by = "feature_symbol",
+  feature_link = NULL,
   ...
 )
 }
@@ -25,7 +26,15 @@ two experiments to integrate.}
 \item{diff_bundles}{Named list of \code{\link[=run_diff]{run_diff()}} bundles keyed by
 experiment tag. Required for \code{"concordance"} and \code{"active_pathways"}.}
 
-\item{by}{Feature key used to join layers (default \code{"feature_symbol"}).}
+\item{by}{Feature key used to join layers when there is no feature
+link (default \code{"feature_symbol"}).}
+
+\item{feature_link}{Optional table saying which feature of one layer is
+which feature of the other: a data frame with a column named after
+each of the two layers (e.g. \code{data.frame(prot = "P04637", rna = "TP53")}), as \code{\link[=read_feature_link]{read_feature_link()}} returns. When \code{NULL} (default),
+the project's own \code{feature_link} is used if it has a column for both
+layers, and features are otherwise matched on \code{by}. See \emph{Matching
+features} below.}
 
 \item{...}{Method-specific arguments forwarded to the backend. See
 the per-method sections below.}
@@ -56,6 +65,42 @@ of two differential analyses.
 All methods return an \code{analysis_bundle} whose \code{results$integration_df}
 follows the schema documented in \code{\link[=check_integration_result_schema]{check_integration_result_schema()}}.
 }
+\section{Matching features}{
+
+Without a feature link, features are matched on \code{by} ignoring case and
+surrounding whitespace. With one, the link decides alone: a feature
+it does not name is not paired. A value in the link names a feature
+when it is the feature's id (or one member of a \verb{;}-separated protein
+group), the canonical accession of a UniProt isoform id (\code{P04637}
+names \code{P04637-2} unless the link also names \code{P04637-2} itself), or the
+feature's \code{by} value -- whichever is most specific.
+
+Every feature is kept, so where several proteins (isoforms, several
+protein groups) map to one gene there are several protein-gene pairs:
+\itemize{
+\item concordance and correlation report each pair as a row of its own,
+and correct the p-values across pairs. \code{feature_id} is the gene when
+it has one pair and the gene followed by the feature that tells its
+pairs apart otherwise (\code{"TP53 (P04637-2)"}); \code{feature_symbol} is the
+gene; \code{feature_id_a} / \code{feature_id_b} name the two features.
+\item ActivePathways scores genes, so a gene with several features in a
+layer takes its most significant feature's p-value, corrected for
+the number of features (Sidak: \code{1 - (1 - p_min)^k}), and that
+feature's fold change; the bundle's warnings say how many genes this
+concerned.
+}
+
+Before features were linked, only the most abundant feature of each
+gene was kept. Results for data with one feature per gene are
+unchanged.
+
+The bundle records how features were matched in
+\code{params$feature_link_source} (\code{source} is \code{"symbol"}, \code{"project"} or
+\code{"supplied"}; \code{path} and \code{columns} say which file the link was read
+from, when known) and the counts of the pairing in
+\code{params$method_info$feature_pairing}.
+}
+
 \section{Correlation arguments}{
 
 \itemize{
@@ -82,9 +127,8 @@ feature to count as a hit there (default \code{0}, no bound).
 Besides the schema columns, the concordance table keeps what each layer
 said on its own: \code{effect_a}, \code{effect_b}, \code{p_value_a}, \code{p_value_b},
 \code{adj_p_value_a}, \code{adj_p_value_b}, \code{significant_a}, \code{significant_b},
-\code{feature_id_a}, \code{feature_id_b}. Features are matched on \code{by}
-ignoring case and surrounding whitespace; where several features of
-one layer share a symbol the most abundant (\code{base_mean}) is kept.
+\code{feature_id_a}, \code{feature_id_b}. One row per protein-gene pair (see
+\emph{Matching features}).
 }
 
 \section{ActivePathways arguments}{
@@ -145,6 +189,8 @@ needs 2.0 or later), Brown's method is used instead, the bundle's
 }
 \seealso{
 Other integration:
-\code{\link[=plot_integration]{plot_integration()}}
+\code{\link[=feature_pairing_preview]{feature_pairing_preview()}},
+\code{\link[=plot_integration]{plot_integration()}},
+\code{\link[=read_feature_link]{read_feature_link()}}
 }
 \concept{integration}

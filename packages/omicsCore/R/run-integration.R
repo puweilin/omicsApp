@@ -36,9 +36,50 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #'   `NULL` and the project has exactly two layers, both are used.
 #' @param diff_bundles Named list of [`run_diff()`] bundles keyed by
 #'   experiment tag. Required for `"concordance"` and `"active_pathways"`.
-#' @param by Feature key used to join layers (default `"feature_symbol"`).
+#' @param by Feature key used to join layers when there is no feature
+#'   link (default `"feature_symbol"`).
+#' @param feature_link Optional table saying which feature of one layer is
+#'   which feature of the other: a data frame with a column named after
+#'   each of the two layers (e.g. `data.frame(prot = "P04637", rna =
+#'   "TP53")`), as [read_feature_link()] returns. When `NULL` (default),
+#'   the project's own `feature_link` is used if it has a column for both
+#'   layers, and features are otherwise matched on `by`. See *Matching
+#'   features* below.
 #' @param ... Method-specific arguments forwarded to the backend. See
 #'   the per-method sections below.
+#'
+#' @section Matching features:
+#' Without a feature link, features are matched on `by` ignoring case and
+#' surrounding whitespace. With one, the link decides alone: a feature
+#' it does not name is not paired. A value in the link names a feature
+#' when it is the feature's id (or one member of a `;`-separated protein
+#' group), the canonical accession of a UniProt isoform id (`P04637`
+#' names `P04637-2` unless the link also names `P04637-2` itself), or the
+#' feature's `by` value -- whichever is most specific.
+#'
+#' Every feature is kept, so where several proteins (isoforms, several
+#' protein groups) map to one gene there are several protein-gene pairs:
+#'
+#' * concordance and correlation report each pair as a row of its own,
+#'   and correct the p-values across pairs. `feature_id` is the gene when
+#'   it has one pair and the gene followed by the feature that tells its
+#'   pairs apart otherwise (`"TP53 (P04637-2)"`); `feature_symbol` is the
+#'   gene; `feature_id_a` / `feature_id_b` name the two features.
+#' * ActivePathways scores genes, so a gene with several features in a
+#'   layer takes its most significant feature's p-value, corrected for
+#'   the number of features (Sidak: `1 - (1 - p_min)^k`), and that
+#'   feature's fold change; the bundle's warnings say how many genes this
+#'   concerned.
+#'
+#' Before features were linked, only the most abundant feature of each
+#' gene was kept. Results for data with one feature per gene are
+#' unchanged.
+#'
+#' The bundle records how features were matched in
+#' `params$feature_link_source` (`source` is `"symbol"`, `"project"` or
+#' `"supplied"`; `path` and `columns` say which file the link was read
+#' from, when known) and the counts of the pairing in
+#' `params$method_info$feature_pairing`.
 #'
 #' @section Correlation arguments:
 #' * `cor_method` -- `"spearman"` (default) or `"pearson"`.
@@ -59,9 +100,8 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #' Besides the schema columns, the concordance table keeps what each layer
 #' said on its own: `effect_a`, `effect_b`, `p_value_a`, `p_value_b`,
 #' `adj_p_value_a`, `adj_p_value_b`, `significant_a`, `significant_b`,
-#' `feature_id_a`, `feature_id_b`. Features are matched on `by`
-#' ignoring case and surrounding whitespace; where several features of
-#' one layer share a symbol the most abundant (`base_mean`) is kept.
+#' `feature_id_a`, `feature_id_b`. One row per protein-gene pair (see
+#' *Matching features*).
 #'
 #' @section ActivePathways arguments:
 #' * `database` -- MSigDB shorthand (default `"hallmark"`).
@@ -126,6 +166,7 @@ run_integration <- function(
   experiments = NULL,
   diff_bundles = NULL,
   by = "feature_symbol",
+  feature_link = NULL,
   ...
 ) {
   method <- match.arg(method)
@@ -135,6 +176,7 @@ run_integration <- function(
   tag_a <- experiments[[1L]]
   tag_b <- experiments[[2L]]
   dots <- list(...)
+  linked <- resolve_feature_link(project, tag_a, tag_b, feature_link)
 
   if (method %in% c("concordance", "active_pathways") && is.null(diff_bundles)) {
     stop("`diff_bundles` is required for method = '", method, "'.")
@@ -153,7 +195,8 @@ run_integration <- function(
       by = by,
       p_adjust_method = p_adjust_method,
       min_samples = min_samples,
-      p_cutoff = p_cutoff
+      p_cutoff = p_cutoff,
+      link = linked$link
     )
     integration_df <- backend$std
     integration_raw <- NULL
@@ -179,7 +222,8 @@ run_integration <- function(
       p_preference = p_preference,
       p_cutoff = p_cutoff,
       p_adjust_method = p_adjust_method,
-      effect_cutoff = effect_cutoff
+      effect_cutoff = effect_cutoff,
+      link = linked$link
     )
     integration_df <- backend$std
     integration_raw <- NULL
@@ -210,7 +254,8 @@ run_integration <- function(
       significant = significant,
       geneset_filter = geneset_filter,
       merge_method = merge_method,
-      constraints_vector = constraints_vector
+      constraints_vector = constraints_vector,
+      link = linked$link
     )
     integration_df <- backend$std
     integration_raw <- backend$raw
@@ -258,7 +303,8 @@ run_integration <- function(
       by = by
     ),
     method_params,
-    list(method_info = method_info),
+    list(method_info = method_info,
+         feature_link_source = feature_link_provenance(linked)),
     # How each layer's differential result was made, so export_script()
     # can make them again: the partner layer's run happens inside the
     # app and exists nowhere else.
@@ -289,3 +335,25 @@ run_integration <- function(
     warnings = warns
   )
 }
+
+# How a run matched features, for the record and for export_script(): the
+# source, the file the link was read from (when it was read with
+# read_feature_link()), and -- for a small link that came from no file --
+# the link itself, so the script can write it out.
+feature_link_provenance <- function(linked) {
+  if (identical(linked$source, "symbol")) return(list(source = "symbol"))
+  file <- linked$file
+  list(
+    source = linked$source,
+    n_rows = nrow(linked$link),
+    path = file$path,
+    columns = file$columns,
+    table = if (is.null(file$path) && nrow(linked$link) <= FEATURE_LINK_INLINE_ROWS)
+      linked$link
+  )
+}
+
+# Above this many rows a link with no file behind it is not written into
+# the exported script (it would be a wall of text no one checks); the
+# script says to supply it instead.
+FEATURE_LINK_INLINE_ROWS <- 500L

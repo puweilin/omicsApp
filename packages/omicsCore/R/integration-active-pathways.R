@@ -1,6 +1,6 @@
 # ActivePathways combined-p pathway enrichment across two omics layers.
 # Heavy Suggests-gated; requires both `ActivePathways` and our enrichment
-# stack (msigdbr → MSigDB gene sets). Builds a per-feature scores matrix
+# stack (msigdbr → MSigDB gene sets). Builds a per-gene scores matrix
 # (rows = gene symbols, columns = experiment tags) from two diff_bundles,
 # then runs ActivePathways against an in-memory GMT-like list.
 #
@@ -65,7 +65,8 @@ run_integration_active_pathways <- function(
   significant = 0.05,
   geneset_filter = c(5L, 1000L),
   merge_method = "DPM",
-  constraints_vector = c(1, 1)
+  constraints_vector = c(1, 1),
+  link = NULL
 ) {
   experiments <- resolve_experiment_pair(project, experiments)
   p_preference <- match.arg(p_preference)
@@ -97,7 +98,7 @@ run_integration_active_pathways <- function(
   res_b <- diff_bundles[[tag_b]]$results$diff_result_df
   check_diff_result_schema(res_a)
   check_diff_result_schema(res_b)
-  if (!by %in% colnames(res_a) || !by %in% colnames(res_b)) {
+  if (is.null(link) && (!by %in% colnames(res_a) || !by %in% colnames(res_b))) {
     stop("`", by, "` must be a column in both diff_result_df's.")
   }
 
@@ -112,20 +113,59 @@ run_integration_active_pathways <- function(
 
   p_col <- if (p_preference == "adjusted") "adj_p_value" else "p_value"
 
-  # Same key rules as concordance: case-insensitive symbols, one row per
-  # gene (the most abundant), so the two methods integrate the same genes.
-  build_score <- function(df) {
-    key <- integration_join_key(df[[by]])
-    keep <- !is.na(key)
-    df <- df[keep, , drop = FALSE]
-    key <- key[keep]
-    idx <- dedupe_by_key(key, df$base_mean)
-    data.frame(key = key[idx], p = as.numeric(df[[p_col]][idx]),
-               effect = as.numeric(df$effect[idx]),
+  # Genes, not features, are what ActivePathways scores, so each layer is
+  # brought to one row per gene. A feature paired across the layers (by
+  # symbol or by the feature link, as concordance pairs them) stands for
+  # its pair's gene; one measured in a single layer for its own symbol.
+  pairs <- link_features(res_a$feature_id, res_a[[by]],
+                         res_b$feature_id, res_b[[by]], link = link)
+  gene_keys <- function(df, paired_rows) {
+    own <- if (by %in% names(df)) integration_join_key(df[[by]])
+           else rep(NA_character_, nrow(df))
+    alone <- setdiff(seq_len(nrow(df)), paired_rows)
+    keys <- rbind(
+      data.frame(i = paired_rows, key = integration_join_key(pairs$label),
+                 stringsAsFactors = FALSE),
+      data.frame(i = alone, key = own[alone], stringsAsFactors = FALSE))
+    unique(keys[!is.na(keys$key), , drop = FALSE])
+  }
+  # Where several features of a layer stand for one gene (isoforms,
+  # several protein groups), the gene takes its most significant
+  # feature's p-value and fold change. The minimum of k p-values is not a
+  # p-value -- it is small by chance far more often than one feature's --
+  # so it is corrected for the number of features on offer (Sidak:
+  # 1 - (1 - p_min)^k). Before isoforms were kept, the most abundant
+  # feature stood for the gene; that wasted the evidence of an isoform
+  # that moved while the abundant one did not. A gene with one feature is
+  # scored exactly as before.
+  build_score <- function(df, paired_rows) {
+    keys <- gene_keys(df, paired_rows)
+    p <- as.numeric(df[[p_col]][keys$i])
+    eff <- as.numeric(df$effect[keys$i])
+    k <- stats::ave(as.numeric(!is.na(p)), keys$key, FUN = sum)
+    ord <- order(keys$key, is.na(p), p, keys$i)
+    best <- ord[!duplicated(keys$key[ord])]
+    # In the order the genes first appear in the table, as before.
+    best <- best[order(stats::ave(keys$i, keys$key, FUN = min)[best])]
+    kk <- pmax(k[best], 1)
+    pb <- p[best]
+    data.frame(key = keys$key[best],
+               p = ifelse(kk > 1, -expm1(kk * log1p(-pb)), pb),
+               effect = eff[best], n_features = kk,
                stringsAsFactors = FALSE)
   }
-  s_a <- build_score(res_a)
-  s_b <- build_score(res_b)
+  s_a <- build_score(res_a, pairs$i_a)
+  s_b <- build_score(res_b, pairs$i_b)
+  for (sc in list(list(s_a, tag_a), list(s_b, tag_b))) {
+    n_multi <- sum(sc[[1L]]$n_features > 1)
+    if (n_multi > 0L) {
+      notes <- c(notes, sprintf(paste(
+        "%d gene(s) are measured by more than one feature in '%s'. Each",
+        "enters ActivePathways with its most significant feature's p-value,",
+        "corrected for the number of its features, and that feature's fold change."),
+        n_multi, sc[[2L]]))
+    }
+  }
   all_keys <- union(s_a$key, s_b$key)
   if (length(all_keys) == 0L) {
     stop("No features found in either diff bundle.")
@@ -202,7 +242,9 @@ run_integration_active_pathways <- function(
     merge_method = merge_method,
     directional = directional,
     constraints_vector = if (directional) as.numeric(constraints_vector),
-    notes = notes
+    notes = notes,
+    feature_pairing = attr(pairs, "info"),
+    n_genes_multi = c(sum(s_a$n_features > 1), sum(s_b$n_features > 1))
   )
 
   if (is.null(ap_raw) || nrow(ap_raw) == 0L) {

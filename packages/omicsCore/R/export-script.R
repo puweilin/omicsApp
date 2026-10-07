@@ -150,6 +150,44 @@ render_data_frame <- function(df) {
   sprintf("data.frame(%s, stringsAsFactors = FALSE)", paste(cols, collapse = ", "))
 }
 
+# The lines that rebuild the feature link an integration ran with, and
+# the argument that passes it on. Nothing for a run that matched symbols
+# (or one saved before links existed). A link read from a file is read
+# from the archived copy; a small one that came from no file is written
+# out; anything else gets a placeholder that fails where it stands,
+# rather than a script that quietly matches symbols instead.
+feature_link_script_lines <- function(src, experiments) {
+  none <- list(lines = character(0), notes = character(0), arg = NULL)
+  if (is.null(src) || identical(src$source, "symbol")) return(none)
+  arg <- script_code("feature_link")
+  if (!is.null(src$path)) {
+    call <- render_call("read_feature_link",
+                        render_value(file.path("raw", basename(src$path))),
+                        params = list(columns = src$columns),
+                        arg_names = "columns", assign_to = "feature_link")
+    return(list(lines = c("# Which feature of one layer is which feature of the other:",
+                          call$lines),
+                notes = call$notes, arg = arg))
+  }
+  code <- if (is.data.frame(src$table)) render_data_frame(src$table) else NA_character_
+  if (!is.na(code)) {
+    return(list(lines = c("# Which feature of one layer is which feature of the other:",
+                          paste0("feature_link <- ", code)),
+                notes = character(0), arg = arg))
+  }
+  tags <- experiments %||% c("layer_a", "layer_b")
+  cols <- stats::setNames(rep("<column>", length(tags)), tags)
+  list(
+    lines = c("# Which feature of one layer is which feature of the other:",
+              sprintf("feature_link <- read_feature_link(%s, columns = %s)",
+                      render_value("<path-to-feature-link-file>"), render_value(cols))),
+    notes = sprintf(paste(
+      "run_integration() matched features with a feature link (%s rows) that",
+      "was not archived; fill in its file and columns below."),
+      format(src$n_rows %||% NA_integer_)),
+    arg = arg)
+}
+
 # The figures plot_integration() draws for each method.
 INTEGRATION_FIGURES <- list(
   correlation = "scatter",
@@ -484,6 +522,12 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
       if (!is.null(link_code)) sprintf("  sample_link = %s", link_code),
       ")"
     )
+    # The feature link the run matched features with, read from the file
+    # it was uploaded as (archived under raw/), so the pairs are the same.
+    fl <- feature_link_script_lines(ip$feature_link_source, ip$experiments)
+    lines <- c(lines, fl$lines)
+    notes <- c(notes, fl$notes)
+    ip$feature_link <- fl$arg
     # Each layer's differential result, made the way it was made --
     # including the partner layer's, which the app computes itself.
     if (length(ip$diff_params)) {
@@ -508,7 +552,7 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     # The method's own settings travel through `...`, so they are named
     # here; omitting them ran every method at its defaults.
     method_args <- setdiff(names(ip), c(script_arg_names(run_integration), "method_info",
-                                        "diff_params"))
+                                        "diff_params", "feature_link_source"))
     call <- render_call("run_integration", "project", ip,
                         c(script_arg_names(run_integration), method_args),
                         assign_to = "integration")

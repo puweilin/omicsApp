@@ -2,8 +2,8 @@
 # join strategies are supported:
 #
 #   * feature-level: join on `feature_symbol` (or `feature_id`) across the
-#     two layers. Used by correlation + concordance, since the unit of
-#     analysis is a feature pair.
+#     two layers, or on a stated `feature_link` table. Used by every
+#     method; see integration-feature-link.R.
 #   * sample-level: align samples across layers either via the project
 #     `sample_link$donor_id` map, or by direct sample-ID matching if the
 #     two layers share IDs. Used by correlation.
@@ -83,21 +83,6 @@ build_sample_pairs <- function(project, tag_a, tag_b) {
   out
 }
 
-# One row per join key. Where several features share a key (protein
-# isoforms, several probes or protein groups naming one gene) the one kept
-# is the most abundant -- a choice that does not look at the test result,
-# unlike "the most significant", which would inflate agreement between
-# layers by picking each gene's luckiest row. Ties, and rows without an
-# abundance, fall back to their original order.
-dedupe_by_key <- function(key, abundance = NULL) {
-  n <- length(key)
-  if (n == 0L) return(integer(0))
-  if (is.null(abundance)) abundance <- rep(NA_real_, n)
-  abundance <- suppressWarnings(as.numeric(abundance))
-  ord <- order(is.na(abundance), -abundance, seq_len(n), na.last = TRUE)
-  ord[!duplicated(key[ord])] |> sort()
-}
-
 # Case- and whitespace-insensitive join key. RNA and protein tables of one
 # study routinely disagree on nothing but case (`Tp53` / `TP53`,
 # UniProt gene names vs Ensembl symbols) or carry a trailing space from a
@@ -125,52 +110,40 @@ direction_sign <- function(direction, effect = NULL) {
   out
 }
 
-# Build a feature mapping between two experiments. Returns a data.frame
-# with columns `feature_a`, `feature_b`, `feature_symbol`, `feature_id`.
-# Uses `feature_symbol` first (since cross-omics integration is typically
-# gene-symbol space), falling back to `feature_id`.
-build_feature_pairs <- function(project, tag_a, tag_b, by = "feature_symbol") {
-  input_a <- project$experiments[[tag_a]]
-  input_b <- project$experiments[[tag_b]]
-  feat_a <- input_a$feature_df
-  feat_b <- input_b$feature_df
-  if (!by %in% colnames(feat_a) || !by %in% colnames(feat_b)) {
+# Pair the features of two experiments for correlation. Returns a
+# data.frame with one row per pair: `feature_id` (unique; the gene where
+# it has one pair), `feature_symbol`, `feature_a`, `feature_b`, and
+# attribute `info` with the pairing counts. Every feature is kept: two
+# proteins of one gene are two pairs (see integration-feature-link.R).
+# `link` is the resolved feature link (resolve_feature_link()), or NULL
+# to match `by`.
+build_feature_pairs <- function(project, tag_a, tag_b, by = "feature_symbol",
+                                link = NULL) {
+  feat_a <- project$experiments[[tag_a]]$feature_df
+  feat_b <- project$experiments[[tag_b]]$feature_df
+  # With a link, a layer may carry no symbols at all (a protein table of
+  # accessions): the link says what each feature is.
+  if (is.null(link) && (!by %in% colnames(feat_a) || !by %in% colnames(feat_b))) {
     stop("`", by, "` must be a column in both experiments' `feature_df`.")
   }
-  a <- data.frame(
-    feature_a = feat_a$feature_id,
-    key = feat_a[[by]],
-    stringsAsFactors = FALSE
-  )
-  b <- data.frame(
-    feature_b = feat_b$feature_id,
-    key = feat_b[[by]],
-    stringsAsFactors = FALSE
-  )
-  a$symbol <- a$key
-  a$key <- integration_join_key(a$key)
-  b$key <- integration_join_key(b$key)
-  abund <- function(input, ids) {
-    m <- input$expr_mat
-    if (is.null(m) || !length(ids)) return(NULL)
-    suppressWarnings(rowMeans(m[intersect(ids, rownames(m)), , drop = FALSE],
-                              na.rm = TRUE))[ids]
-  }
-  a <- a[!is.na(a$key), , drop = FALSE]
-  b <- b[!is.na(b$key), , drop = FALSE]
-  a <- a[dedupe_by_key(a$key, abund(input_a, a$feature_a)), , drop = FALSE]
-  b <- b[dedupe_by_key(b$key, abund(input_b, b$feature_b)), , drop = FALSE]
-  pairs <- merge(a, b, by = "key")
+  pairs <- link_features(feat_a$feature_id, feat_a[[by]],
+                         feat_b$feature_id, feat_b[[by]], link = link)
   if (nrow(pairs) == 0L) {
-    stop("No shared `", by, "` features between '", tag_a, "' and '", tag_b, "'.")
+    if (is.null(link)) {
+      stop("No shared `", by, "` features between '", tag_a, "' and '", tag_b, "'.")
+    }
+    stop("No features of '", tag_a, "' and '", tag_b, "' are paired by the ",
+         "feature link.", call. = FALSE)
   }
-  data.frame(
-    feature_id = pairs$symbol,
-    feature_symbol = pairs$symbol,
+  out <- data.frame(
+    feature_id = pairs$feature_id,
+    feature_symbol = pairs$label,
     feature_a = pairs$feature_a,
     feature_b = pairs$feature_b,
     stringsAsFactors = FALSE
   )
+  attr(out, "info") <- attr(pairs, "info")
+  out
 }
 
 # Validate and coerce a `diff_bundles` argument: must be a named list keyed

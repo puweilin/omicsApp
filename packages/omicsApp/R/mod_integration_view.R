@@ -32,6 +32,9 @@ integration_view_ui <- function(id) {
     # person is an assumption the reader should see before reading
     # anything computed on it.
     integration_pairing_card(ns),
+    # Which protein is which gene, for the same reason: every method
+    # compares matched features, and isoforms of one gene each count.
+    integration_feature_card(ns),
     shiny::uiOutput(ns("stats")),
     shiny::uiOutput(ns("results"))
   )
@@ -312,6 +315,148 @@ integration_view_server <- function(id,
         type = "message")
     })
 
+    # ---- feature matching ----------------------------------------------
+    # How the features of the two layers will be matched: by gene symbol,
+    # or by a mapping table the user uploaded (saved with the project as
+    # its feature_link, and archived so the exported script reads it).
+    feature_pairing <- shiny::reactive({
+      proj <- current_project()
+      l <- layers()
+      if (is.null(proj) || is.null(l)) return(NULL)
+      tryCatch(omicsCore::feature_pairing_preview(proj, l$primary, l$partner),
+               error = function(e) list(error = conditionMessage(e)))
+    })
+
+    output$feature_note <- shiny::renderUI({
+      fp <- feature_pairing()
+      l <- layers()
+      if (is.null(fp) || is.null(l)) {
+        return(notice("Import a second layer to match features across omics.",
+                      kind = "info"))
+      }
+      if (!is.null(fp$error)) {
+        return(notice("The saved mapping table cannot be used", fp$error, kind = "warn"))
+      }
+      feature_pairing_notice(fp, l$primary, l$partner)
+    })
+
+    # An uploaded table, read but not yet in use: its columns, and the
+    # guess of which holds which layer's identifiers.
+    link_upload <- shiny::reactive({
+      f <- input$link_file
+      if (is.null(f)) return(NULL)
+      tab <- tryCatch(omicsCore::read_feature_link(f$datapath, columns = NULL),
+                      error = function(e) e)
+      if (inherits(tab, "error")) return(list(error = conditionMessage(tab)))
+      if (ncol(tab) < 2L) {
+        return(list(error = "The table needs two columns: one for each layer's identifiers."))
+      }
+      proj <- current_project()
+      l <- layers()
+      guess <- if (!is.null(proj) && !is.null(l)) guess_link_columns(tab, proj, l$primary, l$partner)
+      list(tab = tab, name = f$name, path = f$datapath, guess = guess %||% names(tab)[1:2])
+    })
+
+    output$link_columns <- shiny::renderUI({
+      up <- link_upload()
+      l <- layers()
+      if (is.null(up) || is.null(l)) return(NULL)
+      if (!is.null(up$error)) {
+        return(notice("The table could not be read", up$error, kind = "warn"))
+      }
+      cols <- names(up$tab)
+      htmltools::tagList(
+        htmltools::tags$div(
+          class = "row-grid r-6-6",
+          shiny::selectInput(session$ns("link_col_a"),
+                             sprintf("Column with the %s identifiers", l$primary),
+                             choices = cols, selected = up$guess[[1L]]),
+          shiny::selectInput(session$ns("link_col_b"),
+                             sprintf("Column with the %s identifiers", l$partner),
+                             choices = cols, selected = up$guess[[2L]])),
+        shiny::uiOutput(session$ns("link_preview")),
+        shiny::actionButton(session$ns("use_link"), "Use this table",
+                            class = "btn btn-sm btn-primary"))
+    })
+
+    # The table as it would be used with the columns chosen.
+    pending_link <- shiny::reactive({
+      up <- link_upload()
+      l <- layers()
+      a <- input$link_col_a
+      b <- input$link_col_b
+      if (is.null(up) || !is.null(up$error) || is.null(l) || is.null(a) || is.null(b) ||
+          !all(c(a, b) %in% names(up$tab))) return(NULL)
+      if (identical(a, b)) return(list(error = "Choose a different column for each layer."))
+      link <- stats::setNames(up$tab[c(a, b)], c(l$primary, l$partner))
+      prev <- tryCatch(omicsCore::feature_pairing_preview(current_project(), l$primary,
+                                                          l$partner, feature_link = link),
+                       error = function(e) list(error = conditionMessage(e)))
+      list(link = link, preview = prev)
+    })
+
+    output$link_preview <- shiny::renderUI({
+      pl <- pending_link()
+      l <- layers()
+      if (is.null(pl)) return(NULL)
+      if (!is.null(pl$error)) return(notice(pl$error, kind = "warn"))
+      if (!is.null(pl$preview$error)) return(notice(pl$preview$error, kind = "warn"))
+      htmltools::tags$div(
+        class = "muted", style = "font-size:12.5px;margin:4px 0 8px",
+        paste("With this table:", feature_pairing_sentence(pl$preview, l$primary, l$partner)))
+    })
+
+    shiny::observeEvent(input$use_link, {
+      up <- link_upload()
+      pl <- pending_link()
+      proj <- current_project()
+      l <- layers()
+      shiny::req(up, pl, proj, l, is.null(pl$error), is.null(pl$preview$error))
+      # Archived like a sample sheet, so the exported script can read the
+      # same file; read back from the archived copy so the link remembers
+      # where it lives. Archiving fails soft (quota): the link is then
+      # used from the upload and the script asks for the file instead.
+      res <- store_raw_upload(up$path, up$name, unname(tools::md5sum(up$path)))
+      src <- if (isTRUE(res$ok)) res$path else up$path
+      link <- tryCatch(
+        omicsCore::read_feature_link(
+          src, columns = stats::setNames(c(input$link_col_a, input$link_col_b),
+                                         c(l$primary, l$partner))),
+        error = function(e) e)
+      if (inherits(link, "error")) {
+        shiny::showNotification(conditionMessage(link), type = "error")
+        return()
+      }
+      if (!isTRUE(res$ok)) {
+        attr(link, "source") <- NULL
+        if (grepl("quota", res$message %||% "", fixed = TRUE)) {
+          shiny::showNotification(res$message, type = "warning", duration = 8)
+        }
+      }
+      proj$feature_link <- link
+      current_project(proj)
+      shiny::showNotification(
+        sprintf("Mapping table saved with the project: %s rows.",
+                format(nrow(link), big.mark = ",")),
+        type = "message")
+    })
+
+    output$link_action <- shiny::renderUI({
+      fp <- feature_pairing()
+      if (is.null(fp) || !identical(fp$source, "project")) return(NULL)
+      shiny::actionButton(session$ns("drop_link"), "Match by gene symbol instead",
+                          class = "btn btn-sm btn-ghost")
+    })
+
+    shiny::observeEvent(input$drop_link, {
+      proj <- current_project()
+      shiny::req(proj)
+      proj$feature_link <- NULL
+      current_project(proj)
+      shiny::showNotification("Mapping table removed; features are matched by gene symbol.",
+                              type = "message")
+    })
+
     # One of the layers this integration spanned has been replaced, so
     # the pairing it reports no longer exists. Back to the module's own
     # start-up state.
@@ -338,6 +483,7 @@ integration_view_server <- function(id,
       th <- diff_thresholds() %||% list()
       b <- diff_bundle()
       link <- proj$sample_link
+      fl <- proj$feature_link
       paste(method(), info$primary_tag, fp(info$primary_tag),
             info$secondary_tag, fp(info$secondary_tag),
             if (!identical(method(), "correlation") && !is.null(b))
@@ -346,6 +492,10 @@ integration_view_server <- function(id,
                     sum(b$results$diff_result_df$p_value, na.rm = TRUE)),
             th$p_cutoff, th$p_preference, th$effect_cutoff,
             if (identical(method(), "correlation") && !is.null(link)) nrow(link),
+            # A new or removed mapping table changes which features meet.
+            if (!is.null(fl)) paste(nrow(fl), paste(names(fl), collapse = ","),
+                                    attr(fl, "source")$path %||% "",
+                                    sum(nchar(unlist(fl, use.names = FALSE)), na.rm = TRUE)),
             sep = "|")
     })
     # Plain state, not reactive: which inputs the last run saw, and a
@@ -719,7 +869,13 @@ integration_error_hint <- function(msg) {
   msg <- msg %||% ""
   if (grepl("No shared .* features", msg)) {
     return(paste("The two layers have no gene symbols in common. Check that both",
-                 "carry a symbol column (feature_symbol) from the same organism."))
+                 "carry a symbol column (feature_symbol) from the same organism,",
+                 "or match them with your own table under Feature matching."))
+  }
+  if (grepl("paired by the feature link|feature link has no row", msg)) {
+    return(paste("The mapping table matches no features of these two layers.",
+                 "Check which column holds which layer's identifiers, under",
+                 "Feature matching."))
   }
   if (grepl("guess", msg, fixed = TRUE)) {
     return("Accept the suggested sample pairing below, or add a donor column to both layers.")
@@ -836,7 +992,7 @@ integration_result_table <- function(df, method, experiments) {
     ord <- order(!both, df$p_value, na.last = TRUE)
     d <- df[ord, , drop = FALSE]
     out <- data.frame(
-      Feature = d$feature_symbol,
+      Feature = feature_row_label(d),
       a = round(d$effect_a, 3),
       b = round(d$effect_b, 3),
       Quadrant = d$quadrant,
@@ -864,7 +1020,7 @@ integration_result_table <- function(df, method, experiments) {
   }
   d <- df[order(df$adj_p_value, na.last = TRUE), , drop = FALSE]
   data.frame(
-    Feature = d$feature_symbol,
+    Feature = feature_row_label(d),
     Effect = round(d$effect, 3),
     `Adj. p` = signif(d$adj_p_value, 3),
     Direction = d$direction,
@@ -931,6 +1087,112 @@ integration_pairing_card <- function(ns) {
       )
     )
   )
+}
+
+integration_feature_card <- function(ns) {
+  bslib::card(
+    bslib::card_header(
+      htmltools::tags$h3(class = "card-title", "Feature matching"),
+      htmltools::tags$span(class = "card-sub", "which protein is which gene"),
+      shiny::uiOutput(ns("link_action"), inline = TRUE)
+    ),
+    bslib::card_body(
+      shiny::uiOutput(ns("feature_note")),
+      htmltools::tags$details(
+        class = "pairing-details",
+        htmltools::tags$summary("Match with your own table"),
+        htmltools::tags$div(
+          class = "muted", style = "font-size:12px;margin:6px 0 8px",
+          paste("A table with two columns: the identifiers of one layer (for",
+                "example UniProt accessions) and the matching identifiers of",
+                "the other (for example gene symbols or Ensembl gene ids), one",
+                "pair per row. Features are then matched by this table instead",
+                "of by gene symbol, and features it does not list are left out.",
+                "An accession without an isoform suffix (P04637) also covers its",
+                "isoforms (P04637-2). The table is saved with the project and",
+                "replaces any table saved before.")),
+        shiny::fileInput(
+          ns("link_file"), label = NULL, multiple = FALSE,
+          accept = c(".csv", ".tsv", ".txt", ".xlsx", ".xls"),
+          placeholder = "mapping.csv: two columns"),
+        shiny::uiOutput(ns("link_columns"))
+      )
+    )
+  )
+}
+
+# How the two layers' features meet, in one sentence: how many of each
+# were matched, and how many share their partner with another feature of
+# their layer (isoforms of one gene), each such pair being compared on
+# its own.
+feature_pairing_sentence <- function(fp, tag_a, tag_b) {
+  n <- function(x) format(x, big.mark = ",")
+  out <- sprintf("%s of %s features of %s are matched with %s of %s features of %s (%s pairs).",
+                 n(fp$n_paired_a), n(fp$n_features_a), tag_a,
+                 n(fp$n_paired_b), n(fp$n_features_b), tag_b, n(fp$n_pairs))
+  if (fp$n_a_sharing > 0L) {
+    out <- paste(out, sprintf(
+      "%s features of %s share a match in %s with another (%s of its features have more than one).",
+      n(fp$n_a_sharing), tag_a, tag_b, n(fp$n_b_shared)))
+  }
+  if (fp$n_b_sharing > 0L) {
+    out <- paste(out, sprintf(
+      "%s features of %s share a match in %s with another (%s of its features have more than one).",
+      n(fp$n_b_sharing), tag_b, tag_a, n(fp$n_a_shared)))
+  }
+  out
+}
+
+feature_pairing_notice <- function(fp, tag_a, tag_b) {
+  how <- switch(fp$source,
+                project = "Matched by the mapping table saved with this project.",
+                supplied = "Matched by the mapping table.",
+                "Matched by gene symbol.")
+  if (fp$n_pairs == 0L) {
+    return(notice(
+      "No features matched",
+      paste(how, "Check that both layers carry gene symbols from the same",
+            "organism, or match them with your own table below."),
+      kind = "warn"))
+  }
+  shared <- fp$n_a_sharing > 0L || fp$n_b_sharing > 0L
+  notice(
+    paste(how, feature_pairing_sentence(fp, tag_a, tag_b)),
+    if (shared) paste("Every feature is kept: concordance and correlation",
+                      "compare each matched pair on its own, and ActivePathways",
+                      "scores a gene by its most significant feature, allowing",
+                      "for how many it has."),
+    kind = "info")
+}
+
+# The likeliest columns of an uploaded table for each layer: the pair
+# that matches the most features. Only the first few columns are tried;
+# a mapping table is two columns, perhaps with a description beside them.
+guess_link_columns <- function(tab, proj, tag_a, tag_b) {
+  cols <- utils::head(names(tab), 6L)
+  best <- cols[1:2]
+  score <- -1
+  for (a in cols) for (b in cols) {
+    if (identical(a, b)) next
+    link <- stats::setNames(tab[c(a, b)], c(tag_a, tag_b))
+    fp <- tryCatch(omicsCore::feature_pairing_preview(proj, tag_a, tag_b, feature_link = link),
+                   error = function(e) NULL)
+    if (is.null(fp)) next
+    sc <- fp$n_paired_a + fp$n_paired_b
+    if (sc > score) {
+      score <- sc
+      best <- c(a, b)
+    }
+  }
+  best
+}
+
+# A result row's name: the gene, or -- where a gene has several pairs --
+# the pair's id ("TP53 (P04637-2)"), so its rows can be told apart.
+feature_row_label <- function(d) {
+  sym <- d$feature_symbol
+  shared <- !is.na(sym) & (duplicated(sym) | duplicated(sym, fromLast = TRUE))
+  ifelse(shared, d$feature_id, sym)
 }
 
 integration_plot_card <- function(output_id, title, sub) {

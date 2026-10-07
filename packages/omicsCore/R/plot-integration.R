@@ -106,6 +106,15 @@ integration_axis_label <- function(bundle, side) {
   exps[[if (side == "a") 1L else 2L]]
 }
 
+# The text a labelled point carries: the gene, or -- where a gene has
+# several protein-gene pairs and so several points -- the pair's own id
+# ("TP53 (P04637-2)"), so two points do not both read "TP53".
+feature_point_label <- function(df) {
+  sym <- df$feature_symbol
+  shared <- !is.na(sym) & (duplicated(sym) | duplicated(sym, fromLast = TRUE))
+  ifelse(shared, df$feature_id, sym)
+}
+
 pick_label_ids <- function(df, top_n, label_features, p_col = "adj_p_value") {
   ranked <- df[!is.na(df[[p_col]]), , drop = FALSE]
   ranked <- ranked[order(ranked[[p_col]]), , drop = FALSE]
@@ -125,7 +134,7 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
   )
 
   label_ids <- pick_label_ids(df, top_n, label_features)
-  df$.label <- ifelse(df$feature_id %in% label_ids, df$feature_symbol, NA_character_)
+  df$.label <- ifelse(df$feature_id %in% label_ids, feature_point_label(df), NA_character_)
 
   if (method == "correlation") {
     x_aes <- "effect"
@@ -177,7 +186,7 @@ plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_c
     df <- df[order(both), , drop = FALSE]
   }
   label_ids <- pick_label_ids(df, top_n, label_features, p_col = "p_value")
-  df$.label <- ifelse(df$feature_id %in% label_ids, df$feature_symbol, NA_character_)
+  df$.label <- ifelse(df$feature_id %in% label_ids, feature_point_label(df), NA_character_)
 
   # Shared with the Shiny front end so the same comparison is tinted
   # identically on screen and in an exported report.

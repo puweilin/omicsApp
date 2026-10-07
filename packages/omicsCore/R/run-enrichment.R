@@ -75,6 +75,15 @@ SUPPORTED_ENRICH_TYPES <- c("ora", "gsea")
 #'   database, or `"all"` to correct across all queried databases
 #'   together. Makes a difference only with more than one database.
 #' @param min_size,max_size Min/max gene-set sizes, for ORA and GSEA alike.
+#' @param eps GSEA only: the smallest p-value fgsea estimates (its `eps`).
+#'   A pathway stronger than this is reported at `eps` rather than at its
+#'   true, smaller p-value. The default, `1e-10`, is what
+#'   `clusterProfiler::GSEA()` uses; `0` estimates p-values however small
+#'   they are, at some cost in time.
+#' @param n_perm_simple GSEA only: the number of permutations in fgsea's
+#'   first stage (its `nPermSimple`, default `1000`). Raise it when fgsea
+#'   warns that some p-values may be inaccurate, or for steadier p-values
+#'   of modestly enriched pathways.
 #' @param ... Reserved for backend-specific extensions.
 #'
 #' @return An [`analysis_bundle`][is_analysis_bundle()] with
@@ -107,6 +116,8 @@ run_enrichment <- function(
   p_adjust_scope = c("database", "all"),
   min_size = 10L,
   max_size = 500L,
+  eps = 1e-10,
+  n_perm_simple = 1000L,
   ...
 ) {
   if (!is_analysis_bundle(diff_bundle) ||
@@ -159,6 +170,8 @@ run_enrichment <- function(
   if (min_size > max_size) {
     stop("`min_size` must not exceed `max_size`.", call. = FALSE)
   }
+  assert_number(eps, "eps", lower = 0, upper = 1)
+  assert_count(n_perm_simple, "n_perm_simple", lower = 1L)
   databases <- vapply(database, normalize_enrich_database, character(1L))
   databases <- unique(databases)
   organism <- normalize_organism(organism)
@@ -204,7 +217,9 @@ run_enrichment <- function(
         output_p_cutoff = backend_cutoff,
         p_adjust_method = p_adjust_method,
         min_size = min_size,
-        max_size = max_size
+        max_size = max_size,
+        eps = eps,
+        n_perm_simple = n_perm_simple
       )
     }
   })
@@ -261,6 +276,10 @@ run_enrichment <- function(
       p_adjust_scope = p_adjust_scope,
       min_size = min_size,
       max_size = max_size,
+      # Recorded for GSEA only, where they take effect, so that the
+      # exported script repeats them; an ORA call never carried them.
+      eps = if (type == "gsea") eps,
+      n_perm_simple = if (type == "gsea") as.integer(n_perm_simple),
       symbol_case = if (is.null(case_fix)) "exact" else "ignored",
       rank_metric = if (type == "gsea") gsea_rank_metric(diff_bundle),
       geneset_sources = geneset_sources,

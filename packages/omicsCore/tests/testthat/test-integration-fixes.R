@@ -113,7 +113,7 @@ test_that("continuous diffs (positive / negative) still fall into quadrants", {
   expect_false(all(is.na(b$results$integration_df$quadrant)))
 })
 
-test_that("symbols are matched ignoring case, and duplicates keep the most abundant feature", {
+test_that("symbols are matched ignoring case, and a second feature of a gene is kept as its own pair", {
   p <- fx_concordance_project()
   d <- fx_diffs(p)
   rb <- d$rna$results$diff_result_df
@@ -129,9 +129,17 @@ test_that("symbols are matched ignoring case, and duplicates keep the most abund
   d$rna$results$diff_result_df <- rb
   b <- run_integration(p, "concordance", c("prot", "rna"), diff_bundles = d)
   df <- b$results$integration_df
-  expect_equal(nrow(df), 30L)
-  expect_false(-99 %in% df$effect_a)
-  expect_identical(df$feature_id_a[df$feature_symbol == "TP53"], "p1")
+  # Both TP53 proteins are paired with the one TP53 transcript. Keeping
+  # only the most abundant (as before feature links) hid the second.
+  expect_equal(nrow(df), 31L)
+  tp53 <- df[df$feature_symbol == "TP53", ]
+  expect_setequal(tp53$feature_id_a, c("p1", "p_dup"))
+  expect_identical(unique(tp53$feature_id_b), "r1")
+  expect_setequal(tp53$feature_id, c("TP53 (p1)", "TP53 (p_dup)"))
+  expect_equal(tp53$effect_a[tp53$feature_id_a == "p_dup"], -99)
+  # Lower-cased RNA symbols still matched: every other gene has one row.
+  expect_equal(sum(df$feature_symbol != "TP53"), 29L)
+  expect_identical(b$params$method_info$feature_pairing$n_a_sharing, 2L)
 })
 
 test_that("a multi-contrast diff must be narrowed before it is integrated", {

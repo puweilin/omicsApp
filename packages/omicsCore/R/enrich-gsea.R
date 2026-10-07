@@ -2,6 +2,16 @@
 # TERM2GENE table in symbol space (same path as ORA — see enrich-ora.R).
 # The public dispatcher is `run_enrichment()` in run-enrichment.R.
 
+# fgsea's two precision settings, at the values clusterProfiler::GSEA()
+# and fgsea::fgseaMultilevel() use when they are not given, so that a run
+# that does not name them is the run it was before they could be named.
+# `eps` is the smallest p-value fgsea will estimate: a stronger pathway is
+# reported at this floor. `nPermSimple` is the number of permutations of
+# fgsea's first stage; raising it steadies the p-values of pathways that
+# are not extreme.
+GSEA_DEFAULT_EPS <- 1e-10
+GSEA_DEFAULT_N_PERM_SIMPLE <- 1000L
+
 run_gsea_database <- function(
   ranked_features,
   database,
@@ -11,7 +21,9 @@ run_gsea_database <- function(
   p_adjust_method = "BH",
   min_size = 10L,
   max_size = 500L,
-  seed = TRUE
+  seed = TRUE,
+  eps = GSEA_DEFAULT_EPS,
+  n_perm_simple = GSEA_DEFAULT_N_PERM_SIMPLE
 ) {
   ensure_enrichment_deps()
   database <- normalize_enrich_database(database)
@@ -41,6 +53,11 @@ run_gsea_database <- function(
       pAdjustMethod = p_adjust_method,
       minGSSize = min_size,
       maxGSSize = max_size,
+      eps = eps,
+      # Not a GSEA() argument: it travels through `...` to
+      # fgsea::fgsea() and on to fgseaMultilevel(), where it sets the
+      # number of permutations of the first, simple stage.
+      nPermSimple = n_perm_simple,
       seed = isTRUE(seed)
     ),
     error = function(e) {
@@ -65,7 +82,9 @@ run_gsea_from_bundle <- function(
   output_p_cutoff = NULL,
   p_adjust_method = "BH",
   min_size = 10L,
-  max_size = 500L
+  max_size = 500L,
+  eps = GSEA_DEFAULT_EPS,
+  n_perm_simple = GSEA_DEFAULT_N_PERM_SIMPLE
 ) {
   direction <- match.arg(direction)
 
@@ -81,7 +100,9 @@ run_gsea_from_bundle <- function(
     p_cutoff = output_p_cutoff %||% p_cutoff,
     p_adjust_method = p_adjust_method,
     min_size = min_size,
-    max_size = max_size
+    max_size = max_size,
+    eps = eps,
+    n_perm_simple = n_perm_simple
   )
 
   std <- standardize_enrich_result(

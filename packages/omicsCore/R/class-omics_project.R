@@ -16,8 +16,11 @@
 #' @param sample_link Optional `data.frame` with at least the columns
 #'   `tag`, `sample_id`, `donor_id`. `tag` matches a name in `experiments`.
 #'   Each row links a per-experiment sample to a shared donor.
-#' @param feature_link Optional `data.frame` mapping feature IDs across
-#'   omics (e.g. columns `uniprot`, `gene_symbol`).
+#' @param feature_link Optional `data.frame` mapping features across
+#'   layers: one column per layer, named after it, each row naming a
+#'   feature of each (e.g. a UniProt accession and a gene symbol). See
+#'   [read_feature_link()] and the *Matching features* section of
+#'   [run_integration()].
 #' @param metadata Optional named list of arbitrary project-level metadata.
 #'
 #' @return An object of class `omics_project`.
@@ -62,9 +65,7 @@ omics_project <- function(
     validate_sample_link(sample_link, tags = names(experiments))
   }
   if (!is.null(feature_link)) {
-    if (!is.data.frame(feature_link)) {
-      stop("`feature_link` must be a data.frame or NULL.")
-    }
+    validate_feature_link(feature_link, tags = names(experiments))
   }
 
   structure(
