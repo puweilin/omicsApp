@@ -171,7 +171,11 @@ import_view_server <- function(id,
                   assay_type = "raw_count",
                   reason = "Estimated read counts from the quantification files.")
               } else {
-                guess <- omicsCore::infer_assay_type(out$input$expr_mat, omics_type,
+                # The layer's own modality, which is the radio's except for
+                # a SummarizedExperiment's read counts: RNA-seq whatever
+                # the radio said.
+                guess <- omicsCore::infer_assay_type(out$input$expr_mat,
+                                                     out$input$omics_type,
                                                      explain = TRUE)
                 if (!is.na(guess$assay_type)) {
                   out$input$assay_type <- guess$assay_type
@@ -192,8 +196,11 @@ import_view_server <- function(id,
           out$report$source <- paste(f$name, collapse = ", ")
           # Quantification files are RNA-seq whatever the radio said; the
           # radio follows, so the scale choices and the layer name agree.
-          if (!is.null(out$report$suggested_input$quant_format) &&
-              !identical(omics_type, "rnaseq")) {
+          # So are a SummarizedExperiment's read counts.
+          forced_rnaseq <- !is.null(out$report$suggested_input$quant_format) ||
+            (!is.null(out$report$suggested_input$se_class) &&
+               identical(out$input$omics_type, "rnaseq"))
+          if (forced_rnaseq && !identical(omics_type, "rnaseq")) {
             shiny::updateRadioButtons(session, "omics_type", selected = "rnaseq")
           }
           if (!is.null(out$input)) {
@@ -1093,7 +1100,8 @@ import_upload_card <- function(ns) {
         ns("file"),
         label = NULL,
         multiple = TRUE,
-        accept = c(".xlsx", ".xls", ".csv", ".tsv", ".txt", ".rds", ".sf", ".results"),
+        accept = c(".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".txt", ".gz", ".rds",
+                   ".sf", ".results"),
         placeholder = "Drop or browse \u2026"
       ),
       htmltools::tags$div(
@@ -1107,7 +1115,7 @@ import_upload_card <- function(ns) {
         ns("sample_file"),
         label = "Sample sheet (optional)",
         multiple = FALSE,
-        accept = c(".xlsx", ".xls", ".csv", ".tsv", ".txt"),
+        accept = c(".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".txt", ".gz"),
         placeholder = "samples.csv: one row per sample, with a group column"
       ),
       shiny::radioButtons(

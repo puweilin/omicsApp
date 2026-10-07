@@ -67,6 +67,15 @@ to build a candidate \code{omics_input}. Always returns both the built
 object (or \code{NULL}) and a structured \code{\link[=new_import_report]{ImportReport}}
 so the UI can show what was detected before the user commits.
 }
+\details{
+Workbooks may be \code{.xlsx}, \code{.xlsm} (macros are never run; only the cells
+are read) or \code{.xls}. Delimited text may be gzip-compressed
+(\code{.csv.gz}, \code{.tsv.gz}, \code{.txt.gz}, a Salmon \code{quant.sf.gz}); it is
+unpacked up to the \code{options(omicsCore.max_unpacked_mb)} limit (2 GB by
+default). An \code{.rds} file may hold an \code{omics_input}, a data frame or
+matrix, or a \code{SummarizedExperiment} / \code{DESeqDataSet}, which is read as
+\code{\link[=read_summarized_experiment]{read_summarized_experiment()}} reads one.
+}
 \seealso{
 Other io:
 \code{\link[=classify_sheet_role]{classify_sheet_role()}},
@@ -76,6 +85,7 @@ Other io:
 \code{\link[=import_report_warnings]{import_report_warnings()}},
 \code{\link[=is_import_report]{is_import_report()}},
 \code{\link[=new_import_report]{new_import_report()}},
-\code{\link[=read_quant_files]{read_quant_files()}}
+\code{\link[=read_quant_files]{read_quant_files()}},
+\code{\link[=read_summarized_experiment]{read_summarized_experiment()}}
 }
 \concept{io}

@@ -84,6 +84,7 @@ Other io:
 \code{\link[=import_report_warnings]{import_report_warnings()}},
 \code{\link[=is_import_report]{is_import_report()}},
 \code{\link[=new_import_report]{new_import_report()}},
-\code{\link[=read_omics]{read_omics()}}
+\code{\link[=read_omics]{read_omics()}},
+\code{\link[=read_summarized_experiment]{read_summarized_experiment()}}
 }
 \concept{io}

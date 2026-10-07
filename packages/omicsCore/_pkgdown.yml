@@ -24,6 +24,7 @@ reference:
   contents:
   - read_omics
   - read_quant_files
+  - read_summarized_experiment
   - omics_input
   - is_omics_input
   - new_omics_input

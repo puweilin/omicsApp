@@ -52,7 +52,7 @@ detect_quant_format <- function(x) {
 QUANT_FILE_SUFFIX_RE <- paste0(
   "([._-]?(quant([._]genes)?[.]sf|abundance[.](tsv|txt)|",
   "(genes|isoforms)[.]results|quant|abundance))?",
-  "([.](sf|tsv|txt|csv|results))?$")
+  "([.](sf|tsv|txt|csv|results))?([.]gz)?$")
 
 #' Sample names from quantification file paths
 #'
@@ -252,6 +252,16 @@ read_quant_files <- function(paths, sample_names = NULL, tx2gene = NULL,
   if (anyNA(counts)) {
     stop("Some estimated read counts could not be read as numbers.", call. = FALSE)
   }
+  # GENCODE's chromosome-Y copies of the pseudoautosomal genes, which
+  # hold no reads (see feature-symbols.R). After summing to genes, so a
+  # tx2gene that maps the copies to their own _PAR_Y genes drops those.
+  par <- par_y_rows(counts)
+  if (!all(par$keep)) {
+    counts <- counts[par$keep, , drop = FALSE]
+    len <- len[par$keep, , drop = FALSE]
+    if (!is.null(gene_of)) gene_of <- gene_of[par$keep]
+  }
+  notes <- c(notes, par$notes)
 
   # A length of zero is what RSEM and kallisto write for a feature
   # shorter than the fragments; it has no reads, and a zero would make
@@ -261,7 +271,7 @@ read_quant_files <- function(paths, sample_names = NULL, tx2gene = NULL,
   feat <- data.frame(feature_id = rownames(counts), row.names = rownames(counts),
                      stringsAsFactors = FALSE)
   if (!is.null(gene_of)) feat$gene_id <- gene_of
-  sym <- attach_hgnc_symbols(feat, rownames(counts))
+  sym <- attach_gene_symbols(feat, rownames(counts))
   feat <- sym$feature_df
   if (!is.null(sym$note)) notes <- c(notes, sym$note)
   meta <- data.frame(sample_id = samples, row.names = samples, stringsAsFactors = FALSE)

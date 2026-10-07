@@ -72,7 +72,7 @@ RUN R -q -e 'pkgs <- c( \
       "tibble","dplyr","stringr","readxl","openxlsx","jsonlite","scales", \
       "rlang","msigdbr","qs2", \
       "ggrepel","patchwork","circlize","knitr","rmarkdown", \
-      "imputeLCMD","ActivePathways","pkgload","data.table","openssl"); \
+      "imputeLCMD","ActivePathways","pkgload","data.table","openssl","babelgene"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("CRAN packages failed to install: ", \
@@ -130,7 +130,7 @@ RUN R -q -e 'pkgs <- c("S4Vectors","limma","impute","pcaMethods","edgeR", \
                                 paste(missing, collapse = ", "))'
 
 # 3b. 23 more, and the first heavy C++ builds (BiocParallel, Rhdf5lib).
-RUN R -q -e 'pkgs <- c("fgsea","DESeq2","BiocParallel"); \
+RUN R -q -e 'pkgs <- c("fgsea","DESeq2","BiocParallel","SummarizedExperiment"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("Bioconductor 3b failed: ", \

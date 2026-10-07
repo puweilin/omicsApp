@@ -38,6 +38,8 @@ Suggests:
     DESeq2,
     edgeR,
     S4Vectors,
+    SummarizedExperiment,
+    babelgene,
     enrichplot,
     fgsea,
     GSVA,

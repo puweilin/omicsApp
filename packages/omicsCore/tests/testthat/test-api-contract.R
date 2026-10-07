@@ -136,6 +136,11 @@ light_calls <- list(
   is_omics_project = list(x = proj),
   is_import_report = list(x = new_import_report())
 )
+if (requireNamespace("SummarizedExperiment", quietly = TRUE)) {
+  light_calls$read_summarized_experiment <- list(
+    x = SummarizedExperiment::SummarizedExperiment(list(counts = rna$expr_mat),
+                                                   colData = rna$meta_df))
+}
 
 test_that("no public function answers a wrong argument with an internal error", {
   # export_script() and friends write to `path = "x"`; keep that out of

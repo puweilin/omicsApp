@@ -16,6 +16,14 @@
 #' object (or `NULL`) and a structured [`ImportReport`][new_import_report()]
 #' so the UI can show what was detected before the user commits.
 #'
+#' Workbooks may be `.xlsx`, `.xlsm` (macros are never run; only the cells
+#' are read) or `.xls`. Delimited text may be gzip-compressed
+#' (`.csv.gz`, `.tsv.gz`, `.txt.gz`, a Salmon `quant.sf.gz`); it is
+#' unpacked up to the `options(omicsCore.max_unpacked_mb)` limit (2 GB by
+#' default). An `.rds` file may hold an `omics_input`, a data frame or
+#' matrix, or a `SummarizedExperiment` / `DESeqDataSet`, which is read as
+#' [read_summarized_experiment()] reads one.
+#'
 #' @param path Path to a file. The extension drives auto-detection.
 #' @param type One of `"auto"`, `"excel"`, `"csv"`, or `"rds"`.
 #' @param omics_type Optional omics modality. If `NULL`, callers (the
@@ -146,7 +154,9 @@ read_sample_table <- function(path) {
   # The same decoding as the matrix file: a sample sheet typed in Excel
   # on a Chinese or Western Windows machine is the commonest non-UTF-8
   # file there is. What it was read as travels on attribute "encoding".
-  text <- utf8_text_file(path)
+  plain <- gunzip_text_file(path)
+  if (isTRUE(plain$converted)) on.exit(unlink(plain$path), add = TRUE)
+  text <- utf8_text_file(plain$path)
   if (isTRUE(text$converted)) on.exit(unlink(text$path), add = TRUE)
   first <- readLines(text$path, n = 1L, warn = FALSE, encoding = "UTF-8")
   sep <- detect_delimiter(text$path, line = first)
@@ -249,7 +259,15 @@ guard_archive <- function(path,
         seek(con, size - 4)
         sum(as.numeric(readBin(con, "raw", 4L)) * 256^(0:3))
       }, finally = close(con))
-      if (isize > limit) too_big(isize, "compressed file")
+      # A truncated file ends mid-stream, and its "size" is whatever
+      # bytes it stops on; the message allows for both.
+      if (isize > limit) {
+        stop(sprintf(paste(
+          "This compressed file says it unpacks to %s, more than the %s this",
+          "server reads -- or it is damaged. Upload a smaller or complete file,",
+          "or raise options(omicsCore.max_unpacked_mb)."),
+          format_mb(isize), format_mb(limit)), call. = FALSE)
+      }
     }
   }
   invisible(TRUE)
@@ -262,17 +280,30 @@ format_mb <- function(bytes) {
 detect_file_type <- function(path) {
   ext <- tolower(tools::file_ext(path))
 
+  # Compressed text, named for what it holds: counts.csv.gz,
+  # quant.sf.gz. A browser upload arrives renamed "0.gz", with nothing
+  # left to say what is inside; text is what a .gz holds in this field.
+  if (identical(ext, "gz")) {
+    inner <- tolower(tools::file_ext(sub("\\.gz$", "", path, ignore.case = TRUE)))
+    if (inner %in% c("", GZ_TEXT_EXTENSIONS)) return("csv")
+    stop("A compressed (.gz) file is read when it holds delimited text ",
+         "(.csv.gz, .tsv.gz, .txt.gz); this one holds '.", inner, "'.", call. = FALSE)
+  }
+
   # Trust the bytes over the name. RNA-seq pipelines routinely write
   # tab-separated text and call it .xls -- a 170 MB expression table
   # with that extension is normal output, not a mistake -- and handing
   # it to readxl fails with a message about the workbook rather than
   # about the format, which sends you looking at the wrong thing.
-  if (ext %in% c("xls", "xlsx") && file.exists(path) && !is_excel_file(path)) {
+  if (ext %in% c("xls", "xlsx", "xlsm") && file.exists(path) && !is_excel_file(path)) {
     return("csv")
   }
 
   switch(ext,
     xlsx = "excel",
+    # A workbook with macros: the same file format, and the macros are
+    # never run -- readxl reads the cells only.
+    xlsm = "excel",
     xls  = "excel",
     csv  = "csv",
     tsv  = "csv",
@@ -280,6 +311,7 @@ detect_file_type <- function(path) {
     # Salmon's quant.sf and RSEM's *.results are tab-separated text.
     sf      = "csv",
     results = "csv",
+    tab  = "csv",
     rds  = "rds",
     stop("Cannot auto-detect file type for extension: ", ext)
   )
@@ -536,6 +568,11 @@ file_has_byte_after <- function(path, byte, offset = 0) {
 # The delimited table as read.table reads it, with the header's repeated
 # names alongside (read_omics_csv() reports them).
 read_delimited_table <- function(path, ...) {
+  # Unpacked first when gzip-compressed (see io-gzip.R): everything
+  # below reads the file more than once and by byte offset.
+  plain <- gunzip_text_file(path)
+  if (isTRUE(plain$converted)) on.exit(unlink(plain$path), add = TRUE)
+  path <- plain$path
   # Decoded to UTF-8 first unless the caller said how to decode it; a
   # Windows-1252 or GBK file used to stop the import with "invalid
   # UTF-8" (see io-encoding.R).
@@ -626,7 +663,8 @@ read_omics_csv <- function(path, omics_type, assay_type,
     return(out)
   }
   duplicated_headers <- read$duplicated_headers
-  nm <- tools::file_path_sans_ext(basename(path))
+  # "counts.csv.gz" is the sheet "counts".
+  nm <- tools::file_path_sans_ext(basename(path), compression = TRUE)
   cls <- classify_sheet_role(df, name = nm)
   sheet_table <- data.frame(
     name = nm, role = cls$role,
@@ -659,6 +697,13 @@ read_omics_csv <- function(path, omics_type, assay_type,
 read_omics_rds <- function(path, omics_type, assay_type,
                            sheet_roles = NULL, orientation = NULL, ...) {
   obj <- readRDS(path)
+  # A SummarizedExperiment or DESeqDataSet: S4, and so refused by the
+  # walk below. Read slot by slot instead, its code never touched, and
+  # what is copied out goes through the same walk (see io-se.R).
+  if (is_se_object(obj, trusted = FALSE)) {
+    return(read_se_object(obj, omics_type = omics_type, assay_type = assay_type,
+                          source = path, trusted = FALSE))
+  }
   # An uploaded .rds is a file from anywhere, and an R object can carry
   # code (a function, an environment, a promise) as easily as data. The
   # same walk an untrusted project gets: data only, of known classes.
@@ -836,6 +881,11 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   if (!is.null(picked$note)) {
     report <- add_import_warning(report, picked$note)
   }
+  # GENCODE's empty chromosome-Y copies of the pseudoautosomal genes
+  # (see feature-symbols.R).
+  par <- par_y_rows(mat)
+  if (!all(par$keep)) mat <- mat[par$keep, , drop = FALSE]
+  for (note in par$notes) report <- add_import_warning(report, note)
 
   # A sample sheet the classifier could not place -- headings in Chinese,
   # say, where it knows only English ones -- is still recognisable by its
@@ -866,7 +916,7 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   # be matched against it. Done here rather than left to the user,
   # because the alternative -- an empty enrichment result -- is
   # indistinguishable from a real one that found nothing.
-  sym <- attach_hgnc_symbols(feat, rownames(mat))
+  sym <- attach_gene_symbols(feat, rownames(mat))
   feat <- sym$feature_df
   if (!is.null(sym$note)) report <- add_import_warning(report, sym$note)
 
@@ -1576,7 +1626,9 @@ SYMBOL_COLUMN_NAMES <- c(
   "genesymbol", "genesymbols", "symbol", "symbols",
   "gene", "genes", "genename", "genenames",
   "pggenes",        # Spectronaut
-  "hgncsymbol", "hgnc"
+  "hgncsymbol", "hgnc",
+  "mgisymbol",      # mouse
+  "externalgenename" # biomaRt, often the rowData of a SummarizedExperiment
 )
 
 # Which column holds the gene symbol, or NULL.
