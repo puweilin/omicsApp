@@ -147,46 +147,14 @@ run_deseq2_group <- function(
   meta_df <- input$meta_df
   feature_df <- input$feature_df
 
-  if (!group_col %in% colnames(meta_df)) {
-    stop("`group_col` not found in `meta_df`: ", group_col)
-  }
-  check_paired_col(meta_df, paired_col, object_name = "meta_df")
+  tm <- contrast_target_meta(meta_df, group_col, control_group, case_group,
+                             contrasts = contrasts, paired_col = paired_col)
+  specs <- tm$specs
+  group_levels <- tm$group_levels
+  count_sub <- count_mat[, rownames(tm$target_meta), drop = FALSE]
+  mt <- count_model_terms(tm$target_meta, group_col, paired_col, covariates)
 
-  specs <- contrasts %||% case_control_contrasts(control_group, case_group)
-  group_levels <- contrast_levels(specs, order = control_group)
-  meta_df[[group_col]] <- as.character(meta_df[[group_col]])
-  target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
-                           meta_df[[group_col]] %in% group_levels, , drop = FALSE]
-  target_meta[[group_col]] <- factor(target_meta[[group_col]], levels = group_levels)
-  validate_two_group_pairing(
-    target_meta,
-    group_col = group_col,
-    paired_col = paired_col,
-    control_group = if (is.null(contrasts)) control_group,
-    case_group = if (is.null(contrasts)) case_group else group_levels,
-    object_name = "target_meta"
-  )
-
-  keep_samples <- rownames(target_meta)
-  count_sub <- count_mat[, keep_samples, drop = FALSE]
-
-  design_terms <- c(group_col)
-  if (!is.null(paired_col)) {
-    if (any(is.na(target_meta[[paired_col]]))) {
-      stop("`paired_col` contains missing values after group filtering: ", paired_col)
-    }
-    target_meta[[paired_col]] <- factor(target_meta[[paired_col]])
-    design_terms <- c(paired_col, design_terms)
-  }
-  if (!is.null(covariates)) {
-    missing_cov <- setdiff(covariates, colnames(target_meta))
-    if (length(missing_cov) > 0L) {
-      stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
-    }
-    design_terms <- c(design_terms, covariates)
-  }
-
-  safe <- deseq2_safe_coldata(target_meta, design_terms)
+  safe <- deseq2_safe_coldata(mt$meta, mt$terms)
   dds <- build_deseq_dataset(input, count_sub, safe$col_data, safe$formula)
   ref <- group_levels[[1L]]
   gvar <- safe$map[[group_col]]
@@ -197,31 +165,30 @@ run_deseq2_group <- function(
   # contrast is then read off it. A pair goes in by name, which DESeq2
   # resolves for any two levels; a weighted contrast goes in as a numeric
   # vector over the model's coefficients.
-  comparisons <- vapply(specs, `[[`, character(1), "label")
-  per <- lapply(seq_along(specs), function(i) {
-    s <- specs[[i]]
-    res <- if (!is.null(s$case)) {
-      DESeq2::results(dds, contrast = c(gvar, s$case, s$control))
-    } else {
-      DESeq2::results(dds, contrast = deseq2_contrast_vector(dds, gvar, s$weights, ref))
+  st <- stack_contrast_results(
+    specs,
+    raw_for = function(i) {
+      s <- specs[[i]]
+      res <- if (!is.null(s$case)) {
+        DESeq2::results(dds, contrast = c(gvar, s$case, s$control))
+      } else {
+        DESeq2::results(dds, contrast = deseq2_contrast_vector(dds, gvar, s$weights, ref))
+      }
+      as.data.frame(res) |>
+        tibble::rownames_to_column("feature_id")
+    },
+    standardize = function(raw_df, comparison) {
+      standardize_deseq2_group_results(
+        raw_df = raw_df,
+        feature_df = feature_df,
+        comparison = comparison,
+        omics_type = input$omics_type
+      )
     }
-    raw_df <- as.data.frame(res) |>
-      tibble::rownames_to_column("feature_id")
-    std <- standardize_deseq2_group_results(
-      raw_df = raw_df,
-      feature_df = feature_df,
-      comparison = comparisons[[i]],
-      omics_type = input$omics_type
-    )
-    raw_df$comparison <- comparisons[[i]]
-    list(raw = raw_df, std = std)
-  })
-  raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
-  if (length(specs) == 1L) raw_df$comparison <- NULL
-  results_std <- do.call(rbind, lapply(per, `[[`, "std"))
-  rownames(raw_df) <- NULL
-  rownames(results_std) <- NULL
-  comparison <- comparisons
+  )
+  raw_df <- st$raw
+  results_std <- st$std
+  comparison <- st$comparisons
 
   list(
     results_raw = raw_df,
@@ -314,24 +281,10 @@ run_deseq2_continuous <- function(
 
   cont_vals <- coerce_continuous_col(meta_df[[continuous_col]], continuous_col)
   meta_df[[continuous_col]] <- cont_vals
+  mt <- count_model_terms(meta_df, continuous_col, paired_col, covariates,
+                          paired_na = "`paired_col` contains missing values: ")
 
-  design_terms <- c(continuous_col)
-  if (!is.null(paired_col)) {
-    if (any(is.na(meta_df[[paired_col]]))) {
-      stop("`paired_col` contains missing values: ", paired_col)
-    }
-    meta_df[[paired_col]] <- factor(meta_df[[paired_col]])
-    design_terms <- c(paired_col, design_terms)
-  }
-  if (!is.null(covariates)) {
-    missing_cov <- setdiff(covariates, colnames(meta_df))
-    if (length(missing_cov) > 0L) {
-      stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
-    }
-    design_terms <- c(design_terms, covariates)
-  }
-
-  safe <- deseq2_safe_coldata(meta_df, design_terms)
+  safe <- deseq2_safe_coldata(mt$meta, mt$terms)
   dds <- build_deseq_dataset(input, count_mat, safe$col_data, safe$formula)
   dds <- deseq_with_dispersion_fallback(dds)
 

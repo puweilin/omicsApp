@@ -104,3 +104,85 @@ coerce_continuous_col <- function(x, col_name) {
   }
   parsed
 }
+
+# ---- shared backend set-up ----------------------------------------------
+#
+# limma, DESeq2 and edgeR choose a group comparison's samples, assemble
+# its model terms and stack its contrasts in the same way. Each used to
+# carry its own copy, so a fix to one (the pairing check, a covariate
+# that is missing) had to be made three times.
+
+# The samples a group comparison fits: every group any contrast names,
+# in `control_group`-first order, with the pairing checked. Returns the
+# contrast specs, the group levels (the first is the reference) and the
+# metadata of the samples kept, its group column a factor.
+contrast_target_meta <- function(meta_df, group_col, control_group, case_group,
+                                 contrasts = NULL, paired_col = NULL) {
+  if (!group_col %in% colnames(meta_df)) {
+    stop("`group_col` not found in `meta_df`: ", group_col)
+  }
+  check_paired_col(meta_df, paired_col, object_name = "meta_df")
+
+  specs <- contrasts %||% case_control_contrasts(control_group, case_group)
+  group_levels <- contrast_levels(specs, order = control_group)
+  meta_df[[group_col]] <- as.character(meta_df[[group_col]])
+  target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
+                           meta_df[[group_col]] %in% group_levels, , drop = FALSE]
+  target_meta[[group_col]] <- factor(target_meta[[group_col]], levels = group_levels)
+  validate_two_group_pairing(
+    target_meta,
+    group_col = group_col,
+    paired_col = paired_col,
+    control_group = if (is.null(contrasts)) control_group,
+    case_group = if (is.null(contrasts)) case_group else group_levels,
+    object_name = "target_meta"
+  )
+  list(specs = specs, group_levels = group_levels, target_meta = target_meta)
+}
+
+# The terms of a count model, in the order DESeq2 and edgeR fit them: the
+# pairing block first (as a factor), then what is tested, then the
+# covariates. `paired_na` is the start of the message for a block with a
+# missing value. Returns the metadata (block factored) and the terms.
+count_model_terms <- function(meta, primary, paired_col = NULL, covariates = NULL,
+                              paired_na = "`paired_col` contains missing values after group filtering: ") {
+  terms <- primary
+  if (!is.null(paired_col)) {
+    if (anyNA(meta[[paired_col]])) stop(paired_na, paired_col)
+    meta[[paired_col]] <- factor(meta[[paired_col]])
+    terms <- c(paired_col, terms)
+  }
+  missing_cov <- setdiff(covariates, colnames(meta))
+  if (length(missing_cov) > 0L) {
+    stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
+  }
+  list(meta = meta, terms = c(terms, covariates))
+}
+
+# `~ term + term`, each backticked: a column called "Treatment Group" was
+# an "unexpected symbol" in the formula. No terms is the intercept alone.
+backtick_formula <- function(terms) {
+  stats::as.formula(paste("~", if (length(terms))
+    paste0("`", terms, "`", collapse = " + ") else "1"))
+}
+
+# Every contrast read off one fit and stacked into one table under its
+# `comparison` label. `raw_for(i)` returns the engine's table for the
+# i-th contrast and `standardize(raw_df, comparison)` its standardized
+# form. A single contrast keeps the engine's table without a
+# `comparison` column, as it always had.
+stack_contrast_results <- function(specs, raw_for, standardize) {
+  comparisons <- vapply(specs, `[[`, character(1), "label")
+  per <- lapply(seq_along(specs), function(i) {
+    raw_df <- raw_for(i)
+    std <- standardize(raw_df, comparisons[[i]])
+    raw_df$comparison <- comparisons[[i]]
+    list(raw = raw_df, std = std)
+  })
+  raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
+  if (length(specs) == 1L) raw_df$comparison <- NULL
+  results_std <- do.call(rbind, lapply(per, `[[`, "std"))
+  rownames(raw_df) <- NULL
+  rownames(results_std) <- NULL
+  list(raw = raw_df, std = results_std, comparisons = comparisons)
+}

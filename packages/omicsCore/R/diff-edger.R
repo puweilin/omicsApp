@@ -48,49 +48,16 @@ run_edger_group <- function(
   meta_df <- input$meta_df
   feature_df <- input$feature_df
 
-  if (!group_col %in% colnames(meta_df)) {
-    stop("`group_col` not found in `meta_df`: ", group_col)
-  }
-  check_paired_col(meta_df, paired_col, object_name = "meta_df")
+  tm <- contrast_target_meta(meta_df, group_col, control_group, case_group,
+                             contrasts = contrasts, paired_col = paired_col)
+  specs <- tm$specs
+  group_levels <- tm$group_levels
+  count_sub <- count_mat[, rownames(tm$target_meta), drop = FALSE]
+  mt <- count_model_terms(tm$target_meta, group_col, paired_col, covariates)
+  target_meta <- mt$meta
+  design_terms <- mt$terms
 
-  specs <- contrasts %||% case_control_contrasts(control_group, case_group)
-  group_levels <- contrast_levels(specs, order = control_group)
-  meta_df[[group_col]] <- as.character(meta_df[[group_col]])
-  target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
-                           meta_df[[group_col]] %in% group_levels, , drop = FALSE]
-  target_meta[[group_col]] <- factor(target_meta[[group_col]], levels = group_levels)
-  validate_two_group_pairing(
-    target_meta,
-    group_col = group_col,
-    paired_col = paired_col,
-    control_group = if (is.null(contrasts)) control_group,
-    case_group = if (is.null(contrasts)) case_group else group_levels,
-    object_name = "target_meta"
-  )
-
-  keep_samples <- rownames(target_meta)
-  count_sub <- count_mat[, keep_samples, drop = FALSE]
-
-  design_terms <- c(group_col)
-  if (!is.null(paired_col)) {
-    if (any(is.na(target_meta[[paired_col]]))) {
-      stop("`paired_col` contains missing values after group filtering: ", paired_col)
-    }
-    target_meta[[paired_col]] <- factor(target_meta[[paired_col]])
-    design_terms <- c(paired_col, design_terms)
-  }
-  if (!is.null(covariates)) {
-    missing_cov <- setdiff(covariates, colnames(target_meta))
-    if (length(missing_cov) > 0L) {
-      stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
-    }
-    design_terms <- c(design_terms, covariates)
-  }
-
-  # Backticked: a column called "Treatment Group" was an "unexpected
-  # symbol" in the formula.
-  design_formula <- stats::as.formula(paste("~", paste0("`", design_terms, "`", collapse = " + ")))
-  design_mat <- stats::model.matrix(design_formula, data = target_meta)
+  design_mat <- stats::model.matrix(backtick_formula(design_terms), data = target_meta)
   # The group's columns, found by which term they belong to rather than
   # by name: a non-syntactic column name puts backticks into the column
   # names, and a covariate whose name starts with the group column's
@@ -100,16 +67,9 @@ run_edger_group <- function(
   names(grp_cols) <- levels(target_meta[[group_col]])[-1L]
 
   all_features <- rownames(count_sub)
-  y <- edgeR::DGEList(counts = count_sub)
-  y <- edger_filter(y, design_mat)
-  filter_note <- attr(y, "filter_note")
-  report_progress("Normalising library sizes (1 of 4)")
-  y <- edger_normalise(y, input)
-
-  report_progress("Estimating dispersions (2 of 4)")
-  y <- edgeR::estimateDisp(y, design = design_mat)
-  report_progress("Fitting the model (3 of 4)")
-  fit <- edgeR::glmQLFit(y, design = design_mat)
+  ef <- edger_ql_fit(count_sub, design_mat, input)
+  fit <- ef$fit
+  filter_note <- ef$filter_note
 
   # model.matrix() names a factor's columns `<column><level>` verbatim,
   # so the coefficients are found by exact name. They used to be found by
@@ -118,40 +78,39 @@ run_edger_group <- function(
   # other level's column is its difference from it and a contrast is its
   # weights placed on those columns.
   ref <- group_levels[[1L]]
-  comparisons <- vapply(specs, `[[`, character(1), "label")
-  per <- lapply(seq_along(specs), function(i) {
-    w <- specs[[i]]$weights
-    cvec <- stats::setNames(rep(0, ncol(design_mat)), colnames(design_mat))
-    for (lv in setdiff(names(w), ref)) {
-      if (abs(w[[lv]]) < 1e-12) next
-      if (!lv %in% names(grp_cols)) {
-        stop("Could not locate group coefficient in design matrix for: ", lv)
+  st <- stack_contrast_results(
+    specs,
+    raw_for = function(i) {
+      w <- specs[[i]]$weights
+      cvec <- stats::setNames(rep(0, ncol(design_mat)), colnames(design_mat))
+      for (lv in setdiff(names(w), ref)) {
+        if (abs(w[[lv]]) < 1e-12) next
+        if (!lv %in% names(grp_cols)) {
+          stop("Could not locate group coefficient in design matrix for: ", lv)
+        }
+        cvec[[grp_cols[[lv]]]] <- w[[lv]]
       }
-      cvec[[grp_cols[[lv]]]] <- w[[lv]]
+      report_progress(if (length(specs) > 1L) {
+        sprintf("Testing comparison %d of %d (4 of 4)", i, length(specs))
+      } else "Testing (4 of 4)")
+      qlf <- edgeR::glmQLFTest(fit, contrast = unname(cvec))
+      tt <- edgeR::topTags(qlf, n = Inf, sort.by = "none")
+      raw_df <- as.data.frame(tt$table) |>
+        tibble::rownames_to_column("feature_id")
+      pad_untested(raw_df, all_features)
+    },
+    standardize = function(raw_df, comparison) {
+      standardize_edger_group_results(
+        raw_df = raw_df,
+        feature_df = feature_df,
+        comparison = comparison,
+        omics_type = input$omics_type
+      )
     }
-    report_progress(if (length(specs) > 1L) {
-      sprintf("Testing comparison %d of %d (4 of 4)", i, length(specs))
-    } else "Testing (4 of 4)")
-    qlf <- edgeR::glmQLFTest(fit, contrast = unname(cvec))
-    tt <- edgeR::topTags(qlf, n = Inf, sort.by = "none")
-    raw_df <- as.data.frame(tt$table) |>
-      tibble::rownames_to_column("feature_id")
-    raw_df <- pad_untested(raw_df, all_features)
-    std <- standardize_edger_group_results(
-      raw_df = raw_df,
-      feature_df = feature_df,
-      comparison = comparisons[[i]],
-      omics_type = input$omics_type
-    )
-    raw_df$comparison <- comparisons[[i]]
-    list(raw = raw_df, std = std)
-  })
-  raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
-  if (length(specs) == 1L) raw_df$comparison <- NULL
-  results_std <- do.call(rbind, lapply(per, `[[`, "std"))
-  rownames(raw_df) <- NULL
-  rownames(results_std) <- NULL
-  comparison <- comparisons
+  )
+  raw_df <- st$raw
+  results_std <- st$std
+  comparison <- st$comparisons
 
   list(
     results_raw = raw_df,
@@ -169,6 +128,22 @@ run_edger_group <- function(
   )
 }
 
+
+# The quasi-likelihood fit both edgeR tests share (the pairwise
+# contrasts and the global test): low-count genes set aside, library
+# sizes (with tximport's gene lengths when present), dispersions, fit.
+# Returns the fit and the note naming the genes set aside, if any.
+edger_ql_fit <- function(counts, design, input) {
+  y <- edgeR::DGEList(counts = counts)
+  y <- edger_filter(y, design)
+  filter_note <- attr(y, "filter_note")
+  report_progress("Normalising library sizes (1 of 4)")
+  y <- edger_normalise(y, input)
+  report_progress("Estimating dispersions (2 of 4)")
+  y <- edgeR::estimateDisp(y, design = design)
+  report_progress("Fitting the model (3 of 4)")
+  list(fit = edgeR::glmQLFit(y, design = design), filter_note = filter_note)
+}
 
 # Library sizes for a (filtered) DGEList, with tximport's gene lengths
 # when the input carries them. Shared by the pairwise fit and the global

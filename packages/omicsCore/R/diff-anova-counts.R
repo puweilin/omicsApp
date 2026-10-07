@@ -30,56 +30,12 @@ anova_counts_design <- function(input, group_col, covariates, selected_groups,
   if (nlevels(target[[group_col]]) < 2L) {
     stop("ANOVA needs at least two groups in `", group_col, "`.", call. = FALSE)
   }
-  block <- character(0)
-  if (!is.null(paired_col)) {
-    if (anyNA(target[[paired_col]])) {
-      stop("`paired_col` contains missing values after group filtering: ", paired_col)
-    }
-    target[[paired_col]] <- factor(target[[paired_col]])
-    block <- paired_col
-  }
-  missing_cov <- setdiff(covariates, colnames(target))
-  if (length(missing_cov)) {
-    stop("Missing covariates: ", paste(missing_cov, collapse = ", "))
-  }
-  bt <- function(x) if (length(x)) paste0("`", x, "`") else character(0)
-  full <- stats::as.formula(paste("~", paste(c(bt(block), bt(group_col), bt(covariates)),
-                                            collapse = " + ")))
-  red_terms <- c(bt(block), bt(covariates))
-  reduced <- stats::as.formula(paste("~", if (length(red_terms))
-    paste(red_terms, collapse = " + ") else "1"))
+  mt <- count_model_terms(target, group_col, paired_col, covariates)
+  target <- mt$meta
+  red_terms <- setdiff(mt$terms, group_col)
   list(target = target, counts = as.matrix(input$expr_mat)[, rownames(target), drop = FALSE],
-       full = full, reduced = reduced, terms = c(block, group_col, covariates))
-}
-
-standardize_anova_counts <- function(raw_df, feature_df, method, stat, stat_type,
-                                     p, padj, base_mean, comparison, omics_type) {
-  feature_df <- prep_feature_df_for_standardize(feature_df)
-  out <- dplyr::left_join(raw_df, feature_df, by = "feature_id")
-  out <- data.frame(
-    feature_id = out$feature_id,
-    feature_symbol = out$feature_symbol,
-    feature_type = out$feature_type,
-    omics_type = omics_type,
-    method = method,
-    analysis_type = "anova",
-    comparison = comparison,
-    effect = out[[stat]],
-    effect_type = paste0(stat_type, "_statistic"),
-    statistic = out[[stat]],
-    statistic_type = stat_type,
-    # A global test has no direction, so no signed statistic.
-    signed_stat = NA_real_,
-    p_value = out[[p]],
-    adj_p_value = out[[padj]],
-    direction = "ns",
-    base_mean = out[[base_mean]],
-    model_fit = NA_real_,
-    is_significant = NA,
-    stringsAsFactors = FALSE
-  )
-  check_diff_result_schema(out)
-  out
+       full = backtick_formula(mt$terms), reduced = backtick_formula(red_terms),
+       terms = mt$terms)
 }
 
 #' edgeR global test across groups
@@ -102,24 +58,19 @@ run_edger_anova <- function(input, group_col, covariates = NULL,
   # groups.
   term <- match(group_col, d$terms)
   grp_cols <- which(attr(design, "assign") == term)
-  y <- edger_filter(edgeR::DGEList(counts = d$counts), design)
-  filter_note <- attr(y, "filter_note")
-  report_progress("Normalising library sizes (1 of 4)")
   # With tximport's gene lengths when the input has them, as the
-  # pairwise fit uses (edger_normalise(), diff-edger.R).
-  y <- edger_normalise(y, input)
-  report_progress("Estimating dispersions (2 of 4)")
-  y <- edgeR::estimateDisp(y, design = design)
-  report_progress("Fitting the model (3 of 4)")
-  fit <- edgeR::glmQLFit(y, design = design)
+  # pairwise fit uses (edger_ql_fit(), diff-edger.R).
+  ef <- edger_ql_fit(d$counts, design, input)
+  fit <- ef$fit
+  filter_note <- ef$filter_note
   report_progress("Testing (4 of 4)")
   qlf <- edgeR::glmQLFTest(fit, coef = grp_cols)
   raw_df <- as.data.frame(edgeR::topTags(qlf, n = Inf, sort.by = "none")$table) |>
     tibble::rownames_to_column("feature_id")
   raw_df <- pad_untested(raw_df, rownames(d$counts))
-  std <- standardize_anova_counts(raw_df, input$feature_df, "edger", "F", "F",
-                                  "PValue", "FDR", "logCPM", group_col,
-                                  input$omics_type)
+  std <- standardize_global_test_results(
+    raw_df, input$feature_df, group_col, input$omics_type, method = "edger",
+    stat = "F", stat_type = "F", p = "PValue", padj = "FDR", base_mean = "logCPM")
   list(results_raw = raw_df, results_std = std, model_object = fit,
        analysis_info = list(omics_type = input$omics_type, method = "edger",
                             analysis_type = "anova", comparison = group_col,
@@ -157,9 +108,9 @@ run_deseq2_anova <- function(input, group_col, covariates = NULL,
                        parallel = TRUE, BPPARAM = bp)))
   raw_df <- as.data.frame(DESeq2::results(dds)) |>
     tibble::rownames_to_column("feature_id")
-  std <- standardize_anova_counts(raw_df, input$feature_df, "deseq2", "stat",
-                                  "LRT", "pvalue", "padj", "baseMean", group_col,
-                                  input$omics_type)
+  std <- standardize_global_test_results(
+    raw_df, input$feature_df, group_col, input$omics_type, method = "deseq2",
+    stat = "stat", stat_type = "LRT", p = "pvalue", padj = "padj", base_mean = "baseMean")
   list(results_raw = raw_df, results_std = std, model_object = dds,
        analysis_info = list(omics_type = input$omics_type, method = "deseq2",
                             analysis_type = "anova", comparison = group_col,

@@ -46,30 +46,16 @@ run_limma_group <- function(
   meta_df <- input$meta_df
   feature_df <- input$feature_df
 
-  if (!group_col %in% colnames(meta_df)) {
-    stop("`group_col` not found in `meta_df`: ", group_col)
-  }
-  check_paired_col(meta_df, paired_col, object_name = "meta_df")
-
   # `case_group` may name several groups, or `contrasts` any comparisons
   # between groups. Every group involved is fitted in one model, so every
   # contrast shares one residual variance and one eBayes prior -- which
   # is the point of fitting them together rather than as separate
   # two-group runs.
-  specs <- contrasts %||% case_control_contrasts(control_group, case_group)
-  group_levels <- contrast_levels(specs, order = control_group)
-  meta_df[[group_col]] <- as.character(meta_df[[group_col]])
-  target_meta <- meta_df[!is.na(meta_df[[group_col]]) &
-                           meta_df[[group_col]] %in% group_levels, , drop = FALSE]
-  target_meta[[group_col]] <- factor(target_meta[[group_col]], levels = group_levels)
-  validate_two_group_pairing(
-    target_meta,
-    group_col = group_col,
-    paired_col = paired_col,
-    control_group = if (is.null(contrasts)) control_group,
-    case_group = if (is.null(contrasts)) case_group else group_levels,
-    object_name = "target_meta"
-  )
+  tm <- contrast_target_meta(meta_df, group_col, control_group, case_group,
+                             contrasts = contrasts, paired_col = paired_col)
+  specs <- tm$specs
+  group_levels <- tm$group_levels
+  target_meta <- tm$target_meta
 
   keep_samples <- rownames(target_meta)
   expr_sub <- expr_mat[, keep_samples, drop = FALSE]
@@ -113,24 +99,24 @@ run_limma_group <- function(
   contrast_matrix[grp_names, ] <- cw
   fit2 <- limma::eBayes(limma::contrasts.fit(fit, contrast_matrix))
 
-  comparisons <- vapply(specs, `[[`, character(1), "label")
-  per <- lapply(seq_along(specs), function(i) {
-    raw_df <- limma::topTable(fit2, coef = i, number = Inf, sort.by = "none")
-    raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
-    std <- standardize_limma_group_results(
-      raw_df = raw_df,
-      feature_df = feature_df,
-      comparison = comparisons[[i]],
-      omics_type = input$omics_type
-    )
-    raw_df$comparison <- comparisons[[i]]
-    list(raw = raw_df, std = std)
-  })
-  raw_df <- do.call(rbind, lapply(per, `[[`, "raw"))
-  if (length(specs) == 1L) raw_df$comparison <- NULL
-  results_std <- do.call(rbind, lapply(per, `[[`, "std"))
-  rownames(raw_df) <- NULL
-  rownames(results_std) <- NULL
+  st <- stack_contrast_results(
+    specs,
+    raw_for = function(i) {
+      raw_df <- limma::topTable(fit2, coef = i, number = Inf, sort.by = "none")
+      tibble::rownames_to_column(raw_df, "feature_id")
+    },
+    standardize = function(raw_df, comparison) {
+      standardize_limma_group_results(
+        raw_df = raw_df,
+        feature_df = feature_df,
+        comparison = comparison,
+        omics_type = input$omics_type
+      )
+    }
+  )
+  raw_df <- st$raw
+  results_std <- st$std
+  comparisons <- st$comparisons
 
   list(
     results_raw = raw_df,
@@ -277,8 +263,8 @@ run_limma_continuous <- function(
 
 #' Limma multi-group ANOVA-style test
 #'
-#' Builds the standardized diff schema in place (no shared standardizer) so
-#' that F-statistic and AveExpr fields are passed through cleanly. Internal —
+#' Moderated F-test on all group coefficients together, standardized with
+#' the other global tests (the F stands in for the effect). Internal —
 #' call via [run_diff()] with `analysis_type = "anova"`.
 #'
 #' @param input A validated `omics_input`.
@@ -359,30 +345,9 @@ run_limma_anova <- function(
   if (!"F" %in% names(raw_df) && "t" %in% names(raw_df)) raw_df$F <- raw_df$t^2
   raw_df <- tibble::rownames_to_column(raw_df, "feature_id")
 
-  feature_df <- prep_feature_df_for_standardize(feature_df)
-  results_std <- dplyr::left_join(raw_df, feature_df, by = "feature_id") |>
-    dplyr::transmute(
-      feature_id = .data$feature_id,
-      feature_symbol = .data$feature_symbol,
-      feature_type = .data$feature_type,
-      omics_type = input$omics_type,
-      method = "limma",
-      analysis_type = "anova",
-      comparison = group_col,
-      effect = .data$F,
-      effect_type = "F_statistic",
-      statistic = .data$F,
-      statistic_type = "F",
-      # A global test has no direction, so no signed statistic.
-      signed_stat = NA_real_,
-      p_value = .data$P.Value,
-      adj_p_value = .data$adj.P.Val,
-      direction = "ns",
-      base_mean = if ("AveExpr" %in% colnames(raw_df)) .data$AveExpr else NA_real_,
-      model_fit = NA_real_,
-      is_significant = NA
-    )
-  check_diff_result_schema(results_std)
+  results_std <- standardize_global_test_results(
+    raw_df, feature_df, group_col, input$omics_type, method = "limma",
+    stat = "F", stat_type = "F", p = "P.Value", padj = "adj.P.Val", base_mean = "AveExpr")
 
   list(
     results_raw = raw_df,
