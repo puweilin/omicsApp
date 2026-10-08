@@ -34,7 +34,12 @@ A \code{ggplot} object.
 \description{
 Visualises the standardized enrichment table produced by
 \code{\link[=run_enrichment]{run_enrichment()}}. The \code{"dot"} view draws a dotplot of the top \code{top_n}
-pathways per database (size = overlap, color = adjusted p-value); the
+pathways per database: for ORA, x is the share of each pathway's genes
+found in the gene list and point size the number found; for GSEA, x is
+the NES and point size the gene set size. Colour is -log10 of the
+chosen p-value, capped so that one extreme pathway does not wash out
+the rest: values above the cap take the top colour, and the top
+legend label is marked as "at least" that value. The
 \code{"bar"} view draws a horizontal bar chart of the same selection. For
 GSEA bundles a \code{"gsea_dot"} view is available that splits pathways by
 direction (up / down).

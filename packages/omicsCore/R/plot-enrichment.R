@@ -2,7 +2,12 @@
 #'
 #' Visualises the standardized enrichment table produced by
 #' [run_enrichment()]. The `"dot"` view draws a dotplot of the top `top_n`
-#' pathways per database (size = overlap, color = adjusted p-value); the
+#' pathways per database: for ORA, x is the share of each pathway's genes
+#' found in the gene list and point size the number found; for GSEA, x is
+#' the NES and point size the gene set size. Colour is -log10 of the
+#' chosen p-value, capped so that one extreme pathway does not wash out
+#' the rest: values above the cap take the top colour, and the top
+#' legend label is marked as "at least" that value. The
 #' `"bar"` view draws a horizontal bar chart of the same selection. For
 #' GSEA bundles a `"gsea_dot"` view is available that splits pathways by
 #' direction (up / down).
@@ -179,54 +184,97 @@ plot_enrich_dot <- function(df, p_col) {
   if (ora_list_facet(df)) df <- with_list_label(df)
   df$.label <- wrap_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df[[p_col]])]))
+  df$.signif <- neg_log10_p(df[[p_col]])
 
-  # Effect (NES for GSEA, log2 odds for ORA) says which direction a
-  # pathway moved; overlap size only says how many genes were in it.
-  # Prefer the former when the result carries it, and fall back
-  # otherwise so an ORA result without an effect column still plots.
   usable <- function(col) col %in% names(df) && any(is.finite(df[[col]]))
 
+  # Each aesthetic carries a different number. ORA once put the overlap
+  # on x *and* on point size: the same count twice, with a size legend
+  # that said nothing new and took a third of a phone's width.
+  #
+  # Effect (NES for GSEA) says which way a pathway moved, so it has x
+  # when the result carries it. ORA has no effect; its x is the share of
+  # the pathway's genes that turned up in the list -- a 10-gene overlap
+  # means more in a 15-gene pathway than in a 500-gene one, and the
+  # count alone cannot say which. The count stays as point size.
   has_effect <- usable("effect")
-  x_aes <- if (has_effect) "effect" else "overlap_size"
-  df$.signif <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
+  ratio_ok <- !has_effect && usable("overlap_size") && usable("gene_set_size")
+  if (ratio_ok) {
+    df$.ratio <- df$overlap_size / df$gene_set_size
+    # A pathway without its size would drop out of the plot without a
+    # word; better the whole panel falls back than loses a row.
+    ratio_ok <- all(is.finite(df$.ratio)) && all(df$gene_set_size > 0)
+  }
+  x_aes <- if (has_effect) "effect" else if (ratio_ok) ".ratio" else ".signif"
+  colour_signif <- !identical(x_aes, ".signif")
 
-  # The size aesthetic needs the same fallback as x, and for the same
-  # kind of result. GSEA has no overlap: standardize_enrich_results only
-  # fills overlap_size from `Count` or `GeneRatio`, which fgsea emits
-  # neither of, so the column is entirely NA. Mapping size to it made
-  # every point NA-sized, and geom_point drops those -- the panel drew
-  # its axes and facet strips and not one dot.
+  # The size aesthetic needs a fallback too, for GSEA. GSEA has no
+  # overlap: standardize_enrich_results only fills overlap_size from
+  # `Count` or `GeneRatio`, which fgsea emits neither of, so the column
+  # is entirely NA. Mapping size to it made every point NA-sized, and
+  # geom_point drops those -- the panel drew its axes and facet strips
+  # and not one dot.
   #
   # That reads as "enrichment found nothing", which is the same thing an
   # empty result looks like, so the failure hides as a result.
   size_aes <- if (usable("overlap_size")) "overlap_size" else "gene_set_size"
   has_size <- usable(size_aes)
 
-  aes_args <- list(x = quote(.data[[x_aes]]), y = quote(.data$.label),
-                   color = quote(.data$.signif))
+  aes_args <- list(x = quote(.data[[x_aes]]), y = quote(.data$.label))
+  if (colour_signif) aes_args$color <- quote(.data$.signif)
   if (has_size) aes_args$size <- quote(.data[[size_aes]])
 
+  # When x already is the significance (no effect, no usable ratio),
+  # colouring by it as well would be the same number twice again: the
+  # points take one plain colour instead.
+  point <- if (colour_signif) {
+    ggplot2::geom_point(na.rm = TRUE)
+  } else {
+    ggplot2::geom_point(na.rm = TRUE, color = omics_colors$scale_high)
+  }
+
+  x_label <- if (has_effect) {
+    nes <- "effect_type" %in% names(df) && all(df$effect_type %in% "nes")
+    if (nes) "normalized enrichment score (NES)" else "effect"
+  } else if (ratio_ok) {
+    "% of pathway genes in the list"
+  } else {
+    p_axis_label(p_col)
+  }
+
   p <- ggplot2::ggplot(df, do.call(ggplot2::aes, aes_args)) +
-    ggplot2::geom_point(na.rm = TRUE) +
-    enrich_facets(df, scales = "free") +
-    # Low to high significance, matching the volcano: a reader who has
-    # learnt one colour scale reads the other without relearning it.
-    ggplot2::scale_color_gradient(low = omics_colors$scale_low,
-                                  high = omics_colors$scale_high,
-                                  name = p_axis_label(p_col)) +
-    ggplot2::labs(
-      title = "Enrichment",
-      x = if (has_effect) "effect" else "overlap size",
-      y = NULL
-    ) +
-    theme_omics_labelled()
+    point +
+    # x is shared between panels so the up and down lists, or two
+    # databases, can be compared along it; only the names differ.
+    enrich_facets(df, scales = "free_y") +
+    ggplot2::labs(title = "Enrichment", x = x_label, y = NULL) +
+    theme_omics_labelled() +
+    enrich_narrow_theme()
+
+  if (colour_signif) p <- p + signif_colour_scale(df$.signif, p_col)
+
+  if (ratio_ok) {
+    # From zero, so a share reads as a share; the extra room on the
+    # right keeps the largest dot from being cut by the panel edge. Few
+    # ticks: beside long pathway names the panel can be 120 px wide, and
+    # "0% 25% 50% 75% 100%" ran together there.
+    p <- p + ggplot2::expand_limits(x = 0) +
+      ggplot2::scale_x_continuous(labels = scales::label_percent(),
+                                  breaks = scales::breaks_extended(n = 3),
+                                  expand = ggplot2::expansion(mult = c(0.03, 0.1)))
+  } else {
+    p <- p + ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.08, 0.1)))
+  }
 
   if (has_size) {
     # Named for the column actually mapped, so a GSEA panel does not
-    # label a gene-set size "overlap".
+    # label a gene-set size as genes found in a list. Three keys at
+    # most: under a phone-width panel the legend runs across, and a
+    # fourth large dot ran off the edge.
     p <- p + ggplot2::scale_size_continuous(
-      range = c(2, 6),
-      name = if (identical(size_aes, "overlap_size")) "overlap" else "set size")
+      range = c(2, 6), breaks = size_breaks,
+      guide = ggplot2::guide_legend(order = 2L),
+      name = if (identical(size_aes, "overlap_size")) "genes in list" else "set size")
   }
 
   if (has_effect) {
@@ -234,6 +282,116 @@ plot_enrich_dot <- function(df, p_col) {
                                  color = omics_colors$ns)
   }
   p
+}
+
+# Pathway names take more than half of a phone-width plot, which leaves
+# the panel -- and anything centred on it -- a narrow strip at the right.
+# The x title, centred there, ran off the edge; so did the colour bar's
+# top label and the size key once the app moved the legends below the
+# panel. The title ends where the panel ends, and legends under the plot
+# start at its left edge and use its whole width. On a desktop card the
+# legends stay at the side and nothing changes but the title's place.
+enrich_narrow_theme <- function() {
+  th <- ggplot2::theme(axis.title.x = ggplot2::element_text(hjust = 1))
+  tree <- names(ggplot2::get_element_tree())
+  # Both appeared in ggplot2 3.5.
+  if (all(c("legend.location", "legend.justification.bottom") %in% tree)) {
+    th <- th + ggplot2::theme(legend.location = "plot",
+                              legend.justification.bottom = "left")
+  }
+  th
+}
+
+# Two or three round breaks for a size key. Asked for three, the
+# pretty breaks of 10..91 are 0, 50, 100, and only one of those falls
+# inside the range: a key of a single dot says nothing about size. So
+# ask for more until two land inside, and keep at most three of them.
+# When every point has the same size the range has no width, no round
+# break lands in it, and the key shows that one value.
+size_breaks <- function(limits) {
+  b <- numeric(0)
+  for (n in 3:6) {
+    b <- scales::breaks_extended(n = n)(limits)
+    b <- unique(b[b >= limits[1L] & b <= limits[2L]])
+    if (length(b) >= 2L) break
+  }
+  # Every other one (or every third), so the keys stay evenly spaced.
+  if (length(b) > 3L) b <- b[seq(1L, length(b), by = ceiling((length(b) - 1L) / 2L))]
+  if (length(b) == 0L) unique(limits) else b
+}
+
+neg_log10_p <- function(p) -log10(pmax(p, .Machine$double.xmin))
+
+# Colour for significance, -log10(p), low to high in the same colours as
+# the volcano: a reader who has learnt one scale reads the other without
+# relearning it.
+#
+# The top of the scale is capped. Left to the data, one pathway at
+# -log10 p = 200 set the top colour, and every other pathway -- the
+# ones between 2 and 15 a reader actually has to tell apart -- came out
+# the same grey. Values above the cap are drawn in the top colour
+# (squished, not dropped) and the top label is the cap with a
+# greater-or-equal sign, so the legend says the scale stops there.
+signif_colour_scale <- function(values, p_col) {
+  lim <- signif_limits(values)
+  breaks <- ggplot2::waiver()
+  labels <- ggplot2::waiver()
+  if (lim$capped) {
+    lo <- lim$limits[1L]
+    cap <- lim$limits[2L]
+    # Round breaks below the cap, kept clear of it so the two labels do
+    # not run together, then the cap itself.
+    b <- scales::breaks_extended(n = 4)(lim$limits)
+    b <- b[b >= lo & b <= cap - 0.25 * (cap - lo)]
+    breaks <- c(b, cap)
+    labels <- c(format_signif_break(b),
+                paste0("\u2265 ", format_signif_break(cap)))
+  }
+  ggplot2::scale_color_gradient(low = omics_colors$scale_low,
+                                high = omics_colors$scale_high,
+                                name = p_axis_label(p_col),
+                                limits = lim$limits, oob = scales::squish,
+                                breaks = breaks, labels = labels,
+                                guide = ggplot2::guide_colourbar(order = 1L))
+}
+
+format_signif_break <- function(x) as.character(round(x, 1))
+
+# The cap is the largest value that is not an outlier: Tukey's upper
+# fence (Q3 + 1.5 IQR) on the plotted values, or, when the values are
+# too few for quartiles to find it, a top value more than four times the
+# next. A quantile on its own does not work here: the panel shows a
+# dozen pathways, and the 90% quantile of twelve values interpolates
+# most of the way to the extreme one.
+#
+# Nothing is capped when nothing stands out, so the ">=" only appears
+# when it is true of some point. One pathway, or all at the same p,
+# gives a range of zero; the scale then starts at 0 so the points still
+# take a colour.
+signif_limits <- function(x) {
+  x <- x[is.finite(x)]
+  if (length(x) == 0L) return(list(limits = NULL, capped = FALSE))
+  lo <- min(x)
+  hi <- max(x)
+  q <- stats::quantile(x, c(0.25, 0.75), names = FALSE)
+  cap <- max(x[x <= q[2L] + 1.5 * (q[2L] - q[1L])])
+  if (cap == hi && length(x) >= 3L && any(x < hi)) {
+    second <- max(x[x < hi])
+    if (hi > 4 * second) cap <- second
+  }
+  capped <- cap < hi && cap > lo
+  if (capped) {
+    # A round number for the label: ">= 15", not ">= 15.35".
+    nice <- if (cap >= 10) floor(cap) else floor(cap * 10) / 10
+    if (nice > lo) cap <- nice
+  } else {
+    cap <- hi
+  }
+  if (cap <= lo) {
+    lo <- 0
+    if (cap <= 0) cap <- 1
+  }
+  list(limits = c(lo, cap), capped = capped)
 }
 
 plot_enrich_bar <- function(df, p_col) {
@@ -262,24 +420,32 @@ plot_enrich_gsea_dot <- function(df, p_col) {
   }
   df$.label <- wrap_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df[[p_col]])]))
+  df$.signif <- neg_log10_p(df[[p_col]])
   ggplot2::ggplot(
     df,
     ggplot2::aes(x = .data$effect, y = .data$.label,
-                 size = .data$gene_set_size, color = .data[[p_col]])
+                 size = .data$gene_set_size, color = .data$.signif)
   ) +
     ggplot2::geom_point(na.rm = TRUE) +
     ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = omics_colors$ns) +
     ggplot2::facet_grid(rows = ggplot2::vars(.data$database),
                         cols = ggplot2::vars(.data$direction),
                         scales = "free_y") +
-    ggplot2::scale_color_gradient(low = omics_colors$up, high = omics_colors$ns, name = p_col) +
-    ggplot2::scale_size_continuous(range = c(2, 6), name = "set size") +
+    # The same capped significance scale as the dot view. It coloured
+    # the raw p before, red for small and grey for large -- the reverse
+    # of every other plot in the app -- under the column name.
+    signif_colour_scale(df$.signif, p_col) +
+    ggplot2::scale_size_continuous(range = c(2, 6), breaks = size_breaks,
+                                   guide = ggplot2::guide_legend(order = 2L),
+                                   name = "set size") +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.08, 0.1))) +
     ggplot2::labs(
       title = "GSEA",
       x = "NES",
       y = NULL
     ) +
-    theme_omics_labelled()
+    theme_omics_labelled() +
+    enrich_narrow_theme()
 }
 
 # Wrapped, not cut short. A truncated GO BP term is often
