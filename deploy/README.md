@@ -464,8 +464,8 @@ Walk one real dataset through, checking each line:
 | Upload, confirm import | Project appears |
 | Re-upload the **same** file | "already loaded" — nothing is cleared |
 | Upload a **different** file | Dialog naming the analyses that will be cleared |
-| Run QC and a differential analysis | Volcano is two-coloured; caption reads `adj_p_value < 0.05` |
-| Drag the FDR slider | Hit table changes, **volcano does not** |
+| Run QC and a differential analysis | Volcano shows up in red, down in blue; card reads "significant = adjusted p < 0.05 and \|log2FC\| ≥ 0.263" |
+| Drag the FDR slider | Hit table, stat cards and volcano all change together; the card's line states the new cut |
 | Report view | "Analysis code" shows the calls; downloads as `.R` |
 | Project view, Save as | Appears under "My projects" |
 | Close the tab, log back in | "Restore last session" works |

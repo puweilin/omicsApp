@@ -470,10 +470,14 @@ test_that("plot_volcano re-derives significance from supplied thresholds", {
   bundle <- make_plot_diff_bundle()
   df <- bundle$results$diff_result_df
 
-  loose <- ggplot2::ggplot_build(
-    plot_volcano(bundle, p_threshold = 1, effect_threshold = 0))$data[[1]]
-  strict <- ggplot2::ggplot_build(
-    plot_volcano(bundle, p_threshold = 1e-12, effect_threshold = 50))$data[[1]]
+  # The points are two layers, the grey cloud under the hits.
+  point_colours <- function(p) {
+    is_pt <- vapply(p$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1))
+    data.frame(colour = unlist(lapply(ggplot2::ggplot_build(p)$data[is_pt],
+                                      function(d) d$colour)))
+  }
+  loose <- point_colours(plot_volcano(bundle, p_threshold = 1, effect_threshold = 0))
+  strict <- point_colours(plot_volcano(bundle, p_threshold = 1e-12, effect_threshold = 50))
 
   # A threshold nothing can pass must colour nothing as significant; one
   # everything passes must colour everything. Without re-deriving, both

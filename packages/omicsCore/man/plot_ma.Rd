@@ -39,6 +39,7 @@ Which features count as significant is decided here, from the
 thresholds this call is given — the same contract as \code{\link[=plot_volcano]{plot_volcano()}},
 and for the same reason: \code{run_diff()} applies no cutoff, so its
 \code{is_significant} column is \code{NA} and has nothing to colour by.
+Significant features are coloured by direction, as in \code{\link[=plot_volcano]{plot_volcano()}}.
 }
 \seealso{
 Other diff:
@@ -47,6 +48,7 @@ Other diff:
 \code{\link[=contrast_labels]{contrast_labels()}},
 \code{\link[=diff_comparisons]{diff_comparisons()}},
 \code{\link[=diff_hit_sets]{diff_hit_sets()}},
+\code{\link[=effect_label]{effect_label()}},
 \code{\link[=filter_diff_results]{filter_diff_results()}},
 \code{\link[=make_ranked_features]{make_ranked_features()}},
 \code{\link[=pairwise_contrasts]{pairwise_contrasts()}},

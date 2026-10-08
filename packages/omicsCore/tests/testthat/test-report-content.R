@@ -135,3 +135,34 @@ test_that("the report says which gene lists ORA tested and which way pathways we
   expect_match(html, "expecting the layers to change in the same direction", fixed = TRUE)
   expect_match(html, "Found by", fixed = TRUE)
 })
+
+test_that("the report draws the volcano at the thresholds its counts use", {
+  skip_if_no_report()
+  inp <- realistic_input(n_per_group = 3L)
+  diff <- run_diff(inp, method = "ttest", analysis_type = "group",
+                   group_col = "group", control_group = "G1", case_group = "G2")
+  diff$params$display_thresholds <- list(p_cutoff = 0.01, p_preference = "raw",
+                                         effect_cutoff = 0.5)
+  p <- omics_project("Thresholds", experiments = list(proteomics = inp))
+  p$bundles <- list(diff = diff)
+  seen <- list()
+  real <- plot_volcano
+  local_mocked_bindings(plot_volcano = function(bundle, ...) {
+    seen[[length(seen) + 1L]] <<- list(...)
+    real(bundle, ...)
+  })
+  report_html(p)
+  # The sentence above the figure counts hits at raw p < 0.01 and
+  # |log2FC| >= 0.5; the figure's colours must be those same hits.
+  expect_length(seen, 1L)
+  expect_identical(seen[[1]]$p_basis, "raw")
+  expect_identical(seen[[1]]$p_threshold, 0.01)
+  expect_identical(seen[[1]]$effect_threshold, 0.5)
+
+  # No fold-change cut saved: none drawn.
+  p$bundles$diff$params$display_thresholds$effect_cutoff <- 0
+  seen <- list()
+  report_html(p)
+  expect_null(seen[[1]]$effect_threshold)
+  expect_identical(seen[[1]]$p_threshold, 0.01)
+})

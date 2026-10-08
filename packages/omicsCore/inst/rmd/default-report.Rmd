@@ -281,7 +281,13 @@ if (!is.null(diff_b) && is.data.frame(diff_b$results$diff_result_df)) {
                 if (tested < nrow(df)) sprintf(" (%s not testable)", fmt_n(nrow(df) - tested)) else "",
                 fmt_n(sum(hit)), fmt_n(sum(hit & df$effect > 0)), fmt_n(sum(hit & df$effect < 0))))
     if (!identical(one$params$analysis_type, "continuous")) {
-      safe_print(omicsCore::plot_volcano(one, top_n = 10L))
+      # At the cut the counts above were read at, so the red and blue
+      # points are the "up" and "down" just counted.
+      safe_print(omicsCore::plot_volcano(
+        one, top_n = 10L,
+        p_basis = if (identical(thr$p_preference, "raw")) "raw" else "adjusted",
+        p_threshold = thr$p_cutoff,
+        effect_threshold = if ((thr$effect_cutoff %||% 0) > 0) thr$effect_cutoff))
     }
     df <- df[order(df$p_value, na.last = NA), , drop = FALSE]
     top <- utils::head(df, 15L)

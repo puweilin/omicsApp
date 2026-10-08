@@ -148,28 +148,115 @@ test_that("a raw-count layer offers the count engines instead", {
   )
 })
 
-# ---- the volcano is not driven by the sliders -------------------------
+# ---- the volcano follows the threshold controls -----------------------
 
-test_that("the volcano does not depend on the threshold sliders", {
+# Where ggplotly() put the volcano's dashed reference lines (line traces).
+volcano_line_x <- function(fig) {
+  lines <- Filter(function(t) identical(t$mode, "lines"), fig$data)
+  unlist(lapply(lines, function(t) unlist(t$x)))
+}
+
+test_that("the volcano is drawn at the thresholds the controls set", {
   shiny::testServer(
     diff_view_server,
     args = list(current_project = shiny::reactiveVal(NULL)),
     {
       session$setInputs(group_col = "group", control = "G1", case = "G2",
-                        rerun = 1)
-      shiny::req(diff_bundle())
-      caption_of <- function() {
-        p <- omicsCore::plot_volcano(
-          diff_bundle(),
-          top_n = if (isTRUE(input$label_top)) 20L else 0L)
-        ggplot2::ggplot_build(p)$plot$labels$caption
-      }
-      before <- caption_of()
-      session$setInputs(fdr_cut = 0.5, fc_cut = 0.1)
-      # The figure is the stable reference the hit table is read against;
-      # a screenshot of it must not depend on where a control was left.
-      expect_identical(caption_of(), before)
-      expect_match(before, "adjusted p < 0.05", fixed = TRUE)
+                        rerun = 1, fdr_cut = 0.05, fc_cut = 0.5)
+      session$elapse(300)
+      fig <- jsonlite::fromJSON(output$volcano, simplifyVector = FALSE)$x
+      # The fold-change cut is on the figure, on both sides of zero...
+      expect_true(all(c(-0.5, 0.5) %in% volcano_line_x(fig)))
+      # ...and the points it colours are the hits the table lists, up
+      # and down apart.
+      trace_names <- vapply(fig$data, function(t) t$name %||% "", "")
+      n_up   <- sum(marked()$is_significant & marked()$effect > 0)
+      n_down <- sum(marked()$is_significant & marked()$effect < 0)
+      expect_gt(n_up + n_down, 0L)
+      if (n_up > 0L) expect_true(sprintf("up (%d)", n_up) %in% trace_names)
+      if (n_down > 0L) expect_true(sprintf("down (%d)", n_down) %in% trace_names)
+      # The card's own legend is the one shown; plotly's would repeat it.
+      expect_false(isTRUE(fig$layout$showlegend))
+      # The direction-coloured figure still converts cleanly, its traces
+      # named in the legend's plain words.
+      p <- omicsCore::plot_volcano(shown_bundle(), top_n = 0L, effect_threshold = 0.5)
+      built <- expect_no_warning(plotly::plotly_build(plotly::ggplotly(p, tooltip = "text")))
+      built_names <- vapply(built$x$data, function(t) t$name %||% "", "")
+      expect_true("not significant" %in% built_names)
+      expect_false(any(c("ns", "significant", "TRUE", "FALSE") %in% built_names))
+      # And through WebGL as the card draws it: an invisible helper layer
+      # once became a "gl" trace plotly warned about on every build.
+      expect_no_warning(plotly::plotly_build(plotly::toWebGL(
+        drop_hoveron(plotly::ggplotly(p, tooltip = "text")))))
+      # The same when nothing passes and the hit layer is empty.
+      none <- omicsCore::plot_volcano(shown_bundle(), top_n = 0L, p_threshold = 1e-300)
+      expect_no_warning(plotly::plotly_build(plotly::toWebGL(
+        drop_hoveron(plotly::ggplotly(none, tooltip = "text")))))
+
+      session$setInputs(fc_cut = 1)
+      session$elapse(300)
+      fig <- jsonlite::fromJSON(output$volcano, simplifyVector = FALSE)$x
+      expect_true(all(c(-1, 1) %in% volcano_line_x(fig)))
+      expect_false(0.5 %in% volcano_line_x(fig))
+
+      # No fold-change cut, no fold-change lines.
+      session$setInputs(fc_cut = 0)
+      session$elapse(300)
+      fig <- jsonlite::fromJSON(output$volcano, simplifyVector = FALSE)$x
+      expect_false(any(c(-1, 1, -0.5, 0.5) %in% volcano_line_x(fig)))
+    }
+  )
+})
+
+test_that("the volcano card states the cut, and follows the controls", {
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(NULL)),
+    {
+      session$setInputs(group_col = "group", control = "G1", case = "G2",
+                        rerun = 1, fdr_cut = 0.05, fc_cut = 0.263)
+      session$elapse(300)
+      # plotly shows no caption, so the card says what "significant" is.
+      expect_identical(output$volcano_cut,
+                       "significant = adjusted p < 0.05 and |log2FC| \u2265 0.263")
+      session$setInputs(fdr_cut = 0.01, fc_cut = 1)
+      session$elapse(300)
+      expect_identical(output$volcano_cut,
+                       "significant = adjusted p < 0.01 and |log2FC| \u2265 1")
+      session$setInputs(p_kind = "raw")
+      session$elapse(300)
+      expect_match(output$volcano_cut, "significant = p < 0.01", fixed = TRUE)
+      # A cutoff of 0 is no cutoff, and the card does not claim one.
+      session$setInputs(fc_cut = 0)
+      session$elapse(300)
+      expect_identical(output$volcano_cut, "significant = p < 0.01")
+      # The legend under the plot counts the same hits as the stat cards.
+      legend <- output$volcano_legend$html
+      n_up   <- sum(marked()$is_significant & marked()$effect > 0)
+      n_down <- sum(marked()$is_significant & marked()$effect < 0)
+      expect_match(legend, sprintf("up (%d)", n_up), fixed = TRUE)
+      expect_match(legend, sprintf("down (%d)", n_down), fixed = TRUE)
+      expect_match(legend, "not significant", fixed = TRUE)
+    }
+  )
+})
+
+test_that("the volcano's labels sit at the p-value it is drawn on", {
+  shiny::testServer(
+    diff_view_server,
+    args = list(current_project = shiny::reactiveVal(NULL)),
+    {
+      session$setInputs(group_col = "group", control = "G1", case = "G2",
+                        rerun = 1, p_kind = "raw", label_top = TRUE)
+      session$elapse(300)
+      fig <- jsonlite::fromJSON(output$volcano, simplifyVector = FALSE)$x
+      df <- shown_bundle()$results$diff_result_df
+      top <- df[order(df$p_value), ][1, ]
+      ann <- fig$layout$annotations[[1]]
+      expect_identical(ann$text, top$feature_symbol)
+      # -log10 of the raw p, the y axis of a raw-p volcano: placed at the
+      # adjusted p, every label floated below its point.
+      expect_equal(ann$y, -log10(top$p_value), tolerance = 1e-6)
     }
   )
 })
@@ -194,7 +281,20 @@ test_that("the sliders still drive the hit table", {
   )
 })
 
-test_that("the volcano card says the sliders do not reach it", {
+test_that("the volcano card has a line for the cut and an up/down legend", {
   html <- render_html(diff_volcano_card(function(x) x))
-  expect_match(html, "sliders filter the table", fixed = TRUE)
+  expect_match(html, "volcano_cut", fixed = TRUE)
+  expect_match(html, "volcano_legend", fixed = TRUE)
+  expect_no_match(html, "fixed thresholds", fixed = TRUE)
+  legend <- render_html(volcano_legend(412, 388))
+  expect_match(legend, "up (412)", fixed = TRUE)
+  expect_match(legend, "down (388)", fixed = TRUE)
+  expect_match(legend, "not significant", fixed = TRUE)
+  expect_match(legend, omics_colors$up, fixed = TRUE)
+  expect_match(legend, omics_colors$down, fixed = TRUE)
+  # Along a continuous variable the effect is a slope: positive or negative.
+  expect_match(render_html(volcano_legend(1, 2, continuous = TRUE)), "negative (2)",
+               fixed = TRUE)
+  # Before a run there is nothing to count, but the key is still there.
+  expect_match(render_html(volcano_legend()), "</span>\\s*up\\s*</span>")
 })

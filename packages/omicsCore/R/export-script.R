@@ -568,16 +568,32 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
                  'plot_qc(qc, view = "missing")')
     }
     if (!is.null(bundles$diff)) {
-      lines <- c(lines,
-        "# Drawn at plot_volcano()'s default cut, which is the figure the",
-        "# app shows: its threshold sliders filter the hit table, not this.",
-        "# The cut is printed in the plot's caption.",
-        # One comparison per figure: a bundle holding several is refused.
-        if (length(bundles$diff$params$comparison) > 1L) {
-          if (identical(diff_var_for_enrich, "diff_shown")) "plot_volcano(diff_shown)"
-          else sprintf("plot_volcano(select_comparison(diff, %s))", render_value(
-            (bundles$diff$params$shown_comparison %||% bundles$diff$params$comparison)[[1L]]))
-        } else "plot_volcano(diff)")
+      # One comparison per figure: a bundle holding several is refused.
+      vol_target <- if (length(bundles$diff$params$comparison) > 1L) {
+        if (identical(diff_var_for_enrich, "diff_shown")) "diff_shown"
+        else sprintf("select_comparison(diff, %s)", render_value(
+          (bundles$diff$params$shown_comparison %||% bundles$diff$params$comparison)[[1L]]))
+      } else "diff"
+      thr <- bundles$diff$params$display_thresholds
+      vol <- if (is.null(thr)) {
+        list(lines = c(
+          "# Drawn at plot_volcano()'s default cut; the project records no",
+          "# other. The cut is printed in the plot's caption.",
+          sprintf("plot_volcano(%s)", vol_target)))
+      } else {
+        call <- render_call("plot_volcano", vol_target, list(
+          p_basis = if (identical(thr$p_preference, "raw")) "raw" else "adjusted",
+          p_threshold = thr$p_cutoff,
+          effect_threshold = if ((thr$effect_cutoff %||% 0) > 0) thr$effect_cutoff),
+          c("p_basis", "p_threshold", "effect_threshold"))
+        list(lines = c(
+          "# Drawn at the thresholds the app's controls were set to, as the",
+          "# app drew it and as the hit counts were read. The cut is printed",
+          "# in the plot's caption.",
+          call$lines), notes = call$notes)
+      }
+      lines <- c(lines, vol$lines)
+      notes <- c(notes, vol$notes)
     }
     if (!is.null(bundles$enrich)) {
       lines <- c(lines, 'plot_enrichment(enrich, view = "dot", top_n = 12L)')

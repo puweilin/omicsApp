@@ -78,7 +78,7 @@ test_that("effects and p-values are named the same way everywhere", {
   d <- run_diff(bl_diff(c("Control", "A")), method = "limma", group_col = "group",
                 control_group = "Control", case_group = "A")
   v <- plot_volcano(d, effect_threshold = 1)
-  expect_match(v$labels$caption, "adjusted p < 0.05, |log2FC| > 1", fixed = TRUE)
+  expect_match(v$labels$caption, "adjusted p < 0.05, |log2FC| >= 1", fixed = TRUE)
   expect_identical(v$labels$y, "-log10(adjusted p)")
   expect_match(plot_diff_contrasts(d, effect_cutoff = 0.5)$labels$subtitle, "|log2FC|", fixed = TRUE)
 })

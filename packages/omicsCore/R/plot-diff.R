@@ -1,19 +1,29 @@
 #' Volcano plot for a diff bundle
 #'
 #' x-axis is `effect` (log2FC, beta, correlation, depending on the backend);
-#' y-axis is `-log10(p_value)` by default. Significant features
-#' (`is_significant`) are highlighted; the top `top_n` rows by (adjusted)
-#' p-value are labelled. Optionally supply `label_features` to force-label a
-#' specific set of feature symbols.
+#' y-axis is `-log10(p)` of the adjusted p-value by default. Features that
+#' pass `p_threshold` (and `effect_threshold`, when given) are coloured by
+#' direction -- up (red) or down (blue); `"positive"` / `"negative"` for a
+#' continuous variable -- and drawn over the features that do not, which
+#' are smaller and grey. The legend counts each class. A result whose
+#' effect has no sign (the F statistic of a global test) has a single
+#' "significant" class instead. For a signed effect the x axis is
+#' symmetric about zero, so up and down magnitudes compare at a glance.
+#' The top `top_n` rows by (adjusted) p-value are labelled. Optionally
+#' supply `label_features` to force-label a specific set of feature
+#' symbols.
 #'
 #' @param bundle An `analysis_bundle` produced by [run_diff()].
 #' @param top_n Number of top features to label, ranked by `p_basis`.
 #' @param label_features Optional character vector of `feature_symbol` values
 #'   to always label.
-#' @param p_basis Which p-value column to use for the y-axis,
-#'   `"adjusted"` or `"raw"`.
-#' @param effect_threshold Vertical reference line for absolute effect.
-#' @param p_threshold Horizontal reference p-value line (significance cutoff).
+#' @param p_basis Which p-value column to use for the y-axis and the
+#'   significance cut, `"adjusted"` or `"raw"`.
+#' @param effect_threshold Optional absolute-effect cutoff: a feature must
+#'   also reach it to count as significant, and dashed vertical lines mark
+#'   it on both sides of zero.
+#' @param p_threshold P-value cutoff, drawn as a dashed horizontal line, or
+#'   `NULL` for none.
 #'
 #' @return A `ggplot` object.
 #' @export
@@ -37,10 +47,12 @@ plot_volcano <- function(
   df <- result_df
   df$.neglog10p <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
 
-  df$.sig <- factor(
-    ifelse(diff_significance(df, p_col, p_threshold, effect_threshold),
-           "significant", "ns"),
-    levels = c("ns", "significant"))
+  sig <- diff_significance(df, p_col, p_threshold, effect_threshold)
+  df$.sig <- factor(ifelse(sig, "significant", "ns"),
+                    levels = c("ns", "significant"))
+  kind <- diff_direction_kind(df)
+  classes <- diff_direction_classes(df$effect, sig, kind)
+  df$.class <- classes$class
 
   # Choose label set: union of forced labels and top_n by p-basis.
   ranked <- df[order(df[[p_col]], na.last = NA), , drop = FALSE]
@@ -63,13 +75,9 @@ plot_volcano <- function(
   p <- ggplot2::ggplot(df,
                        ggplot2::aes(x = .data$effect,
                                     y = .data$.neglog10p,
-                                    color = .data$.sig,
+                                    color = .data$.class,
                                     text = .data$.hover)) +
-    ggplot2::geom_point(alpha = 0.75, size = 1.6, na.rm = TRUE) +
-    ggplot2::scale_color_manual(
-      values = c(ns = omics_colors$ns, significant = omics_colors$up),
-      name = NULL
-    ) +
+    diff_point_layers(df, classes) +
     ggplot2::labs(
       title = "Volcano",
       subtitle = volcano_subtitle(bundle),
@@ -94,10 +102,27 @@ plot_volcano <- function(
     )
   }
   if (!is.null(effect_threshold)) {
+    # An F statistic is never negative: a line at -cut would mark
+    # nothing and push the axis below zero.
     p <- p + ggplot2::geom_vline(
-      xintercept = c(-effect_threshold, effect_threshold),
+      xintercept = if (identical(kind, "unsigned")) effect_threshold
+                   else c(-effect_threshold, effect_threshold),
       linetype = "dashed", color = omics_colors$ns
     )
+  }
+  # Symmetric about zero, so a reader compares how far up and how far
+  # down things moved without reading two different tick ranges. The
+  # threshold is included so its lines are never cut off when nothing
+  # reaches it. A coordinate limit drops no point (a scale limit would),
+  # and unlike expand_limits() it adds no invisible layer for ggplotly()
+  # to turn into a trace that toWebGL() then cannot convert.
+  # An F statistic has no sign and nothing to mirror.
+  if (!identical(kind, "unsigned")) {
+    reach <- c(abs(df$effect), effect_threshold)
+    reach <- reach[is.finite(reach)]
+    if (length(reach)) {
+      p <- p + ggplot2::coord_cartesian(xlim = c(-max(reach), max(reach)))
+    }
   }
 
   p + add_repel_layer(df, "effect", ".neglog10p", ".label")
@@ -112,6 +137,7 @@ plot_volcano <- function(
 #' thresholds this call is given — the same contract as [plot_volcano()],
 #' and for the same reason: `run_diff()` applies no cutoff, so its
 #' `is_significant` column is `NA` and has nothing to colour by.
+#' Significant features are coloured by direction, as in [plot_volcano()].
 #'
 #' @param bundle An `analysis_bundle` produced by [run_diff()].
 #' @param top_n Number of top features to label.
@@ -140,11 +166,13 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL,
   p_col <- resolve_p_col(result_df, p_preference = p_basis)
 
   df <- result_df
-  df$.sig <- factor(
-    ifelse(diff_significance(df, p_col, p_threshold, effect_threshold),
-           "significant", "ns"),
-    levels = c("ns", "significant")
-  )
+  sig <- diff_significance(df, p_col, p_threshold, effect_threshold)
+  df$.sig <- factor(ifelse(sig, "significant", "ns"),
+                    levels = c("ns", "significant"))
+  # Coloured by direction like the volcano beside it, so the same
+  # feature is the same colour in both.
+  classes <- diff_direction_classes(df$effect, sig, diff_direction_kind(df))
+  df$.class <- classes$class
 
   ranked <- df[order(df$p_value, na.last = NA), , drop = FALSE]
   top_ids <- utils::head(ranked$feature_id, top_n)
@@ -157,12 +185,8 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL,
   p <- ggplot2::ggplot(df,
                        ggplot2::aes(x = .data$base_mean,
                                     y = .data$effect,
-                                    color = .data$.sig)) +
-    ggplot2::geom_point(alpha = 0.75, size = 1.6, na.rm = TRUE) +
-    ggplot2::scale_color_manual(
-      values = c(ns = omics_colors$ns, significant = omics_colors$up),
-      name = NULL
-    ) +
+                                    color = .data$.class)) +
+    diff_point_layers(df, classes) +
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = omics_colors$ns) +
     ggplot2::labs(
       title = "MA plot",
@@ -396,6 +420,94 @@ diff_significance <- function(df, p_col, p_threshold, effect_threshold) {
   sig
 }
 
+# What the sign of `effect` means for this result. A group comparison
+# goes up or down; a continuous variable correlates positively or
+# negatively (the words the result's own `direction` column uses); a
+# global test's F statistic is never negative and has no direction, so
+# calling its hits "up" would assert something the test did not say.
+diff_direction_kind <- function(df) {
+  effect_type <- first_or_na(df$effect_type)
+  analysis_type <- first_or_na(df$analysis_type)
+  if (identical(analysis_type, "anova") ||
+      (!is.na(effect_type) && grepl("_statistic$", effect_type))) {
+    return("unsigned")
+  }
+  if (!is.na(analysis_type) && startsWith(analysis_type, "continuous")) {
+    return("continuous")
+  }
+  "group"
+}
+
+# Colour classes for the points of a volcano or MA plot, as a factor
+# whose levels are the legend labels ("up (412)", "down (388)", "not
+# significant") and the colour for each. The counts are in the label
+# itself, not added by the scale, so ggplotly() -- which names its
+# traces from the data, not from scale labels -- shows the same words.
+#
+# A significant feature with no direction (effect exactly 0, or NA) is
+# grouped with "not significant": it cannot be placed on either side,
+# and the app's up/down counts leave it out the same way.
+diff_direction_classes <- function(effect, sig, kind) {
+  words <- switch(kind,
+    unsigned   = c(hit = "significant"),
+    continuous = c(up = "positive", down = "negative"),
+    c(up = "up", down = "down"))
+  if (identical(kind, "unsigned")) {
+    key <- ifelse(sig, "hit", "ns")
+    colours <- c(hit = omics_colors$up, ns = omics_colors$ns)
+  } else {
+    key <- ifelse(sig & !is.na(effect) & effect > 0, "up",
+                  ifelse(sig & !is.na(effect) & effect < 0, "down", "ns"))
+    colours <- c(up = omics_colors$up, down = omics_colors$down,
+                 ns = omics_colors$ns)
+  }
+  hits <- names(words)
+  labels <- c(sprintf("%s (%s)", words,
+                      format(vapply(hits, function(h) sum(key == h), integer(1)),
+                             big.mark = ",", trim = TRUE)),
+              "not significant")
+  names(labels) <- c(hits, "ns")
+  # Legend order: the hits first, as the reader looks for them.
+  class <- factor(unname(labels[key]), levels = unname(labels))
+  list(class = class,
+       colours = stats::setNames(unname(colours[names(labels)]), labels),
+       ns_label = labels[["ns"]])
+}
+
+# The points of a volcano or MA plot: the features that pass nothing
+# first, smaller and fainter, then the hits on top -- one layer drew
+# the grey cloud over red points wherever they overlapped, and at full
+# strength the cloud competed with the hits for attention.
+diff_point_layers <- function(df, classes) {
+  is_ns <- df$.class == classes$ns_label
+  # A layer with no rows is left out: ggplotly() turns it into an
+  # invisible trace that toWebGL() cannot convert, and plotly warns.
+  # The legend does not need it -- the scale's limits keep every key.
+  ns_layer <- if (any(is_ns) || !any(!is_ns)) {
+    ggplot2::geom_point(data = df[is_ns, , drop = FALSE],
+                        alpha = 0.45, size = 1.1, na.rm = TRUE,
+                        show.legend = TRUE)
+  }
+  hit_layer <- if (any(!is_ns)) {
+    ggplot2::geom_point(data = df[!is_ns, , drop = FALSE],
+                        alpha = 0.85, size = 1.7, na.rm = TRUE,
+                        show.legend = TRUE)
+  }
+  list(
+    ns_layer,
+    hit_layer,
+    # Every class keeps its legend entry and swatch, even with nothing
+    # in it (show.legend = TRUE above draws the key of an empty class):
+    # "down (0)" says nothing went down, which a missing entry does not.
+    ggplot2::scale_color_manual(
+      values = classes$colours, breaks = names(classes$colours),
+      limits = names(classes$colours), drop = FALSE, name = NULL
+    ),
+    ggplot2::guides(color = ggplot2::guide_legend(
+      override.aes = list(size = 2.4, alpha = 1)))
+  )
+}
+
 # Axis titles say "adjusted p", the words the controls use, not the
 # column name (adj_p_value) the value was read from.
 p_axis_label <- function(p_col) {
@@ -410,7 +522,9 @@ threshold_caption <- function(p_col, p_threshold, effect_threshold,
     bits <- c(bits, sprintf("%s < %g", p_name, p_threshold))
   }
   if (!is.null(effect_threshold)) {
-    bits <- c(bits, sprintf("|%s| > %g", effect_name, effect_threshold))
+    # ">=", as the cut is applied (diff_significance()) and as the app
+    # states it; ">" described a rule one feature short of the real one.
+    bits <- c(bits, sprintf("|%s| >= %g", effect_name, effect_threshold))
   }
   if (length(bits) == 0L) {
     return("significance as recorded on the result")

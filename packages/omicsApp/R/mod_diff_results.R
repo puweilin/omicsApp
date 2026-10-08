@@ -182,25 +182,45 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     )
   })
 
+  # plotly drops a ggplot caption, so the card says what "significant"
+  # means on the figure: the same cut as the table beside it.
+  output$volcano_cut <- shiny::renderText({
+    b <- shown_bundle()
+    if (is.null(b)) return("")
+    volcano_cut_text(p_label(), fdr_cut_d(), omicsCore::effect_label(b), fc_cut_d())
+  })
+
+  # The figure's legend, with the counts plot_volcano() puts in its own
+  # (the same mask as the stat cards, so the numbers match them too).
+  output$volcano_legend <- shiny::renderUI({
+    if (is.null(shown_bundle())) return(volcano_legend())
+    df <- marked()
+    volcano_legend(
+      up_n   = sum(df$is_significant & df$effect > 0, na.rm = TRUE),
+      down_n = sum(df$is_significant & df$effect < 0, na.rm = TRUE),
+      continuous = startsWith(as.character(df$analysis_type[1L] %||% ""), "continuous"))
+  })
+
   output$volcano <- plotly::renderPlotly({
     b <- shown_bundle()
     shiny::validate(shiny::need(b, "Press Run analysis to draw the volcano."))
-    # Deliberately not given the slider values. The volcano is drawn
-    # at plot_volcano()'s own defaults, which is what an exported
-    # report and an exported script also produce -- so the figure a
-    # reader is shown is the figure they can reproduce, and a
-    # screenshot does not depend on where a control happened to be.
-    #
-    # The sliders still drive the hit table and the stat cards, where
-    # sweeping a threshold is the useful thing to do; the figure is
-    # the stable reference next to them.
+    # Drawn at the thresholds the controls set, so its colours agree
+    # with the hit table and the stat cards beside it. The same values
+    # are saved with the project (params$display_thresholds), so the
+    # report and the exported script draw this same figure.
     # The labels are added as plotly annotations, not drawn by
     # plot_volcano(): ggplotly() cannot convert ggrepel's text layer and
     # dropped it with a warning, so "Label top 20" labelled nothing.
-    p <- omicsCore::plot_volcano(b, top_n = 0L)
-    fig <- plotly::ggplotly(p, tooltip = "text") |> drop_hoveron()
+    p <- omicsCore::plot_volcano(b, top_n = 0L, p_basis = volcano_p_basis(p_col()),
+                                 p_threshold = fdr_cut_d(),
+                                 effect_threshold = volcano_effect_cut(fc_cut_d()))
+    # plotly's own legend is hidden: the card's legend below the plot
+    # says the same, with the counts, and does not take width from the
+    # plot on a phone.
+    fig <- plotly::ggplotly(p, tooltip = "text") |> drop_hoveron() |>
+      plotly::layout(showlegend = FALSE)
     if (isTRUE(input$label_top)) {
-      fig <- plotly::layout(fig, annotations = volcano_annotations(b, 20L))
+      fig <- plotly::layout(fig, annotations = volcano_annotations(b, 20L, p_col()))
     }
     # WebGL rather than one SVG node per point: 60,000 genes painted in
     # 0.5 s instead of 4 s, with the same points and hover text. Only
@@ -305,20 +325,14 @@ diff_volcano_card <- function(ns) {
   bslib::card(
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Volcano"),
-      # Says plainly that the thresholds do not reach this figure. The
-      # cut it was drawn at is in the plot's own caption, so a
-      # screenshot carries it too.
-      htmltools::tags$span(
-        class = "card-sub",
-        "fixed thresholds \u00B7 sliders filter the table below")
+      # The cut the figure is drawn at, in words: plotly does not show
+      # the caption plot_volcano() writes it into.
+      shiny::textOutput(ns("volcano_cut"), container = function(...)
+        htmltools::tags$span(class = "card-sub", ...))
     ),
     bslib::card_body(
       plotly::plotlyOutput(ns("volcano"), height = "360px"),
-      htmltools::tags$div(
-        class = "legend",
-        legend_swatch("significant", omics_colors$up),
-        legend_swatch("ns", omics_colors$ns)
-      )
+      shiny::uiOutput(ns("volcano_legend"))
     )
   )
 }
@@ -376,15 +390,46 @@ diff_error_hint <- function(msg) {
   "See the technical details below."
 }
 
-# ggplotly() sets `hoveron` on its traces; scattergl has no such
-# attribute, so once toWebGL() converts them plotly warns about it on
-# every build. Dropped first, it is never there to warn about.
+# The volcano's significance cut, from the view's controls, in the form
+# plot_volcano() takes it. A |log2FC| cutoff of 0 is no cutoff: drawn,
+# it was a pair of dashed lines on top of the zero line.
+volcano_p_basis <- function(p_col) {
+  if (identical(p_col, "p_value")) "raw" else "adjusted"
+}
+volcano_effect_cut <- function(fc_cut) {
+  if (is.null(fc_cut) || !is.finite(fc_cut) || fc_cut <= 0) NULL else fc_cut
+}
+
+# "significant = adjusted p < 0.05 and |log2FC| >= 0.263", in the words
+# the controls use.
+volcano_cut_text <- function(p_label, p_cut, effect_name, fc_cut) {
+  txt <- sprintf("significant = %s < %s", p_label, format(p_cut, digits = 3))
+  if (!is.null(volcano_effect_cut(fc_cut))) {
+    txt <- sprintf("%s and |%s| \u2265 %s", txt, effect_name, format(fc_cut, digits = 3))
+  }
+  txt
+}
+
+# The volcano's legend, in plot_volcano()'s classes and colours: up in
+# red, down in blue, the rest grey. Counts when there is a result.
+volcano_legend <- function(up_n = NULL, down_n = NULL, continuous = FALSE) {
+  words <- if (isTRUE(continuous)) c("positive", "negative") else c("up", "down")
+  count <- function(word, n) {
+    if (is.null(n)) word else sprintf("%s (%s)", word, format(n, big.mark = ","))
+  }
+  htmltools::tags$div(
+    class = "legend",
+    legend_swatch(count(words[[1]], up_n), omics_colors$up),
+    legend_swatch(count(words[[2]], down_n), omics_colors$down),
+    legend_swatch("not significant", omics_colors$ns)
+  )
+}
+
 # The most significant features of a result as plotly annotations, at
-# the coordinates plot_volcano() draws them (adjusted p when the result
-# has it).
-volcano_annotations <- function(bundle, n) {
+# the coordinates plot_volcano() draws them: the p-value column the
+# figure was drawn from.
+volcano_annotations <- function(bundle, n, p_col = "adj_p_value") {
   df <- bundle$results$diff_result_df
-  p_col <- if ("adj_p_value" %in% names(df) && any(!is.na(df$adj_p_value))) "adj_p_value" else "p_value"
   df <- df[!is.na(df[[p_col]]) & !is.na(df$effect), , drop = FALSE]
   top <- utils::head(df[order(df[[p_col]]), , drop = FALSE], n)
   if (!nrow(top)) return(list())
@@ -397,6 +442,9 @@ volcano_annotations <- function(bundle, n) {
     font = list(size = 11, color = "#1A2541")))
 }
 
+# ggplotly() sets `hoveron` on its traces; scattergl has no such
+# attribute, so once toWebGL() converts them plotly warns about it on
+# every build. Dropped first, it is never there to warn about.
 drop_hoveron <- function(fig) {
   fig$x$data <- lapply(fig$x$data, function(tr) {
     tr$hoveron <- NULL

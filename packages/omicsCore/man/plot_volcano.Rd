@@ -21,22 +21,32 @@ plot_volcano(
 \item{label_features}{Optional character vector of \code{feature_symbol} values
 to always label.}
 
-\item{p_basis}{Which p-value column to use for the y-axis,
-\code{"adjusted"} or \code{"raw"}.}
+\item{p_basis}{Which p-value column to use for the y-axis and the
+significance cut, \code{"adjusted"} or \code{"raw"}.}
 
-\item{effect_threshold}{Vertical reference line for absolute effect.}
+\item{effect_threshold}{Optional absolute-effect cutoff: a feature must
+also reach it to count as significant, and dashed vertical lines mark
+it on both sides of zero.}
 
-\item{p_threshold}{Horizontal reference p-value line (significance cutoff).}
+\item{p_threshold}{P-value cutoff, drawn as a dashed horizontal line, or
+\code{NULL} for none.}
 }
 \value{
 A \code{ggplot} object.
 }
 \description{
 x-axis is \code{effect} (log2FC, beta, correlation, depending on the backend);
-y-axis is \code{-log10(p_value)} by default. Significant features
-(\code{is_significant}) are highlighted; the top \code{top_n} rows by (adjusted)
-p-value are labelled. Optionally supply \code{label_features} to force-label a
-specific set of feature symbols.
+y-axis is \code{-log10(p)} of the adjusted p-value by default. Features that
+pass \code{p_threshold} (and \code{effect_threshold}, when given) are coloured by
+direction -- up (red) or down (blue); \code{"positive"} / \code{"negative"} for a
+continuous variable -- and drawn over the features that do not, which
+are smaller and grey. The legend counts each class. A result whose
+effect has no sign (the F statistic of a global test) has a single
+"significant" class instead. For a signed effect the x axis is
+symmetric about zero, so up and down magnitudes compare at a glance.
+The top \code{top_n} rows by (adjusted) p-value are labelled. Optionally
+supply \code{label_features} to force-label a specific set of feature
+symbols.
 }
 \seealso{
 Other diff:
@@ -45,6 +55,7 @@ Other diff:
 \code{\link[=contrast_labels]{contrast_labels()}},
 \code{\link[=diff_comparisons]{diff_comparisons()}},
 \code{\link[=diff_hit_sets]{diff_hit_sets()}},
+\code{\link[=effect_label]{effect_label()}},
 \code{\link[=filter_diff_results]{filter_diff_results()}},
 \code{\link[=make_ranked_features]{make_ranked_features()}},
 \code{\link[=pairwise_contrasts]{pairwise_contrasts()}},

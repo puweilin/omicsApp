@@ -194,18 +194,39 @@ test_that("each analysis emits the figure its view shows", {
   expect_no_match(txt, "dual_volcano", fixed = TRUE)
 })
 
-test_that("the volcano is emitted at the same cut the app draws", {
+test_that("a project with no saved thresholds gets the default volcano", {
   proj <- fixture_project("raw/x.xlsx")
   proj$bundles <- list(diff = new_analysis_bundle("run_diff",
     input_info = list(omics_type = "proteomics"),
     params = list(method = "limma")))
   txt <- paste(export_script(proj), collapse = "\n")
-  # The view passes no thresholds either, so `plot_volcano(diff)` here
-  # and the figure on screen are the same picture. Emitting a threshold
-  # would put a number in the script that no control in the app set.
+  # Nothing recorded a cut, so the script invents none: a number no
+  # control in the app set would describe a figure nobody saw.
   expect_false(grepl("p_threshold", txt, fixed = TRUE))
   expect_match(txt, "plot_volcano(diff)", fixed = TRUE)
-  expect_match(txt, "sliders filter the hit table", fixed = TRUE)
+  expect_match(txt, "default cut", fixed = TRUE)
+})
+
+test_that("the volcano is emitted at the thresholds the app drew it at", {
+  proj <- fixture_project("raw/x.xlsx")
+  proj$bundles <- list(diff = new_analysis_bundle("run_diff",
+    input_info = list(omics_type = "proteomics"),
+    params = list(method = "limma",
+                  display_thresholds = list(p_cutoff = 0.01, p_preference = "raw",
+                                            effect_cutoff = 0.263))))
+  txt <- paste(export_script(proj), collapse = "\n")
+  # The app's volcano follows the controls, and the controls are saved
+  # with the project; the script's figure is the one on screen.
+  expect_match(txt, paste0("plot_volcano(\n  diff,\n  p_basis          = \"raw\",\n",
+                           "  p_threshold      = 0.01,\n  effect_threshold = 0.263\n)"),
+               fixed = TRUE)
+  expect_no_match(txt, "default cut", fixed = TRUE)
+
+  # A |log2FC| cutoff of 0 is no cutoff, and is not written as one.
+  proj$bundles$diff$params$display_thresholds$effect_cutoff <- 0
+  txt <- paste(export_script(proj), collapse = "\n")
+  expect_match(txt, "p_threshold = 0.01\n)", fixed = TRUE)
+  expect_no_match(txt, "effect_threshold", fixed = TRUE)
 })
 
 # ---- round trip -------------------------------------------------------
