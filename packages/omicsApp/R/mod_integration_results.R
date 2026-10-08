@@ -156,7 +156,8 @@ integration_results_server <- function(input, output, session, navigate, method,
   output$scatter <- shiny::renderPlot(res = PLOT_RES, alt = "Each feature's effect in one layer against its effect in the other, the hits in both layers coloured and the top ones named", fit_to_width("scatter", {
     b <- plot_bundle()
     shiny::req(b, identical(b$params$method, "concordance"))
-    omicsCore::plot_integration(b, view = "effect_pair")
+    # Six names fit a half-width card without the labels piling up.
+    omicsCore::plot_integration(b, view = "effect_pair", top_n = 6L)
   }))
 
   # Twelve rows is what a 320 px card holds at a readable size.

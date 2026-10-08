@@ -288,8 +288,10 @@ plot_integration_effect_pair <- function(df, bundle, top_n = 10L,
     ggplot2::coord_equal(xlim = c(-lim, lim), ylim = c(-lim, lim)) +
     ggplot2::labs(
       title = "Effect in each layer",
-      subtitle = paste0(paste(bundle$params$experiments, collapse = " vs "),
-                        if (nrow(ring)) " \u00B7 ringed: top hits in both layers"),
+      # The axes name the layers; a phone-width card has no room to
+      # repeat them here.
+      subtitle = if (nrow(ring)) "ringed: top hits in both layers"
+                 else paste(bundle$params$experiments, collapse = " vs "),
       x = paste0(lab, " (", integration_axis_label(bundle, "a"), ")"),
       y = paste0(lab, " (", integration_axis_label(bundle, "b"), ")")
     ) +
@@ -354,7 +356,7 @@ plot_integration_top_hits <- function(df, bundle, top_n = 15L) {
     ggplot2::labs(
       title = "Top hits in both layers",
       subtitle = if (nrow(top) > 1L)
-        "ranked by combined adjusted p \u00B7 short line = layers agree"
+        "ranked by combined adjusted p\nshort line = layers agree"
       else "ranked by combined adjusted p",
       x = integration_effect_label(bundle), y = NULL
     ) +
