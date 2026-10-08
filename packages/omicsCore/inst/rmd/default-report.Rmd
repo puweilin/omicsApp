@@ -385,6 +385,10 @@ if (!is.null(ib)) {
   view <- switch(ip$method %||% "", correlation = "scatter",
                  concordance = "effect_pair", active_pathways = "dotplot", "scatter")
   safe_print(omicsCore::plot_integration(ib, view = view))
+  # The scatter shows where the hits sit; the ranked list names them.
+  if (identical(ip$method, "concordance")) {
+    safe_print(omicsCore::plot_integration(ib, view = "top_hits", top_n = 15L))
+  }
   df <- ib$results$integration_df
   if (identical(ip$method, "active_pathways") && is.data.frame(df) && nrow(df) &&
       "evidence" %in% names(df)) {

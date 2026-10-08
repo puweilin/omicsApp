@@ -15,6 +15,8 @@ low to high significance.}
 \item{conc_up_up, conc_down_down, conc_up_down, conc_down_up}{The
 four concordance quadrants of a two-omics comparison.}
 \item{shared, unique_}{Pathways found in both layers versus one.}
+\item{layer_a, layer_b}{The two layers of an integration, where a
+figure shows each layer's value side by side.}
 }
 }
 \usage{

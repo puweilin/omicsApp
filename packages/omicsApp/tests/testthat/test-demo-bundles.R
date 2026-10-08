@@ -23,10 +23,11 @@ test_that("the demo integration fixture is a bundle that satisfies the schema", 
   b <- example_integration_bundle()
   expect_true(omicsCore::is_analysis_bundle(b))
   expect_identical(b$analysis_name, "run_integration")
-  expect_s3_class(omicsCore::plot_integration(b, view = "dual_volcano"),
-                  "ggplot")
   expect_s3_class(omicsCore::plot_integration(b, view = "effect_pair"),
                   "ggplot")
+  # The demo has hits in both layers, so the top-hits card has rows to show.
+  g <- omicsCore::plot_integration(b, view = "top_hits", top_n = 12L)
+  expect_identical(nrow(g$data), 2L * 12L)
 })
 
 test_that("demo bundles are cached rather than rebuilt", {

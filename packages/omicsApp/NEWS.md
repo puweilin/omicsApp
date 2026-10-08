@@ -39,3 +39,6 @@ First versioned release. Highlights since the development snapshots:
 * Project files are signed and checked before they are opened.
 * Internals: module servers split by card; tests use installed packages
   unless omicsApp itself runs from source (`OMICSAPP_TEST_CORE`).
+* Integration: the "Mirrored volcano" card is gone; the concordance
+  scatter names the top hits, and a new "Top hits in both layers" card
+  shows each one's effect in both layers side by side.

@@ -186,10 +186,12 @@ test_that("each analysis emits the figure its view shows", {
                  'plot_qc(qc, view = "missing")',
                  "plot_volcano(diff)",
                  'plot_enrichment(enrich, view = "dot", top_n = 12L)',
-                 'plot_integration(integration, view = "dual_volcano")',
-                 'plot_integration(integration, view = "effect_pair")')) {
+                 'plot_integration(integration, view = "effect_pair")',
+                 'plot_integration(integration, view = "top_hits")')) {
     expect_match(txt, call, fixed = TRUE)
   }
+  # Deprecated: a new script would warn the first time it ran.
+  expect_no_match(txt, "dual_volcano", fixed = TRUE)
 })
 
 test_that("the volcano is emitted at the same cut the app draws", {

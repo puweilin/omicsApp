@@ -2,7 +2,7 @@
 # tables, for a live result or the demo.
 #
 # Split out of mod_integration_view.R and called from inside its module
-# server, so the outputs keep their ids ("integration-dual",
+# server, so the outputs keep their ids ("integration-scatter",
 # "integration-top_table").
 integration_results_server <- function(input, output, session, navigate, method, can_run,
                                        is_demo, integration_bundle, integration_error,
@@ -142,10 +142,10 @@ integration_results_server <- function(input, output, session, navigate, method,
     } else {
       htmltools::tagList(
         htmltools::tags$div(class = "row-grid r-6-6",
-          integration_plot_card(ns("dual"), "Mirrored volcano",
-                                "x = effect(A) - effect(B) \u00B7 y = combined p"),
           integration_plot_card(ns("scatter"), "Fold-change concordance",
-                                "A vs B \u00B7 dashed = y=x \u00B7 coloured = hit in both")),
+                                "A vs B \u00B7 dashed = agreement \u00B7 coloured = hit in both"),
+          integration_plot_card(ns("top_hits"), "Top hits in both layers",
+                                "one row per feature \u00B7 one dot per layer")),
         htmltools::tags$div(class = "row-grid r-6-6",
           integration_table_card(ns("top_table"), "Features",
                                  "hits in both layers first"),
@@ -153,16 +153,17 @@ integration_results_server <- function(input, output, session, navigate, method,
     }
   })
 
-  output$dual <- shiny::renderPlot(res = PLOT_RES, alt = "Volcano plots of the two layers side by side", fit_to_width("dual", {
-    b <- plot_bundle()
-    shiny::req(b, identical(b$params$method, "concordance"))
-    omicsCore::plot_integration(b, view = "dual_volcano")
-  }))
-
-  output$scatter <- shiny::renderPlot(res = PLOT_RES, alt = "Effect in one layer against the effect in the other", fit_to_width("scatter", {
+  output$scatter <- shiny::renderPlot(res = PLOT_RES, alt = "Each feature's effect in one layer against its effect in the other, the hits in both layers coloured and the top ones named", fit_to_width("scatter", {
     b <- plot_bundle()
     shiny::req(b, identical(b$params$method, "concordance"))
     omicsCore::plot_integration(b, view = "effect_pair")
+  }))
+
+  # Twelve rows is what a 320 px card holds at a readable size.
+  output$top_hits <- shiny::renderPlot(res = PLOT_RES, alt = "The top hits in both layers, one row each, with a dot for each layer's effect", fit_to_width("top_hits", {
+    b <- plot_bundle()
+    shiny::req(b, identical(b$params$method, "concordance"))
+    omicsCore::plot_integration(b, view = "top_hits", top_n = 12L)
   }))
 
   output$cor_scatter <- shiny::renderPlot(res = PLOT_RES, alt = "Per-feature correlation between the layers across paired samples", fit_to_width("cor_scatter", {

@@ -234,3 +234,85 @@ test_that("a strong Spearman correlation on a dozen samples has a finite, non-ze
   expect_true(all(df$p_value < 1e-3))
   expect_equal(df$p_value[df$feature_symbol == "G5"], 2 / factorial(12))
 })
+
+# ---- the effect-pair and top-hits views (figure review, 2026-10) -------
+
+fx_hits_bundle <- function() {
+  p <- fx_concordance_project()
+  run_integration(p, "concordance", c("prot", "rna"), diff_bundles = fx_diffs(p))
+}
+
+test_that("the top-hits view lists the hits in both layers, in the table's order", {
+  b <- fx_hits_bundle()
+  df <- b$results$integration_df
+  both <- df$significant_a & df$significant_b
+  expect_gt(sum(both), 1L)
+  expected <- df$feature_symbol[both][order(df$adj_p_value[both], df$p_value[both])]
+
+  g <- plot_integration(b, view = "top_hits", top_n = 3L)
+  # Top row first: the y axis runs bottom-up, so the levels are reversed.
+  expect_identical(rev(levels(g$data$.label)), utils::head(expected, 3L))
+  # One dot per layer per feature, at that layer's own effect.
+  expect_identical(nrow(g$data), 2L * 3L)
+  first <- g$data[g$data$.label == expected[[1L]], ]
+  row <- df[df$feature_symbol == expected[[1L]], ]
+  expect_setequal(first$effect, c(row$effect_a, row$effect_b))
+  expect_identical(levels(g$data$layer), c("prot", "rna"))
+})
+
+test_that("a feature the layers disagree on is still a top hit, with its line across zero", {
+  b <- fx_hits_bundle()
+  df <- b$results$integration_df
+  i <- which(df$significant_a & df$significant_b)[[1L]]
+  df$effect_b[i] <- -abs(df$effect_a[i])
+  df$quadrant[i] <- if (df$effect_a[i] > 0) "up_down" else "down_up"
+  b$results$integration_df <- df
+  g <- plot_integration(b, view = "top_hits")
+  expect_true(df$feature_symbol[i] %in% levels(g$data$.label))
+})
+
+test_that("the top-hits view says so when no feature is a hit in both layers", {
+  b <- fx_hits_bundle()
+  b$results$integration_df$significant_b <- FALSE
+  g <- plot_integration(b, view = "top_hits")
+  txt <- unlist(lapply(g$layers, function(l) l$aes_params$label %||% l$data$label))
+  expect_match(paste(txt, collapse = " "), "No feature is a hit in both layers")
+})
+
+test_that("the top-hits view of a result without per-layer effects draws the message", {
+  b <- fx_hits_bundle()
+  b$results$integration_df$effect_a <- NULL
+  b$results$integration_df$effect_b <- NULL
+  g <- plot_integration(b, view = "top_hits")
+  expect_true(any(vapply(g$layers, function(l) inherits(l$geom, "GeomText"),
+                         logical(1))))
+})
+
+test_that("the effect-pair legend counts each class, and only the top hits are ringed", {
+  b <- fx_hits_bundle()
+  df <- b$results$integration_df
+  both <- df$significant_a & df$significant_b
+  g <- plot_integration(b, view = "effect_pair", top_n = 2L)
+  labels <- g$scales$get_scales("colour")$labels
+  expect_true(any(grepl(sprintf("^up in both \\(%d\\)$",
+                                sum(both & df$quadrant == "up_up")), labels)))
+  expect_true(any(grepl(sprintf("^not a hit in both \\(%d\\)$", sum(!both)), labels)))
+  # Equal axes, symmetric about zero: the diagonal is the line of agreement.
+  expect_identical(g$coordinates$ratio, 1)
+  expect_equal(g$coordinates$limits$x, -rev(g$coordinates$limits$x))
+
+  rings <- Filter(function(l) inherits(l$geom, "GeomPoint") &&
+                    identical(l$aes_params$shape, 21), g$layers)
+  expect_length(rings, 1L)
+  top <- df$feature_id[both][order(df$adj_p_value[both], df$p_value[both])][1:2]
+  expect_setequal(rings[[1L]]$data$feature_id, top)
+})
+
+test_that("the per-layer axes say log2FC for group comparisons and 'effect' otherwise", {
+  b <- fx_hits_bundle()
+  g <- plot_integration(b, view = "effect_pair")
+  expect_identical(g$labels$x, "log2FC (prot)")
+  b$params$diff_params$rna$analysis_type <- "continuous"
+  g <- plot_integration(b, view = "top_hits")
+  expect_identical(g$labels$x, "effect")
+})

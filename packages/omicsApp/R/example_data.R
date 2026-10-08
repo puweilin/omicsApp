@@ -312,7 +312,7 @@ example_enrich_table <- function() {
 #'   both omics layers (`effect_a` = RNA log2FC, `effect_b` = protein
 #'   log2FC), their difference, a p-value pair, and the four-quadrant
 #'   concordance label (`up_up`, `down_down`, `up_down`, `down_up`,
-#'   `ns`). ~60 rows so the dual-volcano and scatter cards have
+#'   `ns`). ~60 rows so the scatter and top-hits cards have
 #'   something to render.
 #' * `active_pathways_df` — pathway-level data frame with per-omics
 #'   p-values (`p_a` = protein, `p_b` = RNA) and a combined p-value,

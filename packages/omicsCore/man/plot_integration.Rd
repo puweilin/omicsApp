@@ -6,7 +6,7 @@
 \usage{
 plot_integration(
   bundle,
-  view = c("scatter", "dual_volcano", "effect_pair", "quadrant", "dotplot"),
+  view = c("scatter", "effect_pair", "top_hits", "quadrant", "dotplot", "dual_volcano"),
   top_n = 20L,
   label_features = NULL,
   p_cutoff = 0.05
@@ -16,16 +16,16 @@ plot_integration(
 \item{bundle}{An \code{\link[=is_analysis_bundle]{analysis_bundle}} produced by
 \code{\link[=run_integration]{run_integration()}}.}
 
-\item{view}{One of \code{"scatter"}, \code{"dual_volcano"}, \code{"quadrant"},
-\code{"dotplot"}.}
+\item{view}{One of \code{"scatter"}, \code{"effect_pair"}, \code{"top_hits"},
+\code{"quadrant"}, \code{"dotplot"} (or the deprecated \code{"dual_volcano"}).}
 
 \item{top_n}{Number of features / pathways to label or display.}
 
 \item{label_features}{Optional character vector of \code{feature_symbol}
-values to force-label (scatter / dual_volcano views).}
+values to force-label (scatter / effect_pair views).}
 
-\item{p_cutoff}{Significance cutoff used for highlight color in scatter
-and dual_volcano views.}
+\item{p_cutoff}{Significance cutoff used for highlight color in the
+scatter view.}
 }
 \value{
 A \code{ggplot} object.
@@ -41,11 +41,16 @@ correlation coefficient against \code{-log10(adj_p_value)}. For
 \code{concordance} plots the effect difference (\code{effect_a - effect_b})
 against \code{-log10(adj_p_value)}. For \code{active_pathways} plots
 \code{-log10(adj_p_value)} against pathway rank.
-\item \code{"dual_volcano"} -- concordance-only. Plots \code{effect} (the difference
-of effects) on the x-axis against \code{-log10(p)} on the y-axis and
-colors by quadrant.
-\item \code{"effect_pair"} -- concordance-only. \code{effect_a} against \code{effect_b},
-features that are hits in both layers coloured by quadrant.
+\item \code{"effect_pair"} -- concordance-only. Each layer's effect against the
+other's on equal axes, with the diagonal of perfect agreement. The
+features that are hits in both layers are coloured by which way each
+layer moved (the legend counts them), the rest stay a faint grey
+background, and the top hits (at most \code{min(top_n, 10)}, ranked by
+the combined adjusted p) are ringed and named.
+\item \code{"top_hits"} -- concordance-only. The top \code{top_n} hits in both
+layers, ranked by the combined adjusted p, one row per feature with
+a dot for each layer's effect joined by a line: the shorter the
+line, the closer the two layers agree.
 \item \code{"quadrant"} -- concordance-only. Bar count of the four
 \verb{(direction_a, direction_b)} sign quadrants.
 \item \code{"dotplot"} -- active_pathways-only. Dotplot of top pathways, with
@@ -53,6 +58,12 @@ colour = direction (up in both layers, down in both, or layers
 disagree) and shape = evidence (shared by both layers, unique to one,
 or found only by the combined p-value). Results made before the
 directional method carry no direction and are coloured by adjusted p.
+\item \code{"dual_volcano"} -- deprecated, kept so scripts exported by earlier
+versions still run; it warns. It plotted the difference of the two
+effects against the combined p, which put the features that agree
+best at the centre, where a volcano reader looks for "no change".
+The difference is each point's distance from the diagonal in
+\code{"effect_pair"}.
 }
 }
 \seealso{

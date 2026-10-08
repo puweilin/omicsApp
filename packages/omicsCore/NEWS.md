@@ -56,3 +56,10 @@ First versioned release.
   `sign_project_file()`).
 * `install_optional()` groups cover the packages moved to Suggests
   (limma, clusterProfiler, msigdbr) and a new `"io"` group.
+* Integration figures: `plot_integration(view = "effect_pair")` draws
+  each layer's effect on equal axes with the hits in both layers counted
+  in the legend and the top ones named; the new `view = "top_hits"` lists
+  the top hits with a dot for each layer's effect. `view =
+  "dual_volcano"` is deprecated (it warns, and new exported scripts no
+  longer call it): its x axis, the difference of the two effects, is each
+  point's distance from the diagonal in `"effect_pair"`.

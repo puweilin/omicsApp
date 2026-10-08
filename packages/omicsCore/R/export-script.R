@@ -191,7 +191,7 @@ feature_link_script_lines <- function(src, experiments) {
 # The figures plot_integration() draws for each method.
 INTEGRATION_FIGURES <- list(
   correlation = "scatter",
-  concordance = c("dual_volcano", "effect_pair", "quadrant"),
+  concordance = c("effect_pair", "top_hits", "quadrant"),
   active_pathways = "dotplot"
 )
 

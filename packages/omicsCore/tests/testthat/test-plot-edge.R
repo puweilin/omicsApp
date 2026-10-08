@@ -361,7 +361,7 @@ test_that("plot_integration view = 'dual_volcano' renders", {
   res <- run_integration(s$proj, method = "concordance",
                          experiments = c("prot", "rna"),
                          diff_bundles = list(prot = s$d1, rna = s$d2))
-  res2 <- tryCatch(plot_integration(res, view = "dual_volcano"),
+  res2 <- tryCatch(suppressWarnings(plot_integration(res, view = "dual_volcano")),
                    error = function(e) e)
   expect_true(inherits(res2, "ggplot") || inherits(res2, "error"))
 })

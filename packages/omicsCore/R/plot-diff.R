@@ -451,7 +451,7 @@ ma_xlab <- function(bundle) {
          "mean expression (base_mean)")
 }
 
-add_repel_layer <- function(df, x, y, label_col) {
+add_repel_layer <- function(df, x, y, label_col, ...) {
   if (!any(!is.na(df[[label_col]]))) return(NULL)
   if (is_installed("ggrepel")) {
     ggrepel::geom_text_repel(
@@ -459,7 +459,7 @@ add_repel_layer <- function(df, x, y, label_col) {
       mapping = ggplot2::aes(x = .data[[x]], y = .data[[y]],
                              label = .data[[label_col]]),
       size = 3, color = omics_colors$fg_dark, max.overlaps = Inf,
-      na.rm = TRUE, inherit.aes = FALSE
+      na.rm = TRUE, inherit.aes = FALSE, ...
     )
   } else {
     ggplot2::geom_text(

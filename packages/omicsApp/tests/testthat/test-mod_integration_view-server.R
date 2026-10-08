@@ -25,6 +25,26 @@ test_that("integration view falls back to demo when prerequisites are absent", {
   )
 })
 
+test_that("a concordance result shows the scatter and the top-hits cards, not the old dual volcano", {
+  current_project <- shiny::reactiveVal(NULL)
+  diff_bundle <- shiny::reactiveVal(NULL)
+  shiny::testServer(
+    integration_view_server,
+    args = list(current_project = current_project,
+                diff_bundle     = diff_bundle),
+    {
+      session$setInputs(rerun = 0)
+      html <- paste(as.character(output$results$html), collapse = "")
+      expect_match(html, "Top hits in both layers", fixed = TRUE)
+      expect_match(html, session$ns("top_hits"), fixed = TRUE)
+      expect_match(html, session$ns("scatter"), fixed = TRUE)
+      expect_no_match(html, "volcano", ignore.case = TRUE)
+      expect_match(output$scatter$src, "^data:image/png")
+      expect_match(output$top_hits$src, "^data:image/png")
+    }
+  )
+})
+
 test_that("integration view with a one-layer project says so instead of showing the demo", {
   skip_if_not_installed("openxlsx")
   skip_if_not_installed("readxl")
