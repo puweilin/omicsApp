@@ -19,7 +19,8 @@ plot_integration(
 \item{view}{One of \code{"scatter"}, \code{"effect_pair"}, \code{"top_hits"},
 \code{"quadrant"}, \code{"dotplot"} (or the deprecated \code{"dual_volcano"}).}
 
-\item{top_n}{Number of features / pathways to label or display.}
+\item{top_n}{Number of features / pathways to label or display. The
+scatter view names at most eight, and only significant features.}
 
 \item{label_features}{Optional character vector of \code{feature_symbol}
 values to force-label (scatter / effect_pair views).}

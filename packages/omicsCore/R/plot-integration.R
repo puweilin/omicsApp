@@ -36,7 +36,8 @@
 #'   [run_integration()].
 #' @param view One of `"scatter"`, `"effect_pair"`, `"top_hits"`,
 #'   `"quadrant"`, `"dotplot"` (or the deprecated `"dual_volcano"`).
-#' @param top_n Number of features / pathways to label or display.
+#' @param top_n Number of features / pathways to label or display. The
+#'   scatter view names at most eight, and only significant features.
 #' @param label_features Optional character vector of `feature_symbol`
 #'   values to force-label (scatter / effect_pair views).
 #' @param p_cutoff Significance cutoff used for highlight color in the
@@ -134,20 +135,34 @@ pick_label_ids <- function(df, top_n, label_features, p_col = "adj_p_value") {
   unique(c(top_ids, forced_ids))
 }
 
+# The cap on names in the scatter views. Twenty, the old default, drew
+# twenty leader lines into the densest corner of the plot and crossed
+# most of them; past about eight the names stop being readable at the
+# size the app draws this card.
+SCATTER_MAX_LABELS <- 8L
+
 plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff) {
   method <- bundle$params$method
   df$.neglog10p <- -log10(pmax(df$adj_p_value, .Machine$double.xmin))
-  df$.sig <- factor(
-    ifelse(!is.na(df$is_significant) & df$is_significant, "significant", "ns"),
-    levels = c("ns", "significant")
-  )
+  sig <- !is.na(df$is_significant) & df$is_significant
+  df$.sig <- factor(ifelse(sig, "significant", "ns"), levels = c("ns", "significant"))
 
-  label_ids <- pick_label_ids(df, top_n, label_features)
-  df$.label <- ifelse(df$feature_id %in% label_ids, feature_point_label(df), NA_character_)
+  # Only significant features are named, the strongest first: a name on
+  # a grey point invites reading it as a finding. Names asked for by the
+  # caller are added whatever their p.
+  label_ids <- pick_label_ids(df[sig, , drop = FALSE], min(top_n, SCATTER_MAX_LABELS),
+                              label_features = NULL)
+  forced <- if (is.null(label_features)) character(0)
+            else df$feature_id[df$feature_symbol %in% label_features]
+  df$.label <- ifelse(df$feature_id %in% c(label_ids, forced),
+                      feature_point_label(df), NA_character_)
 
   if (method == "correlation") {
     x_aes <- "effect"
-    xlab <- paste0("correlation (", df$effect_type[[1L]], ")")
+    type <- first_or_na(df$effect_type)
+    xlab <- switch(type, spearman_r = "Spearman correlation across paired samples",
+                   pearson_r = "Pearson correlation across paired samples",
+                   paste0("correlation (", type, ")"))
     title <- "Integration: correlation"
   } else if (method == "concordance") {
     x_aes <- "effect"
@@ -160,14 +175,22 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
     xlab <- "pathway rank"
     title <- "Integration: ActivePathways"
   }
+  # The background first and faint, the hits on top of it.
+  df <- df[order(sig), , drop = FALSE]
+  n_sig <- sum(sig)
 
   p <- ggplot2::ggplot(
     df,
     ggplot2::aes(x = .data[[x_aes]], y = .data$.neglog10p, color = .data$.sig)
   ) +
-    ggplot2::geom_point(alpha = 0.75, size = 1.6, na.rm = TRUE) +
+    ggplot2::geom_point(ggplot2::aes(size = .data$.sig, alpha = .data$.sig),
+                        stroke = 0, na.rm = TRUE) +
+    ggplot2::scale_size_manual(values = c(ns = 1, significant = 1.9), guide = "none") +
+    ggplot2::scale_alpha_manual(values = c(ns = 0.35, significant = 0.9), guide = "none") +
     ggplot2::scale_color_manual(
       values = c(ns = omics_colors$ns, significant = omics_colors$up),
+      labels = c(ns = "not significant",
+                 significant = sprintf("significant (%s)", format(n_sig, big.mark = ","))),
       name = NULL
     ) +
     ggplot2::geom_hline(
@@ -181,7 +204,9 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
     ) +
     theme_omics_labelled()
 
-  p + add_repel_layer(df, x_aes, ".neglog10p", ".label")
+  p + add_repel_layer(df, x_aes, ".neglog10p", ".label",
+                      min.segment.length = 0, box.padding = 0.4,
+                      segment.color = omics_colors$ns, seed = 1L)
 }
 
 plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_cutoff) {

@@ -316,3 +316,38 @@ test_that("the per-layer axes say log2FC for group comparisons and 'effect' othe
   g <- plot_integration(b, view = "top_hits")
   expect_identical(g$labels$x, "effect")
 })
+
+test_that("the correlation scatter names a few significant features, not twenty of anything", {
+  set.seed(4)
+  nf <- 300; nd <- 12
+  shared <- matrix(rnorm(nf * nd), nf)
+  mk <- function(prefix, omics, assay) {
+    m <- 6 + matrix(rnorm(nf * nd), nf)
+    m[1:60, ] <- m[1:60, ] + 1.5 * shared[1:60, ]
+    ids <- paste0(prefix, seq_len(nf)); s <- paste0(prefix, "_D", seq_len(nd))
+    dimnames(m) <- list(ids, s)
+    omics_input(m, data.frame(group = rep(c("a", "b"), each = nd / 2),
+                              donor = paste0("D", seq_len(nd)), row.names = s),
+                data.frame(feature_id = ids, feature_symbol = paste0("G", seq_len(nf)),
+                           row.names = ids),
+                omics_type = omics, assay_type = assay)
+  }
+  p <- omics_project("c", list(prot = mk("p", "proteomics", "normalized_intensity"),
+                               rna = mk("r", "rnaseq", "logcpm")))
+  b <- run_integration(p, "correlation")
+  df <- b$results$integration_df
+  expect_gt(sum(df$is_significant %in% TRUE), 8L)
+
+  g <- plot_integration(b, view = "scatter")  # top_n = 20 by default
+  named <- g$data$feature_id[!is.na(g$data$.label)]
+  expect_length(named, 8L)
+  expect_true(all(df$is_significant[match(named, df$feature_id)]))
+  # The strongest ones.
+  sig <- df[df$is_significant %in% TRUE, ]
+  expect_setequal(named, utils::head(sig$feature_id[order(sig$adj_p_value)], 8L))
+  # A name the caller asks for is added even when it is not significant.
+  ns_sym <- df$feature_symbol[df$is_significant %in% FALSE][[1L]]
+  g <- plot_integration(b, view = "scatter", label_features = ns_sym)
+  expect_true(ns_sym %in% g$data$.label)
+  expect_match(g$labels$x, "Spearman correlation")
+})
