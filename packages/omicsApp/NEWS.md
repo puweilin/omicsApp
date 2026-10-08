@@ -42,3 +42,5 @@ First versioned release. Highlights since the development snapshots:
 * Integration: the "Mirrored volcano" card is gone; the concordance
   scatter names the top hits, and a new "Top hits in both layers" card
   shows each one's effect in both layers side by side.
+* Differential: the volcano follows the p and |log2FC| controls, like
+  the table beside it, and its card says what "significant" means.

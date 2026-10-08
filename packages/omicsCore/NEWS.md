@@ -63,3 +63,12 @@ First versioned release.
   "dual_volcano"` is deprecated (it warns, and new exported scripts no
   longer call it): its x axis, the difference of the two effects, is each
   point's distance from the diagonal in `"effect_pair"`.
+* Figures: the volcano and MA plots colour hits by direction (up red,
+  down blue) with counts in the legend, on an x axis symmetric about 0;
+  the report and exported script draw the volcano at the project's saved
+  thresholds. The QC missing-value panel gives samples their own axis
+  and shows features as a histogram with the filter cutoff and how many
+  were removed. The ORA dot plot puts the fraction of pathway genes on
+  x (no longer the overlap twice) and caps the significance colour
+  scale so one extreme pathway cannot wash out the rest. The
+  correlation scatter names at most eight significant features.
