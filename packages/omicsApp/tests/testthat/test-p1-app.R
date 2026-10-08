@@ -138,3 +138,28 @@ test_that("a saved QC result goes back to its own layer of two of the same type"
   q$input_info$layer <- NULL
   expect_identical(qc_bundle_layer(exps, q), "batch1")   # older result: first that fits
 })
+
+# ---- figures --------------------------------------------------------------
+
+test_that("the volcano labels its top features, and falls back to SVG without WebGL", {
+  proj <- shiny::reactiveVal(tutorial_project())
+  shiny::testServer(diff_view_server, args = list(current_project = proj), {
+    session$setInputs(layer = "proteomics", group_col = "group", control = "Control",
+                      case = "TreatA", method = "limma", rerun = 1)
+    plain <- jsonlite::fromJSON(output$volcano, simplifyVector = FALSE)$x
+    expect_length(plain$layout$annotations %||% list(), 0L)
+    session$setInputs(label_top = TRUE)
+    fig <- jsonlite::fromJSON(output$volcano, simplifyVector = FALSE)$x
+    ann <- fig$layout$annotations
+    expect_length(ann, 20L)
+    top <- diff_bundle()$results$diff_result_df
+    top <- top[order(top$adj_p_value), ][1, ]
+    expect_identical(ann[[1]]$text, top$feature_symbol)
+    expect_true(any(vapply(fig$data, function(t) identical(t$type, "scattergl"), logical(1))))
+    session$rootScope()$setInputs(omics_webgl = FALSE)
+    svg <- jsonlite::fromJSON(output$volcano, simplifyVector = FALSE)$x
+    expect_false(any(vapply(svg$data, function(t) identical(t$type, "scattergl"), logical(1))))
+    expect_match(svg$data[[1]]$text[[1]], "log2FC: ", fixed = TRUE)
+  })
+  expect_match(as.character(webgl_probe()), "omics_webgl", fixed = TRUE)
+})

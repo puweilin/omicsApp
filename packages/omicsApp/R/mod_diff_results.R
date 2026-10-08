@@ -194,17 +194,24 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     # The sliders still drive the hit table and the stat cards, where
     # sweeping a threshold is the useful thing to do; the figure is
     # the stable reference next to them.
-    p <- omicsCore::plot_volcano(
-      b,
-      top_n = if (isTRUE(input$label_top)) 20L else 0L
-    )
+    # The labels are added as plotly annotations, not drawn by
+    # plot_volcano(): ggplotly() cannot convert ggrepel's text layer and
+    # dropped it with a warning, so "Label top 20" labelled nothing.
+    p <- omicsCore::plot_volcano(b, top_n = 0L)
+    fig <- plotly::ggplotly(p, tooltip = "text") |> drop_hoveron()
+    if (isTRUE(input$label_top)) {
+      fig <- plotly::layout(fig, annotations = volcano_annotations(b, 20L))
+    }
     # WebGL rather than one SVG node per point: 60,000 genes painted in
-    # 0.5 s instead of 4 s, with the same points and hover text.
-    plotly::ggplotly(p, tooltip = "text") |>
-      drop_hoveron() |>
-      plotly::toWebGL() |>
-      plotly::config(displaylogo = FALSE,
-                     modeBarButtonsToRemove = c("lasso2d", "select2d"))
+    # 0.5 s instead of 4 s, with the same points and hover text. Only
+    # where the browser has WebGL: without it (remote desktops, some
+    # locked-down or GPU-less machines) plotly drew a grey box saying
+    # "WebGL is not supported" and no volcano at all.
+    if (!identical(session$rootScope()$input$omics_webgl, FALSE)) {
+      fig <- plotly::toWebGL(fig)
+    }
+    plotly::config(fig, displaylogo = FALSE,
+                   modeBarButtonsToRemove = c("lasso2d", "select2d"))
   })
 
   # An empty card before the first run read as a broken one.
@@ -372,6 +379,24 @@ diff_error_hint <- function(msg) {
 # ggplotly() sets `hoveron` on its traces; scattergl has no such
 # attribute, so once toWebGL() converts them plotly warns about it on
 # every build. Dropped first, it is never there to warn about.
+# The most significant features of a result as plotly annotations, at
+# the coordinates plot_volcano() draws them (adjusted p when the result
+# has it).
+volcano_annotations <- function(bundle, n) {
+  df <- bundle$results$diff_result_df
+  p_col <- if ("adj_p_value" %in% names(df) && any(!is.na(df$adj_p_value))) "adj_p_value" else "p_value"
+  df <- df[!is.na(df[[p_col]]) & !is.na(df$effect), , drop = FALSE]
+  top <- utils::head(df[order(df[[p_col]]), , drop = FALSE], n)
+  if (!nrow(top)) return(list())
+  lab <- ifelse(is.na(top$feature_symbol) | !nzchar(top$feature_symbol),
+                top$feature_id, top$feature_symbol)
+  lapply(seq_len(nrow(top)), function(i) list(
+    x = top$effect[[i]], y = -log10(max(top[[p_col]][[i]], .Machine$double.xmin)),
+    text = lab[[i]], showarrow = TRUE, arrowhead = 0, arrowwidth = 0.8,
+    arrowcolor = "#9AA3AE", ax = if (top$effect[[i]] >= 0) 24 else -24, ay = -14,
+    font = list(size = 11, color = "#1A2541")))
+}
+
 drop_hoveron <- function(fig) {
   fig$x$data <- lapply(fig$x$data, function(tr) {
     tr$hoveron <- NULL

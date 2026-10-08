@@ -246,7 +246,13 @@ if (!is.null(qb)) {
               fmt_n(qb$input_info$n_features_out), fmt_n(qb$input_info$n_features_in)))
   cat(if (length(flagged)) sprintf("Possible outlier sample(s): %s.\n\n", esc(and_list(flagged)))
       else "No sample was flagged as an outlier.\n\n")
-  safe_print(omicsCore::plot_qc(qb, view = "pca"))
+  # Coloured by the layer's groups, as the app shows it: a PCA without
+  # them cannot show whether samples cluster by condition.
+  qc_layer <- project$experiments[[omicsCore::bundle_layer(project, qb)]]
+  qc_group <- qc_layer$design$group_col
+  if (is.null(qc_group) || !qc_group %in% names(qc_layer$meta_df)) qc_group <- NULL
+  safe_print(tryCatch(omicsCore::plot_qc(qb, view = "pca", color_by = qc_group),
+                      error = function(e) omicsCore::plot_qc(qb, view = "pca")))
 }
 ```
 

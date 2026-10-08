@@ -476,7 +476,12 @@ fit_to_width <- function(output_id, p, session = shiny::getDefaultReactiveDomain
   # down) fits on a line.
   top <- identical(tryCatch(p$theme$legend.position, error = function(e) NULL), "top")
   shrink <- ggplot2::theme(text = ggplot2::element_text(size = 9))
-  if (!top) shrink <- shrink + ggplot2::theme(legend.direction = "vertical")
+  # A legend at the side took most of a 280 px panel: the enrichment dot
+  # plot's points were squeezed into a sliver. Under the panel instead,
+  # its entries stacked.
+  if (!top) shrink <- shrink + ggplot2::theme(legend.position = "bottom",
+                                              legend.direction = "vertical",
+                                              legend.box = "horizontal")
   if (inherits(p, "patchwork")) p & shrink
   else if (inherits(p, c("gg", "ggplot"))) p + shrink
   else p

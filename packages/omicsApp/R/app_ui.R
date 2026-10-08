@@ -37,6 +37,7 @@ app_ui <- function() {
     # like a plot that has stopped.
     shiny::useBusyIndicators(spinners = TRUE, pulse = TRUE),
     app_favicon(),
+    webgl_probe(),
     shiny::tabsetPanel(
       id = "view",
       type = "hidden",
@@ -55,6 +56,20 @@ app_ui <- function() {
 # The brand hexagon as the tab icon, inline. Without a declared icon
 # every page load asked for /favicon.ico, which the app does not serve:
 # a 404 in every browser console and every server log.
+# Whether this browser can draw WebGL, told to the server once on
+# connect (as input `omics_webgl`): the volcano uses WebGL only where it
+# will be drawn.
+webgl_probe <- function() {
+  htmltools::tags$script(htmltools::HTML(paste(
+    "$(document).on('shiny:connected', function() {",
+    "  var ok = false;",
+    "  try { var c = document.createElement('canvas');",
+    "        ok = !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl'))); }",
+    "  catch (e) { ok = false; }",
+    "  Shiny.setInputValue('omics_webgl', ok);",
+    "});")))
+}
+
 app_favicon <- function() {
   svg <- paste0(
     "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>",

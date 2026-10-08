@@ -53,10 +53,13 @@ plot_volcano <- function(
 
   # What an interactive viewer (plotly) shows on hover: the gene first.
   # The static figure ignores it.
-  df$.hover <- sprintf("%s<br>effect: %.3f<br>%s: %.3g",
+  # In the app's words (log2FC, adjusted p), not the column names.
+  df$.hover <- sprintf("%s<br>%s: %.3f<br>%s: %.3g",
                        ifelse(is.na(df$feature_symbol) | !nzchar(df$feature_symbol),
                               df$feature_id, df$feature_symbol),
-                       df$effect, p_col, df[[p_col]])
+                       effect_label(bundle), df$effect,
+                       switch(p_col, adj_p_value = "adjusted p", p_value = "p", p_col),
+                       df[[p_col]])
   p <- ggplot2::ggplot(df,
                        ggplot2::aes(x = .data$effect,
                                     y = .data$.neglog10p,
