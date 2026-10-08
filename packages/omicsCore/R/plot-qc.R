@@ -37,77 +37,216 @@ plot_qc <- function(bundle,
 
 MISSING_FILL <- "#2C3E99"
 
-# How many samples the per-sample panel will draw before it starts
-# showing only the worst. Past this the bars are too thin to read in
-# the height the app gives the panel, and the question the panel
-# answers -- which samples are worst -- only needs the top of the list.
+# Samples and features above a cutoff -- the ones QC flags or removes.
+# Amber rather than the up/down red or blue: being over a missingness
+# cutoff is a warning, not a direction of change, and red here would
+# read as "up". The same amber as omics_colors$conc_up_down, written out
+# because plot-tokens.R is sourced after this file.
+MISSING_OVER_FILL <- "#E0A030"
+
+# The dashed cutoff line: dark enough to read over both fills.
+MISSING_CUTOFF_COLOUR <- "#374151"
+
+# How many samples the depth view names on its sample axis. (The
+# missingness panel used this too, and drew 24 overlapping names; it has
+# its own, smaller cap below.)
 MISSING_MAX_SAMPLE_BARS <- 30L
 
-# Samples and features are not the same kind of question, and were
-# previously drawn as though they were: one 30-bin histogram, faceted.
-# With a dozen samples most of those bins are empty and the few that are
-# not read as unexplained spikes, and a histogram discards the one thing
-# the sample panel is for -- *which* sample is bad.
+# How many samples the missingness panel draws as named bars. The app
+# gives the two stacked panels 360 px between them, and after titles
+# and axes the sample panel has about 90 px for its bars: ten names at
+# 7 pt is what fits there without the labels running into one another
+# (24 overlapped at the old cap of 30, and 12 still touched). Past it,
+# every sample is a point on a ranked curve and the ones that matter
+# are named in the subtitle.
+MISSING_MAX_NAMED_SAMPLES <- 10L
+
+# From this many bars the names drop from the theme's size to 7 pt, so
+# that up to MISSING_MAX_NAMED_SAMPLES fit.
+MISSING_SMALL_LABEL_FROM <- 7L
+
+# The feature histogram's bins. A missing rate can only be k / n -- with
+# 24 samples there are 25 possible values -- so a bin per possible value
+# is exact, and bins that ignore that split some values across two bars
+# and leave others empty, which draws a comb that is not in the data.
+# Past this many possible values, neighbouring values share a bin.
+MISSING_MAX_BINS <- 40L
+
+# Two panels, because samples and features are different questions:
 #
-# So: a bar per sample, worst first; a density for features, where the
-# count is large and the shape is the point.
+# * per sample -- which sample is bad, and is any over the sample cutoff
+#   (if one was set);
+# * per feature -- how many features the missing-value filter removes,
+#   which is the decision this panel exists to inform. The cutoff is
+#   drawn on it and the bars past it are coloured, so the count in the
+#   subtitle can be seen as well as read.
+#
+# Each panel has its own x axis. They used to share one, and since a
+# feature missing in every sample is common, that shared axis ran to
+# 100% and squeezed sample bars of 5-20% against its left edge.
 plot_qc_missing <- function(bundle) {
   miss <- bundle$results$qc_summary$missingness
-  # One x range for both panels. They measure the same quantity, and
-  # the previous facet_wrap(scales = "free") gave them separate ones,
-  # so a sample panel and a feature panel that looked alike could be an
-  # order of magnitude apart. Scaled to the data rather than fixed at
-  # [0, 1]: real missingness is usually a few percent, and a panel that
-  # is 95% empty space hides the shape it exists to show.
-  upper <- missing_axis_upper(c(miss$sample_metrics$missing_rate,
-                                miss$feature_metrics$missing_rate))
+  rules <- missing_rules(bundle)
+  n_samples <- nrow(miss$sample_metrics)
   patchwork::wrap_plots(
-    plot_missing_by_sample(miss$sample_metrics, upper),
-    plot_missing_by_feature(miss$feature_metrics, upper),
-    ncol = 1
+    missing_unaligned(
+      plot_missing_by_sample(miss$sample_metrics, cutoff = rules$sample_cutoff)),
+    missing_unaligned(
+      plot_missing_by_feature(miss$feature_metrics,
+                              cutoff = rules$feature_cutoff,
+                              filter = rules$filter,
+                              n_removed = rules$n_removed,
+                              n_samples = n_samples)),
+    ncol = 1,
+    # Named bars need every pixel of their half; the ranked curve does
+    # not, and the histogram's bars past the cutoff are short.
+    heights = if (n_samples > MISSING_MAX_NAMED_SAMPLES) c(1, 1.25) else c(1, 1)
   )
 }
 
-# Always anchored at 0, so the reader can see where the floor is, and
-# never past 1. The floor of 5% stops an all-but-complete dataset from
-# being magnified into what looks like a problem.
+# The two panels' plotting areas are not lined up. Their x axes measure
+# different things now, and lining the histogram up under the sample
+# names gave a third of a phone-width panel to empty space. free() is
+# patchwork >= 1.2; an older one lines them up, which is only wasteful.
+missing_unaligned <- function(p) {
+  if (utils::packageVersion("patchwork") >= "1.2.0") patchwork::free(p) else p
+}
+
+# The cutoffs and the outcome QC recorded, read from wherever the bundle
+# keeps them. The missingness settings are what qc_missingness() actually
+# used, so they come first; the run's params are the same values one
+# level up, and an older saved bundle may carry only one of the two, or
+# neither -- then the panel draws no line and states no count, rather
+# than guess one.
+missing_rules <- function(bundle) {
+  miss <- bundle$results$qc_summary$missingness
+  settings <- miss$settings
+  params <- bundle$params
+  cutoff_or_null <- function(x) {
+    if (is.numeric(x) && length(x) == 1L && !is.na(x) && x >= 0 && x <= 1) x
+  }
+  filter <- settings$missing_filter %||% params$missing_filter %||% "global"
+  if (!filter %in% c("global", "any_group", "all_groups")) filter <- "global"
+
+  # The number removed is the number QC flagged -- every flagged feature
+  # is dropped from the cleaned layer, and nothing else drops a feature,
+  # so it equals n_features_in - n_features_out. The input counts are the
+  # fallback for a bundle saved without the flagged list.
+  n_removed <- if (!is.null(miss$flagged_features)) {
+    length(unique(miss$flagged_features))
+  } else {
+    info <- bundle$input_info
+    if (is.numeric(info$n_features_in) && is.numeric(info$n_features_out)) {
+      as.integer(info$n_features_in - info$n_features_out)
+    }
+  }
+
+  list(
+    feature_cutoff = cutoff_or_null(settings$feature_missing_cutoff %||%
+                                      params$missing_threshold),
+    sample_cutoff = cutoff_or_null(settings$sample_missing_cutoff %||%
+                                     params$sample_missing_threshold),
+    filter = filter,
+    n_removed = n_removed
+  )
+}
+
+# Anchored at 0, so the reader can see where the floor is, and never
+# past 1. The floor of 5% stops an all-but-complete dataset from being
+# magnified into what looks like a problem. Used for the sample axis
+# only: the feature panel always shows the whole 0-100%, because
+# features missing in most samples are exactly what it is about.
 missing_axis_upper <- function(rates) {
   rates <- rates[!is.na(rates)]
   if (!length(rates)) return(1)
   max(0.05, min(1, max(rates) * 1.15 + 0.01))
 }
 
-# How many of the worst samples to name when there are too many to name
-# them all. Five fits in the tail of a sorted curve without the labels
-# colliding.
-MISSING_LABEL_WORST <- 5L
+# Whether the sample cutoff is close enough to the samples to draw. A
+# cutoff far past every sample (80% when the worst is at 15%) would
+# stretch the axis back out and squeeze the bars the way the shared axis
+# did; the subtitle then says none is over it, which is all the line
+# would have shown.
+missing_cutoff_in_view <- function(rates, cutoff) {
+  if (is.null(cutoff)) return(FALSE)
+  rates <- rates[!is.na(rates)]
+  top <- if (length(rates)) max(rates) else 0
+  cutoff <= max(0.05, 2 * top)
+}
 
-# One bar per sample stops working somewhere past a few dozen: the bars
-# get thinner than their labels are tall. Truncating to the worst N
-# answers "which sample is bad" but throws away "how bad is this cohort
-# overall", which is the other half of what the panel is for.
+# How many of the worst samples to name when there are too many to name
+# them all, at most.
+MISSING_LABEL_WORST <- 3L
+
+# How many characters of sample names the subtitle's second line holds:
+# what fits a phone-width panel. Short names fit three; long ones fewer,
+# each in full -- a name cut short loses the part that tells samples
+# apart ("Patient_005_pla...").
+MISSING_NAME_CHARS <- 40L
+
+# "S01, S02, S03"; "and 4 more" when the list is a set (the samples over
+# the cutoff) rather than the top of a ranking.
+missing_name_list <- function(ids, n = MISSING_LABEL_WORST, more = FALSE) {
+  ids <- truncate_pathway_name(as.character(ids), MISSING_NAME_CHARS)
+  fits <- cumsum(nchar(ids) + 2L) - 2L <= MISSING_NAME_CHARS
+  k <- max(1L, min(n, sum(fits)))
+  shown <- paste(ids[seq_len(min(k, length(ids)))], collapse = ", ")
+  if (more && length(ids) > k) sprintf("%s and %d more", shown, length(ids) - k)
+  else shown
+}
+
+# "3 over the 25% cutoff", after a middle dot; nothing when no cutoff
+# was set.
+missing_sample_cutoff_text <- function(n_over, cutoff) {
+  if (is.null(cutoff)) return("")
+  pct <- format_missing_pct(cutoff)
+  if (n_over == 0L) sprintf(" \u00b7 none over the %s cutoff", pct)
+  else sprintf(" \u00b7 %d over the %s cutoff", n_over, pct)
+}
+
+# "8 samples", and says so when none of them misses a value: empty
+# bars on their own look like a plot that failed to draw.
+missing_sample_count <- function(df) {
+  out <- sprintf("%d samples", nrow(df))
+  if (nrow(df) && all(df$missing_rate == 0, na.rm = TRUE)) {
+    out <- paste(out, "\u00b7 no missing values")
+  }
+  out
+}
+
+format_missing_pct <- function(x) scales::label_percent(accuracy = 1)(x)
+
+# A bar per sample, worst first, while the names fit; past that a
+# sorted curve: every sample is still a point, rank on y, and the shape
+# of the curve is the distribution -- a flat line with a short tail
+# reads very differently from a steady slope. The worst few (or the
+# ones over the cutoff) keep their names, in the subtitle.
 #
-# So past the cap it becomes a sorted curve: every sample is still a
-# point, rank on y, and the shape of the curve is the distribution -- a
-# flat line with a short tail reads very differently from a steady
-# slope. The worst few keep their names, which is all anyone reads off
-# the top of a bar chart anyway.
-#
-# Missing rate stays on x either way, so this panel and the feature
-# panel below it remain directly comparable.
-plot_missing_by_sample <- function(sample_df, upper = 1) {
+# Samples over the sample cutoff are amber, with the cutoff dashed.
+plot_missing_by_sample <- function(sample_df, cutoff = NULL) {
   df <- sample_df[order(sample_df$missing_rate, decreasing = TRUE), ,
                   drop = FALSE]
-  if (nrow(df) > MISSING_MAX_SAMPLE_BARS) {
-    return(plot_missing_sample_curve(df, upper))
+  df$over <- if (is.null(cutoff)) {
+    rep(FALSE, nrow(df))
+  } else {
+    !is.na(df$missing_rate) & df$missing_rate > cutoff
+  }
+  show_line <- missing_cutoff_in_view(df$missing_rate, cutoff)
+  upper <- missing_axis_upper(c(df$missing_rate, if (show_line) cutoff))
+
+  if (nrow(df) > MISSING_MAX_NAMED_SAMPLES) {
+    return(plot_missing_sample_curve(df, upper, cutoff, show_line))
   }
   # Reversed, because a discrete y axis is drawn bottom-up and the
   # worst sample belongs at the top.
   df$sample_id <- factor(df$sample_id, levels = rev(df$sample_id))
 
   ggplot2::ggplot(df, ggplot2::aes(x = .data$missing_rate,
-                                   y = .data$sample_id)) +
-    ggplot2::geom_col(fill = MISSING_FILL, width = 0.7) +
+                                   y = .data$sample_id,
+                                   fill = .data$over)) +
+    ggplot2::geom_col(width = 0.7) +
+    missing_over_scale("fill") +
+    missing_cutoff_line(cutoff, show_line) +
     ggplot2::scale_y_discrete(labels = function(x) truncate_pathway_name(x, 24L)) +
     ggplot2::scale_x_continuous(
       labels = scales::label_percent(),
@@ -115,86 +254,251 @@ plot_missing_by_sample <- function(sample_df, upper = 1) {
       expand = ggplot2::expansion(mult = c(0, 0.02))
     ) +
     ggplot2::labs(title = "Missing rate per sample",
-                  subtitle = sprintf("%d samples", nrow(df)),
+                  subtitle = paste0(missing_sample_count(df),
+                                    missing_sample_cutoff_text(sum(df$over), cutoff)),
                   x = NULL, y = NULL) +
-    theme_omicsCore()
+    theme_omicsCore() +
+    if (nrow(df) >= MISSING_SMALL_LABEL_FROM) {
+      ggplot2::theme(axis.text.y = ggplot2::element_text(size = 7))
+    }
 }
 
-# `df` is already sorted worst-first.
-plot_missing_sample_curve <- function(df, upper = 1) {
+# `df` is already sorted worst-first, with `over` set.
+plot_missing_sample_curve <- function(df, upper = 1, cutoff = NULL,
+                                      show_line = FALSE) {
   df$rank <- seq_len(nrow(df))
-  worst <- df[seq_len(min(MISSING_LABEL_WORST, nrow(df))), , drop = FALSE]
+  # Named in the subtitle rather than beside their points: the worst few
+  # sit at almost the same rank, so on the plot their labels land on top
+  # of one another. With a cutoff, the samples over it are the ones to
+  # name; otherwise the worst. On a second line, which a phone-width
+  # panel needs for long names.
+  names <- if (any(df$over)) {
+    paste("Over it:", missing_name_list(df$sample_id[df$over], more = TRUE))
+  } else {
+    paste("Worst:", missing_name_list(df$sample_id))
+  }
+  subtitle <- paste0(sprintf("%d samples, ranked", nrow(df)),
+                     missing_sample_cutoff_text(sum(df$over), cutoff),
+                     "\n", names)
 
-  ggplot2::ggplot(df, ggplot2::aes(x = .data$missing_rate, y = .data$rank)) +
-    ggplot2::geom_point(colour = MISSING_FILL, size = 1.1, alpha = 0.7) +
+  ggplot2::ggplot(df, ggplot2::aes(x = .data$missing_rate, y = .data$rank,
+                                   colour = .data$over)) +
+    ggplot2::geom_point(size = 1.3, alpha = 0.8) +
+    missing_over_scale("colour") +
+    missing_cutoff_line(cutoff, show_line) +
     # Rank 1 is the worst, and belongs at the top.
-    ggplot2::scale_y_reverse(breaks = scales::breaks_pretty(4)) +
+    ggplot2::scale_y_reverse(breaks = function(lim) {
+      b <- scales::breaks_pretty(4)(lim)
+      b[b >= 1]  # there is no rank 0
+    }) +
     ggplot2::scale_x_continuous(labels = scales::label_percent(),
-                                limits = c(0, upper)) +
-    ggplot2::labs(
-      title = "Missing rate per sample",
-      # The names go in the subtitle rather than beside their points.
-      # The worst few sit at almost the same rank, so on the plot their
-      # labels land on top of one another; and putting them here costs
-      # no axis room, which keeps this panel's x range identical to the
-      # feature panel's.
-      subtitle = sprintf("%d samples, ranked. Worst: %s",
-                         nrow(df), paste(worst$sample_id, collapse = ", ")),
-      x = NULL, y = "Rank"
-    ) +
+                                limits = c(0, upper),
+                                expand = ggplot2::expansion(mult = c(0, 0.02))) +
+    ggplot2::labs(title = "Missing rate per sample", subtitle = subtitle,
+                  x = NULL, y = "Rank") +
     theme_omicsCore()
 }
 
-plot_missing_by_feature <- function(feature_df, upper = 1) {
-  rate <- feature_df$missing_rate
-  rate <- rate[!is.na(rate)]
-  base <- ggplot2::labs(
-    title = "Missing rate across features",
-    subtitle = sprintf("%d features", length(rate)),
-    # Named, because an unlabelled axis reading 2.5, 5.0, 7.5 next to a
-    # panel of counts invites being read as one.
-    x = "Missing rate", y = "Density"
-  )
+missing_over_scale <- function(aesthetic) {
+  ggplot2::scale_discrete_manual(
+    aesthetics = aesthetic,
+    values = c(`FALSE` = MISSING_FILL, `TRUE` = MISSING_OVER_FILL),
+    guide = "none")
+}
 
-  # density() needs spread to estimate a bandwidth from. All-complete
-  # data -- the good case -- has none, so say so rather than error.
-  if (length(rate) < 3L || length(unique(rate)) < 2L) {
-    return(
-      ggplot2::ggplot(data.frame(x = rate), ggplot2::aes(x = .data$x)) +
-        ggplot2::geom_rug(colour = MISSING_FILL) +
-        ggplot2::scale_x_continuous(labels = scales::label_percent(),
-                                    limits = c(0, upper)) +
-        base +
-        ggplot2::labs(subtitle = sprintf(
-          "%d features, all at %s", length(rate),
-          scales::label_percent()(if (length(rate)) rate[1] else 0))) +
-        theme_omicsCore()
-    )
+missing_cutoff_line <- function(cutoff, show = !is.null(cutoff)) {
+  if (!show || is.null(cutoff)) return(NULL)
+  ggplot2::geom_vline(xintercept = cutoff, linetype = "dashed",
+                      colour = MISSING_CUTOFF_COLOUR, linewidth = 0.5)
+}
+
+# What the feature filter compared with the cutoff, in words, for the
+# axis -- and the rule for removal, for the subtitle. Worded like the
+# app's own summary card ("filtered at 50% missing in every group").
+missing_filter_words <- function(filter) {
+  switch(filter,
+    any_group = list(axis = "Lowest missing rate among groups",
+                     rule = "more than %s missing in every group"),
+    all_groups = list(axis = "Highest missing rate among groups",
+                      rule = "more than %s missing in at least one group"),
+    # No axis title for the overall rate: the panel's title already says
+    # what x is, and the app's 360 px leave no height to spare.
+    list(axis = NULL, rule = "missing in more than %s of samples"))
+}
+
+# The bins of the feature histogram, as edges on [0, 1]. Missing rates
+# are fractions k / d, so the edges sit half-way between possible
+# values: each bin holds whole values, never part of one. 0% -- complete
+# features, usually the largest group -- gets a bin of its own; past
+# MISSING_MAX_BINS possible values, neighbours are paired (or tripled,
+# ...) after it.
+missing_bins <- function(rate, n_samples = NA_integer_) {
+  d <- missing_rate_denominator(rate, n_samples)
+  if (is.na(d)) {
+    edges <- seq(0, 1, length.out = MISSING_MAX_BINS + 1L)
+  } else {
+    g <- ceiling(d / MISSING_MAX_BINS)
+    # In whole values first, then divided: every edge is half-way
+    # between two possible values, so none can fall on one.
+    edges <- c(-0.5, 0.5 + g * (0:ceiling(d / g))) / d
+  }
+  structure(edges, denominator = d)
+}
+
+# The smallest d for which every rate is a whole number of d-ths. For
+# the overall rate that is the number of samples (or a divisor of it);
+# for the group rates it is the least common multiple of the group
+# sizes, which the bundle does not record but the rates themselves give
+# away. NA when no small d fits -- then the bins are simply even.
+missing_rate_denominator <- function(rate, n_samples = NA_integer_,
+                                     max_d = 1000L) {
+  r <- unique(round(rate[!is.na(rate)], 9))
+  if (!length(r)) return(1L)
+  cands <- seq_len(max_d)
+  if (!is.na(n_samples) && n_samples >= 1L && n_samples <= max_d) {
+    # Try the sample count first: for the overall rate it is the answer,
+    # and a smaller d that happens to fit too (all rates multiples of a
+    # quarter, with 24 samples) would draw coarser bins than the data has.
+    cands <- c(n_samples, setdiff(cands, n_samples))
+  }
+  for (d in cands) {
+    if (all(abs(r * d - round(r * d)) < 1e-6)) return(as.integer(d))
+  }
+  NA_integer_
+}
+
+# Counts of features per bin, split into kept and removed.
+missing_feature_bins <- function(rate, cutoff, n_samples = NA_integer_) {
+  edges <- missing_bins(rate, n_samples)
+  bin <- findInterval(rate, edges, rightmost.closed = TRUE, all.inside = TRUE)
+  removed <- if (is.null(cutoff)) rep(FALSE, length(rate)) else rate > cutoff
+  counts <- as.data.frame(table(bin = factor(bin, levels = seq_len(length(edges) - 1L)),
+                                removed = factor(removed, levels = c(FALSE, TRUE))),
+                          responseName = "n", stringsAsFactors = FALSE)
+  counts$bin <- as.integer(counts$bin)
+  counts <- counts[counts$n > 0L, , drop = FALSE]
+  # Each bar stands at the middle of the rates its bin can hold -- 0% at
+  # 0%, 100% at 100% -- not at the middle of an interval that runs half
+  # a value past either end.
+  d <- attr(edges, "denominator")
+  lo <- edges[counts$bin]
+  hi <- edges[counts$bin + 1L]
+  counts$x <- if (is.na(d)) {
+    (lo + hi) / 2
+  } else {
+    (pmax(ceiling(lo * d), 0) + pmin(floor(hi * d), d)) / 2 / d
+  }
+  counts$width <- 0.85 * stats::median(diff(edges))
+  counts$removed <- counts$removed == "TRUE"
+  counts[order(counts$x, counts$removed), , drop = FALSE]
+}
+
+# A histogram of feature missing rates over the whole 0-100%, with the
+# filter's cutoff dashed and the features it removes in amber. y is on a
+# square-root scale: complete features usually outnumber those near the
+# cutoff fifty to one, and on a linear axis the bars the filter removes
+# -- the ones this panel is about -- are a pixel high.
+#
+# For the group rules the cutoff is not compared with the overall rate,
+# so drawing that would put features on the wrong side of the line. The
+# panel then plots the rate the filter used (the lowest or highest group
+# rate) and says so on its axis.
+plot_missing_by_feature <- function(feature_df, cutoff = NULL,
+                                    filter = "global", n_removed = NULL,
+                                    n_samples = NA_integer_) {
+  group_rule <- !identical(filter, "global")
+  has_group_rate <- group_rule && !is.null(feature_df$filter_missing_rate)
+  rate <- if (has_group_rate) feature_df$filter_missing_rate
+          else feature_df$missing_rate
+  rate <- rate[!is.na(rate)]
+  # A group rule with no group rates recorded: the overall rate is all
+  # there is to draw, and a cutoff line over it would not be the line
+  # the filter used.
+  draw_cutoff <- !is.null(cutoff) && (!group_rule || has_group_rate)
+  words <- missing_filter_words(if (has_group_rate) filter else "global")
+  # The group rates are fractions of a group, not of all samples.
+  if (has_group_rate) n_samples <- NA_integer_
+
+  subtitle <- missing_feature_subtitle(length(rate), rate, cutoff, filter,
+                                       n_removed)
+  labs <- ggplot2::labs(title = "Missing rate per feature",
+                        subtitle = subtitle,
+                        x = words$axis, y = "Features (\u221a scale)")
+  x_scale <- ggplot2::scale_x_continuous(
+    labels = scales::label_percent(), breaks = seq(0, 1, 0.25))
+
+  if (!length(rate)) {
+    return(ggplot2::ggplot() + x_scale +
+             ggplot2::coord_cartesian(xlim = c(0, 1)) + labs +
+             theme_omicsCore())
   }
 
-  # Evaluated on [0, 1] rather than left to spill past either end: a
-  # missing rate below 0 or above 1 is not a thing, and a smooth that
-  # draws one invites the reader to believe it.
-  dens <- stats::density(rate, from = 0, to = 1)
-  curve <- data.frame(x = dens$x, y = dens$y)
+  bins <- missing_feature_bins(rate, if (draw_cutoff) cutoff, n_samples)
+  half <- bins$width[1L] / 2
+  xlim <- c(min(0, bins$x - half), max(1, bins$x + half))
+  top <- max(tapply(bins$n, bins$x, sum))
 
-  ggplot2::ggplot(curve, ggplot2::aes(x = .data$x, y = .data$y)) +
-    ggplot2::geom_area(fill = MISSING_FILL, alpha = 0.25) +
-    ggplot2::geom_line(colour = MISSING_FILL, linewidth = 0.6) +
-    # The rug keeps the individual features visible under the smooth,
-    # which matters when there are few of them and the curve is mostly
-    # bandwidth.
-    ggplot2::geom_rug(data = data.frame(x = rate, y = 0),
-                      ggplot2::aes(x = .data$x), sides = "b",
-                      alpha = 0.4, colour = MISSING_FILL) +
-    # coord_cartesian, not scale limits: the density is estimated over
-    # the whole [0, 1] and then viewed, rather than re-estimated from a
-    # truncated sample, which would change the curve's shape.
-    ggplot2::scale_x_continuous(labels = scales::label_percent()) +
-    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.05))) +
-    ggplot2::coord_cartesian(xlim = c(0, upper)) +
-    base +
-    theme_omicsCore()
+  ggplot2::ggplot(bins, ggplot2::aes(x = .data$x, y = .data$n,
+                                     fill = .data$removed)) +
+    ggplot2::geom_col(width = bins$width[1L],
+                      position = ggplot2::position_stack(reverse = TRUE)) +
+    missing_over_scale("fill") +
+    missing_cutoff_line(cutoff, draw_cutoff) +
+    (if (draw_cutoff) missing_cutoff_label(cutoff, top)) +
+    x_scale +
+    ggplot2::scale_y_sqrt(breaks = missing_count_breaks(top),
+                          labels = scales::label_comma()) +
+    # Room above the tallest bar for the cutoff's label.
+    ggplot2::coord_cartesian(xlim = xlim, ylim = c(0, top * 1.4),
+                             expand = FALSE) +
+    labs +
+    theme_omicsCore() +
+    # Smaller than the theme's, to fit the height of a panel the app
+    # gives 200 px.
+    ggplot2::theme(axis.title.y = ggplot2::element_text(size = ggplot2::rel(0.8)))
+}
+
+# The cutoff's value, written at the top of its line: on the side with
+# more room, so a cutoff near 100% does not run off the panel.
+missing_cutoff_label <- function(cutoff, top) {
+  right <- cutoff <= 0.75
+  ggplot2::annotate("text", x = cutoff, y = top * 1.35,
+                    label = paste0(if (right) " " else "",
+                                   format_missing_pct(cutoff), " cutoff",
+                                   if (right) "" else " "),
+                    hjust = if (right) 0 else 1, vjust = 1, size = 3,
+                    colour = MISSING_CUTOFF_COLOUR)
+}
+
+# Round counts that spread out on a square-root axis: 0, 10, 100, 500,
+# 1,000 ... rather than evenly spaced counts that bunch at the top.
+missing_count_breaks <- function(top) {
+  if (!is.finite(top) || top <= 0) return(0)
+  steps <- c(1, 2, 5) * rep(10^(0:7), each = 3)
+  cand <- c(0, steps[steps <= top])
+  # Three or four labelled counts: 0, the largest round count under the
+  # top, and one or two in between on the square-root scale.
+  if (length(cand) <= 4L) return(cand)
+  hi <- cand[length(cand)]
+  mids <- vapply(c(1 / 9, 4 / 9), function(f) {
+    cand[which.min(abs(sqrt(cand) - sqrt(hi * f)))]
+  }, numeric(1))
+  unique(c(0, mids, hi))
+}
+
+# "5,000 features, 312 removed" over "(missing in more than 50% of
+# samples)" -- on two lines, because one does not fit a phone-width
+# panel, and the second line is the rule, not the result.
+missing_feature_subtitle <- function(n, rate, cutoff, filter, n_removed) {
+  head <- sprintf("%s features", format(n, big.mark = ","))
+  if (n > 0L && all(rate == 0)) {
+    head <- paste(head, "\u00b7 no missing values")
+  }
+  if (is.null(cutoff) || is.null(n_removed)) return(head)
+  result <- if (n_removed == 0L) "none removed"
+            else sprintf("%s removed", format(n_removed, big.mark = ","))
+  sprintf("%s \u00b7 %s\n(%s)", head, result,
+          sprintf(missing_filter_words(filter)$rule, format_missing_pct(cutoff)))
 }
 
 plot_qc_pca <- function(bundle, color_by = NULL) {
