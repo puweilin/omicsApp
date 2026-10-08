@@ -72,3 +72,8 @@ First versioned release.
   x (no longer the overlap twice) and caps the significance colour
   scale so one extreme pathway cannot wash out the rest. The
   correlation scatter names at most eight significant features.
+* The QC depth view names at most ten samples and ranks the rest, with
+  shallow libraries in amber in both panels; QC cutoff lines stay
+  visible over the bars. The enrichment bar view is coloured by
+  direction and cuts a far-outlying bar short, marked and labelled with
+  its true value.

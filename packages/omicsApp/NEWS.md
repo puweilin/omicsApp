@@ -44,3 +44,5 @@ First versioned release. Highlights since the development snapshots:
   shows each one's effect in both layers side by side.
 * Differential: the volcano follows the p and |log2FC| controls, like
   the table beside it, and its card says what "significant" means.
+* Differential: the volcano's top-hit labels are laid out in columns
+  beside the points and never overlap ("Label top hits (up to 20)").

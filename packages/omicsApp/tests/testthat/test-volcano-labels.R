@@ -129,6 +129,9 @@ test_that("the app's figure carries the laid-out labels and the wider x range", 
     xr <- unlist(fig$layout$xaxis$range)
     expect_equal(xr[[1]], -xr[[2]])
     expect_gte(xr[[2]], unlist(plain$layout$xaxis$range)[[2]] - 1e-9)
+    # No title inside the plot: the card has one, and on a phone the
+    # plot's own ran into the toolbar.
+    expect_false(grepl("Volcano", fig$layout$title$text %||% ""))
   })
 })
 

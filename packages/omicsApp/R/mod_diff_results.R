@@ -217,7 +217,9 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     # plotly's own legend is hidden: the card's legend below the plot
     # says the same, with the counts, and does not take width from the
     # plot on a phone.
-    fig <- plotly::ggplotly(p, tooltip = "text") |> drop_hoveron() |>
+    # No plotly title: the card already says "Volcano", and at phone
+    # width the title ran into the plotly toolbar.
+    fig <- plotly::ggplotly(p + ggplotly_untitled(), tooltip = "text") |> drop_hoveron() |>
       plotly::layout(showlegend = FALSE)
     if (isTRUE(input$label_top)) {
       # Laid out for the width the browser reports, so a phone gets
@@ -603,6 +605,8 @@ label_volcano <- function(fig, bundle, n, p_col, width = NULL) {
 # ggplotly() sets `hoveron` on its traces; scattergl has no such
 # attribute, so once toWebGL() converts them plotly warns about it on
 # every build. Dropped first, it is never there to warn about.
+ggplotly_untitled <- function() ggplot2::labs(title = NULL, subtitle = NULL)
+
 drop_hoveron <- function(fig) {
   fig$x$data <- lapply(fig$x$data, function(tr) {
     tr$hoveron <- NULL
