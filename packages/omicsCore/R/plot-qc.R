@@ -767,11 +767,28 @@ plot_qc_depth <- function(bundle) {
   # the pair, and a low detection bar that is *not* amber is the
   # degraded sample worth a second look.
   depth$.low <- depth$sample_id %in% qc_depth_outliers(depth, DEPTH_LOW_RATIO)
+  words <- depth_words(bundle$input_info$omics_type)
   patchwork::wrap_plots(
-    missing_unaligned(plot_depth_library(depth)),
-    missing_unaligned(plot_depth_detection(depth)),
+    missing_unaligned(plot_depth_library(depth, words)),
+    missing_unaligned(plot_depth_detection(depth, words)),
     ncol = 1
   )
+}
+
+# What the two numbers are called. A proteomics run has no library and
+# is not sequenced: its total is the summed intensity, and a sample far
+# below the rest was under-loaded or poorly ionised, not "shallow".
+DEPTH_WORDS <- list(
+  library = list(total = "Library size per sample",
+                 detected = "Features detected per sample",
+                 low = "shallow library", low_prefix = "Shallow:"),
+  intensity = list(total = "Total intensity per sample",
+                   detected = "Features quantified per sample",
+                   low = "low total intensity", low_prefix = "Low:")
+)
+
+depth_words <- function(omics_type) {
+  if (identical(omics_type, "proteomics")) DEPTH_WORDS$intensity else DEPTH_WORDS$library
 }
 
 # Ordered worst-first for the same reason the missingness panel is: the
@@ -784,7 +801,7 @@ depth_ordered <- function(depth, col) {
   depth
 }
 
-plot_depth_library <- function(depth) {
+plot_depth_library <- function(depth, words = DEPTH_WORDS$library) {
   if (is.null(depth$.low)) {
     depth$.low <- depth$sample_id %in% qc_depth_outliers(depth, DEPTH_LOW_RATIO)
   }
@@ -798,15 +815,15 @@ plot_depth_library <- function(depth) {
                   format_missing_pct(DEPTH_LOW_RATIO))
   if (is.null(cutoff)) head <- sprintf("%d samples", nrow(d))
   names <- if (n_low > 0L) {
-    paste("Shallow:", sample_name_list(d$sample_id[d$.low], more = TRUE))
+    paste(words$low_prefix, sample_name_list(d$sample_id[d$.low], more = TRUE))
   } else {
     paste("Lowest:", sample_name_list(d$sample_id))
   }
-  depth_sample_panel(d, "library_size", title = "Library size per sample",
+  depth_sample_panel(d, "library_size", title = words$total,
                      head = head, names = names, cutoff = cutoff)
 }
 
-plot_depth_detection <- function(depth) {
+plot_depth_detection <- function(depth, words = DEPTH_WORDS$library) {
   d <- depth_ordered(depth, "n_detected")
   n_feat <- suppressWarnings(
     round(max(d$n_detected) / max(d$detection_rate, na.rm = TRUE)))
@@ -815,8 +832,8 @@ plot_depth_detection <- function(depth) {
   } else {
     "with any signal"
   }
-  if (any(d$.low)) head <- paste(head, "\u00b7 amber: shallow library")
-  depth_sample_panel(d, "n_detected", title = "Features detected per sample",
+  if (any(d$.low)) head <- paste(head, "\u00b7 amber:", words$low)
+  depth_sample_panel(d, "n_detected", title = words$detected,
                      head = head,
                      names = paste("Fewest:", sample_name_list(d$sample_id)))
 }
@@ -871,7 +888,10 @@ depth_axis_labels <- function(x) {
   vapply(x, function(v) {
     if (is.na(v)) return("")
     a <- abs(v)
-    if (a >= 1e6) paste0(signif(v / 1e6, 3), "M")
+    # Proteomics totals run to 1e11 and past: "1e+05M" is not a label.
+    if (a >= 1e12) paste0(signif(v / 1e12, 3), "T")
+    else if (a >= 1e9) paste0(signif(v / 1e9, 3), "G")
+    else if (a >= 1e6) paste0(signif(v / 1e6, 3), "M")
     else if (a >= 1e3) paste0(signif(v / 1e3, 3), "k")
     else format(v, big.mark = ",", scientific = FALSE, trim = TRUE)
   }, character(1))

@@ -77,3 +77,7 @@ First versioned release.
   visible over the bars. The enrichment bar view is coloured by
   direction and cuts a far-outlying bar short, marked and labelled with
   its true value.
+* QC depth on a proteomics layer is total intensity, summed on the
+  linear scale when the layer is log2 (summing logs hid an
+  under-loaded sample), and is labelled as such ("Total intensity",
+  "Features quantified", "low" rather than "shallow").

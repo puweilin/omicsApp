@@ -147,6 +147,25 @@ test_that("the default is a default, not a lock", {
   })
 })
 
+test_that("a proteomics layer's depth panel is called intensity, not library size", {
+  proj <- shiny::reactiveVal(omicsCore::omics_project(
+    "p", list(prot = qv_input("proteomics"))))
+  shiny::testServer(qc_view_server, args = list(current_project = proj), {
+    session$setInputs(quality_view = "depth")
+    session$flushReact()
+    title <- paste(as.character(output$quality_title$html), collapse = "")
+    expect_match(title, "Intensity")
+    expect_match(title, "total intensity and features quantified")
+    expect_no_match(title, "library", ignore.case = TRUE)
+  })
+})
+
+test_that("large totals are written short in the depth caption", {
+  expect_identical(short_number(113588296286), "114G")
+  expect_identical(short_number(2.4e6), "2.4M")
+  expect_identical(short_number(51234), "51,234")
+})
+
 test_that("the panel title follows the panel", {
   proj <- shiny::reactiveVal(omicsCore::omics_project(
     "p", list(rna = qv_input("rnaseq"))))

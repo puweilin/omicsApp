@@ -11,7 +11,9 @@ qc_depth(input)
 }
 \value{
 A data frame with one row per sample: \code{sample_id},
-\code{library_size}, \code{n_detected}, \code{detection_rate}, and
+\code{library_size} (total counts; for an intensity layer the summed
+intensity, taken on the linear scale when the layer is log-scaled),
+\code{n_detected}, \code{detection_rate}, and
 \code{library_size_ratio} (each library over the median, so "half the
 depth of a typical sample" is readable without arithmetic).
 }

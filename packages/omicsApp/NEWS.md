@@ -46,3 +46,5 @@ First versioned release. Highlights since the development snapshots:
   the table beside it, and its card says what "significant" means.
 * Differential: the volcano's top-hit labels are laid out in columns
   beside the points and never overlap ("Label top hits (up to 20)").
+* QC: on a proteomics layer the depth panel is called "Intensity" and
+  its caption gives the median total intensity, written short (114G).

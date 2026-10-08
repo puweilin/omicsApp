@@ -24,12 +24,23 @@
 # Computed for proteomics too, where they read as total intensity and
 # features quantified. Both are one pass over the matrix, so there is
 # nothing to gain by deciding in advance which one gets looked at.
+#
+# A total is only a total on the linear scale. Most proteomics layers
+# arrive log2-transformed (normalized_intensity and the other
+# LOG_SCALE_ASSAY_TYPES), and summing logs adds up "how many proteins,
+# times how bright on average in orders of magnitude": a sample loaded
+# at a third of the others came out a few percent low and was never
+# flagged. Those are summed back on the linear scale. A log value of 0
+# or below is still a measurement there, so detection on that scale is
+# "has a value", not "is positive".
 
 #' Per-sample depth and detection
 #'
 #' @param input An [omics_input].
 #' @return A data frame with one row per sample: `sample_id`,
-#'   `library_size`, `n_detected`, `detection_rate`, and
+#'   `library_size` (total counts; for an intensity layer the summed
+#'   intensity, taken on the linear scale when the layer is log-scaled),
+#'   `n_detected`, `detection_rate`, and
 #'   `library_size_ratio` (each library over the median, so "half the
 #'   depth of a typical sample" is readable without arithmetic).
 #' @export
@@ -39,11 +50,12 @@ qc_depth <- function(input) {
   mat <- input$expr_mat
   n_feat <- nrow(mat)
 
-  lib <- colSums(mat, na.rm = TRUE)
+  log_scale <- isTRUE(input$assay_type %in% LOG_SCALE_ASSAY_TYPES)
+  lib <- colSums(if (log_scale) 2^mat else mat, na.rm = TRUE)
   # Zero and NA both mean "nothing seen here": a counts matrix says it
   # with 0 and an intensity matrix with NA, and the question -- how much
   # of the assay did this sample return -- is the same one.
-  detected <- colSums(!is.na(mat) & mat > 0)
+  detected <- if (log_scale) colSums(!is.na(mat)) else colSums(!is.na(mat) & mat > 0)
 
   med <- stats::median(lib[is.finite(lib)])
   data.frame(

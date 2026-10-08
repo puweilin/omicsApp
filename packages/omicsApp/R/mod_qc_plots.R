@@ -74,6 +74,11 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
   # A default per modality, not a lock: an intensity matrix has a
   # meaningful total too, and someone with an imputed counts matrix may
   # well want the missingness view.
+  # A proteomics layer's "depth" is its summed intensity: there is no
+  # library, and nothing was sequenced.
+  is_proteomics <- shiny::reactive(identical(active()$input$omics_type %||% "", "proteomics"))
+  depth_label <- shiny::reactive(if (is_proteomics()) "Intensity" else "Depth")
+
   default_quality_view <- shiny::reactive({
     if (identical(active()$input$omics_type %||% "", "rnaseq")) "depth"
     else "missing"
@@ -88,10 +93,11 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
     depth <- identical(quality_view(), "depth")
     htmltools::tagList(
       htmltools::tags$h3(class = "card-title",
-                         if (depth) "Depth" else "Missingness"),
+                         if (depth) depth_label() else "Missingness"),
       htmltools::tags$span(
         class = "card-sub",
-        if (depth) "library size and features detected"
+        if (depth && is_proteomics()) "total intensity and features quantified"
+        else if (depth) "library size and features detected"
         else "per-sample and per-feature missing rate")
     )
   })
@@ -105,7 +111,7 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
     }
     shiny::radioButtons(
       session$ns("quality_view"), label = NULL,
-      choices = c("Depth" = "depth", "Missingness" = "missing"),
+      choices = stats::setNames(c("depth", "missing"), c(depth_label(), "Missingness")),
       selected = sel, inline = TRUE)
   })
 
@@ -125,11 +131,12 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
         "No depth summary for this layer."
       } else {
         low <- omicsCore::qc_depth_outliers(d)
-        sprintf("%d samples \u00b7 median library %s \u00b7 %s",
-                nrow(d),
-                format(round(stats::median(d$library_size)), big.mark = ","),
-                if (length(low) == 0L) "none shallow"
-                else sprintf("shallow: %s", paste(low, collapse = ", ")))
+        low_word <- if (is_proteomics()) "low" else "shallow"
+        sprintf("%d samples \u00b7 median %s %s \u00b7 %s",
+                nrow(d), if (is_proteomics()) "total intensity" else "library",
+                short_number(stats::median(d$library_size)),
+                if (length(low) == 0L) paste("none", low_word)
+                else sprintf("%s: %s", low_word, paste(low, collapse = ", ")))
       }
     } else if (a$is_demo) {
       "Demo fixture: ~5% of cells set to NA at random."
@@ -163,4 +170,14 @@ qc_missing_after <- function(bundle) {
   } else {
     sum(is.na(bundle$results$cleaned_input$expr_mat))
   }
+}
+
+# 2,400,000 as "2.4M" and a proteomics total of 113,588,296,286 as
+# "114G": the caption sits on one line under the panel.
+short_number <- function(x) {
+  if (!is.finite(x)) return("NA")
+  for (u in list(c(1e12, "T"), c(1e9, "G"), c(1e6, "M"))) {
+    if (abs(x) >= as.numeric(u[[1]])) return(paste0(signif(x / as.numeric(u[[1]]), 3), u[[2]]))
+  }
+  format(round(x), big.mark = ",")
 }

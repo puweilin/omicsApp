@@ -171,6 +171,8 @@ test_that("depth axis labels format each value on its own", {
   # format() over the whole vector wrote the zero as "0e+00".
   expect_identical(depth_axis_labels(c(0, 500, 50000, 2.5e6, NA)),
                    c("0", "500", "50k", "2.5M", ""))
+  # Proteomics totals: billions, not "1e+05M".
+  expect_identical(depth_axis_labels(c(5e10, 1.2e11, 3e12)), c("50G", "120G", "3T"))
 })
 
 test_that("depth subtitles fit a phone-width line", {
@@ -194,4 +196,54 @@ test_that("the depth view survives the app's phone-width theme", {
     grDevices::dev.off()
     unlink(f)
   }
+})
+
+# ---- proteomics: total intensity, on the linear scale ------------------
+
+prot_depth_input <- function(loading = rep(1, 6), assay = "normalized_intensity") {
+  ids <- paste0("P", seq_along(loading))
+  set.seed(11)
+  lin <- matrix(stats::rlnorm(200 * length(ids), log(2^20), 1), nrow = 200,
+                dimnames = list(paste0("Q", 1:200), ids))
+  lin <- sweep(lin, 2L, loading, "*")
+  mat <- if (assay %in% LOG_SCALE_ASSAY_TYPES) log2(lin) else lin
+  omics_input(mat,
+              data.frame(sample_id = ids, condition = "G1", row.names = ids,
+                         stringsAsFactors = FALSE),
+              data.frame(feature_id = rownames(mat), row.names = rownames(mat),
+                         stringsAsFactors = FALSE),
+              omics_type = "proteomics", assay_type = assay)
+}
+
+test_that("a log2 intensity layer is totalled on the linear scale, so an under-loaded sample is flagged", {
+  inp <- prot_depth_input(loading = c(1, 1, 1, 1, 1, 0.2))
+  d <- qc_depth(inp)
+  # Summed as logs, a fifth of the loading came out ~1% low.
+  expect_lt(d$library_size_ratio[d$sample_id == "P6"], 0.3)
+  expect_identical(qc_depth_outliers(d), "P6")
+  expect_equal(d$library_size[[1]], sum(2^inp$expr_mat[, 1]))
+})
+
+test_that("on a log scale a value at or below 0 still counts as quantified", {
+  inp <- prot_depth_input()
+  inp$expr_mat[1:5, 1] <- c(-1, -0.5, 0, NA, NA)
+  d <- qc_depth(inp)
+  expect_identical(d$n_detected[[1]], 198L)
+})
+
+test_that("a linear intensity layer is summed as it is", {
+  inp <- prot_depth_input(assay = "raw_intensity")
+  expect_equal(qc_depth(inp)$library_size[[1]], sum(inp$expr_mat[, 1]))
+})
+
+test_that("a proteomics depth view speaks of intensity, not libraries", {
+  b <- run_qc(prot_depth_input(loading = c(1, 1, 1, 1, 1, 0.2)))
+  p <- plot_qc(b, view = "depth")
+  expect_identical(p[[1]]$labels$title, "Total intensity per sample")
+  expect_identical(p[[2]]$labels$title, "Features quantified per sample")
+  expect_match(p[[2]]$labels$subtitle, "amber: low total intensity", fixed = TRUE)
+  expect_no_match(paste(p[[1]]$labels$subtitle, p[[2]]$labels$subtitle), "shallow|library")
+  # RNA-seq keeps its words.
+  r <- plot_qc(run_qc(depth_input()), view = "depth")
+  expect_identical(r[[1]]$labels$title, "Library size per sample")
 })
