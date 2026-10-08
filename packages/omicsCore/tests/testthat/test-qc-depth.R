@@ -72,3 +72,123 @@ test_that("the depth view draws, and refuses a bundle that has none", {
   b$results$qc_summary$depth <- NULL
   expect_error(plot_qc(b, view = "depth"), "no depth summary")
 })
+
+# ---- the depth view ----------------------------------------------------
+# Same rules as the missingness panel's samples: it named up to 30
+# samples in the app's 360 px card, and past ~10 the names overlapped.
+
+depth_df <- function(n, low = integer(0), ids = sprintf("S%02d", seq_len(n))) {
+  lib <- seq(1.3, 0.7, length.out = n) * 1e6
+  lib[low] <- 0.1e6
+  det <- round(seq(15000, 14000, length.out = n))
+  det[low] <- 9000
+  data.frame(sample_id = ids, library_size = lib, n_detected = as.integer(det),
+             detection_rate = det / 20000,
+             library_size_ratio = lib / stats::median(lib),
+             stringsAsFactors = FALSE)
+}
+depth_bundle <- function(d) {
+  b <- run_qc(depth_input())
+  b$results$qc_summary$depth <- d
+  b
+}
+depth_panels <- function(d) {
+  p <- plot_qc(depth_bundle(d), view = "depth")
+  list(library = p[[1]], detection = p[[2]])
+}
+
+test_that("depth names samples on bars up to the shared cap, then ranks them", {
+  bars <- depth_panels(depth_df(SAMPLE_MAX_NAMED_BARS))
+  expect_false("rank" %in% names(bars$library$data))
+  expect_false("rank" %in% names(bars$detection$data))
+  curve <- depth_panels(depth_df(SAMPLE_MAX_NAMED_BARS + 1L))
+  expect_true("rank" %in% names(curve$library$data))
+  expect_true("rank" %in% names(curve$detection$data))
+  # Every sample stays on the curve.
+  expect_equal(nrow(depth_panels(depth_df(60L))$library$data), 60L)
+})
+
+test_that("depth bar names shrink with the missingness panel's, worst at the top", {
+  p <- depth_panels(depth_df(SAMPLE_MAX_NAMED_BARS, low = 3L))$library
+  expect_equal(p$theme$axis.text.y$size, 7)
+  # A discrete y axis draws bottom-up: the last level is the top row.
+  lv <- levels(p$data$sample_id)
+  expect_identical(lv[length(lv)], "S03")
+  expect_null(depth_panels(depth_df(4L))$library$theme$axis.text.y$size)
+})
+
+test_that("shallow libraries are amber in both panels, with the cutoff dashed", {
+  d <- depth_df(8L, low = c(2L, 5L))
+  panels <- depth_panels(d)
+  lib <- panels$library
+  expect_setequal(as.character(lib$data$sample_id[lib$data$.low]), c("S02", "S05"))
+  expect_setequal(as.character(lib$data$sample_id[lib$data$.low]),
+                  qc_depth_outliers(d))
+  vl <- Filter(function(l) inherits(l$geom, "GeomVline"), lib$layers)
+  expect_length(vl, 1L)
+  expect_equal(vl[[1]]$data$xintercept %||% vl[[1]]$aes_params$xintercept,
+               DEPTH_LOW_RATIO * stats::median(d$library_size))
+  expect_match(lib$labels$subtitle, "2 below 30% of median", fixed = TRUE)
+  fills <- unique(ggplot2::ggplot_build(lib)$data[[1]]$fill)
+  expect_setequal(fills, c(MISSING_FILL, MISSING_OVER_FILL))
+  # Amber, not the "up" red it used to be.
+  expect_false(omics_colors$up %in% fills)
+  det <- panels$detection
+  expect_setequal(as.character(det$data$sample_id[det$data$.low]), c("S02", "S05"))
+  expect_identical(det$labels$subtitle, "of 20,000 \u00b7 amber: shallow library")
+})
+
+test_that("the ranked depth curve names the shallow or lowest samples", {
+  ids <- sprintf("Patient_%03d_PBMC_RNA_rep1", 1:24)
+  p <- depth_panels(depth_df(24L, low = c(4L, 9L), ids = ids))
+  expect_match(p$library$labels$subtitle,
+               "24 samples \u00b7 2 below 30% of median\nShallow: ",
+               fixed = TRUE)
+  expect_match(p$library$labels$subtitle, ids[4], fixed = TRUE)
+  expect_match(p$detection$labels$subtitle, "\nFewest: ", fixed = TRUE)
+  # Rank 1 is the lowest.
+  lib <- p$library$data
+  expect_equal(lib$library_size[lib$rank == 1L], min(lib$library_size))
+  even <- depth_panels(depth_df(24L))$library
+  expect_match(even$labels$subtitle, "none below 30% of median", fixed = TRUE)
+  expect_match(even$labels$subtitle, "\nLowest: S24", fixed = TRUE)
+})
+
+test_that("each depth panel starts its own axis at zero", {
+  p <- depth_panels(depth_df(8L))
+  r1 <- ggplot2::ggplot_build(p$library)$layout$panel_params[[1]]$x.range
+  r2 <- ggplot2::ggplot_build(p$detection)$layout$panel_params[[1]]$x.range
+  expect_equal(r1[1], 0)
+  expect_equal(r2[1], 0)
+  expect_gt(r1[2], 1e6)
+  expect_lt(r2[2], 2e4)
+})
+
+test_that("depth axis labels format each value on its own", {
+  # format() over the whole vector wrote the zero as "0e+00".
+  expect_identical(depth_axis_labels(c(0, 500, 50000, 2.5e6, NA)),
+                   c("0", "500", "50k", "2.5M", ""))
+})
+
+test_that("depth subtitles fit a phone-width line", {
+  # About 42 characters fit the app's 293 px panel; "of the median
+  # (dashed)" ran off it.
+  ids <- sprintf("Patient_%03d_PBMC_RNA_rep1", 1:60)
+  p <- depth_panels(depth_df(60L, low = c(2L, 9L, 30L), ids = ids))
+  lines <- unlist(strsplit(c(p$library$labels$subtitle,
+                             p$detection$labels$subtitle), "\n"))
+  expect_true(all(nchar(lines) <= 42L), info = paste(lines, collapse = " | "))
+})
+
+test_that("the depth view survives the app's phone-width theme", {
+  for (n in c(8L, 24L, 60L)) {
+    ids <- sprintf("Patient_%03d_PBMC_RNA_rep1", seq_len(n))
+    p <- plot_qc(depth_bundle(depth_df(n, low = 2L, ids = ids)), view = "depth") &
+      ggplot2::theme(text = ggplot2::element_text(size = 9))
+    f <- tempfile(fileext = ".png")
+    grDevices::png(f, width = 293, height = 360, res = 96)
+    expect_no_error(print(p))
+    grDevices::dev.off()
+    unlink(f)
+  }
+})

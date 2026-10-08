@@ -47,23 +47,39 @@ MISSING_OVER_FILL <- "#E0A030"
 # The dashed cutoff line: dark enough to read over both fills.
 MISSING_CUTOFF_COLOUR <- "#374151"
 
-# How many samples the depth view names on its sample axis. (The
-# missingness panel used this too, and drew 24 overlapping names; it has
-# its own, smaller cap below.)
-MISSING_MAX_SAMPLE_BARS <- 30L
-
-# How many samples the missingness panel draws as named bars. The app
-# gives the two stacked panels 360 px between them, and after titles
-# and axes the sample panel has about 90 px for its bars: ten names at
-# 7 pt is what fits there without the labels running into one another
-# (24 overlapped at the old cap of 30, and 12 still touched). Past it,
-# every sample is a point on a ranked curve and the ones that matter
-# are named in the subtitle.
-MISSING_MAX_NAMED_SAMPLES <- 10L
+# ---- per-sample panels, shared by the missingness and depth views ----
+#
+# How many samples a per-sample panel draws as named bars. The app gives
+# two stacked panels 360 px between them, and after titles and axes each
+# has about 90 px for its bars: ten names at 7 pt is what fits there
+# without the labels running into one another (24 overlapped at the old
+# cap of 30, and 12 still touched). Past it, every sample is a point on
+# a ranked curve and the ones that matter are named in the subtitle.
+SAMPLE_MAX_NAMED_BARS <- 10L
 
 # From this many bars the names drop from the theme's size to 7 pt, so
-# that up to MISSING_MAX_NAMED_SAMPLES fit.
-MISSING_SMALL_LABEL_FROM <- 7L
+# that up to SAMPLE_MAX_NAMED_BARS fit.
+SAMPLE_SMALL_LABEL_FROM <- 7L
+
+# The names these had when only the missingness panel used them.
+MISSING_MAX_NAMED_SAMPLES <- SAMPLE_MAX_NAMED_BARS
+MISSING_SMALL_LABEL_FROM <- SAMPLE_SMALL_LABEL_FROM
+
+# Sample names on a bar chart's y axis: smaller once there are enough
+# bars to crowd, and cut at 24 characters.
+sample_label_theme <- function(n) {
+  if (n >= SAMPLE_SMALL_LABEL_FROM) {
+    ggplot2::theme(axis.text.y = ggplot2::element_text(size = 7))
+  }
+}
+
+# The y axis of a ranked curve: rank 1, the worst, at the top.
+sample_rank_scale <- function() {
+  ggplot2::scale_y_reverse(breaks = function(lim) {
+    b <- scales::breaks_pretty(4)(lim)
+    b[b >= 1]  # there is no rank 0
+  })
+}
 
 # The feature histogram's bins. A missing rate can only be k / n -- with
 # 24 samples there are 25 possible values -- so a bin per possible value
@@ -100,7 +116,7 @@ plot_qc_missing <- function(bundle) {
     ncol = 1,
     # Named bars need every pixel of their half; the ranked curve does
     # not, and the histogram's bars past the cutoff are short.
-    heights = if (n_samples > MISSING_MAX_NAMED_SAMPLES) c(1, 1.25) else c(1, 1)
+    heights = if (n_samples > SAMPLE_MAX_NAMED_BARS) c(1, 1.25) else c(1, 1)
   )
 }
 
@@ -176,24 +192,26 @@ missing_cutoff_in_view <- function(rates, cutoff) {
 
 # How many of the worst samples to name when there are too many to name
 # them all, at most.
-MISSING_LABEL_WORST <- 3L
+SAMPLE_LABEL_WORST <- 3L
 
-# How many characters of sample names the subtitle's second line holds:
-# what fits a phone-width panel. Short names fit three; long ones fewer,
-# each in full -- a name cut short loses the part that tells samples
-# apart ("Patient_005_pla...").
-MISSING_NAME_CHARS <- 40L
+# How many characters of sample names the subtitle's second line holds.
+# With its "Shallow: " in front and ", ..." after, 28 is what fits a
+# phone-width panel (293 px at 9 pt). Short names fit three; long ones
+# fewer, each whole where it can be -- a name cut short loses the part
+# that tells samples apart ("Patient_005_pla...").
+SAMPLE_NAME_CHARS <- 28L
 
-# "S01, S02, S03"; "and 4 more" when the list is a set (the samples over
-# the cutoff) rather than the top of a ranking.
-missing_name_list <- function(ids, n = MISSING_LABEL_WORST, more = FALSE) {
-  ids <- truncate_pathway_name(as.character(ids), MISSING_NAME_CHARS)
-  fits <- cumsum(nchar(ids) + 2L) - 2L <= MISSING_NAME_CHARS
+# "S01, S02, S03". When the list is a set (the samples over a cutoff)
+# and not all of it fits, it ends in an ellipsis: the line above it
+# already says how many there are.
+sample_name_list <- function(ids, n = SAMPLE_LABEL_WORST, more = FALSE) {
+  ids <- truncate_pathway_name(as.character(ids), SAMPLE_NAME_CHARS)
+  fits <- cumsum(nchar(ids) + 2L) - 2L <= SAMPLE_NAME_CHARS
   k <- max(1L, min(n, sum(fits)))
   shown <- paste(ids[seq_len(min(k, length(ids)))], collapse = ", ")
-  if (more && length(ids) > k) sprintf("%s and %d more", shown, length(ids) - k)
-  else shown
+  if (more && length(ids) > k) paste0(shown, ", \u2026") else shown
 }
+missing_name_list <- sample_name_list
 
 # "3 over the 25% cutoff", after a middle dot; nothing when no cutoff
 # was set.
@@ -234,7 +252,7 @@ plot_missing_by_sample <- function(sample_df, cutoff = NULL) {
   show_line <- missing_cutoff_in_view(df$missing_rate, cutoff)
   upper <- missing_axis_upper(c(df$missing_rate, if (show_line) cutoff))
 
-  if (nrow(df) > MISSING_MAX_NAMED_SAMPLES) {
+  if (nrow(df) > SAMPLE_MAX_NAMED_BARS) {
     return(plot_missing_sample_curve(df, upper, cutoff, show_line))
   }
   # Reversed, because a discrete y axis is drawn bottom-up and the
@@ -258,9 +276,7 @@ plot_missing_by_sample <- function(sample_df, cutoff = NULL) {
                                     missing_sample_cutoff_text(sum(df$over), cutoff)),
                   x = NULL, y = NULL) +
     theme_omicsCore() +
-    if (nrow(df) >= MISSING_SMALL_LABEL_FROM) {
-      ggplot2::theme(axis.text.y = ggplot2::element_text(size = 7))
-    }
+    sample_label_theme(nrow(df))
 }
 
 # `df` is already sorted worst-first, with `over` set.
@@ -272,25 +288,25 @@ plot_missing_sample_curve <- function(df, upper = 1, cutoff = NULL,
   # of one another. With a cutoff, the samples over it are the ones to
   # name; otherwise the worst. On a second line, which a phone-width
   # panel needs for long names.
+  # A complete matrix -- every counts layer -- has no worst sample to
+  # name: "Worst: R01, R02, R03" over a column of zeros said there was.
   names <- if (any(df$over)) {
-    paste("Over it:", missing_name_list(df$sample_id[df$over], more = TRUE))
-  } else {
-    paste("Worst:", missing_name_list(df$sample_id))
+    paste0("\nOver it: ", sample_name_list(df$sample_id[df$over], more = TRUE))
+  } else if (!all(df$missing_rate == 0, na.rm = TRUE)) {
+    paste0("\nWorst: ", sample_name_list(df$sample_id))
   }
-  subtitle <- paste0(sprintf("%d samples, ranked", nrow(df)),
+  # "ranked" is left to the axis title: the first line has to fit a
+  # phone-width panel, about 42 characters in the app.
+  subtitle <- paste0(missing_sample_count(df),
                      missing_sample_cutoff_text(sum(df$over), cutoff),
-                     "\n", names)
+                     names)
 
   ggplot2::ggplot(df, ggplot2::aes(x = .data$missing_rate, y = .data$rank,
                                    colour = .data$over)) +
     ggplot2::geom_point(size = 1.3, alpha = 0.8) +
     missing_over_scale("colour") +
     missing_cutoff_line(cutoff, show_line) +
-    # Rank 1 is the worst, and belongs at the top.
-    ggplot2::scale_y_reverse(breaks = function(lim) {
-      b <- scales::breaks_pretty(4)(lim)
-      b[b >= 1]  # there is no rank 0
-    }) +
+    sample_rank_scale() +
     ggplot2::scale_x_continuous(labels = scales::label_percent(),
                                 limits = c(0, upper),
                                 expand = ggplot2::expansion(mult = c(0, 0.02))) +
@@ -320,7 +336,7 @@ missing_filter_words <- function(filter) {
     any_group = list(axis = "Lowest missing rate among groups",
                      rule = "more than %s missing in every group"),
     all_groups = list(axis = "Highest missing rate among groups",
-                      rule = "more than %s missing in at least one group"),
+                      rule = "more than %s missing in any group"),
     # No axis title for the overall rate: the panel's title already says
     # what x is, and the app's 360 px leave no height to spare.
     list(axis = NULL, rule = "missing in more than %s of samples"))
@@ -725,7 +741,15 @@ legend_key_spacing <- function() {
 # the two problems: a shallow library drops both total counts and genes
 # detected, while a degraded sample drops detection with the total
 # holding up.
+#
+# Drawn by the same rules as the missingness panel's samples: named bars
+# while the names fit, worst at the top, a ranked curve past
+# SAMPLE_MAX_NAMED_BARS; flagged samples amber, their cutoff dashed.
 
+# A library below this fraction of the median is flagged as shallow --
+# the cutoff qc_depth_outliers() uses by default, and so the one the
+# app's caption under this panel reports. run_qc() does not record a
+# depth cutoff of its own.
 DEPTH_LOW_RATIO <- 0.3
 
 plot_qc_depth <- function(bundle) {
@@ -733,88 +757,120 @@ plot_qc_depth <- function(bundle) {
   if (is.null(depth) || nrow(depth) == 0L) {
     stop("This QC bundle carries no depth summary.", call. = FALSE)
   }
+  # Flagged once, on library size, and shown amber in both panels: that
+  # a shallow library also detects fewer genes is the expected half of
+  # the pair, and a low detection bar that is *not* amber is the
+  # degraded sample worth a second look.
+  depth$.low <- depth$sample_id %in% qc_depth_outliers(depth, DEPTH_LOW_RATIO)
   patchwork::wrap_plots(
-    plot_depth_library(depth),
-    plot_depth_detection(depth),
+    missing_unaligned(plot_depth_library(depth)),
+    missing_unaligned(plot_depth_detection(depth)),
     ncol = 1
   )
 }
 
 # Ordered worst-first for the same reason the missingness panel is: the
 # question is which sample is bad, and sorting is what answers it
-# without reading every label.
+# without reading every label. Lowest first; the bar chart reverses its
+# levels so the lowest is drawn at the top.
 depth_ordered <- function(depth, col) {
   depth <- depth[order(depth[[col]]), , drop = FALSE]
-  depth$sample_id <- factor(depth$sample_id, levels = depth$sample_id)
+  if (is.null(depth$.low)) depth$.low <- rep(FALSE, nrow(depth))
   depth
 }
 
 plot_depth_library <- function(depth) {
+  if (is.null(depth$.low)) {
+    depth$.low <- depth$sample_id %in% qc_depth_outliers(depth, DEPTH_LOW_RATIO)
+  }
   d <- depth_ordered(depth, "library_size")
-  # Coloured against the median rather than an absolute count: what
-  # counts as shallow depends on the experiment, and a fixed cutoff
-  # would be wrong for every study but one.
-  d$.low <- !is.na(d$library_size_ratio) &
-    d$library_size_ratio < DEPTH_LOW_RATIO
-
-  ggplot2::ggplot(d, ggplot2::aes(x = .data$library_size,
-                                  y = .data$sample_id,
-                                  fill = .data$.low)) +
-    ggplot2::geom_col(width = 0.75) +
-    ggplot2::scale_fill_manual(
-      values = c(`FALSE` = MISSING_FILL, `TRUE` = omics_colors$up),
-      guide = "none") +
-    ggplot2::scale_x_continuous(labels = depth_axis_labels) +
-    ggplot2::labs(
-      title = "Library size per sample",
-      subtitle = depth_library_subtitle(d),
-      x = "Total counts", y = NULL
-    ) +
-    theme_omicsCore() +
-    depth_sample_axis(nrow(d))
+  med <- stats::median(d$library_size[is.finite(d$library_size)])
+  cutoff <- if (is.finite(med) && med > 0) DEPTH_LOW_RATIO * med
+  n_low <- sum(d$.low)
+  # Short enough for a phone-width panel (about 42 characters there).
+  head <- sprintf("%d samples \u00b7 %s below %s of median",
+                  nrow(d), if (n_low == 0L) "none" else as.character(n_low),
+                  format_missing_pct(DEPTH_LOW_RATIO))
+  if (is.null(cutoff)) head <- sprintf("%d samples", nrow(d))
+  names <- if (n_low > 0L) {
+    paste("Shallow:", sample_name_list(d$sample_id[d$.low], more = TRUE))
+  } else {
+    paste("Lowest:", sample_name_list(d$sample_id))
+  }
+  depth_sample_panel(d, "library_size", title = "Library size per sample",
+                     head = head, names = names, cutoff = cutoff)
 }
 
 plot_depth_detection <- function(depth) {
   d <- depth_ordered(depth, "n_detected")
-  ggplot2::ggplot(d, ggplot2::aes(x = .data$n_detected,
-                                  y = .data$sample_id)) +
-    ggplot2::geom_col(width = 0.75, fill = MISSING_FILL) +
-    ggplot2::scale_x_continuous(labels = depth_axis_labels) +
-    ggplot2::labs(
-      title = "Features detected per sample",
-      subtitle = sprintf("of %s in the matrix",
-                         format(round(max(d$n_detected) /
-                                        max(d$detection_rate, na.rm = TRUE)),
-                                big.mark = ",")),
-      x = "Features with any signal", y = NULL
-    ) +
-    theme_omicsCore() +
-    depth_sample_axis(nrow(d))
-}
-
-depth_library_subtitle <- function(d) {
-  n_low <- sum(d$.low)
-  if (n_low == 0L) {
-    "no sample below 30% of the median"
+  n_feat <- suppressWarnings(
+    round(max(d$n_detected) / max(d$detection_rate, na.rm = TRUE)))
+  head <- if (is.finite(n_feat)) {
+    sprintf("of %s", format(n_feat, big.mark = ","))
   } else {
-    sprintf("%d sample%s below 30%% of the median: %s",
-            n_low, if (n_low == 1L) "" else "s",
-            paste(as.character(d$sample_id[d$.low]), collapse = ", "))
+    "with any signal"
   }
+  if (any(d$.low)) head <- paste(head, "\u00b7 amber: shallow library")
+  depth_sample_panel(d, "n_detected", title = "Features detected per sample",
+                     head = head,
+                     names = paste("Fewest:", sample_name_list(d$sample_id)))
 }
 
-# Past a few dozen samples the labels stop being legible in the height
-# the app gives the panel, and the ordering is what carries the meaning
-# anyway.
-depth_sample_axis <- function(n) {
-  if (n <= MISSING_MAX_SAMPLE_BARS) return(NULL)
-  ggplot2::theme(axis.text.y = ggplot2::element_blank(),
-                 axis.ticks.y = ggplot2::element_blank())
+# One per-sample depth panel. `d` is sorted lowest first, with `.low`
+# set. `head` is the subtitle; `names` its second line, used only by
+# the ranked curve, where the samples are not named on the axis.
+depth_sample_panel <- function(d, col, title, head, names, cutoff = NULL) {
+  x_scale <- ggplot2::scale_x_continuous(
+    labels = depth_axis_labels,
+    limits = c(0, NA),
+    expand = ggplot2::expansion(mult = c(0, 0.03)))
+  line <- if (!is.null(cutoff)) {
+    ggplot2::geom_vline(xintercept = cutoff, linetype = "dashed",
+                        colour = MISSING_CUTOFF_COLOUR, linewidth = 0.5)
+  }
+
+  if (nrow(d) > SAMPLE_MAX_NAMED_BARS) {
+    d$rank <- seq_len(nrow(d))
+    return(
+      ggplot2::ggplot(d, ggplot2::aes(x = .data[[col]], y = .data$rank,
+                                      colour = .data$.low)) +
+        line +
+        ggplot2::geom_point(size = 1.3, alpha = 0.8) +
+        missing_over_scale("colour") +
+        sample_rank_scale() +
+        x_scale +
+        ggplot2::labs(title = title, subtitle = paste0(head, "\n", names),
+                      x = NULL, y = "Rank") +
+        theme_omicsCore()
+    )
+  }
+
+  # Reversed, because a discrete y axis is drawn bottom-up and the
+  # lowest sample belongs at the top.
+  d$sample_id <- factor(d$sample_id, levels = rev(d$sample_id))
+  ggplot2::ggplot(d, ggplot2::aes(x = .data[[col]], y = .data$sample_id,
+                                  fill = .data$.low)) +
+    ggplot2::geom_col(width = 0.7) +
+    line +
+    missing_over_scale("fill") +
+    ggplot2::scale_y_discrete(labels = function(x) truncate_pathway_name(x, 24L)) +
+    x_scale +
+    # No x title: the panel title says what is counted, and the app's
+    # 360 px for two panels leave no height for one.
+    ggplot2::labs(title = title, subtitle = head, x = NULL, y = NULL) +
+    theme_omicsCore() +
+    sample_label_theme(nrow(d))
 }
 
+# 0, 50k, 2.5M. Each value formatted on its own: format() over the
+# whole vector gave every label the notation the largest needed, so the
+# axis started at "0e+00".
 depth_axis_labels <- function(x) {
-  ifelse(is.na(x), "",
-         ifelse(abs(x) >= 1e6, paste0(round(x / 1e6, 1), "M"),
-                ifelse(abs(x) >= 1e3, paste0(round(x / 1e3), "k"),
-                       format(x, big.mark = ","))))
+  vapply(x, function(v) {
+    if (is.na(v)) return("")
+    a <- abs(v)
+    if (a >= 1e6) paste0(signif(v / 1e6, 3), "M")
+    else if (a >= 1e3) paste0(signif(v / 1e3, 3), "k")
+    else format(v, big.mark = ",", scientific = FALSE, trim = TRUE)
+  }, character(1))
 }

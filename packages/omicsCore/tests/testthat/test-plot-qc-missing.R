@@ -101,7 +101,7 @@ test_that("the ranked curve names the worst samples in its subtitle", {
   # On the plot their labels would land on top of each other: the worst
   # few sit at almost the same rank.
   p <- plot_missing_by_sample(big_cohort(100L))
-  expect_match(p$labels$subtitle, "100 samples, ranked", fixed = TRUE)
+  expect_match(p$labels$subtitle, "^100 samples\n")
   expect_match(p$labels$subtitle, "Worst: S001", fixed = TRUE)
   expect_false(grepl("S100", p$labels$subtitle, fixed = TRUE))  # the best
 })
@@ -111,10 +111,26 @@ test_that("long sample names are listed whole, fewer of them", {
   # samples apart; the list stays short enough for a phone-width panel.
   ids <- sprintf("Patient_%03d_plasma_rep1", 1:20)
   expect_identical(missing_name_list(ids), "Patient_001_plasma_rep1")
+  # A set that does not all fit ends in an ellipsis; the subtitle's first
+  # line carries the count.
   expect_identical(missing_name_list(ids, more = TRUE),
-                   "Patient_001_plasma_rep1 and 19 more")
+                   "Patient_001_plasma_rep1, \u2026")
   expect_identical(missing_name_list(c("P01", "P02", "P03", "P04")),
                    "P01, P02, P03")
+  # The old name and the shared one are the same function.
+  expect_identical(missing_name_list, sample_name_list)
+  expect_identical(MISSING_MAX_NAMED_SAMPLES, SAMPLE_MAX_NAMED_BARS)
+  # No list is longer than a phone-width line holds.
+  long <- sprintf("Patient_%03d_PBMC_RNA_sequencing_rep1", 1:5)
+  expect_lte(nchar(sample_name_list(long, more = TRUE)), SAMPLE_NAME_CHARS + 3L)
+})
+
+test_that("a complete cohort on the ranked curve names no 'worst' sample", {
+  # Every counts layer is complete; "Worst: R01, R02, R03" over a column
+  # of zeros said there was a worst one.
+  df <- data.frame(sample_id = sprintf("R%02d", 1:24), missing_rate = 0)
+  p <- plot_missing_by_sample(df)
+  expect_identical(p$labels$subtitle, "24 samples \u00b7 no missing values")
 })
 
 test_that("rank 1 is the worst sample", {
@@ -271,7 +287,7 @@ test_that("the removed count is the number QC removed, and the bars agree", {
                b$input_info$n_features_in - b$input_info$n_features_out)
   fp <- missing_panels(b)$feature
   expect_match(fp$labels$subtitle,
-               sprintf("80 features · %d removed\n(missing in more than 30%% of samples)",
+               sprintf("80 features \u00b7 %d removed\n(missing in more than 30%% of samples)",
                        n_flagged), fixed = TRUE)
   # The amber bars hold exactly those features.
   expect_equal(sum(fp$data$n[fp$data$removed]), n_flagged)
@@ -330,8 +346,21 @@ test_that("a group filter plots the rate it compared with the cutoff", {
   expect_match(any_p$labels$subtitle, "missing in every group", fixed = TRUE)
   all_p <- missing_panels(group_bundle("all_groups"))$feature
   expect_identical(all_p$labels$x, "Highest missing rate among groups")
-  expect_match(all_p$labels$subtitle, "missing in at least one group",
+  expect_match(all_p$labels$subtitle, "(more than 50% missing in any group)",
                fixed = TRUE)
+})
+
+test_that("subtitle lines fit a phone-width panel", {
+  # About 42 characters fit the app's 293 px panel.
+  subs <- c(
+    missing_panels(group_bundle("any_group"))$feature$labels$subtitle,
+    missing_panels(group_bundle("all_groups"))$feature$labels$subtitle,
+    plot_missing_by_sample(
+      data.frame(sample_id = sprintf("Patient_%03d_plasma_rep1", 1:40),
+                 missing_rate = seq(0.5, 0.01, length.out = 40)),
+      cutoff = 0.25)$labels$subtitle)
+  lines <- unlist(strsplit(subs, "\n"))
+  expect_true(all(nchar(lines) <= 42L), info = paste(lines, collapse = " | "))
 })
 
 test_that("a group filter without its group rates draws no false line", {
@@ -378,7 +407,7 @@ test_that("all-complete data still draws, and says so", {
   expect_equal(nrow(fp$data), 1L)
   expect_equal(fp$data$x, 0)
   expect_equal(fp$data$n, 40L)
-  expect_match(fp$labels$subtitle, "40 features · no missing values",
+  expect_match(fp$labels$subtitle, "40 features \u00b7 no missing values",
                fixed = TRUE)
   expect_match(fp$labels$subtitle, "none removed", fixed = TRUE)
   expect_equal(vline_x(fp), 0.9)
