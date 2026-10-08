@@ -462,8 +462,10 @@ diff_params_card <- function(ns) {
             class = "muted", style = "font-size:11.5px;margin-top:-6px",
             sprintf("%.3f = %.2gx fold change", log2(1.2), 1.2)
           ),
+          # "up to": only as many as fit beside the points without
+          # overlapping (mod_diff_results.R); every name is in the hover.
           shinyWidgets::materialSwitch(
-            ns("label_top"), label = "Label top 20",
+            ns("label_top"), label = "Label top hits (up to 20)",
             value = FALSE, status = "primary", right = TRUE
           )
         ),

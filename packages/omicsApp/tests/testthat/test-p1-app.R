@@ -151,7 +151,10 @@ test_that("the volcano labels its top features, and falls back to SVG without We
     session$setInputs(label_top = TRUE)
     fig <- jsonlite::fromJSON(output$volcano, simplifyVector = FALSE)$x
     ann <- fig$layout$annotations
-    expect_length(ann, 20L)
+    # Up to 20: as many as fit beside the points without overlapping
+    # (test-volcano-labels.R checks the layout itself).
+    expect_gte(length(ann), 5L)
+    expect_lte(length(ann), 20L)
     top <- diff_bundle()$results$diff_result_df
     top <- top[order(top$adj_p_value), ][1, ]
     expect_identical(ann[[1]]$text, top$feature_symbol)

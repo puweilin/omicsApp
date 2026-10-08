@@ -210,7 +210,7 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     # report and the exported script draw this same figure.
     # The labels are added as plotly annotations, not drawn by
     # plot_volcano(): ggplotly() cannot convert ggrepel's text layer and
-    # dropped it with a warning, so "Label top 20" labelled nothing.
+    # dropped it with a warning, so "Label top hits" labelled nothing.
     p <- omicsCore::plot_volcano(b, top_n = 0L, p_basis = volcano_p_basis(p_col()),
                                  p_threshold = fdr_cut_d(),
                                  effect_threshold = volcano_effect_cut(fc_cut_d()))
@@ -220,7 +220,11 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     fig <- plotly::ggplotly(p, tooltip = "text") |> drop_hoveron() |>
       plotly::layout(showlegend = FALSE)
     if (isTRUE(input$label_top)) {
-      fig <- plotly::layout(fig, annotations = volcano_annotations(b, 20L, p_col()))
+      # Laid out for the width the browser reports, so a phone gets
+      # fewer labels rather than overlapping ones.
+      fig <- label_volcano(fig, b, 20L, p_col(),
+                           width = session$clientData[[paste0("output_", session$ns("volcano"),
+                                                              "_width")]])
     }
     # WebGL rather than one SVG node per point: 60,000 genes painted in
     # 0.5 s instead of 4 s, with the same points and hover text. Only
@@ -425,21 +429,175 @@ volcano_legend <- function(up_n = NULL, down_n = NULL, continuous = FALSE) {
   )
 }
 
-# The most significant features of a result as plotly annotations, at
-# the coordinates plot_volcano() draws them: the p-value column the
-# figure was drawn from.
-volcano_annotations <- function(bundle, n, p_col = "adj_p_value") {
+# ---- labelling the volcano's top features ------------------------------
+#
+# plotly has no label repulsion, and the top hits of a real result sit
+# together at the top of the cloud: twenty labels at one fixed offset
+# from their points piled into an unreadable block. So the labels are
+# laid out here, in pixels, before plotly sees them. Up-regulated
+# features are labelled to the right of their points and down-regulated
+# to the left; on each side the labels are stacked in a column, one
+# line apart, in the order of their points' height. Two labels on one
+# side never share a line, and the two sides never cross the middle,
+# so no two labels overlap. A label that cannot be fitted is left off
+# -- the least significant on its side first -- and its name is still
+# in the point's hover.
+
+VOLCANO_LABEL_FONT <- 11
+VOLCANO_LABEL_LINE <- 16   # px between stacked labels (11 px text + air)
+VOLCANO_LABEL_GAP <- 14    # px from a point to its label
+VOLCANO_PLOT_HEIGHT <- 360 # the card's plotlyOutput height
+
+# Approximate width of a label in px at the label font.
+volcano_label_width <- function(text) nchar(text) * 6.5 + 4
+
+# The plot area in px, from the figure ggplotly() built and the width
+# the browser reports for the output (assumed when it reports none).
+volcano_geometry <- function(fig, width = NULL) {
+  m <- fig$x$layout$margin
+  width <- if (is.numeric(width) && length(width) == 1L && is.finite(width) && width > 0)
+    width else 600
+  list(
+    x_range = unlist(fig$x$layout$xaxis$range),
+    y_range = unlist(fig$x$layout$yaxis$range),
+    # A little under the margins ggplotly asked for: the axis titles
+    # can take a few px more, and a plot area smaller than assumed only
+    # spreads the labels further apart than needed.
+    w = max(width - (m$l %||% 50) - (m$r %||% 10) - 8, 120),
+    h = max(VOLCANO_PLOT_HEIGHT - (m$t %||% 40) - (m$b %||% 40) - 8, 120))
+}
+
+# Stack labels wanted at heights `want` (px from the top of the plot
+# area) into lines at least `line` apart within [lo, hi], keeping their
+# order. Drops the least significant (highest `rank`) until they fit.
+# Returns the kept indices and their heights.
+#
+# A label pushed far from its point (more than `max_shift` px up or
+# down) counts as not fitting too: a column of names reaching to the
+# x axis, each on a long line across the cloud, was technically clear
+# of overlaps and still hard to read.
+stack_volcano_labels <- function(want, rank, lo, hi, line, max_shift = Inf) {
+  keep <- seq_along(want)
+  repeat {
+    if (!length(keep)) return(list(keep = integer(0), y = numeric(0)))
+    o <- keep[order(want[keep], rank[keep])]
+    y <- pmin(pmax(want[o], lo), hi)
+    for (i in seq_along(y)[-1L]) y[i] <- max(y[i], y[i - 1L] + line)
+    if (y[length(y)] > hi) {
+      y[length(y)] <- hi
+      for (i in rev(seq_along(y))[-1L]) y[i] <- min(y[i], y[i + 1L] - line)
+    }
+    if (y[1L] >= lo - 1e-9 && all(abs(y - want[o]) <= max_shift)) {
+      return(list(keep = o, y = y))
+    }
+    keep <- setdiff(keep, keep[which.max(rank[keep])])
+  }
+}
+
+# The `n` most significant features of a result as plotly annotations,
+# laid out as above for a plot area of `geom` (see volcano_geometry()).
+# Their heads sit on the points, at the coordinates plot_volcano()
+# draws them (the p column the figure was drawn from); the label text
+# sits at the end of a thin leader line. Returns the annotations and
+# the x range to draw at: wider than the data when that makes room for
+# the labels beside the outermost points, but never so wide that the
+# data is squeezed into less than ~40% of the plot.
+volcano_annotations <- function(bundle, n, p_col = "adj_p_value", geom) {
+  none <- list(annotations = list(), x_range = geom$x_range)
   df <- bundle$results$diff_result_df
   df <- df[!is.na(df[[p_col]]) & !is.na(df$effect), , drop = FALSE]
   top <- utils::head(df[order(df[[p_col]]), , drop = FALSE], n)
-  if (!nrow(top)) return(list())
+  if (!nrow(top)) return(none)
   lab <- ifelse(is.na(top$feature_symbol) | !nzchar(top$feature_symbol),
                 top$feature_id, top$feature_symbol)
-  lapply(seq_len(nrow(top)), function(i) list(
-    x = top$effect[[i]], y = -log10(max(top[[p_col]][[i]], .Machine$double.xmin)),
-    text = lab[[i]], showarrow = TRUE, arrowhead = 0, arrowwidth = 0.8,
-    arrowcolor = "#9AA3AE", ax = if (top$effect[[i]] >= 0) 24 else -24, ay = -14,
-    font = list(size = 11, color = "#1A2541")))
+  x <- top$effect
+  y <- -log10(pmax(top[[p_col]], .Machine$double.xmin))
+  rank <- seq_len(nrow(top))
+  right <- x >= 0
+  lw <- volcano_label_width(lab)
+  W <- geom$w
+  H <- geom$h
+
+  # Room for each side's column beside its outermost point: on a
+  # symmetric axis of half-width R, a point at |x| leaves room for a
+  # label of width w when |x|/(2R) * W + gap + w <= W/2.
+  half <- max(abs(geom$x_range))
+  need <- vapply(list(right, !right), function(s) {
+    if (!any(s)) return(0)
+    max(abs(x[s])) * W / max(W - 2 * (VOLCANO_LABEL_GAP + max(lw[s])), 1)
+  }, numeric(1))
+  # Capped so the data keeps at least ~40% of the width; a phone gets
+  # the narrower cloud, and the toggle is the user asking for names.
+  half <- min(max(half, need), half * 2.4)
+  x_range <- c(-half, half)
+  px <- (x + half) / (2 * half) * W
+  y0 <- geom$y_range[[1L]]
+  y1 <- geom$y_range[[2L]]
+  py <- (1 - (y - y0) / (y1 - y0)) * H
+
+  # Each side's labels line up in one column just beyond its outermost
+  # labelled point (right side: their left edges; left side: their
+  # right edges), so no label sits on a point it names. Where the plot's
+  # edge leaves no room beyond a point, that point goes unlabelled
+  # (outermost first) and the column is placed for the rest; a column
+  # that would cross the middle is left off.
+  edge <- numeric(length(x))
+  fits <- logical(length(x))
+  for (side in c(TRUE, FALSE)) {
+    cand <- which(right == side)
+    while (length(cand)) {
+      e <- if (side) min(max(px[cand]) + VOLCANO_LABEL_GAP, W - max(lw[cand]))
+           else max(min(px[cand]) - VOLCANO_LABEL_GAP, max(lw[cand]))
+      clear <- if (side) px[cand] + VOLCANO_LABEL_GAP <= e + 1e-9
+               else px[cand] - VOLCANO_LABEL_GAP >= e - 1e-9
+      if (all(clear)) break
+      # The outermost point that the column cannot get past.
+      cand <- setdiff(cand, cand[!clear][which.max(abs(px[cand][!clear] - W / 2))])
+    }
+    if (length(cand)) {
+      edge[cand] <- e
+      fits[cand] <- if (side) e >= W / 2 + 2 else e <= W / 2 - 2
+    }
+  }
+
+  out <- list()
+  for (side in c(TRUE, FALSE)) {
+    idx <- which(right == side & fits)
+    if (!length(idx)) next
+    st <- stack_volcano_labels(py[idx], rank[idx], lo = VOLCANO_LABEL_LINE / 2,
+                               hi = H - VOLCANO_LABEL_LINE / 2, line = VOLCANO_LABEL_LINE,
+                               max_shift = H * 0.4)
+    for (j in seq_along(st$keep)) {
+      i <- idx[[st$keep[[j]]]]
+      out[[length(out) + 1L]] <- list(
+        rank = rank[[i]],
+        x = x[[i]], y = y[[i]], text = lab[[i]],
+        # The label's anchor, in data coordinates (axref/ayref on the
+        # axes), so it stays put relative to the points if the plot is
+        # a few px off the size assumed here.
+        ax = edge[[i]] / W * (2 * half) - half,
+        ay = y1 - st$y[[j]] / H * (y1 - y0),
+        axref = "x", ayref = "y",
+        xanchor = if (side) "left" else "right", yanchor = "middle",
+        showarrow = TRUE, arrowhead = 0, arrowwidth = 0.7, standoff = 3,
+        arrowcolor = "#9AA3AE",
+        font = list(size = VOLCANO_LABEL_FONT, color = "#1A2541"))
+    }
+  }
+  # Most significant first, as they were chosen.
+  out <- out[order(vapply(out, `[[`, numeric(1), "rank"))]
+  out <- lapply(out, function(a) { a$rank <- NULL; a })
+  list(annotations = out, x_range = x_range)
+}
+
+# Adds the labels to a ggplotly() volcano, widening its x range when
+# that gives them room.
+label_volcano <- function(fig, bundle, n, p_col, width = NULL) {
+  geom <- volcano_geometry(fig, width)
+  lab <- volcano_annotations(bundle, n, p_col, geom)
+  if (!length(lab$annotations)) return(fig)
+  plotly::layout(fig, annotations = lab$annotations,
+                 xaxis = list(range = lab$x_range))
 }
 
 # ggplotly() sets `hoveron` on its traces; scattergl has no such
