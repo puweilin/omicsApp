@@ -322,10 +322,15 @@ missing_over_scale <- function(aesthetic) {
     guide = "none")
 }
 
+# A white line under the dashes: drawn on its own, the dark-grey dash
+# all but vanished where it crossed the dark-blue bars, which is where
+# the reader needs it -- on the sample nearest the cutoff.
 missing_cutoff_line <- function(cutoff, show = !is.null(cutoff)) {
   if (!show || is.null(cutoff)) return(NULL)
-  ggplot2::geom_vline(xintercept = cutoff, linetype = "dashed",
-                      colour = MISSING_CUTOFF_COLOUR, linewidth = 0.5)
+  list(
+    ggplot2::geom_vline(xintercept = cutoff, colour = "white", linewidth = 1.6),
+    ggplot2::geom_vline(xintercept = cutoff, linetype = "dashed",
+                        colour = MISSING_CUTOFF_COLOUR, linewidth = 0.5))
 }
 
 # What the feature filter compared with the cutoff, in words, for the
@@ -824,10 +829,7 @@ depth_sample_panel <- function(d, col, title, head, names, cutoff = NULL) {
     labels = depth_axis_labels,
     limits = c(0, NA),
     expand = ggplot2::expansion(mult = c(0, 0.03)))
-  line <- if (!is.null(cutoff)) {
-    ggplot2::geom_vline(xintercept = cutoff, linetype = "dashed",
-                        colour = MISSING_CUTOFF_COLOUR, linewidth = 0.5)
-  }
+  line <- missing_cutoff_line(cutoff)
 
   if (nrow(d) > SAMPLE_MAX_NAMED_BARS) {
     d$rank <- seq_len(nrow(d))

@@ -124,10 +124,13 @@ test_that("shallow libraries are amber in both panels, with the cutoff dashed", 
   expect_setequal(as.character(lib$data$sample_id[lib$data$.low]), c("S02", "S05"))
   expect_setequal(as.character(lib$data$sample_id[lib$data$.low]),
                   qc_depth_outliers(d))
+  # The dashed line, over a white halo that keeps it visible on the bars.
   vl <- Filter(function(l) inherits(l$geom, "GeomVline"), lib$layers)
-  expect_length(vl, 1L)
-  expect_equal(vl[[1]]$data$xintercept %||% vl[[1]]$aes_params$xintercept,
+  dashed <- Filter(function(l) identical(l$aes_params$linetype, "dashed"), vl)
+  expect_length(dashed, 1L)
+  expect_equal(dashed[[1]]$data$xintercept %||% dashed[[1]]$aes_params$xintercept,
                DEPTH_LOW_RATIO * stats::median(d$library_size))
+  expect_identical(vl[[1]]$aes_params$colour, "white")
   expect_match(lib$labels$subtitle, "2 below 30% of median", fixed = TRUE)
   fills <- unique(ggplot2::ggplot_build(lib)$data[[1]]$fill)
   expect_setequal(fills, c(MISSING_FILL, MISSING_OVER_FILL))
