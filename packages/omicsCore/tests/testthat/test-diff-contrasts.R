@@ -495,3 +495,38 @@ test_that("a balanced paired design needs no note, and one comparison pairs the 
   expect_equal(one$results$diff_result_df$p_value, m$p_value)
   expect_match(one$warnings, "TreatB vs Control used", fixed = TRUE, all = FALSE)
 })
+
+test_that("the overlap plot's dots sit under the bars they describe", {
+  # Shared hits draw connecting lines; those once set the dots' column
+  # order, so each column of dots described another bar.
+  comps <- c("A_vs_C", "B_vs_C", "D_vs_C")
+  hits <- list(A = paste0("g", 1:50), B = c(paste0("g", 1:3), paste0("h", 1:30)),
+               D = paste0("k", 1:40))
+  df <- do.call(rbind, lapply(seq_along(comps), function(i) {
+    ids <- unique(unlist(hits))
+    data.frame(feature_id = ids, feature_symbol = ids, comparison = comps[i],
+               effect = ifelse(ids %in% hits[[i]], 2, 0),
+               p_value = ifelse(ids %in% hits[[i]], 1e-6, 0.9),
+               adj_p_value = ifelse(ids %in% hits[[i]], 1e-5, 0.9),
+               direction = ifelse(ids %in% hits[[i]], "up", "ns"),
+               feature_type = "protein", omics_type = "proteomics", method = "limma",
+               analysis_type = "group", effect_type = "log2FC", statistic = 0,
+               statistic_type = "t", base_mean = 1, model_fit = NA_real_,
+               is_significant = ids %in% hits[[i]],
+               stringsAsFactors = FALSE)
+  }))
+  b <- new_analysis_bundle("run_diff", input_info = list(omics_type = "proteomics"),
+                           params = list(method = "limma", comparison = comps),
+                           results = list(diff_result_df = df))
+  ov <- plot_diff_overlap(b)
+  top <- ggplot2::ggplot_build(ov[[1]])
+  dots <- ggplot2::ggplot_build(ov[[2]])
+  bar_n <- top$data[[1]]$y[order(top$data[[1]]$x)]
+  pts <- dots$data[[length(dots$data)]]
+  ylabs <- dots$layout$panel_params[[1]]$y$get_labels()
+  on <- pts[pts$colour == "#333333", ]
+  # Column by column, the dark dots name exactly the sets of that bar.
+  members <- lapply(sort(unique(pts$x)), function(x) sort(sub(" vs C.*", "", ylabs[on$y[on$x == x]])))
+  expect_equal(bar_n, c(47, 40, 30, 3))
+  expect_identical(members, list("A", "D", "B", c("A", "B")))
+})

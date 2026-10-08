@@ -321,6 +321,7 @@ plot_diff_overlap <- function(
   }))
 
   top <- ggplot2::ggplot(bars, ggplot2::aes(x = .data$combo, y = .data$n)) +
+    ggplot2::scale_x_discrete(limits = combos) +
     ggplot2::geom_col(fill = omics_colors$fg_dark %||% "#333333", width = 0.7) +
     ggplot2::geom_text(ggplot2::aes(label = .data$n), vjust = -0.4, size = 3.2) +
     ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.15))) +
@@ -339,7 +340,13 @@ plot_diff_overlap <- function(
                    axis.ticks.x = ggplot2::element_blank(),
                    panel.grid.major.x = ggplot2::element_blank())
 
-  dots <- ggplot2::ggplot(grid, ggplot2::aes(x = .data$combo, y = .data$set))
+  # The combinations on an explicit axis, in count order, for both
+  # panels. Left to ggplot, the dots panel's axis took its order from the
+  # first layer to name a combination -- the connecting lines, which only
+  # exist for multi-comparison combinations -- so whenever any hit was
+  # shared, every column of dots sat under the wrong bar.
+  dots <- ggplot2::ggplot(grid, ggplot2::aes(x = .data$combo, y = .data$set)) +
+    ggplot2::scale_x_discrete(limits = combos)
   if (!is.null(lines) && nrow(lines)) {
     dots <- dots + ggplot2::geom_segment(
       data = lines,
