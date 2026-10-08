@@ -151,9 +151,13 @@ group_legend_scales <- function(values, redundant_shape = TRUE) {
   if (is.null(values) || is.numeric(values)) return(list())
   n <- length(unique(stats::na.omit(as.character(values))))
   lab <- function(x) wrap_label(x, width = 18L, max_lines = 3L)
-  out <- list(ggplot2::scale_colour_discrete(labels = lab))
+  # One entry per line wherever the legend is placed: across the bottom
+  # of a narrow panel, a row of long group names ran off the edge.
+  guide <- ggplot2::guide_legend(ncol = 1)
+  out <- list(ggplot2::scale_colour_discrete(labels = lab, guide = guide))
   if (redundant_shape && n <= length(GROUP_SHAPES)) {
-    out <- c(out, list(ggplot2::scale_shape_manual(values = GROUP_SHAPES, labels = lab)))
+    out <- c(out, list(ggplot2::scale_shape_manual(values = GROUP_SHAPES, labels = lab,
+                                                   guide = guide)))
   }
   out
 }

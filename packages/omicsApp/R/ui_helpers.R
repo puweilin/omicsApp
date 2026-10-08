@@ -479,9 +479,20 @@ fit_to_width <- function(output_id, p, session = shiny::getDefaultReactiveDomain
   # A legend at the side took most of a 280 px panel: the enrichment dot
   # plot's points were squeezed into a sliver. Under the panel instead,
   # its entries stacked.
-  if (!top) shrink <- shrink + ggplot2::theme(legend.position = "bottom",
-                                              legend.direction = "vertical",
-                                              legend.box = "horizontal")
+  # Legends run across, each on its own row: two upright legends side by
+  # side (the enrichment colour bar and its size key) did not fit in the
+  # width and were cut off. Group legends keep one entry per line (their
+  # guide asks for one column), so long group names do not run off.
+  if (!top) {
+    shrink <- shrink + ggplot2::theme(legend.position = "bottom",
+                                      legend.direction = "horizontal",
+                                      legend.box = "vertical")
+    # Titles above their keys, not beside them: "-log10(adjusted p)"
+    # beside a colour bar was wider than the panel. (ggplot2 >= 3.5.)
+    if ("legend.title.position" %in% names(ggplot2::get_element_tree())) {
+      shrink <- shrink + ggplot2::theme(legend.title.position = "top")
+    }
+  }
   if (inherits(p, "patchwork")) p & shrink
   else if (inherits(p, c("gg", "ggplot"))) p + shrink
   else p
