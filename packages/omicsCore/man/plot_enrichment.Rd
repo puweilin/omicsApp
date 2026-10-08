@@ -40,7 +40,11 @@ the NES and point size the gene set size. Colour is -log10 of the
 chosen p-value, capped so that one extreme pathway does not wash out
 the rest: values above the cap take the top colour, and the top
 legend label is marked as "at least" that value. The
-\code{"bar"} view draws a horizontal bar chart of the same selection. For
+\code{"bar"} view draws a horizontal bar chart of the same selection, bar
+length -log10 p, coloured by gene list (ORA: up red, down blue) or by
+the sign of the NES (GSEA); a bar more than three times the longest
+ordinary one is cut short, marked with a break and labelled with its
+true value. For
 GSEA bundles a \code{"gsea_dot"} view is available that splits pathways by
 direction (up / down).
 }

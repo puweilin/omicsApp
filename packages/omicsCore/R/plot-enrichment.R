@@ -8,7 +8,11 @@
 #' chosen p-value, capped so that one extreme pathway does not wash out
 #' the rest: values above the cap take the top colour, and the top
 #' legend label is marked as "at least" that value. The
-#' `"bar"` view draws a horizontal bar chart of the same selection. For
+#' `"bar"` view draws a horizontal bar chart of the same selection, bar
+#' length -log10 p, coloured by gene list (ORA: up red, down blue) or by
+#' the sign of the NES (GSEA); a bar more than three times the longest
+#' ordinary one is cut short, marked with a break and labelled with its
+#' true value. For
 #' GSEA bundles a `"gsea_dot"` view is available that splits pathways by
 #' direction (up / down).
 #'
@@ -368,9 +372,13 @@ format_signif_break <- function(x) as.character(round(x, 1))
 # when it is true of some point. One pathway, or all at the same p,
 # gives a range of zero; the scale then starts at 0 so the points still
 # take a colour.
+#
+# `top` is the largest ordinary value before that rounding: where the
+# bar view cuts its axis. Cut at the rounded cap, a bar at 15.35 would
+# be marked as broken at 15.
 signif_limits <- function(x) {
   x <- x[is.finite(x)]
-  if (length(x) == 0L) return(list(limits = NULL, capped = FALSE))
+  if (length(x) == 0L) return(list(limits = NULL, capped = FALSE, top = NA_real_))
   lo <- min(x)
   hi <- max(x)
   q <- stats::quantile(x, c(0.25, 0.75), names = FALSE)
@@ -380,6 +388,7 @@ signif_limits <- function(x) {
     if (hi > 4 * second) cap <- second
   }
   capped <- cap < hi && cap > lo
+  top <- if (capped) cap else hi
   if (capped) {
     # A round number for the label: ">= 15", not ">= 15.35".
     nice <- if (cap >= 10) floor(cap) else floor(cap * 10) / 10
@@ -391,27 +400,109 @@ signif_limits <- function(x) {
     lo <- 0
     if (cap <= 0) cap <- 1
   }
-  list(limits = c(lo, cap), capped = capped)
+  list(limits = c(lo, cap), capped = capped, top = top)
 }
 
 plot_enrich_bar <- function(df, p_col) {
   if (ora_list_facet(df)) df <- with_list_label(df)
   df$.label <- wrap_pathway_name(df$pathway_name)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(df[[p_col]], decreasing = TRUE)]))
-  ggplot2::ggplot(
-    df,
-    ggplot2::aes(x = -log10(pmax(.data[[p_col]], .Machine$double.xmin)),
-                 y = .data$.label, fill = .data$database)
-  ) +
-    ggplot2::geom_col() +
+  df$.signif <- neg_log10_p(df[[p_col]])
+
+  # Colour means direction, as everywhere else in the app. The fill was
+  # the database, in ggplot's default hue (salmon for the usual single
+  # database) with its legend hidden: a colour that meant nothing.
+  #  * ORA split by gene list: the list's direction. The facet strips
+  #    already name the list, so no legend.
+  #  * GSEA: the sign of the NES, with a legend above the panel, since
+  #    nothing else on the plot says which way a bar's pathway moved.
+  #  * Anything else, pooled lists included: one neutral ink colour.
+  fill_by_sign <- FALSE
+  if (ora_list_facet(df)) {
+    df$.fill <- unname(c(up = omics_colors$up, down = omics_colors$down)[df$direction])
+  } else if (any(is.finite(df$effect))) {
+    df$.fill <- ifelse(df$effect >= 0, omics_colors$up, omics_colors$down)
+    fill_by_sign <- TRUE
+  } else {
+    df$.fill <- NA_character_
+  }
+  df$.fill[is.na(df$.fill)] <- omics_colors$fg_dark
+
+  # Bar length is -log10(p), and one pathway at 248 left every other bar
+  # a sliver. The axis stops at the same cap as the dot plot's colour
+  # scale (the largest value that is not an outlier); a bar beyond it is
+  # drawn to the cap, cut by a break mark near its end, with its true
+  # value printed past the end -- an axis label alone would not tell the
+  # reader that this one bar is longer than drawn.
+  #
+  # A bar is cut only when it is more than three times the longest
+  # ordinary one. A colour scale loses its spread to any outlier, but a
+  # bar twice as long as the next still leaves the others readable, and
+  # a cut bar is harder to read than a long one.
+  lim <- signif_limits(df$.signif)
+  cap <- if (lim$capped && max(df$.signif) > 3 * lim$top) lim$top else Inf
+  df$.bar <- pmin(df$.signif, cap)
+  over <- df[df$.signif > cap, , drop = FALSE]
+
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$.bar, y = .data$.label)) +
+    ggplot2::geom_col(ggplot2::aes(fill = .data$.fill), width = 0.75) +
     enrich_facets(df, scales = "free_y") +
-    ggplot2::guides(fill = "none") +
-    ggplot2::labs(
-      title = "Enrichment",
-      x = p_axis_label(p_col),
-      y = NULL
-    ) +
-    theme_omics_labelled()
+    ggplot2::labs(title = "Enrichment", x = p_axis_label(p_col), y = NULL) +
+    theme_omics_labelled() +
+    enrich_narrow_theme()
+
+  if (fill_by_sign) {
+    eff <- if (all(df$effect_type %in% "nes")) "NES" else "effect"
+    labs_sign <- stats::setNames(paste(eff, c("> 0 (up)", "< 0 (down)")),
+                                 c(omics_colors$up, omics_colors$down))
+    shown <- intersect(names(labs_sign), df$.fill)
+    p <- p + ggplot2::scale_fill_identity(guide = "legend", name = NULL,
+                                          breaks = shown, labels = unname(labs_sign[shown])) +
+      ggplot2::theme(legend.position = "top", legend.justification = "left")
+  } else {
+    p <- p + ggplot2::scale_fill_identity()
+  }
+
+  if (nrow(over) > 0L) {
+    # A slanted line needs a numeric y. Each panel's y axis holds only
+    # its own pathways, in level order, so a bar's position is its rank
+    # among the labels of its panel, not its place among all labels.
+    panel <- if (".list" %in% names(df)) paste(df$database, df$.list) else df$database
+    over_panel <- panel[df$.signif > cap]
+    over$.y <- vapply(seq_len(nrow(over)), function(i) {
+      present <- sort(unique(as.integer(df$.label[panel == over_panel[i]])))
+      match(as.integer(over$.label[i]), present)
+    }, numeric(1))
+    # Two short white slashes across the bar, a little before its end:
+    # the usual mark for an axis that has been cut. Spaced in proportion
+    # to the axis, wide enough apart that the two stay two at phone
+    # width, where the panel is about 110 px.
+    at <- cap * 0.86
+    d <- cap * 0.025
+    marks <- rbind(transform(over, .x0 = at - d, .x1 = at),
+                   transform(over, .x0 = at + 1.2 * d, .x1 = at + 2.2 * d))
+    p <- p +
+      ggplot2::geom_segment(
+        data = marks,
+        ggplot2::aes(x = .data$.x0, xend = .data$.x1,
+                     y = .data$.y - 0.42, yend = .data$.y + 0.42),
+        color = "white", linewidth = 0.9, inherit.aes = FALSE) +
+      ggplot2::geom_text(
+        data = over,
+        ggplot2::aes(x = cap, label = format_bar_value(.data$.signif)),
+        hjust = -0.15, size = 3.2, color = omics_colors$fg_dark)
+  }
+
+  # Bars start at the axis; on the right, room for the printed value.
+  # Clipping off, so a label a few pixels wider than that room on a
+  # narrow panel is not cut in half.
+  p + ggplot2::scale_x_continuous(
+    expand = ggplot2::expansion(mult = c(0, if (nrow(over) > 0L) 0.22 else 0.05))) +
+    ggplot2::coord_cartesian(clip = "off")
+}
+
+format_bar_value <- function(x) {
+  as.character(ifelse(x >= 10, round(x), round(x, 1)))
 }
 
 plot_enrich_gsea_dot <- function(df, p_col) {
