@@ -72,6 +72,40 @@ safe_print <- function(expr) {
   if (!is.null(p)) { print(p); cat("\n\n") }
   invisible(NULL)
 }
+# Figure heights that follow what a figure holds. At one fixed 4.5 in,
+# 30 pathway rows were squeezed into it with their names overlapping,
+# three comparisons' bars sat in a mostly empty panel, and a PCA's key
+# of six long group names ran off the bottom. Each such figure is drawn
+# in a chunk of its own whose fig.height is worked out here, from the
+# figure, in the chunk before it.
+fig_h <- function(inches, lo = 3, hi = 14) round(min(hi, max(lo, inches)), 2)
+# Lines of text down a figure's discrete y axes, every panel's added up
+# (a pathway name wrapped over two lines counts two).
+y_label_lines <- function(p) {
+  b <- tryCatch(ggplot2::ggplot_build(p), error = function(e) NULL)
+  if (is.null(b)) return(0)
+  sum(vapply(b$layout$panel_params, function(pp) {
+    labs <- tryCatch(as.character(pp$y$get_labels()), error = function(e) character(0))
+    as.numeric(sum(lengths(strsplit(labs[!is.na(labs)], "\n", fixed = TRUE))))
+  }, numeric(1)))
+}
+# Lines of text in a figure's colour key (a group name wrapped over
+# three lines counts three); 0 without one.
+key_lines <- function(p) {
+  b <- tryCatch(ggplot2::ggplot_build(p), error = function(e) NULL)
+  s <- if (!is.null(b)) b$plot$scales$get_scales("colour")
+  if (is.null(s) || !s$is_discrete()) return(0)
+  labs <- tryCatch(as.character(s$get_labels()), error = function(e) character(0))
+  sum(lengths(strsplit(labs, "\n", fixed = TRUE)))
+}
+# The height of a figure whose rows each carry a label: the title,
+# axis and legends around them, then about a quarter inch a line.
+rows_h <- function(p, base = 1.6, per_line = 0.24, lo = 3) {
+  fig_h(base + per_line * y_label_lines(p), lo = lo)
+}
+# The figures, built before the chunk that draws them so that chunk's
+# height can be read from them; NULL where the report has no such figure.
+try_plot <- function(expr) tryCatch(expr, error = function(e) NULL)
 project <- params$project
 project_name <- params$project_name
 bundles <- if (is.null(project$bundles)) list() else project$bundles
@@ -251,14 +285,23 @@ if (!is.null(qb)) {
   qc_layer <- project$experiments[[omicsCore::bundle_layer(project, qb)]]
   qc_group <- qc_layer$design$group_col
   if (is.null(qc_group) || !qc_group %in% names(qc_layer$meta_df)) qc_group <- NULL
-  safe_print(tryCatch(omicsCore::plot_qc(qb, view = "pca", color_by = qc_group,
-                                         reference = qc_layer$design$reference),
-                      error = function(e) omicsCore::plot_qc(qb, view = "pca")))
+  pca_fig <- try_plot(tryCatch(omicsCore::plot_qc(qb, view = "pca", color_by = qc_group,
+                                                  reference = qc_layer$design$reference),
+                               error = function(e) omicsCore::plot_qc(qb, view = "pca")))
 }
+# Tall enough for its key beside the points: a line of a group's name
+# is about a fifth of an inch.
+pca_h <- if (!is.null(qb)) fig_h(1.2 + 0.2 * key_lines(pca_fig), lo = 4.5) else 4.5
+```
+
+```{r qc-pca, results = "asis", fig.height = pca_h}
+if (!is.null(qb)) safe_print(pca_fig)
 ```
 
 ```{r diff-section, results = "asis"}
-if (!is.null(diff_b) && is.data.frame(diff_b$results$diff_result_df)) {
+has_diff <- !is.null(diff_b) && is.data.frame(diff_b$results$diff_result_df)
+comps <- character(0)
+if (has_diff) {
   cat("\n## Differential analysis\n\n")
   comps <- tryCatch(omicsCore::diff_comparisons(diff_b), error = function(e) character(0))
   if (length(comps) > 1L) {
@@ -268,9 +311,27 @@ if (!is.null(diff_b) && is.data.frame(diff_b$results$diff_result_df)) {
                                              effect_cutoff = thr$effect_cutoff %||% 0)
     print(knitr::kable(esc_df(s)))
     cat("\n\n")
-    safe_print(omicsCore::plot_diff_contrasts(diff_b))
-    if (length(comps) <= 8L) safe_print(omicsCore::plot_diff_overlap(diff_b))
   }
+}
+# A row per comparison in both figures, as tall as its name (wrapped
+# over up to three lines); the app sizes its cards the same way.
+cmp_lines <- if (length(comps)) omicsCore::comparison_label_lines(comps) else 0
+contrasts_h <- fig_h((160 + sum(20 + 19 * cmp_lines)) / 96, lo = 2.5)
+overlap_h <- fig_h((270 + sum(10 + 19 * cmp_lines)) / 96, lo = 3.5)
+```
+
+```{r diff-contrasts, results = "asis", fig.height = contrasts_h}
+if (has_diff && length(comps) > 1L) safe_print(omicsCore::plot_diff_contrasts(diff_b))
+```
+
+```{r diff-overlap, results = "asis", fig.height = overlap_h}
+if (has_diff && length(comps) > 1L && length(comps) <= 8L) {
+  safe_print(omicsCore::plot_diff_overlap(diff_b))
+}
+```
+
+```{r diff-comparisons, results = "asis"}
+if (has_diff) {
   for (cmp in comps) {
     one <- if (length(comps) > 1L) omicsCore::select_comparison(diff_b, cmp) else diff_b
     df <- one$results$diff_result_df
@@ -328,36 +389,52 @@ if (!is.null(ab)) {
 
 ```{r enrich-section, results = "asis"}
 eb <- bundles$enrich
+enrich_df <- if (!is.null(eb)) eb$results$enrich_result_df
+has_enrich <- !is.null(enrich_df) && nrow(enrich_df) > 0L
 if (!is.null(eb)) {
-  df <- eb$results$enrich_result_df
   cat("\n## Pathway enrichment\n\n")
-  if (is.null(df) || !nrow(df)) {
-    cat("No pathway reached significance.\n\n")
-  } else {
-    safe_print(omicsCore::plot_enrichment(eb, view = "dot", top_n = 12L))
-    df <- utils::head(df[order(df$adj_p_value), , drop = FALSE], 15L)
-    tab <- data.frame(Pathway = df$pathway_name,
-                      Genes = ifelse(is.na(df$overlap_size), "",
-                                     sprintf("%s / %s", df$overlap_size, df$gene_set_size)),
-                      `adjusted p` = fmt_p(df$adj_p_value), check.names = FALSE,
-                      stringsAsFactors = FALSE)
-    if (!all(is.na(df$effect))) tab$NES <- formatC(df$effect, digits = 2, format = "f")
-    if (!all(is.na(df$direction))) {
-      # ORA tested up and down as separate lists: say which list, in words.
-      tab$Direction <- if (identical(eb$params$type, "ora"))
-        ifelse(df$direction %in% "up", "up-regulated genes",
-               ifelse(df$direction %in% "down", "down-regulated genes", ""))
-      else df$direction
-    }
-    print(knitr::kable(esc_df(tab)))
-    cat("\n\n")
+  if (!has_enrich) cat("No pathway reached significance.\n\n")
+}
+dot_fig <- if (has_enrich) try_plot(omicsCore::plot_enrichment(eb, view = "dot", top_n = 12L))
+# Never below 4 in: the colour bar and the size key stacked beside the
+# panel need that much, however few pathways there are.
+dot_h <- if (!is.null(dot_fig)) rows_h(dot_fig, lo = 4) else 4.5
+```
+
+```{r enrich-dot, results = "asis", fig.height = dot_h}
+if (has_enrich) safe_print(dot_fig)
+```
+
+```{r enrich-table, results = "asis"}
+if (has_enrich) {
+  df <- enrich_df
+  df <- utils::head(df[order(df$adj_p_value), , drop = FALSE], 15L)
+  tab <- data.frame(Pathway = df$pathway_name,
+                    Genes = ifelse(is.na(df$overlap_size), "",
+                                   sprintf("%s / %s", df$overlap_size, df$gene_set_size)),
+                    `adjusted p` = fmt_p(df$adj_p_value), check.names = FALSE,
+                    stringsAsFactors = FALSE)
+  if (!all(is.na(df$effect))) tab$NES <- formatC(df$effect, digits = 2, format = "f")
+  if (!all(is.na(df$direction))) {
+    # ORA tested up and down as separate lists: say which list, in words.
+    tab$Direction <- if (identical(eb$params$type, "ora"))
+      ifelse(df$direction %in% "up", "up-regulated genes",
+             ifelse(df$direction %in% "down", "down-regulated genes", ""))
+    else df$direction
   }
+  print(knitr::kable(esc_df(tab)))
+  cat("\n\n")
 }
 cb <- bundles$enrich_compare
-if (!is.null(cb)) {
-  cat("\n### Pathways across comparisons\n\n")
-  safe_print(omicsCore::plot_enrichment_comparison(cb))
-}
+if (!is.null(cb)) cat("\n### Pathways across comparisons\n\n")
+compare_fig <- if (!is.null(cb)) try_plot(omicsCore::plot_enrichment_comparison(cb))
+# A row per pathway, as in the app (compare_plot_px()), with room under
+# the panel for the slanted comparison names.
+compare_h <- if (!is.null(compare_fig)) rows_h(compare_fig, base = 2.4, lo = 4.5) else 4.5
+```
+
+```{r enrich-compare, results = "asis", fig.height = compare_h}
+if (!is.null(cb)) safe_print(compare_fig)
 ```
 
 ```{r integration-section, results = "asis"}
@@ -392,10 +469,20 @@ if (!is.null(ib)) {
   view <- switch(ip$method %||% "", correlation = "scatter",
                  concordance = "effect_pair", active_pathways = "dotplot", "scatter")
   safe_print(omicsCore::plot_integration(ib, view = view))
-  # The scatter shows where the hits sit; the ranked list names them.
-  if (identical(ip$method, "concordance")) {
-    safe_print(omicsCore::plot_integration(ib, view = "top_hits", top_n = 15L))
-  }
+}
+# The scatter shows where the hits sit; the ranked list names them.
+top_hits_fig <- if (!is.null(ib) && identical(ib$params$method, "concordance")) {
+  try_plot(omicsCore::plot_integration(ib, view = "top_hits", top_n = 15L))
+}
+top_hits_h <- if (!is.null(top_hits_fig)) rows_h(top_hits_fig) else 4.5
+```
+
+```{r integration-top-hits, results = "asis", fig.height = top_hits_h}
+if (!is.null(top_hits_fig)) safe_print(top_hits_fig)
+```
+
+```{r integration-table, results = "asis"}
+if (!is.null(ib)) {
   df <- ib$results$integration_df
   if (identical(ip$method, "active_pathways") && is.data.frame(df) && nrow(df) &&
       "evidence" %in% names(df)) {

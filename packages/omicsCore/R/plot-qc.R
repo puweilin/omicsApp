@@ -570,7 +570,7 @@ plot_qc_pca <- function(bundle, color_by = NULL, reference = NULL) {
   ggplot2::ggplot(scores, mapping) +
     ggplot2::geom_point(size = 2.5, alpha = 0.9) +
     ggplot2::labs(
-      title = "PCA of cleaned input",
+      title = "Samples on the first two principal components",
       subtitle = subtitle,
       x = sprintf("PC1 (%.1f%%)", var_pct[1L]),
       y = sprintf("PC2 (%.1f%%)", var_pct[2L])
@@ -602,7 +602,7 @@ plot_qc_connectivity <- function(bundle) {
     ggplot2::scale_fill_manual(values = c(`TRUE` = "#C0392B", `FALSE` = "#2C3E99")) +
     ggplot2::scale_x_discrete(labels = function(x) truncate_pathway_name(x, 20L)) +
     ggplot2::labs(
-      title = "Sample connectivity",
+      title = "Correlation of each sample with the others",
       x = NULL,
       y = "Mean pairwise correlation",
       fill = "Outlier"
@@ -656,7 +656,7 @@ plot_qc_imputation <- function(bundle) {
     ggplot2::scale_color_manual(values = c(raw = "#9AA3AE", observed = "#9AA3AE",
                                            imputed = "#1FBF9E")) +
     ggplot2::labs(
-      title = "Imputation effect on intensity distribution",
+      title = "Intensities before and after filling in missing values",
       x = "Value",
       y = "Density",
       fill = NULL, color = NULL

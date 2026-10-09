@@ -37,7 +37,8 @@ qc_view_ui <- function(id) {
         ),
         bslib::card_body(
           shiny::uiOutput(ns("pca_color_picker")),
-          hover_plot_output(ns("pca"), height = "360px")
+          # Its height is the server's (pca_plot_px()): taller on a phone.
+          hover_plot_output(ns("pca"), height = "auto")
         )
       ),
       bslib::card(

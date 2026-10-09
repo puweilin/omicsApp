@@ -265,11 +265,19 @@ diff_hit_sets <- function(
 #' carries that comparison's total. Read left to right: the tallest columns
 #' are the patterns the data actually has -- "shared by every treatment",
 #' "specific to TreatB" -- which a Venn diagram of more than three sets
-#' cannot show legibly.
+#' cannot show legibly. When more combinations have hits than are drawn,
+#' the subtitle says so ("top 20 of 31 combinations").
+#'
+#' `compact = TRUE` lays the figure out for a phone-width panel: the six
+#' most populated combinations, comparisons that all share a control
+#' named by their treatment alone (the control is named once, in the
+#' subtitle), other names cut to two lines, and smaller counts over the
+#' bars.
 #'
 #' @inheritParams diff_hit_sets
 #' @param max_combinations Largest number of combinations drawn (the most
-#'   populated ones).
+#'   populated ones): 20, or 6 when `compact`.
+#' @param compact Lay the figure out for a narrow (phone-width) panel.
 #' @return A `patchwork` / `ggplot` object.
 #' @export
 #' @family diff
@@ -279,13 +287,16 @@ plot_diff_overlap <- function(
   p_preference = c("adjusted", "raw"),
   effect_cutoff = NULL,
   direction = c("any", "up", "down"),
-  max_combinations = 20L
+  max_combinations = if (compact) 6L else 20L,
+  compact = FALSE
 ) {
+  assert_flag(compact, "compact")
   assert_count(max_combinations, "max_combinations")
   p_preference <- match.arg(p_preference)
   direction <- match.arg(direction)
   sets <- diff_hit_sets(bundle, p_cutoff = p_cutoff, p_preference = p_preference,
                         effect_cutoff = effect_cutoff, direction = direction)
+  set_labels <- overlap_set_labels(names(sets), compact)
   names(sets) <- gsub("_vs_", " vs ", names(sets), fixed = TRUE)
   empty <- function(msg) {
     ggplot2::ggplot() + ggplot2::theme_void() +
@@ -301,6 +312,7 @@ plot_diff_overlap <- function(
   member <- matrix(member, nrow = length(all_ids), dimnames = list(all_ids, names(sets)))
   key <- apply(member, 1L, function(r) paste(as.integer(r), collapse = ""))
   counts <- sort(table(key), decreasing = TRUE)
+  n_combos <- length(counts)
   counts <- utils::head(counts, max_combinations)
   combos <- names(counts)
   set_names <- names(sets)
@@ -323,18 +335,14 @@ plot_diff_overlap <- function(
   top <- ggplot2::ggplot(bars, ggplot2::aes(x = .data$combo, y = .data$n)) +
     ggplot2::scale_x_discrete(limits = combos) +
     ggplot2::geom_col(fill = omics_colors$fg_dark %||% "#333333", width = 0.7) +
-    ggplot2::geom_text(ggplot2::aes(label = .data$n), vjust = -0.4, size = 3.2) +
+    # Counts over the bars, shortened ("1.2k") where the columns are
+    # narrow -- many of them, or a phone's panel -- and four digits ran
+    # into the next column's count.
+    ggplot2::geom_text(ggplot2::aes(label = overlap_count_label(
+                         .data$n, short = compact || length(combos) > 12L)),
+                       vjust = -0.4, size = if (compact) 2.6 else 3.2) +
     ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.15))) +
-    ggplot2::labs(
-      title = "Shared hits between comparisons",
-      subtitle = sprintf("%s hits, %s p < %s%s",
-                         switch(direction, any = "all", up = "up-regulated",
-                                down = "down-regulated"),
-                         if (p_preference == "adjusted") "adjusted" else "raw",
-                         format(p_cutoff),
-                         if (is.null(effect_cutoff)) "" else
-                           sprintf("\n|%s| \u2265 %s", effect_label(bundle), format(effect_cutoff))),
-      x = NULL, y = "features in exactly\nthis combination") +
+    ggplot2::labs(x = NULL, y = "features in exactly\nthis combination") +
     theme_omics_labelled() +
     ggplot2::theme(axis.text.x = ggplot2::element_blank(),
                    axis.ticks.x = ggplot2::element_blank(),
@@ -360,7 +368,7 @@ plot_diff_overlap <- function(
     ggplot2::scale_y_discrete(labels = function(x) {
       # The count goes after the wrapping, so a long name cut short
       # never takes its total with it.
-      sprintf("%s (%d)", wrap_comparison(x), lengths(sets)[x])
+      sprintf("%s (%d)", set_labels$labels[x], lengths(sets)[x])
     }) +
     ggplot2::labs(x = NULL, y = NULL) +
     theme_omics_labelled() +
@@ -370,9 +378,78 @@ plot_diff_overlap <- function(
 
   # The dot rows grow with their labels: a name wrapped over three lines
   # needs three lines of height, or it runs into its neighbours.
-  n_lines <- sum(comparison_label_lines(set_names))
+  n_lines <- sum(lengths(strsplit(set_labels$labels, "\n", fixed = TRUE)))
+  # The title and subtitle are the figure's, over both panels, rather
+  # than the bar panel's: the app drops a figure's title (its card has
+  # one) and keeps the panels' own.
   patchwork::wrap_plots(top, dots, ncol = 1L,
-                        heights = c(2, max(1, 0.13 * length(set_names) + 0.22 * n_lines)))
+                        heights = c(2, max(1, 0.13 * length(set_names) + 0.22 * n_lines))) +
+    patchwork::plot_annotation(
+      title = "Shared hits between comparisons",
+      subtitle = overlap_subtitle(bundle, direction, p_preference, p_cutoff, effect_cutoff,
+                                  shown = length(combos), total = n_combos,
+                                  control = set_labels$control),
+      theme = theme_omics_labelled())
+}
+
+# What the overlap plot counts, under its title: the hits and thresholds;
+# how many of the populated combinations are drawn, when not all are;
+# and the shared control, when the rows are named by treatment alone.
+overlap_subtitle <- function(bundle, direction, p_preference, p_cutoff, effect_cutoff,
+                             shown, total, control = NULL) {
+  out <- sprintf("%s hits, %s p < %s%s",
+                 switch(direction, any = "all", up = "up-regulated",
+                        down = "down-regulated"),
+                 if (p_preference == "adjusted") "adjusted" else "raw",
+                 format(p_cutoff),
+                 if (is.null(effect_cutoff)) "" else
+                   sprintf("\n|%s| \u2265 %s", effect_label(bundle), format(effect_cutoff)))
+  if (total > shown) out <- paste0(out, sprintf("\ntop %d of %d combinations", shown, total))
+  if (!is.null(control)) {
+    out <- paste0(out, "\n", wrap_label(paste("each vs", control), width = 40L, max_lines = 2L))
+  }
+  out
+}
+
+# Row labels of the overlap plot, named by comparison as the plot shows
+# it ("A vs B"), and the control they share when it is left out of them.
+# Full names, wrapped, by default. Compact (a phone): when every
+# comparison has the same control, the treatment alone over at most two
+# lines, as the comparison plot of enrichment names its columns
+# (comparison_columns()); otherwise each side over at most two lines.
+# One line a side was tried: groups named "Compound alpha ..." and
+# "Compound beta ..." both came out "vs Compound...", and the rows could
+# not be told apart.
+overlap_set_labels <- function(cmps, compact = FALSE) {
+  shown <- gsub("_vs_", " vs ", cmps, fixed = TRUE)
+  if (!compact) {
+    return(list(labels = stats::setNames(wrap_comparison(shown), shown), control = NULL))
+  }
+  width <- 16L
+  parts <- strsplit(cmps, "_vs_", fixed = TRUE)
+  control <- comparison_columns(cmps)$control
+  labels <- if (!is.null(control)) {
+    cases <- vapply(parts, `[`, character(1), 1L)
+    short <- wrap_label(cases, width = width, max_lines = 2L)
+    # Two treatments that only differ past the cut keep their full names.
+    if (anyDuplicated(short)) wrap_label(cases, width = width, max_lines = 4L) else short
+  } else {
+    vapply(parts, function(p) {
+      if (length(p) != 2L) return(wrap_label(paste(p, collapse = " vs "), width = width, max_lines = 2L))
+      paste0(wrap_label(p[1L], width = width, max_lines = 2L), "\n",
+             wrap_label(paste("vs", p[2L]), width = width, max_lines = 2L))
+    }, character(1))
+  }
+  list(labels = stats::setNames(labels, shown), control = control)
+}
+
+# A bar's count; past 999 as "1.2k" when `short`.
+overlap_count_label <- function(n, short = FALSE) {
+  out <- as.character(n)
+  if (!short) return(out)
+  big <- n >= 1000
+  out[big] <- paste0(trimws(formatC(n[big] / 1000, format = "fg", digits = 2)), "k")
+  out
 }
 
 #' @rdname wrap_label
@@ -395,8 +472,17 @@ wrap_comparison <- function(x, width = 22L) {
 
 #' @rdname wrap_label
 #' @details `comparison_label_lines()` gives the number of lines
-#'   `wrap_comparison()` uses for each label, for sizing a plot to fit.
+#'   `wrap_comparison()` uses for each label, for sizing a plot to fit;
+#'   with `compact = TRUE`, the lines of the row labels
+#'   [plot_diff_overlap()] draws with `compact = TRUE` for the comparisons
+#'   `x` (`"<case>_vs_<control>"` names, as [diff_comparisons()] gives
+#'   them).
+#' @param compact For `comparison_label_lines()`: count the lines of
+#'   `plot_diff_overlap(compact = TRUE)`'s row labels instead.
 #' @export
-comparison_label_lines <- function(x, width = 22L) {
-  lengths(strsplit(wrap_comparison(x, width = width), "\n", fixed = TRUE))
+comparison_label_lines <- function(x, width = 22L, compact = FALSE) {
+  assert_flag(compact, "compact")
+  labels <- if (compact) overlap_set_labels(as.character(x), compact = TRUE)$labels
+            else wrap_comparison(x, width = width)
+  unname(lengths(strsplit(labels, "\n", fixed = TRUE)))
 }

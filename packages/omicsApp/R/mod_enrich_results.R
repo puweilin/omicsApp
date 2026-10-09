@@ -329,7 +329,8 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
 
   output$gsea_curve <- shiny::renderPlot(
     res = PLOT_RES, alt = "Running enrichment score of the selected pathway",
-    fit_to_width("gsea_curve", gsea_curve()))
+    # Its title is the pathway's name, which the card header does not say.
+    fit_to_width("gsea_curve", gsea_curve(), keep_title = TRUE))
 
   # A card of its own under the results row, only once a pathway is
   # picked. Inside the table's card it sat below a scrolling table, in a

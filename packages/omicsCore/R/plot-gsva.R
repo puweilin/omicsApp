@@ -32,7 +32,7 @@ plot_gsva_heatmap <- function(
   scale = c("row", "none", "column"),
   cluster_rows = TRUE,
   cluster_cols = TRUE,
-  title = "GSVA"
+  title = "Pathway scores per sample"
 ) {
   assert_count(top_n, "top_n", lower = 1L)
   assert_character(pathways, "pathways", allow_null = TRUE)

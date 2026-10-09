@@ -62,12 +62,25 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
     # Differential view's figures, so a group is one colour in both.
     design <- tryCatch(omicsCore::study_design(active()$input), error = function(e) NULL)
     reference <- if (identical(design$group_col, color_by)) design$reference
-    p <- omicsCore::plot_qc(bundle, view = "pca", color_by = color_by,
-                            reference = reference)
-    p + ggplot2::theme(legend.position = "bottom")
+    # The key beside the points, as the report draws it. Under them, one
+    # group to a line, six long group names took two thirds of a desktop
+    # card and four short ones a third. On a phone fit_to_width() puts it
+    # under the points, two groups to a row.
+    omicsCore::plot_qc(bundle, view = "pca", color_by = color_by,
+                       reference = reference)
   })
 
+  # As tall as the desktop card on a wide screen; on a phone, taller by
+  # the rows of the key under the points, so they keep about 230 px
+  # however many groups there are.
+  pca_height <- function() {
+    narrow <- is_narrow_width(plot_output_width("pca", session))
+    p <- tryCatch(pca_plot(), error = function(e) NULL)
+    pca_plot_px(pca_key_entries(p), narrow)
+  }
+
   output$pca <- shiny::renderPlot(res = PLOT_RES, alt = "Principal component plot of the samples",
+                                  height = pca_height,
                                   fit_to_width("pca", pca_plot()))
 
   # Which sample is the one off on its own: hovering (or tapping) a
@@ -178,6 +191,25 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
 
   list(pca_color_choices = pca_color_choices, quality_view = quality_view,
        pca_plot = pca_plot, quality_plot = quality_plot, depth_label = depth_label)
+}
+
+# The PCA's height in CSS px. 360 on a wide screen. On a phone the key
+# is under the points: a line for its title, then a row (two lines) for
+# every two groups, or a colour bar for a numeric colouring (`n` NA).
+pca_plot_px <- function(n, narrow = FALSE) {
+  if (!isTRUE(narrow)) return(360L)
+  key <- if (is.na(n)) 60 else if (n > 0L) 22 + 34 * ceiling(n / 2) else 0
+  as.integer(max(360, 290 + key))
+}
+
+# Entries in the PCA's colour key: the groups coloured, 0 for none, NA
+# for a numeric column (a colour bar).
+pca_key_entries <- function(p) {
+  col <- if (inherits(p, "ggplot")) plot_aes_column(p, "colour")
+  if (is.null(col) || !col %in% names(p$data)) return(0L)
+  v <- p$data[[col]]
+  if (is.numeric(v)) return(NA_integer_)
+  length(unique(stats::na.omit(as.character(v))))
 }
 
 # Cells still missing after imputation: the ones the method could not fill.

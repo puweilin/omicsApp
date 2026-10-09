@@ -79,7 +79,7 @@ plot_volcano <- function(
                                     text = .data$.hover)) +
     diff_point_layers(df, classes) +
     ggplot2::labs(
-      title = "Volcano",
+      title = "Volcano plot",
       subtitle = volcano_subtitle(bundle),
       # What "significant" meant here travels with the figure. Without
       # it a reader has a two-coloured cloud and no way to know which
@@ -189,7 +189,7 @@ plot_ma <- function(bundle, top_n = 20, label_features = NULL,
     diff_point_layers(df, classes) +
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = omics_colors$ns) +
     ggplot2::labs(
-      title = "MA plot",
+      title = "Fold change against average level (MA plot)",
       subtitle = volcano_subtitle(bundle),
       caption = threshold_caption(p_col, p_threshold, effect_threshold,
                                 effect_label(bundle)),
@@ -268,7 +268,7 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
   ggplot2::ggplot(scores, mapping) +
     ggplot2::geom_point(size = 2.5, alpha = 0.9) +
     ggplot2::labs(
-      title = "PCA scores",
+      title = "Samples on the first two principal components",
       x = sprintf("PC1 (%.1f%%)", var_pct[1L]),
       y = sprintf("PC2 (%.1f%%)", var_pct[2L])
     ) +

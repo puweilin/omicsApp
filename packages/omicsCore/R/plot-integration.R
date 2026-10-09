@@ -163,17 +163,17 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
     xlab <- switch(type, spearman_r = "Spearman correlation across paired samples",
                    pearson_r = "Pearson correlation across paired samples",
                    paste0("correlation (", type, ")"))
-    title <- "Integration: correlation"
+    title <- "Correlation between layers, gene by gene"
   } else if (method == "concordance") {
     x_aes <- "effect"
     xlab <- paste0("effect difference (", integration_axis_label(bundle, "a"),
                    " - ", integration_axis_label(bundle, "b"), ")")
-    title <- "Integration: concordance"
+    title <- "Difference in fold change between layers"
   } else {
     df$.rank <- seq_len(nrow(df))
     x_aes <- ".rank"
     xlab <- "pathway rank"
-    title <- "Integration: ActivePathways"
+    title <- "Pathways ranked across both layers"
   }
   # The background first and faint, the hits on top of it.
   df <- df[order(sig), , drop = FALSE]
@@ -238,7 +238,7 @@ plot_integration_dual_volcano <- function(df, bundle, top_n, label_features, p_c
     ggplot2::scale_color_manual(values = quadrant_colors, name = "quadrant",
                                 na.value = omics_colors$ns) +
     ggplot2::labs(
-      title = "Integration: dual volcano",
+      title = "Difference between layers, by significance",
       subtitle = paste(bundle$params$experiments, collapse = " vs "),
       x = paste0("effect (", integration_axis_label(bundle, "a"),
                  " - ", integration_axis_label(bundle, "b"), ")"),
@@ -312,7 +312,7 @@ plot_integration_effect_pair <- function(df, bundle, top_n = 10L,
       ncol = 1, override.aes = list(size = 2.6, alpha = 1))) +
     ggplot2::coord_equal(xlim = c(-lim, lim), ylim = c(-lim, lim)) +
     ggplot2::labs(
-      title = "Effect in each layer",
+      title = "Fold change in each layer",
       # The axes name the layers; a phone-width card has no room to
       # repeat them here.
       subtitle = if (nrow(ring)) "ringed: top hits in both layers"
@@ -478,7 +478,7 @@ plot_integration_quadrant <- function(df, bundle) {
     ggplot2::geom_col() +
     ggplot2::scale_fill_manual(values = quadrant_colors, guide = "none") +
     ggplot2::labs(
-      title = "Integration: concordance quadrants",
+      title = "Direction of change in both layers",
       subtitle = sprintf("%s; features significant in both layers",
                          paste(bundle$params$experiments, collapse = " vs ")),
       x = NULL, y = "features"
@@ -534,7 +534,7 @@ plot_integration_dotplot <- function(df, bundle, top_n) {
   }
   p + shape_scale +
     ggplot2::labs(
-      title = "Integration: ActivePathways",
+      title = "Pathways from both layers combined",
       subtitle = subtitle,
       x = "-log10(adj p)", y = NULL
     ) +

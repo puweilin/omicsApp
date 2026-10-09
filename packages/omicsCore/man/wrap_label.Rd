@@ -8,7 +8,7 @@
 \usage{
 wrap_comparison(x, width = 22L)
 
-comparison_label_lines(x, width = 22L)
+comparison_label_lines(x, width = 22L, compact = FALSE)
 
 wrap_label(x, width = 24L, max_lines = 3L)
 }
@@ -16,6 +16,9 @@ wrap_label(x, width = 24L, max_lines = 3L)
 \item{x}{Character vector of labels.}
 
 \item{width}{Widest line, in display columns.}
+
+\item{compact}{For \code{comparison_label_lines()}: count the lines of
+\code{plot_diff_overlap(compact = TRUE)}'s row labels instead.}
 
 \item{max_lines}{Most lines kept per label.}
 }
@@ -37,7 +40,11 @@ each side on its own lines -- the case over at most two, then
 the control, half of what the label says, with it.
 
 \code{comparison_label_lines()} gives the number of lines
-\code{wrap_comparison()} uses for each label, for sizing a plot to fit.
+\code{wrap_comparison()} uses for each label, for sizing a plot to fit;
+with \code{compact = TRUE}, the lines of the row labels
+\code{\link[=plot_diff_overlap]{plot_diff_overlap()}} draws with \code{compact = TRUE} for the comparisons
+\code{x} (\code{"<case>_vs_<control>"} names, as \code{\link[=diff_comparisons]{diff_comparisons()}} gives
+them).
 }
 \examples{
 wrap_label("Treatment with a long descriptive name vs Control", width = 20)

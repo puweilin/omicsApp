@@ -468,10 +468,22 @@ disabled_if <- function(tag, busy) {
 # set smaller and legends stack, rather than the figure being cut.
 NARROW_PLOT_PX <- 420
 
-fit_to_width <- function(output_id, p, session = shiny::getDefaultReactiveDomain()) {
-  w <- tryCatch(session$clientData[[paste0("output_", session$ns(output_id), "_width")]],
-                error = function(e) NULL)
-  if (!is.numeric(w) || !length(w) || w >= NARROW_PLOT_PX) return(p)
+# Every figure in the app goes through here on its way to renderPlot().
+#
+# The card header already names the figure ("PCA", "Pathway dotplot"),
+# so the plot's own title only repeated it -- in the analysis's words,
+# "PCA of cleaned input" beside a card titled "PCA" -- and took a line
+# of the card. It is dropped here, not in omicsCore: the report and a
+# downloaded file have no card around them and keep it (a download
+# draws the plot before this). The subtitle stays: it says what the
+# card does not (the thresholds, the control, the features left out).
+# `keep_title` is for a title that is the figure's content rather than
+# its name, such as the selected pathway over its GSEA curve.
+fit_to_width <- function(output_id, p, session = shiny::getDefaultReactiveDomain(),
+                         keep_title = FALSE) {
+  if (!isTRUE(keep_title)) p <- drop_plot_title(p)
+  w <- plot_output_width(output_id, session)
+  if (!is_narrow_width(w)) return(p)
   # Stacked only where a legend sits under the panel; one above it (up /
   # down) fits on a line.
   top <- identical(tryCatch(p$theme$legend.position, error = function(e) NULL), "top")
@@ -481,8 +493,9 @@ fit_to_width <- function(output_id, p, session = shiny::getDefaultReactiveDomain
   # its entries stacked.
   # Legends run across, each on its own row: two upright legends side by
   # side (the enrichment colour bar and its size key) did not fit in the
-  # width and were cut off. Group legends keep one entry per line (their
-  # guide asks for one column), so long group names do not run off.
+  # width and were cut off. Group legends ask for one column, so long
+  # group names do not run off; narrow_group_legends() gives them two
+  # where the names fit.
   if (!top) {
     shrink <- shrink + ggplot2::theme(legend.position = "bottom",
                                       legend.direction = "horizontal",
@@ -492,8 +505,114 @@ fit_to_width <- function(output_id, p, session = shiny::getDefaultReactiveDomain
     if ("legend.title.position" %in% names(ggplot2::get_element_tree())) {
       shrink <- shrink + ggplot2::theme(legend.title.position = "top")
     }
+    # Centred under the whole figure, not under its panel: beside a
+    # heatmap's 80 px of gene names the panel starts a quarter of the way
+    # across, and a two-column group key centred under it ran off the
+    # right edge.
+    if ("legend.location" %in% names(ggplot2::get_element_tree())) {
+      shrink <- shrink + ggplot2::theme(legend.location = "plot")
+    }
+    if (inherits(p, "ggplot")) p <- narrow_group_legends(p, w)
   }
   if (inherits(p, "patchwork")) p & shrink
   else if (inherits(p, c("gg", "ggplot"))) p + shrink
   else p
+}
+
+# The width the browser reports for a plot output, in CSS pixels; NULL
+# before it has reported one (and outside a session).
+plot_output_width <- function(output_id, session = shiny::getDefaultReactiveDomain()) {
+  tryCatch(session$clientData[[paste0("output_", session$ns(output_id), "_width")]],
+           error = function(e) NULL)
+}
+
+is_narrow_width <- function(w) {
+  is.numeric(w) && length(w) == 1L && is.finite(w) && w < NARROW_PLOT_PX
+}
+
+# A ggplot's title, or a patchwork's overall one (plot_annotation()).
+# The titles of a patchwork's panels stay: "Missing rate per sample"
+# and "... per feature" say which panel is which, not what the figure is.
+drop_plot_title <- function(p) {
+  if (inherits(p, "patchwork")) {
+    if (!is.null(p$patches$annotation$title)) p$patches$annotation["title"] <- list(NULL)
+    return(p)
+  }
+  if (inherits(p, "ggplot")) return(p + ggplot2::labs(title = NULL))
+  p
+}
+
+# Lines a group name keeps in a phone's two-column key; the full name is
+# in the hover card.
+NARROW_KEY_LINES <- 2L
+
+# Sample-group keys two to a row on a phone. A group legend lists one
+# group per line (its guide asks for one column, so long names wrap
+# rather than run off), and under a 290 px PCA six long names, each over
+# three lines, filled the card and left the points a 70 px strip. Two to
+# a row, each name re-wrapped to half the width and at most two lines,
+# the key takes about a third of that. Keys of one or two entries are
+# short already and keep their column.
+narrow_group_legends <- function(p, width_px) {
+  scales <- tryCatch(p$scales$scales, error = function(e) NULL)
+  targets <- Filter(is_single_column_legend, scales %||% list())
+  if (!length(targets)) return(p)
+  built <- tryCatch(ggplot2::ggplot_build(p), error = function(e) NULL)
+  if (is.null(built)) return(p)
+  chars <- narrow_key_chars(width_px - wide_margin_px(p))
+  for (s in targets) {
+    n <- tryCatch(length(built$plot$scales$get_scales(s$aesthetics[1L])$get_labels()),
+                  error = function(e) 0L)
+    if (n >= 3L) p <- suppressMessages(p + two_column_scale(s, chars))
+  }
+  p
+}
+
+# Characters of a key's name that fit beside its symbol in half the
+# width: about 6.5 px each at the 9 pt a phone's plots use, after the
+# symbol and the gap beside it, and one more for the ellipsis of a cut
+# name.
+narrow_key_chars <- function(width_px) {
+  max(8L, as.integer(floor((width_px / 2 - 28) / 6.5)) - 1L)
+}
+
+# Width a plot's own margins take beyond the usual 5.5 pt a side, in CSS
+# px. The heatmap writes its gene names into a wide left margin, and a
+# key under it has only what is left: centred in the full width, its
+# second column ran off the right edge.
+wide_margin_px <- function(p) {
+  m <- tryCatch(p$theme$plot.margin, error = function(e) NULL)
+  if (!inherits(m, "unit") || length(m) != 4L) return(0)
+  px <- tryCatch(grid::convertWidth(m[c(2L, 4L)], "in", valueOnly = TRUE) * PLOT_RES,
+                 error = function(e) c(0, 0))
+  max(0, sum(px) - 2 * 5.5 / 72 * PLOT_RES)
+}
+
+is_single_column_legend <- function(s) {
+  isTRUE(tryCatch(
+    s$is_discrete() && any(s$aesthetics %in% c("colour", "fill", "shape")) &&
+      inherits(s$guide, "GuideLegend") && identical(as.integer(s$guide$params$ncol), 1L),
+    error = function(e) FALSE))
+}
+
+# A copy of the scale -- its colours, breaks and name untouched -- whose
+# names are re-wrapped to `chars` a line over at most two lines, in a
+# two-column key. The scale and its guide are ggproto objects the plot
+# they came from still holds, so both are copied rather than changed in
+# place.
+two_column_scale <- function(s, chars) {
+  out <- s$clone()
+  old <- s$labels
+  out$labels <- function(x) {
+    lab <- if (is.function(old)) old(x)
+           else if (is.null(old) || inherits(old, "waiver")) x
+           else if (!is.null(names(old))) ifelse(x %in% names(old), old[as.character(x)], x)
+           else old
+    lab <- gsub("\\s*\n\\s*", " ", as.character(lab))
+    omicsCore::wrap_label(lab, width = chars, max_lines = NARROW_KEY_LINES)
+  }
+  guide <- ggplot2::ggproto(NULL, s$guide)
+  guide$params <- utils::modifyList(s$guide$params, list(ncol = 2L))
+  out$guide <- guide
+  out
 }

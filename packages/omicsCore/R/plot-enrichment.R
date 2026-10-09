@@ -412,7 +412,7 @@ plot_enrich_dot <- function(df, p_col) {
     # x is shared between panels so the up and down lists, or two
     # databases, can be compared along it; only the names differ.
     enrich_facets(df, scales = "free_y") +
-    ggplot2::labs(title = "Enrichment", x = x_label, y = NULL) +
+    ggplot2::labs(title = "Pathways enriched", x = x_label, y = NULL) +
     theme_omics_labelled() +
     enrich_narrow_theme()
 
@@ -633,7 +633,7 @@ plot_enrich_bar <- function(df, p_col) {
   p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$.bar, y = .data$.label)) +
     ggplot2::geom_col(ggplot2::aes(fill = .data$.fill), width = 0.75) +
     enrich_facets(df, scales = "free_y") +
-    ggplot2::labs(title = "Enrichment", x = p_axis_label(p_col), y = NULL) +
+    ggplot2::labs(title = "Pathways enriched", x = p_axis_label(p_col), y = NULL) +
     theme_omics_labelled() +
     enrich_narrow_theme()
 
@@ -717,7 +717,7 @@ plot_enrich_gsea_dot <- function(df, p_col) {
                                    name = "set size") +
     ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.08, 0.1))) +
     ggplot2::labs(
-      title = "GSEA",
+      title = "Pathways enriched in the ranked gene list",
       x = "NES",
       y = NULL
     ) +

@@ -179,7 +179,7 @@ plot_enrichment_comparison <- function(bundle, top_n = 8L, p_cutoff = 0.05,
   p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$.col, y = .data$.row)) +
     ggplot2::scale_y_discrete(labels = labels[levels(df$.row)]) +
     shape_scale +
-    ggplot2::labs(title = "Pathways across comparisons",
+    ggplot2::labs(title = "Pathways enriched in each comparison",
                   subtitle = comparison_subtitle(bundle$params, cols$control),
                   x = NULL, y = NULL) +
     theme_omics_labelled() +

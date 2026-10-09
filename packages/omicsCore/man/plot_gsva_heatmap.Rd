@@ -13,7 +13,7 @@ plot_gsva_heatmap(
   scale = c("row", "none", "column"),
   cluster_rows = TRUE,
   cluster_cols = TRUE,
-  title = "GSVA"
+  title = "Pathway scores per sample"
 )
 }
 \arguments{

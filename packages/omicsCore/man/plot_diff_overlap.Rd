@@ -10,7 +10,8 @@ plot_diff_overlap(
   p_preference = c("adjusted", "raw"),
   effect_cutoff = NULL,
   direction = c("any", "up", "down"),
-  max_combinations = 20L
+  max_combinations = if (compact) 6L else 20L,
+  compact = FALSE
 )
 }
 \arguments{
@@ -27,7 +28,9 @@ plot_diff_overlap(
 \item{direction}{\code{"any"} (default), \code{"up"} or \code{"down"}: which hits.}
 
 \item{max_combinations}{Largest number of combinations drawn (the most
-populated ones).}
+populated ones): 20, or 6 when \code{compact}.}
+
+\item{compact}{Lay the figure out for a narrow (phone-width) panel.}
 }
 \value{
 A \code{patchwork} / \code{ggplot} object.
@@ -39,7 +42,15 @@ dots under it say which comparisons the combination is; each row label
 carries that comparison's total. Read left to right: the tallest columns
 are the patterns the data actually has -- "shared by every treatment",
 "specific to TreatB" -- which a Venn diagram of more than three sets
-cannot show legibly.
+cannot show legibly. When more combinations have hits than are drawn,
+the subtitle says so ("top 20 of 31 combinations").
+}
+\details{
+\code{compact = TRUE} lays the figure out for a phone-width panel: the six
+most populated combinations, comparisons that all share a control
+named by their treatment alone (the control is named once, in the
+subtitle), other names cut to two lines, and smaller counts over the
+bars.
 }
 \seealso{
 Other diff:
