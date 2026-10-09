@@ -85,7 +85,9 @@ collect_ids <- function(file) {
 # literal to match. Named here so the check stays exact everywhere else.
 dynamic_ids <- list(
   # The report's download buttons come from a helper that takes the id.
-  report = c("download_html", "download_pdf")
+  report = c("download_html", "download_pdf"),
+  # DT reports a table's selected rows as "<table id>_rows_selected".
+  enrich = "hits_rows_selected"
 )
 
 control_re <- "(Input|Button|Buttons|Link|Switch|Slider|Checkbox|Picker)$"

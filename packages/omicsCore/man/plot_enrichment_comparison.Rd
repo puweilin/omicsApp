@@ -30,6 +30,16 @@ the \code{top_n} strongest of each comparison, so a pathway that matters in
 only one of them still appears -- and its empty cells in the other
 columns are the finding.
 }
+\details{
+Point size is -log10 of the chosen p-value, capped as \code{\link[=plot_enrichment]{plot_enrichment()}}
+caps its colour: a pathway beyond the cap takes the largest dot and the
+key's top label reads "at least" the cap. Colour is the gene list a
+pathway was found among (ORA run on up and down separately) or the NES
+(GSEA). Pathways that miss \code{p_cutoff} are drawn hollow, and only then
+does the plot carry a key for filled and hollow. When every comparison
+has the same control the columns are named by the treatment and the
+control is named once, in the subtitle.
+}
 \seealso{
 Other enrich:
 \code{\link[=compare_enrichment]{compare_enrichment()}},

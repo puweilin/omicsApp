@@ -72,9 +72,19 @@ plot_enrichment <- function(
 
 #' GSEA running-score plot
 #'
-#' Plots the `clusterProfiler::gseaplot2()` running-score curve for a single
-#' pathway in a GSEA enrichment bundle. Requires the `enrichplot`
-#' Bioconductor package.
+#' The running enrichment score of one pathway in a GSEA result: the
+#' genes ranked from most up to most down along x, a tick for each gene
+#' of the pathway in a band under the curve, and the curve climbing at
+#' each tick and falling between them. Its peak (marked) is the
+#' enrichment score: a peak near the left means the pathway's genes
+#' gather among the most up-regulated, a trough near the right among the
+#' most down-regulated.
+#'
+#' The ranking and the gene sets are read from the clusterProfiler object
+#' the run keeps (`results$enrich_object`). A bundle without it is drawn
+#' from the differential result it was run on, passed as `diff_bundle`:
+#' the ranking is rebuilt as [run_enrichment()] builds it and the gene
+#' set read again from the database.
 #'
 #' @param bundle An [`analysis_bundle`][is_analysis_bundle()] produced by
 #'   [run_enrichment()] with `type = "gsea"`.
@@ -82,11 +92,13 @@ plot_enrichment <- function(
 #'   table) or pathway name.
 #' @param database Database key. Required when the bundle holds multiple
 #'   databases; ignored when there's only one.
+#' @param diff_bundle Optional: the differential bundle the enrichment
+#'   was run on. Used only when `bundle` does not keep its GSEA objects.
 #'
 #' @return A `ggplot` object.
 #' @export
 #' @family enrich
-plot_gsea <- function(bundle, pathway_id, database = NULL) {
+plot_gsea <- function(bundle, pathway_id, database = NULL, diff_bundle = NULL) {
   if (!is_analysis_bundle(bundle) ||
       !identical(bundle$analysis_name, "run_enrichment")) {
     stop("`bundle` must be an analysis_bundle from run_enrichment().")
@@ -94,33 +106,182 @@ plot_gsea <- function(bundle, pathway_id, database = NULL) {
   if (!identical(bundle$params$type, "gsea")) {
     stop("plot_gsea() requires a bundle with type = 'gsea'.")
   }
-  if (!is_installed("enrichplot")) {
-    stop(
-      "Package 'enrichplot' is required for plot_gsea(). ",
-      "Install with: BiocManager::install('enrichplot').",
-      call. = FALSE
-    )
-  }
-
-  objects <- bundle$results$enrich_object
-  if (length(objects) == 0L) {
-    stop("Bundle does not contain any GSEA objects.")
-  }
-
-  obj <- if (length(objects) == 1L) {
-    objects[[1L]]
-  } else {
-    if (is.null(database)) {
+  assert_string(pathway_id, "pathway_id")
+  dbs <- bundle$params$database %||% names(bundle$results$enrich_object)
+  if (is.null(database)) {
+    if (length(dbs) > 1L) {
       stop("`database` must be supplied when the bundle covers multiple databases: ",
-           paste(names(objects), collapse = ", "))
+           paste(dbs, collapse = ", "), call. = FALSE)
     }
-    objects[[normalize_enrich_database(database)]]
+    database <- dbs[[1L]]
   }
-  if (is.null(obj)) {
-    stop("No GSEA object available for the requested database.")
+  database <- normalize_enrich_database(database)
+
+  # The pathway's row of the table, for its name, NES and p. Found by ID
+  # or by name, as the caller has it.
+  df <- bundle$results$enrich_result_df
+  row <- NULL
+  if (is.data.frame(df) && nrow(df)) {
+    in_db <- is.na(df$database) | df$database == database
+    hit <- which(in_db & (df$pathway_id %in% pathway_id | df$pathway_name %in% pathway_id))
+    if (length(hit)) row <- df[hit[[1L]], , drop = FALSE]
+  }
+  set_id <- if (!is.null(row)) row$pathway_id else pathway_id
+
+  run <- gsea_ranking_and_set(bundle, database, set_id, diff_bundle)
+  curve <- gsea_running_score(run$ranking, run$gene_set, exponent = run$exponent)
+  if (!any(curve$hit)) {
+    stop("None of the genes of ", pathway_id, " are in the ranked list.", call. = FALSE)
+  }
+  gsea_curve_plot(curve, row = row, title = pathway_id,
+                  metric = bundle$params$rank_metric %||% attr(run$ranking, "metric"))
+}
+
+# The ranked statistics and the pathway's genes: from the stored
+# clusterProfiler object, or without one rebuilt from the differential
+# result the way run_enrichment() built them (symbol case included).
+gsea_ranking_and_set <- function(bundle, database, set_id, diff_bundle = NULL) {
+  objects <- bundle$results$enrich_object
+  obj <- if (length(objects)) {
+    objects[[database]] %||% (if (length(objects) == 1L) objects[[1L]])
+  }
+  if (!is.null(obj) && methods::is(obj, "gseaResult")) {
+    sets <- methods::slot(obj, "geneSets")
+    if (!set_id %in% names(sets)) {
+      stop("No gene set called ", set_id, " in this result.", call. = FALSE)
+    }
+    return(list(ranking = methods::slot(obj, "geneList"),
+                gene_set = sets[[set_id]],
+                exponent = methods::slot(obj, "params")$exponent %||% 1))
+  }
+  if (is.null(diff_bundle)) {
+    stop("This result does not keep its ranked gene list; pass the differential ",
+         "result it was run on (`diff_bundle`) to draw the curve.", call. = FALSE)
+  }
+  assert_diff_bundle(diff_bundle)
+  organism <- bundle$params$organism %||% "Hs"
+  if (identical(bundle$params$symbol_case, "ignored")) {
+    fix <- match_symbol_case(diff_bundle, database, organism)
+    if (!is.null(fix)) diff_bundle <- fix$bundle
+  }
+  res <- diff_result_from_bundle(diff_bundle)
+  col <- if ("feature_symbol" %in% colnames(res)) "feature_symbol" else "feature_id"
+  t2g <- build_term_tables(database = database, organism = organism)$term2gene
+  genes <- unique(t2g$gene[t2g$term == set_id])
+  if (!length(genes)) {
+    stop("No gene set called ", set_id, " in ", database, ".", call. = FALSE)
+  }
+  list(ranking = gsea_rank_vector(res, col), gene_set = genes, exponent = 1)
+}
+
+# The running score as GSEA computes it (Subramanian et al. 2005; the
+# same sums as DOSE::gseaScores(), which clusterProfiler uses). Walking
+# down the ranking, a gene of the pathway adds its share of the
+# pathway's summed |statistic|^exponent and any other gene takes away
+# 1 / (genes outside the pathway), so the walk ends at 0 and the
+# enrichment score is its largest excursion either way.
+gsea_running_score <- function(ranking, gene_set, exponent = 1) {
+  ranking <- sort(ranking[is.finite(ranking)], decreasing = TRUE)
+  hit <- names(ranking) %in% gene_set
+  n <- length(ranking)
+  n_hit <- sum(hit)
+  w <- ifelse(hit, abs(ranking)^exponent, 0)
+  up <- if (sum(w) > 0) cumsum(w / sum(w)) else cumsum(hit / max(n_hit, 1L))
+  down <- cumsum((!hit) / max(n - n_hit, 1L))
+  data.frame(position = seq_len(n), gene = names(ranking), stat = unname(ranking),
+             score = up - down, hit = hit, stringsAsFactors = FALSE)
+}
+
+# One panel, not gseaplot2's three. Its bright green curve, rainbow bar
+# and "Ranked List Metric" panel used none of the app's colours, and at
+# phone width its two axis titles ran into each other. Here the curve
+# takes the direction's colour, the pathway's genes are ticks in a band
+# under it, and a strip under the ticks says which end of the ranking is
+# up and which down -- the one thing a reader needs to read the rest.
+gsea_curve_plot <- function(curve, row = NULL, title = NULL, metric = NULL) {
+  n <- nrow(curve)
+  peak <- which.max(abs(curve$score))
+  es <- curve$score[peak]
+  nes <- if (!is.null(row)) row$effect else NA_real_
+  colour <- if (if (is.finite(nes)) nes >= 0 else es >= 0) omics_colors$up else omics_colors$down
+
+  lo <- min(0, curve$score)
+  hi <- max(0, curve$score)
+  span <- max(hi - lo, 1e-6)
+  tick_top <- lo - 0.06 * span
+  tick_bot <- tick_top - 0.16 * span
+  strip_top <- tick_bot - 0.05 * span
+  strip_bot <- strip_top - 0.08 * span
+  n_up <- sum(curve$stat > 0)
+  strip <- data.frame(xmin = c(0.5, n_up + 0.5), xmax = c(n_up + 0.5, n + 0.5),
+                      fill = c(omics_colors$up, omics_colors$down),
+                      label = c("up", "down"), x = c(1, n), hjust = c(-0.2, 1.2),
+                      stringsAsFactors = FALSE)
+  strip <- strip[strip$xmax > strip$xmin, , drop = FALSE]
+  ticks <- curve[curve$hit, , drop = FALSE]
+
+  name <- if (!is.null(row)) row$pathway_name else title %||% "Pathway"
+  n_genes <- sum(curve$hit)
+  sub <- if (!is.null(row) && is.finite(nes)) {
+    sprintf("NES %s \u00B7 adjusted p %s \u00B7 %d genes",
+            formatC(nes, digits = 2, format = "f"), format_enrich_p(row$adj_p_value), n_genes)
+  } else {
+    sprintf("%d genes in the set", n_genes)
+  }
+  metric_txt <- switch(metric %||% "",
+                       "signed test statistic" = "test statistic",
+                       "signed sqrt(F)" = "signed \u221AF",
+                       "sign(effect) * -log10(p)" = "signed -log10 p",
+                       "change")
+  score_breaks <- function(l) {
+    b <- scales::breaks_extended(n = 4)(c(lo, hi))
+    b[b >= lo - 0.05 * span & b <= hi + 0.05 * span]
   }
 
-  enrichplot::gseaplot2(obj, geneSetID = pathway_id)
+  ggplot2::ggplot(curve, ggplot2::aes(x = .data$position)) +
+    ggplot2::geom_hline(yintercept = 0, colour = omics_colors$ns, linewidth = 0.4) +
+    ggplot2::annotate("segment", x = peak, xend = peak, y = 0, yend = es,
+                      colour = colour, linetype = "dashed", linewidth = 0.4) +
+    ggplot2::geom_line(ggplot2::aes(y = .data$score), colour = colour, linewidth = 0.9) +
+    ggplot2::annotate("point", x = peak, y = es, colour = colour, size = 2.2) +
+    # Beside the dashed line, half-way up it: at the peak itself the label
+    # sat on the curve wherever the score plateaus there.
+    ggplot2::annotate("text", x = peak, y = es / 2,
+                      label = paste("ES", formatC(es, digits = 2, format = "f")),
+                      hjust = if (peak < n / 2) -0.25 else 1.25,
+                      vjust = 0.5,
+                      size = 3.4, colour = omics_colors$fg_dark) +
+    ggplot2::geom_segment(data = ticks,
+                          ggplot2::aes(x = .data$position, xend = .data$position),
+                          y = tick_bot, yend = tick_top,
+                          colour = omics_colors$fg_dark, linewidth = 0.3, alpha = 0.7) +
+    ggplot2::geom_rect(data = strip,
+                       ggplot2::aes(xmin = .data$xmin, xmax = .data$xmax),
+                       ymin = strip_bot, ymax = strip_top,
+                       fill = strip$fill, alpha = 0.3, inherit.aes = FALSE) +
+    ggplot2::geom_text(data = strip,
+                       ggplot2::aes(x = .data$x, label = .data$label, hjust = .data$hjust),
+                       y = (strip_top + strip_bot) / 2, size = 3,
+                       colour = omics_colors$fg_dark, inherit.aes = FALSE) +
+    # Numbers for the score only; the band and the strip carry none.
+    ggplot2::scale_y_continuous(breaks = score_breaks,
+                                expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
+    ggplot2::scale_x_continuous(breaks = NULL, expand = ggplot2::expansion(mult = 0.01)) +
+    ggplot2::labs(title = wrap_label(name, width = 40L, max_lines = 2L),
+                  subtitle = sub,
+                  x = paste("genes ranked by", metric_txt),
+                  y = "running enrichment score") +
+    theme_omicsCore(base_size = 12) +
+    ggplot2::theme(panel.grid.major.x = ggplot2::element_blank(),
+                   axis.title.x = ggplot2::element_text(hjust = 0),
+                   axis.title.y = ggplot2::element_text(hjust = 1))
+}
+
+# A p-value for a subtitle: three digits, or two in scientific notation
+# when small.
+format_enrich_p <- function(p) {
+  if (length(p) != 1L || !is.finite(p)) return("NA")
+  if (p < 0.001) formatC(p, digits = 1, format = "e") else formatC(p, digits = 3, format = "fg")
 }
 
 # ---- internal helpers --------------------------------------------------
@@ -338,25 +499,50 @@ neg_log10_p <- function(p) -log10(pmax(p, .Machine$double.xmin))
 # greater-or-equal sign, so the legend says the scale stops there.
 signif_colour_scale <- function(values, p_col) {
   lim <- signif_limits(values)
-  breaks <- ggplot2::waiver()
-  labels <- ggplot2::waiver()
-  if (lim$capped) {
-    lo <- lim$limits[1L]
-    cap <- lim$limits[2L]
-    # Round breaks below the cap, kept clear of it so the two labels do
-    # not run together, then the cap itself.
-    b <- scales::breaks_extended(n = 4)(lim$limits)
-    b <- b[b >= lo & b <= cap - 0.25 * (cap - lo)]
-    breaks <- c(b, cap)
-    labels <- c(format_signif_break(b),
-                paste0("\u2265 ", format_signif_break(cap)))
-  }
+  bl <- signif_capped_breaks(lim, n = 4L)
   ggplot2::scale_color_gradient(low = omics_colors$scale_low,
                                 high = omics_colors$scale_high,
                                 name = p_axis_label(p_col),
                                 limits = lim$limits, oob = scales::squish,
-                                breaks = breaks, labels = labels,
+                                breaks = bl$breaks, labels = bl$labels,
                                 guide = ggplot2::guide_colourbar(order = 1L))
+}
+
+# Breaks and labels for a scale capped by signif_limits(): round breaks
+# below the cap, kept clear of it so the two labels do not run together,
+# then the cap itself marked "at least". Left to ggplot (waiver) when
+# nothing is capped.
+signif_capped_breaks <- function(lim, n = 4L) {
+  if (!isTRUE(lim$capped)) {
+    return(list(breaks = ggplot2::waiver(), labels = ggplot2::waiver()))
+  }
+  lo <- lim$limits[1L]
+  cap <- lim$limits[2L]
+  b <- scales::breaks_extended(n = n)(lim$limits)
+  b <- b[b >= lo & b <= cap - 0.25 * (cap - lo)]
+  list(breaks = c(b, cap),
+       labels = c(format_signif_break(b), paste0("\u2265 ", format_signif_break(cap))))
+}
+
+# The same capped significance as a point size, for a plot whose colour
+# already says something else (the comparison plot's gene list, or the
+# NES). Left to the data, one pathway at -log10 p = 200 took the largest
+# dot and every pathway between 2 and 20 came out alike and small.
+# Values past the cap take the largest size, and the key's top label
+# says "at least". Three keys or so, as for the dot plot's size key:
+# under a phone-width panel the key runs across, and more large dots ran
+# off the edge.
+signif_size_scale <- function(values, p_col, range = c(2, 6), guide = "legend") {
+  lim <- signif_limits(values)
+  bl <- signif_capped_breaks(lim, n = 3L)
+  if (!isTRUE(lim$capped)) bl$breaks <- size_breaks
+  # scale_size_continuous() takes no `oob`; this is what it builds, with
+  # the squish that keeps an outlier as the largest dot instead of
+  # dropping it.
+  ggplot2::continuous_scale("size", palette = scales::area_pal(range),
+                            name = p_axis_label(p_col),
+                            limits = lim$limits, oob = scales::squish,
+                            breaks = bl$breaks, labels = bl$labels, guide = guide)
 }
 
 format_signif_break <- function(x) as.character(round(x, 1))

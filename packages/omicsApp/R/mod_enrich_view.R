@@ -29,6 +29,8 @@ enrich_view_ui <- function(id) {
       enrich_dot_card(ns),
       enrich_hits_card(ns)
     ),
+    # The pathway picked in the table (mod_enrich_results.R).
+    shiny::uiOutput(ns("pathway_detail")),
     # Only when the differential run holds several comparisons.
     shiny::uiOutput(ns("compare_card"))
   )

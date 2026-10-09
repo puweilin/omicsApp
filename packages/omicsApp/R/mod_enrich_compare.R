@@ -61,7 +61,7 @@ enrich_compare_server <- function(input, output, session, diff_all, diff_thresho
                  detail = paste(b$warnings, collapse = " "), kind = "info")
         },
         if (!is.null(b)) {
-          shiny::plotOutput(session$ns("compare_plot"), height = "480px")
+          shiny::plotOutput(session$ns("compare_plot"), height = "auto")
         }
       )
     )
@@ -102,14 +102,44 @@ enrich_compare_server <- function(input, output, session, diff_all, diff_thresho
     )
   })
 
-  output$compare_plot <- shiny::renderPlot(res = PLOT_RES, alt = "Pathways enriched in each comparison, side by side", fit_to_width("compare_plot", {
+  # Built by its own reactive so the figure can be reused (a download,
+  # say) without drawing it twice.
+  compare_plot <- shiny::reactive({
     b <- compare_bundle()
     shiny::req(b)
     omicsCore::plot_enrichment_comparison(
       b, p_preference = input$show_p %||% "adjusted")
-  }))
+  })
+
+  # As tall as its rows need. At a fixed 480 px, five comparisons'
+  # pathways (17 rows) left each row 12 px: the names overlapped and the
+  # dots of neighbouring rows ran into each other. On a phone the legends
+  # sit under the panel and take their own height.
+  compare_plot_height <- function() {
+    p <- tryCatch(compare_plot(), error = function(e) NULL)
+    n <- if (inherits(p, "ggplot") && ".row" %in% names(p$data)) {
+      length(unique(p$data$.row))
+    } else 0L
+    w <- session$clientData[[paste0("output_", session$ns("compare_plot"), "_width")]]
+    narrow <- is.numeric(w) && length(w) && w < NARROW_PLOT_PX
+    compare_plot_px(n, narrow)
+  }
+
+  output$compare_plot <- shiny::renderPlot(
+    res = PLOT_RES, height = compare_plot_height,
+    alt = "Pathways enriched in each comparison, side by side",
+    fit_to_width("compare_plot", compare_plot()))
 
   list(compare_bundle = compare_bundle, compare_error = compare_error,
        all_comparisons = all_comparisons, compare_epoch = compare_epoch,
-       compare_running = compare_running)
+       compare_running = compare_running, compare_plot = compare_plot)
+}
+
+# Height of the comparison plot for `n_rows` pathways: room for the
+# title, subtitle and slanted comparison names, then about 24 px a row
+# (16 on a phone, where the text is smaller) plus, on a phone, the
+# legends under the panel. Never below the 480 px the card had.
+compare_plot_px <- function(n_rows, narrow = FALSE) {
+  px <- if (narrow) 330 + 16 * n_rows else 190 + 24 * n_rows
+  max(480, round(px))
 }

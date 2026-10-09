@@ -258,10 +258,16 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
                                p_cutoff = show_cutoff())
   }))
 
-  output$hits <- DT::renderDT({
+  # The pathways in the table, in its order: a selected row's index is
+  # read against this.
+  hits_rows <- shiny::reactive({
     df <- table_data()
     shiny::req(nrow(df) > 0L)
-    out <- enrich_hits_table(df, show_p(), show_cutoff())
+    enrich_hits_rows(df, show_p(), show_cutoff())
+  })
+
+  output$hits <- DT::renderDT({
+    out <- enrich_hits_table(hits_rows(), show_p(), show_cutoff())
     shiny::req(nrow(out) > 0L)
     DT::datatable(
       out,
@@ -276,6 +282,90 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
       )
     )
   }, server = TRUE)
+
+  # ---- the selected pathway -------------------------------------------
+  # A row of the table opens the pathway under it: for GSEA its
+  # running-score curve, for ORA -- which counts genes and has no curve
+  # -- the pathway's genes that were in the list, with their change.
+  selected_pathway <- shiny::reactive({
+    i <- input$hits_rows_selected
+    if (!length(i)) return(NULL)
+    rows <- tryCatch(hits_rows(), error = function(e) NULL)
+    if (is.null(rows) || i[[1L]] > nrow(rows)) return(NULL)
+    rows[i[[1L]], , drop = FALSE]
+  })
+
+  # The differential result the enrichment was run on, when it is still
+  # the one on screen; NULL once the Differential view has moved to
+  # another comparison, whose genes and values would not be this
+  # pathway's.
+  matching_diff <- shiny::reactive({
+    eb <- enrich_bundle()
+    db <- diff_bundle()
+    if (is.null(eb) || is.null(db)) return(NULL)
+    if (!identical(eb$params$comparison, db$params$comparison)) return(NULL)
+    db
+  })
+
+  # Built here, drawn by renderPlot below: kept as its own reactive so
+  # the figure can be reused (a download, say) without drawing it twice.
+  gsea_curve <- shiny::reactive({
+    row <- selected_pathway()
+    eb <- enrich_bundle()
+    shiny::req(row, eb, identical(eb$params$type, "gsea"), !isTRUE(is_demo()))
+    res <- tryCatch(
+      omicsCore::plot_gsea(eb, row$pathway_id, database = row$database,
+                           diff_bundle = matching_diff()),
+      error = function(e) e)
+    shiny::validate(shiny::need(
+      !inherits(res, "error"),
+      paste("The curve could not be drawn:",
+            if (inherits(res, "error")) conditionMessage(res) else "")))
+    res
+  })
+
+  output$gsea_curve <- shiny::renderPlot(
+    res = PLOT_RES, alt = "Running enrichment score of the selected pathway",
+    fit_to_width("gsea_curve", gsea_curve()))
+
+  # A card of its own under the results row, only once a pathway is
+  # picked. Inside the table's card it sat below a scrolling table, in a
+  # card as tall as the dot plot beside it, where nobody would find it.
+  output$pathway_detail <- shiny::renderUI({
+    row <- selected_pathway()
+    if (is.null(row)) return(NULL)
+    gsea <- identical(plot_bundle()$params$type, "gsea")
+    body <- if (isTRUE(is_demo())) {
+      notice("Demo pathways only", kind = "info",
+             detail = paste("These example pathways come without genes or a",
+                            "ranking. Open a project and run the enrichment to",
+                            "see a pathway's curve or genes."))
+    } else if (gsea) {
+      htmltools::tags$div(
+        class = "pathway-detail",
+        style = "display:flex;flex-wrap:wrap;gap:8px 24px;align-items:flex-start",
+        htmltools::tags$div(
+          style = "flex:1 1 420px;max-width:760px;min-width:0",
+          shiny::plotOutput(session$ns("gsea_curve"), height = "320px")),
+        htmltools::tags$p(
+          class = "muted", style = "flex:1 1 220px;font-size:12.5px;margin:0",
+          htmltools::tags$strong("How to read it. "),
+          paste("Genes are ranked from most up-regulated (left) to most",
+                "down-regulated (right). Each tick is a gene of this pathway; the",
+                "curve climbs at every tick and falls between them, and its peak is",
+                "the enrichment score (ES). A peak near the left means the",
+                "pathway's genes are mostly up, a dip near the right mostly down.")))
+    } else {
+      ora_pathway_genes_ui(row, matching_diff(), diff_bundle())
+    }
+    bslib::card(
+      bslib::card_header(
+        htmltools::tags$h3(class = "card-title", "Selected pathway"),
+        htmltools::tags$span(class = "card-sub",
+                             if (gsea) "running enrichment score"
+                             else "its genes in the list")),
+      bslib::card_body(body))
+  })
 
   output$download_table <- shiny::downloadHandler(
     filename = function() {
@@ -300,16 +390,116 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
 
   list(table_data = table_data, diff_layer_tag = diff_layer_tag,
        selected_features = selected_features, plot_bundle = plot_bundle,
-       show_p = show_p, show_cutoff = show_cutoff)
+       show_p = show_p, show_cutoff = show_cutoff,
+       selected_pathway = selected_pathway, gsea_curve = gsea_curve)
 }
 
-# The rows of the Enriched sets table: the pathways that pass the
-# display threshold, strongest first.
-enrich_hits_table <- function(df, show_p, show_cutoff) {
+# The pathways of the Enriched sets table: those that pass the display
+# threshold, strongest first.
+enrich_hits_rows <- function(df, show_p, show_cutoff) {
   df <- omicsCore::filter_enrich_results(
     df, p_cutoff = show_cutoff, p_preference = show_p)
   pcol <- if (identical(show_p, "raw")) "p_value" else "adj_p_value"
-  df <- df[order(df[[pcol]]), , drop = FALSE]
+  df[order(df[[pcol]]), , drop = FALSE]
+}
+
+# ORA's answer for one pathway: its genes that were in the tested list,
+# with their change in the comparison. There is no running score to
+# draw -- ORA counts genes, it does not walk a ranking -- and saying so
+# is better than leaving the space empty.
+ora_pathway_genes_ui <- function(row, diff_now, diff_any) {
+  genes <- strsplit(row$overlap_features %||% "", "/", fixed = TRUE)[[1L]]
+  genes <- unique(genes[nzchar(genes) & !is.na(genes)])
+  list_name <- switch(row$direction %||% "",
+                      up = "the up-regulated genes",
+                      down = "the down-regulated genes",
+                      "the gene list")
+  head_line <- htmltools::tags$div(
+    htmltools::tags$strong(row$pathway_name),
+    htmltools::tags$div(
+      class = "muted", style = "font-size:12.5px",
+      sprintf("%s of the pathway's %s genes were among %s \u00B7 adjusted p %s",
+              format(length(genes)), format(row$gene_set_size), list_name,
+              format_p_plain(row$adj_p_value))))
+  why <- htmltools::tags$p(
+    class = "muted", style = "font-size:12.5px;margin:6px 0",
+    paste("ORA counts how many of a pathway's genes are in the list, so there is no",
+          "running score to draw. These are those genes."))
+  if (!length(genes)) {
+    return(htmltools::tags$div(head_line, notice(
+      "No gene names were kept for this pathway", kind = "info",
+      detail = "The result does not list which genes overlapped.")))
+  }
+  tab <- ora_gene_values(genes, diff_now, row$direction)
+  if (is.null(tab)) {
+    return(htmltools::tags$div(
+      style = "max-width:640px", head_line, why,
+      htmltools::tags$p(style = "font-size:12.5px", paste(genes, collapse = ", ")),
+      htmltools::tags$p(
+        class = "muted", style = "font-size:12px",
+        if (is.null(diff_any))
+          "Their changes are not shown: the differential result is not loaded."
+        else paste("Their changes are not shown: the Differential view now shows",
+                   "another comparison than the one this enrichment was run on."))))
+  }
+  eff <- omicsCore::effect_label(diff_now)
+  rows <- lapply(seq_len(nrow(tab)), function(i) {
+    v <- tab$effect[i]
+    colour <- if (!is.finite(v)) "inherit" else if (v > 0) omics_colors$up else omics_colors$down
+    htmltools::tags$tr(
+      htmltools::tags$td(tab$gene[i]),
+      htmltools::tags$td(style = sprintf("text-align:right;color:%s", colour),
+                         if (is.finite(v)) sprintf("%+.2f", v) else "\u2013"),
+      htmltools::tags$td(style = "text-align:right", format_p_plain(tab$adj_p[i])))
+  })
+  htmltools::tags$div(
+    class = "pathway-detail", style = "max-width:640px",
+    head_line, why,
+    htmltools::tags$div(
+      style = "max-height:260px;overflow-y:auto",
+      htmltools::tags$table(
+        class = "table table-sm ora-genes", style = "font-size:12.5px;margin:0",
+        htmltools::tags$thead(htmltools::tags$tr(
+          htmltools::tags$th("Gene"),
+          htmltools::tags$th(style = "text-align:right", eff),
+          htmltools::tags$th(style = "text-align:right", "adjusted p"))),
+        htmltools::tags$tbody(rows))))
+}
+
+# The overlap genes' values in the differential result, most changed
+# first in the direction of the list they were found in. A symbol
+# measured more than once (protein isoforms) takes its most significant
+# row. NULL when there is no matching result to read from.
+ora_gene_values <- function(genes, diff_bundle, direction = NA_character_) {
+  if (is.null(diff_bundle)) return(NULL)
+  df <- diff_bundle$results$diff_result_df
+  if (is.null(df) || !nrow(df)) return(NULL)
+  df <- df[order(df$adj_p_value %||% df$p_value), , drop = FALSE]
+  key <- if ("feature_symbol" %in% names(df)) df$feature_symbol else df$feature_id
+  i <- match(genes, key)
+  # The run may have matched the names ignoring case.
+  miss <- is.na(i)
+  if (any(miss)) i[miss] <- match(toupper(genes[miss]), toupper(key))
+  out <- data.frame(gene = genes,
+                    effect = df$effect[i],
+                    adj_p = (df$adj_p_value %||% df$p_value)[i],
+                    stringsAsFactors = FALSE)
+  ord <- switch(direction %||% "",
+                up = order(-out$effect),
+                down = order(out$effect),
+                order(-abs(out$effect)))
+  out[ord, , drop = FALSE]
+}
+
+format_p_plain <- function(p) {
+  if (length(p) != 1L || is.na(p)) return("\u2013")
+  if (p < 0.001) formatC(p, digits = 1, format = "e") else formatC(p, digits = 3, format = "fg")
+}
+
+# The rows of the Enriched sets table, as shown.
+enrich_hits_table <- function(df, show_p, show_cutoff) {
+  df <- enrich_hits_rows(df, show_p, show_cutoff)
+  pcol <- if (identical(show_p, "raw")) "p_value" else "adj_p_value"
   out <- data.frame(
     Pathway   = df$pathway_name,
     NES       = sprintf("%+.2f", df$effect),
@@ -362,7 +552,7 @@ enrich_hits_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Enriched sets"),
       htmltools::tags$span(class = "card-sub",
-                           "ranked by adjusted p"),
+                           "ranked by adjusted p \u00B7 click a pathway for more"),
       # Everything, not what the table happens to be showing: the CSV is
       # what gets opened in Excel a week later, and a file silently
       # truncated to one significance threshold is the kind of thing

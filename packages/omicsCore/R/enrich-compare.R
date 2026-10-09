@@ -81,6 +81,15 @@ compare_enrichment <- function(diff_bundle, comparisons = NULL, ...) {
 #' only one of them still appears -- and its empty cells in the other
 #' columns are the finding.
 #'
+#' Point size is -log10 of the chosen p-value, capped as [plot_enrichment()]
+#' caps its colour: a pathway beyond the cap takes the largest dot and the
+#' key's top label reads "at least" the cap. Colour is the gene list a
+#' pathway was found among (ORA run on up and down separately) or the NES
+#' (GSEA). Pathways that miss `p_cutoff` are drawn hollow, and only then
+#' does the plot carry a key for filled and hollow. When every comparison
+#' has the same control the columns are named by the treatment and the
+#' control is named once, in the subtitle.
+#'
 #' @param bundle A bundle from [compare_enrichment()].
 #' @param top_n Pathways taken from each comparison.
 #' @param p_cutoff Pathways above this (adjusted, unless `p_preference`
@@ -148,48 +157,124 @@ plot_enrichment_comparison <- function(bundle, top_n = 8L, p_cutoff = 0.05,
   ord <- names(sort(-n_sig * 1e6 + rank(best)[names(n_sig)]))
   labels <- stats::setNames(truncate_pathway_name(df$pathway_name), df$pathway_id)
   df$.row <- factor(df$pathway_id, levels = rev(ord))
-  df$.col <- factor(gsub("_vs_", " vs ", df$comparison, fixed = TRUE),
-                    levels = gsub("_vs_", " vs ", cmps, fixed = TRUE))
-  df$.neglog <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
+  cols <- comparison_columns(cmps)
+  df$.col <- factor(unname(cols$labels[df$comparison]), levels = unique(unname(cols$labels)))
+  df$.neglog <- neg_log10_p(df[[p_col]])
   df$.sig <- ifelse(sig, "yes", "no")
+
+  # Filled or hollow says whether a dot passes `p_cutoff`. With every dot
+  # filled, a key of one entry ("adjusted p < 0.05: yes") told the reader
+  # nothing and took a legend's room; the key appears only when there is
+  # a hollow dot to explain, and then in words.
+  p_name <- if (p_preference == "adjusted") "adjusted p" else "p"
+  shape_scale <- ggplot2::scale_shape_manual(
+    values = c(yes = 16, no = 1), breaks = c("yes", "no"),
+    labels = c(yes = sprintf("%s < %s", p_name, format(p_cutoff)),
+               no = "not significant"),
+    name = NULL,
+    guide = if (any(!sig)) {
+      ggplot2::guide_legend(order = 3L, override.aes = list(size = 3, colour = omics_colors$fg_dark))
+    } else "none")
 
   p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$.col, y = .data$.row)) +
     ggplot2::scale_y_discrete(labels = labels[levels(df$.row)]) +
-    ggplot2::scale_x_discrete(labels = function(x) wrap_comparison(x, width = 18L)) +
-    ggplot2::scale_shape_manual(values = c(yes = 16, no = 1),
-                                name = sprintf("%s < %s",
-                                               if (p_preference == "adjusted") "adjusted p" else "p",
-                                               format(p_cutoff))) +
+    shape_scale +
     ggplot2::labs(title = "Pathways across comparisons",
-                  subtitle = paste0(toupper(bundle$params$type %||% ""), " ",
-                                    paste(bundle$params$database, collapse = ", "),
-                                    ora_list_caption(bundle$params)),
+                  subtitle = comparison_subtitle(bundle$params, cols$control),
                   x = NULL, y = NULL) +
     theme_omics_labelled() +
-    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1))
+    enrich_narrow_theme() +
+    comparison_legend_theme() +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, vjust = 1))
+  # Size is the significance in every case but the pooled ORA, where the
+  # colour carries it: the same -log10 of the p the plot is told to use,
+  # capped as the dot plot caps its colour, so one extreme pathway does
+  # not leave every other dot the same small size.
+  size_scale <- signif_size_scale(df$.neglog, p_col, guide = ggplot2::guide_legend(order = 2L))
   if (is_gsea) {
     p + ggplot2::geom_point(ggplot2::aes(size = .data$.neglog, color = .data$effect,
                                          shape = .data$.sig)) +
       ggplot2::scale_color_gradient2(low = omics_colors$down, mid = "#F2F2F2",
                                      high = omics_colors$up, midpoint = 0,
-                                     name = "NES") +
-      ggplot2::scale_size_continuous(name = "-log10 p", range = c(2, 7))
+                                     name = "NES",
+                                     guide = ggplot2::guide_colourbar(order = 1L)) +
+      size_scale
   } else if (directional_ora) {
+    lists <- c(`Up-regulated genes` = omics_colors$up,
+               `Down-regulated genes` = omics_colors$down,
+               `Up and down` = omics_colors$conc_down_up,
+               Pooled = omics_colors$ns)
+    shown_lists <- intersect(names(lists), df$.list)
     p + ggplot2::geom_point(ggplot2::aes(size = .data$.neglog, color = .data$.list,
                                          shape = .data$.sig)) +
+      # Up first, as everywhere else. One entry per line wherever the key
+      # is: side by side under a 290 px phone panel, "Down-regulated
+      # genes" ran off the right edge.
       ggplot2::scale_color_manual(
-        values = c(`Up-regulated genes` = omics_colors$up,
-                   `Down-regulated genes` = omics_colors$down,
-                   `Up and down` = omics_colors$conc_down_up,
-                   Pooled = omics_colors$ns),
-        name = "found among") +
-      ggplot2::scale_size_continuous(name = "-log10 p", range = c(2, 7))
+        values = lists, breaks = shown_lists,
+        name = "found among",
+        guide = ggplot2::guide_legend(order = 1L, ncol = 1L,
+                                      override.aes = list(size = 3.5))) +
+      size_scale
   } else {
     p + ggplot2::geom_point(ggplot2::aes(size = .data$overlap_size,
                                          color = .data$.neglog,
                                          shape = .data$.sig)) +
-      ggplot2::scale_color_gradient(low = "#9DB2D9", high = omics_colors$up,
-                                    name = "-log10 p") +
-      ggplot2::scale_size_continuous(name = "genes", range = c(2, 7))
+      signif_colour_scale(df$.neglog, p_col) +
+      ggplot2::scale_size_continuous(name = "genes in list", range = c(2, 6),
+                                     breaks = size_breaks,
+                                     guide = ggplot2::guide_legend(order = 2L))
   }
+}
+
+# What was run, under the title. The full line ("ORA hallmark - up- and
+# down-regulated genes tested separately") is wider than a phone-width
+# plot and, at report size, ran into the legend beside the panel; split
+# at its dot it is two short lines that fit either.
+comparison_subtitle <- function(params, control = NULL) {
+  method <- trimws(paste(toupper(params$type %||% ""),
+                         paste(params$database, collapse = ", ")))
+  if (!is.null(control)) method <- paste0(method, " \u00B7 each vs ", control)
+  # Shorter than ora_list_caption(), whose wording filled the whole width
+  # of a 310 px phone plot; the legend names the two lists anyway.
+  separate <- identical(params$type, "ora") && identical(params$direction, "separate")
+  lists <- if (separate) "up and down genes tested separately"
+           else sub("^ \u00B7 ", "", ora_list_caption(params))
+  lines <- c(method, if (nzchar(lists)) lists)
+  paste(wrap_label(lines, width = 48L, max_lines = 2L), collapse = "\n")
+}
+
+# Column labels. Several treatments against one control is the usual
+# design, and "vs Vehicle control" repeated under every column took most
+# of each label: wrapped over two lines and slanted, five long ones ran
+# into each other. When every comparison shares its control, the
+# columns are named by the treatment alone (shortened past 24
+# characters, on one line) and the control is said once, in the
+# subtitle. Otherwise each column keeps its full "A vs B", wrapped.
+comparison_columns <- function(cmps) {
+  parts <- strsplit(cmps, "_vs_", fixed = TRUE)
+  two <- all(lengths(parts) == 2L)
+  control <- if (two) unique(vapply(parts, `[`, character(1), 2L))
+  if (length(cmps) > 1L && length(control) == 1L) {
+    cases <- vapply(parts, `[`, character(1), 1L)
+    short <- truncate_pathway_name(cases, max_chars = 24L)
+    # Two treatments that only differ past the cut keep their full names.
+    if (anyDuplicated(short)) short <- cases
+    return(list(labels = stats::setNames(short, cmps), control = control))
+  }
+  list(labels = stats::setNames(wrap_comparison(cmps, width = 18L), cmps), control = NULL)
+}
+
+# The legends sit at the top of the space beside the panel, under the
+# subtitle, not centred on the panel's height: centred, a tall legend
+# stack reached up into the subtitle. (Below the panel -- where the app
+# puts them on a phone -- enrich_narrow_theme() starts the stack at the
+# left, and each legend in it starts there too rather than being centred
+# under the widest.)
+comparison_legend_theme <- function() {
+  th <- ggplot2::theme(legend.box.just = "left")
+  if (!"legend.justification.right" %in% names(ggplot2::get_element_tree())) {
+    return(th + ggplot2::theme(legend.justification = "top"))
+  }
+  th + ggplot2::theme(legend.justification.right = "top")
 }
