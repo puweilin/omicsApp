@@ -153,31 +153,54 @@ integration_results_server <- function(input, output, session, navigate, method,
     }
   })
 
-  output$scatter <- shiny::renderPlot(res = PLOT_RES, alt = "Each feature's effect in one layer against its effect in the other, the hits in both layers coloured and the top ones named", fit_to_width("scatter", {
+  # Each figure's ggplot, kept apart from its renderPlot() so the hover
+  # read-out (and anything else that needs the figure) uses the same one.
+  scatter_plot <- shiny::reactive({
     b <- plot_bundle()
     shiny::req(b, identical(b$params$method, "concordance"))
     # Six names fit a half-width card without the labels piling up.
     omicsCore::plot_integration(b, view = "effect_pair", top_n = 6L)
-  }))
+  })
 
   # Twelve rows is what a 320 px card holds at a readable size.
-  output$top_hits <- shiny::renderPlot(res = PLOT_RES, alt = "The top hits in both layers, one row each, with a dot for each layer's effect", fit_to_width("top_hits", {
+  top_hits_plot <- shiny::reactive({
     b <- plot_bundle()
     shiny::req(b, identical(b$params$method, "concordance"))
     omicsCore::plot_integration(b, view = "top_hits", top_n = 12L)
-  }))
+  })
 
-  output$cor_scatter <- shiny::renderPlot(res = PLOT_RES, alt = "Per-feature correlation between the layers across paired samples", fit_to_width("cor_scatter", {
+  cor_scatter_plot <- shiny::reactive({
     b <- plot_bundle()
     shiny::req(b, identical(b$params$method, "correlation"))
     omicsCore::plot_integration(b, view = "scatter")
-  }))
+  })
 
-  output$ap_dot <- shiny::renderPlot(res = PLOT_RES, alt = "Pathways found by combining the two layers", fit_to_width("ap_dot", {
+  ap_dot_plot <- shiny::reactive({
     b <- plot_bundle()
     shiny::req(b, identical(b$params$method, "active_pathways"))
     omicsCore::plot_integration(b, view = "dotplot")
-  }))
+  })
+
+  output$scatter <- shiny::renderPlot(
+    fit_to_width("scatter", scatter_plot()), res = PLOT_RES,
+    alt = paste("Each feature's effect in one layer against its effect in the other,",
+                "the hits in both layers coloured and the top ones named"))
+  output$top_hits <- shiny::renderPlot(
+    fit_to_width("top_hits", top_hits_plot()), res = PLOT_RES,
+    alt = "The top hits in both layers, one row each, with a dot for each layer's effect")
+  output$cor_scatter <- shiny::renderPlot(
+    fit_to_width("cor_scatter", cor_scatter_plot()), res = PLOT_RES,
+    alt = "Per-feature correlation between the layers across paired samples")
+  output$ap_dot <- shiny::renderPlot(
+    fit_to_width("ap_dot", ap_dot_plot()), res = PLOT_RES,
+    alt = "Pathways found by combining the two layers")
+
+  # Only the top few points are named on the plots; hovering (or
+  # tapping) any other names it and gives its numbers.
+  plot_hover_server("scatter", scatter_plot, effect_pair_hover_text, input, output, session)
+  plot_hover_server("top_hits", top_hits_plot, top_hits_hover_text, input, output, session)
+  plot_hover_server("cor_scatter", cor_scatter_plot, correlation_hover_text, input, output, session)
+  plot_hover_server("ap_dot", ap_dot_plot, active_pathways_hover_text, input, output, session)
 
   output$top_table <- DT::renderDT({
     b <- plot_bundle()
@@ -217,7 +240,9 @@ integration_results_server <- function(input, output, session, navigate, method,
       )
     )
   }, server = TRUE)
-  invisible()
+  # The figures, for whatever else needs the ggplot a card draws.
+  invisible(list(scatter = scatter_plot, top_hits = top_hits_plot,
+                 cor_scatter = cor_scatter_plot, ap_dot = ap_dot_plot))
 }
 
 # A plain-language reading of the errors a run most often ends in.
@@ -397,7 +422,7 @@ integration_plot_card <- function(output_id, title, sub) {
       htmltools::tags$h3(class = "card-title", title),
       htmltools::tags$span(class = "card-sub", sub)
     ),
-    bslib::card_body(shiny::plotOutput(output_id, height = "320px"))
+    bslib::card_body(hover_plot_output(output_id, height = "320px"))
   )
 }
 

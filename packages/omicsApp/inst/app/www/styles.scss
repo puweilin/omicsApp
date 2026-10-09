@@ -514,6 +514,39 @@ table.tbl td.num, table.tbl th.num {
             vertical-align: 1px; }
 .info-tip:focus { outline: 2px solid var(--brand-500); border-radius: 50%; }
 
+// The read-out next to a hovered or tapped point (R/plot_hover.R). The
+// layer covers the plot without taking its pointer: under the cursor
+// it would fire the plot's mouseout and hide itself.
+.plot-hover-wrap { position: relative; }
+.plot-hover-layer {
+  position: absolute; inset: 0; pointer-events: none; z-index: 3;
+}
+// Shiny dims an output while it updates; this one updates on every move.
+.plot-hover-layer.recalculating { opacity: 1; }
+.plot-hover-tip {
+  position: absolute; width: max-content;
+  padding: 6px 9px;
+  background: var(--card); color: var(--fg-1);
+  border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  box-shadow: var(--shadow-md), 0 1px 3px rgba(15,19,32,.10);
+  font-size: 12px; line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.plot-hover-title { font-weight: 600; margin-bottom: 2px; }
+.plot-hover-rows { border-collapse: collapse; }
+// A key breaks between words only ("log2FC (proteomics)"), never inside
+// one: on a phone "group" came out as "gro" over "up". A long value (a
+// group name) takes the remaining width and wraps instead.
+.plot-hover-rows th {
+  font-weight: 400; color: var(--fg-3); padding: 0 10px 0 0; text-align: left;
+  vertical-align: top; overflow-wrap: normal;
+}
+.plot-hover-rows td { padding: 0; vertical-align: top; }
+.plot-hover-rows td.num {
+  font-family: var(--font-mono); font-size: 11.5px; text-align: right;
+}
+.plot-hover-note { color: var(--fg-2); margin-top: 2px; }
+
 .pairing-details { margin-top: 8px; font-size: 13px; }
 .pairing-details summary { cursor: pointer; color: var(--brand-700); }
 

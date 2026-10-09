@@ -49,7 +49,7 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
                          width = "220px"))
   })
 
-  output$pca <- shiny::renderPlot(res = PLOT_RES, alt = "Principal component plot of the samples", fit_to_width("pca", {
+  pca_plot <- shiny::reactive({
     bundle <- last_bundle()
     shiny::req(bundle)
     ch <- pca_color_choices()
@@ -60,7 +60,14 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
     if (identical(input$pca_color_by, "(none)")) color_by <- NULL
     p <- omicsCore::plot_qc(bundle, view = "pca", color_by = color_by)
     p + ggplot2::theme(legend.position = "bottom")
-  }))
+  })
+
+  output$pca <- shiny::renderPlot(res = PLOT_RES, alt = "Principal component plot of the samples",
+                                  fit_to_width("pca", pca_plot()))
+
+  # Which sample is the one off on its own: hovering (or tapping) a
+  # point names it, with its group and coordinates.
+  plot_hover_server("pca", pca_plot, pca_hover_text, input, output, session)
 
   # Which quality panel this modality is actually asking about.
   #
@@ -160,7 +167,8 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
     )
   })
 
-  list(pca_color_choices = pca_color_choices, quality_view = quality_view)
+  list(pca_color_choices = pca_color_choices, quality_view = quality_view,
+       pca_plot = pca_plot)
 }
 
 # Cells still missing after imputation: the ones the method could not fill.

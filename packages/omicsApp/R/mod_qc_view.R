@@ -36,7 +36,7 @@ qc_view_ui <- function(id) {
         ),
         bslib::card_body(
           shiny::uiOutput(ns("pca_color_picker")),
-          shiny::plotOutput(ns("pca"), height = "360px")
+          hover_plot_output(ns("pca"), height = "360px")
         )
       ),
       bslib::card(
@@ -286,6 +286,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     plots <- qc_plots_server(input, output, session, active, last_bundle)
     pca_color_choices <- plots$pca_color_choices
     quality_view      <- plots$quality_view
+    pca_plot          <- plots$pca_plot
 
     # Expose the QC bundle for slice 3F (report).
     shiny::reactive(last_bundle())
