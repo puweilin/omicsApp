@@ -208,7 +208,8 @@ test_that("hovering an ActivePathways dot gives the pathway in full and its adju
   # In the axis's words -- no collection prefix, no underscores -- but
   # whole where the axis shortens it.
   expect_identical(txt$title, "A VERY LONG PATHWAY NAME NUMBER 3")
-  axis <- sub("…$|\\.\\.\\.$", "", as.character(d$.label[i]))
+  # The axis wraps long names over lines rather than cutting them.
+  axis <- gsub("\n", " ", sub("…$|\\.\\.\\.$", "", as.character(d$.label[i])), fixed = TRUE)
   expect_true(startsWith(txt$title, axis))
   expect_identical(hover_pathway_name("REACTOME_CELL_CYCLE"), "CELL CYCLE")
   expect_identical(hover_pathway_name("my own set"), "my own set")
