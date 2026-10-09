@@ -615,7 +615,8 @@ enrich_dot_height <- function(p, narrow = FALSE) {
   })
   line_px <- if (isTRUE(narrow)) 13 else 18
   h <- 110 + 40 * length(need) + max(need) * line_px * length(need) +
-    if (isTRUE(narrow)) 170 else 0
+    # Room for the keys, which sit under the panel on every width.
+    if (isTRUE(narrow)) 170 else 130
   round(max(ENRICH_DOT_MIN_PX, min(1800, h)))
 }
 
@@ -624,7 +625,9 @@ enrich_dot_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Pathway dotplot"),
       htmltools::tags$span(class = "card-sub",
-                           "top 12 by adjusted p \u00B7 size = overlap"),
+                           # Size is genes in the list for ORA and set size for
+                           # GSEA, and the p can be raw: the keys say which.
+                           "top 12 per database \u00B7 hover a dot for details"),
       plot_download_ui(ns("dot_download"))
     ),
     bslib::card_body(

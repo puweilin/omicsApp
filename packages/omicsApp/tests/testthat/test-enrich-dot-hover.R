@@ -145,7 +145,9 @@ test_that("a GSEA dot gives its NES and pathway size", {
 
 test_that("the dot plot's card grows with long names and several panels", {
   short <- omicsCore::plot_enrichment(example_enrich_bundle(), view = "dot", top_n = 12L)
-  expect_identical(enrich_dot_height(short), ENRICH_DOT_MIN_PX)
+  # Never below the card's old height; the keys sit under the panel, so
+  # even a short result may need a little more.
+  expect_gte(enrich_dot_height(short), ENRICH_DOT_MIN_PX)
   expect_identical(enrich_dot_height(NULL), ENRICH_DOT_MIN_PX)
   # Three panels of long names need more room than one of short ones,
   # and a phone adds room for the legends under the plot.
@@ -157,7 +159,7 @@ test_that("the dot plot's card grows with long names and several panels", {
   more$database <- rep(c("go_bp", "hallmark", "reactome"), each = nrow(df))
   b$results$enrich_result_df <- more
   long <- omicsCore::plot_enrichment(b, view = "dot", top_n = 12L)
-  expect_gt(enrich_dot_height(long), ENRICH_DOT_MIN_PX)
+  expect_gt(enrich_dot_height(long), enrich_dot_height(short))
   expect_gt(enrich_dot_height(long, narrow = TRUE), enrich_dot_height(long) - 100)
   # The card's plot takes the height renderPlot() gives it.
   ui <- as.character(enrich_dot_card(shiny::NS("enrich")))

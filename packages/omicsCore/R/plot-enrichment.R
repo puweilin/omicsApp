@@ -337,8 +337,15 @@ with_list_label <- function(df) {
 
 enrich_facets <- function(df, scales) {
   if (ora_list_facet(df)) {
+    # One strip line ("go_bp \u00B7 Up-regulated genes"), not two: the two
+    # stacked strips were each cut to the panel's width, which beside long
+    # GO names left "o_b" and "regulated ge".
     ggplot2::facet_wrap(ggplot2::vars(.data$database, .data$.list),
-                        scales = scales, ncol = 1)
+                        scales = scales, ncol = 1,
+                        labeller = function(labels) {
+                          list(do.call(paste, c(lapply(labels, as.character),
+                                                sep = " \u00B7 ")))
+                        })
   } else {
     ggplot2::facet_wrap(~ .data$database, scales = scales, ncol = 1)
   }
@@ -414,7 +421,15 @@ plot_enrich_dot <- function(df, p_col) {
     enrich_facets(df, scales = "free_y") +
     ggplot2::labs(title = "Pathways enriched", x = x_label, y = NULL) +
     theme_omics_labelled() +
-    enrich_narrow_theme()
+    enrich_narrow_theme() +
+    # Keys under the plot, not beside it: with long GO names on the left
+    # and the keys on the right, a 540 px card left the panel 25-70 px
+    # and its ticks ran together ("0%50%100%"). A strip label longer than
+    # the panel runs left over the empty space above the names rather
+    # than being cut.
+    ggplot2::theme(legend.position = "bottom", legend.box = "vertical",
+                   strip.text = ggplot2::element_text(hjust = 1),
+                   strip.clip = "off")
 
   if (colour_signif) p <- p + signif_colour_scale(df$.signif, p_col)
 
