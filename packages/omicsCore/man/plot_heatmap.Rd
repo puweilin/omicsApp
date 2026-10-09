@@ -14,7 +14,12 @@ plot_heatmap(
   cluster_rows = TRUE,
   cluster_cols = TRUE,
   show_rownames = NULL,
-  title = NULL
+  title = NULL,
+  group_by = NULL,
+  group_levels = NULL,
+  highlight = NULL,
+  show_colnames = NULL,
+  engine = c("auto", "ComplexHeatmap", "ggplot")
 )
 }
 \arguments{
@@ -32,17 +37,34 @@ Overrides \code{n_top}.}
 \item{scale}{One of \code{"row"} (default), \code{"none"}, or \code{"column"}.}
 
 \item{annotation_cols}{Optional character vector of columns from
-\code{input$meta_df} to surface as a column annotation.}
+\code{input$meta_df} to surface as a column annotation. The ggplot
+heatmap draws one annotation bar: \code{group_by}, or else the first of
+these.}
 
-\item{cluster_rows, cluster_cols}{Whether to cluster rows / columns.}
+\item{cluster_rows, cluster_cols}{Whether to cluster rows / columns.
+With \code{group_by} the columns are clustered within each group, so the
+groups stay together.}
 
-\item{show_rownames}{If \code{NULL}, auto-decide based on row count.}
+\item{show_rownames, show_colnames}{If \code{NULL}, auto-decide: rows are
+named up to 80 of them (40 in the ggplot heatmap, where they would
+otherwise overlap at a screen's size), samples up to 40.}
 
 \item{title}{Plot title.}
+
+\item{group_by}{Optional column of \code{input$meta_df} to group and colour
+the samples by.}
+
+\item{group_levels}{Optional groups of \code{group_by} to show, in order;
+samples in other groups are left out. Requires \code{group_by}.}
+
+\item{highlight}{Optional \code{feature_id}s or symbols to mark.}
+
+\item{engine}{\code{"auto"} (ComplexHeatmap when installed), \code{"ComplexHeatmap"}
+or \code{"ggplot"}.}
 }
 \value{
 A \code{ComplexHeatmap::Heatmap} object when \code{ComplexHeatmap} is
-available, otherwise a \code{ggplot} tile plot.
+used, otherwise a \code{ggplot} tile plot.
 }
 \description{
 Two dispatch modes:
@@ -57,18 +79,35 @@ corresponding \code{omics_input} via the \code{input} argument. Features are
 selected by ascending adjusted p-value.
 }
 
+Values are drawn on a comparable scale first: raw counts as
+log2(CPM + 1) with library sizes from the whole matrix, linear
+intensities, TPM and FPKM as log2(x + 1). With \code{scale = "row"} (the
+default) each feature is then centred and scaled across the samples
+shown, and the colours run blue (below the feature's mean) through
+white to red (above it).
+
+With \code{group_by}, the samples are drawn group by group (in the order of
+\code{group_levels}, or sorted), a gap between groups, under a bar coloured
+by group -- in the colours the PCA gives the same groups. \code{highlight}
+outlines a feature's row and names it in bold, also when there are too
+many rows to name them all.
+
 When \code{ComplexHeatmap} is installed the function returns a
-\code{ComplexHeatmap::Heatmap}; otherwise it falls back to a ggplot2 tile
-plot so the function is always usable from a clean install.
+\code{ComplexHeatmap::Heatmap} unless \code{engine = "ggplot"}; otherwise it
+falls back to a ggplot2 tile plot so the function is always usable
+from a clean install.
 }
 \examples{
 \dontrun{
   # From an omics_input
   plot_heatmap(input, n_top = 30)
 
-  # From a diff bundle
+  # From a diff bundle: its top 50 features, the two groups compared,
+  # one gene marked
   b <- run_diff(input, ...)
-  plot_heatmap(b, input = input, n_top = 50)
+  plot_heatmap(b, input = input, n_top = 50, group_by = "group",
+               group_levels = c("Control", "TreatA"), highlight = "IL6",
+               engine = "ggplot")
 }
 }
 \seealso{
@@ -78,6 +117,7 @@ Other diff:
 \code{\link[=contrast_labels]{contrast_labels()}},
 \code{\link[=diff_comparisons]{diff_comparisons()}},
 \code{\link[=diff_hit_sets]{diff_hit_sets()}},
+\code{\link[=effect_label]{effect_label()}},
 \code{\link[=filter_diff_results]{filter_diff_results()}},
 \code{\link[=make_ranked_features]{make_ranked_features()}},
 \code{\link[=pairwise_contrasts]{pairwise_contrasts()}},

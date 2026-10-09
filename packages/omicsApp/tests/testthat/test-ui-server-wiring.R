@@ -99,6 +99,9 @@ test_that("every input a module reads is a control it draws", {
   for (mod in names(mods)) {
     ids <- module_ids(mods[[mod]])
     declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[mod]])
+    # A DT table declares the inputs it reports itself: `hits_rows_selected`
+    # comes from the DTOutput placed as ns("hits").
+    declared <- c(declared, paste0(declared, "_rows_selected"))
     read <- unique(ids$id[ids$kind == "input"])
     missing <- setdiff(read, declared)
     expect_identical(missing, character(0),

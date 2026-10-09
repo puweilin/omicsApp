@@ -2,9 +2,15 @@
 % Please edit documentation in R/plot-diff.R
 \name{plot_feature_expression}
 \alias{plot_feature_expression}
-\title{Per-feature expression box / violin}
+\title{Per-feature expression by group}
 \usage{
-plot_feature_expression(input, features, group_by, color_by = NULL)
+plot_feature_expression(
+  input,
+  features,
+  group_by,
+  color_by = NULL,
+  group_levels = NULL
+)
 }
 \arguments{
 \item{input}{A validated \code{omics_input}.}
@@ -13,14 +19,31 @@ plot_feature_expression(input, features, group_by, color_by = NULL)
 
 \item{group_by}{Column in \code{meta_df} used for the x-axis grouping.}
 
-\item{color_by}{Optional column for additional color aesthetic.}
+\item{color_by}{Optional column for the points' colour, instead of the
+group.}
+
+\item{group_levels}{Optional groups of \code{group_by} to show, in the order
+to show them (a comparison's reference group first, for example).
+Samples in other groups are left out. By default every group, sorted.}
 }
 \value{
-A \code{ggplot} object.
+A \code{ggplot} object. With one feature its title is the feature's
+name; with several each has its own panel.
 }
 \description{
-Plots one or more features as boxplots (with jittered points) split by a
-grouping column. RNA-seq raw counts are log2-transformed automatically.
+Plots one or more features as boxplots with every sample drawn as a
+point, one box per group of \code{group_by}. The values are put on the scale
+a reader can compare between samples: raw counts become log2(CPM + 1)
+(library sizes from the whole matrix), linear intensities, TPM and FPKM
+become log2(x + 1), and values already on a log scale are drawn as
+they are. The y axis says which.
+}
+\details{
+Points are coloured by group in the same colours the PCA and the
+heatmap give each group (the default discrete palette over the sorted
+groups of the whole column), so a group is one colour everywhere. When
+\code{group_by} is numeric (a continuous design) the samples are drawn
+against it with a least-squares line instead.
 }
 \seealso{
 Other diff:
@@ -29,6 +52,7 @@ Other diff:
 \code{\link[=contrast_labels]{contrast_labels()}},
 \code{\link[=diff_comparisons]{diff_comparisons()}},
 \code{\link[=diff_hit_sets]{diff_hit_sets()}},
+\code{\link[=effect_label]{effect_label()}},
 \code{\link[=filter_diff_results]{filter_diff_results()}},
 \code{\link[=make_ranked_features]{make_ranked_features()}},
 \code{\link[=pairwise_contrasts]{pairwise_contrasts()}},

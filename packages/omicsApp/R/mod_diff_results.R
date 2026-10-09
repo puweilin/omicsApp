@@ -7,7 +7,8 @@
 
 diff_results_server <- function(input, output, session, navigate, active, shown_bundle,
                                 diff_bundle, diff_error, comparisons, settings_changed,
-                                marked, p_col, p_label, fdr_cut_d, fc_cut_d) {
+                                marked, p_col, p_label, fdr_cut_d, fc_cut_d,
+                                selected = shiny::reactiveVal(NULL)) {
   output$header <- shiny::renderUI({
     a <- active()
     b <- shown_bundle()
@@ -190,55 +191,90 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     volcano_cut_text(p_label(), fdr_cut_d(), omicsCore::effect_label(b), fc_cut_d())
   })
 
+  # Which features the browser is sent. Past VOLCANO_THIN_MIN features
+  # the grey cloud is thinned where its points sit on top of each other
+  # (volcano_thin_mask()); every hit, every labelled feature and the
+  # selected one stay. Shared by the figure and its legend, which says
+  # how many grey points are drawn.
+  volcano_shown <- shiny::reactive({
+    df <- marked()
+    keep_ids <- c(volcano_label_ids(df, p_col(), 20L), shiny::isolate(selected()))
+    volcano_thin_mask(df, p_col(), df$is_significant, keep_ids)
+  })
+
   # The figure's legend, with the counts plot_volcano() puts in its own
   # (the same mask as the stat cards, so the numbers match them too).
   output$volcano_legend <- shiny::renderUI({
     if (is.null(shown_bundle())) return(volcano_legend())
     df <- marked()
+    shown <- volcano_shown()
+    ns <- !df$is_significant & volcano_drawable(df, p_col())
     volcano_legend(
       up_n   = sum(df$is_significant & df$effect > 0, na.rm = TRUE),
       down_n = sum(df$is_significant & df$effect < 0, na.rm = TRUE),
-      continuous = startsWith(as.character(df$analysis_type[1L] %||% ""), "continuous"))
+      continuous = startsWith(as.character(df$analysis_type[1L] %||% ""), "continuous"),
+      ns_shown = if (!all(shown)) sum(shown & ns),
+      ns_total = if (!all(shown)) sum(ns))
   })
+
+  # Whether the figure in the browser carries the ring that marks the
+  # selected feature (its last trace): set when the figure is drawn, and
+  # when the ring is moved without redrawing it.
+  volcano_marked <- FALSE
 
   output$volcano <- plotly::renderPlotly({
     b <- shown_bundle()
     shiny::validate(shiny::need(b, "Press Run analysis to draw the volcano."))
-    # Drawn at the thresholds the controls set, so its colours agree
-    # with the hit table and the stat cards beside it. The same values
-    # are saved with the project (params$display_thresholds), so the
-    # report and the exported script draw this same figure.
-    # The labels are added as plotly annotations, not drawn by
-    # plot_volcano(): ggplotly() cannot convert ggrepel's text layer and
-    # dropped it with a warning, so "Label top hits" labelled nothing.
-    p <- omicsCore::plot_volcano(b, top_n = 0L, p_basis = volcano_p_basis(p_col()),
-                                 p_threshold = fdr_cut_d(),
-                                 effect_threshold = volcano_effect_cut(fc_cut_d()))
-    # plotly's own legend is hidden: the card's legend below the plot
-    # says the same, with the counts, and does not take width from the
-    # plot on a phone.
-    # No plotly title: the card already says "Volcano", and at phone
-    # width the title ran into the plotly toolbar.
-    fig <- plotly::ggplotly(p + ggplotly_untitled(), tooltip = "text") |> drop_hoveron() |>
-      plotly::layout(showlegend = FALSE)
-    if (isTRUE(input$label_top)) {
+    sel <- shiny::isolate(selected())
+    volcano_marked <<- !is.null(sel)
+    volcano_figure(
+      b, p_col(), fdr_cut_d(), fc_cut_d(),
+      label_top = isTRUE(input$label_top),
       # Laid out for the width the browser reports, so a phone gets
       # fewer labels rather than overlapping ones.
-      fig <- label_volcano(fig, b, 20L, p_col(),
-                           width = session$clientData[[paste0("output_", session$ns("volcano"),
-                                                              "_width")]])
-    }
-    # WebGL rather than one SVG node per point: 60,000 genes painted in
-    # 0.5 s instead of 4 s, with the same points and hover text. Only
-    # where the browser has WebGL: without it (remote desktops, some
-    # locked-down or GPU-less machines) plotly drew a grey box saying
-    # "WebGL is not supported" and no volcano at all.
-    if (!identical(session$rootScope()$input$omics_webgl, FALSE)) {
-      fig <- plotly::toWebGL(fig)
-    }
-    plotly::config(fig, displaylogo = FALSE,
-                   modeBarButtonsToRemove = c("lasso2d", "select2d"))
+      width = session$clientData[[paste0("output_", session$ns("volcano"), "_width")]],
+      # Only where the browser has WebGL: without it (remote desktops,
+      # some locked-down or GPU-less machines) plotly drew a grey box
+      # saying "WebGL is not supported" and no volcano at all.
+      webgl = !identical(session$rootScope()$input$omics_webgl, FALSE),
+      shown = volcano_shown(),
+      selected = sel,
+      source = session$ns("volcano"))
   })
+
+  # A point clicked on the volcano selects its feature, as a row of the
+  # table does. The click carries the point's coordinates; the feature
+  # is the one drawn there.
+  #
+  # Read from the input plotly.js sets (the figure registers the event,
+  # volcano_figure()) rather than through plotly::event_data(), which
+  # logs a warning that the event "is not registered" whenever it is
+  # asked before the figure has been drawn -- as it is here, on arrival.
+  click_id <- paste0("plotly_click-", session$ns("volcano"))
+  shiny::observeEvent(session$rootScope()$input[[click_id]], {
+    ev <- tryCatch(jsonlite::parse_json(session$rootScope()$input[[click_id]],
+                                        simplifyVector = TRUE),
+                   error = function(e) NULL)
+    # A click that reports more than one point (traces drawn on top of
+    # each other) selects the first.
+    id <- volcano_click_feature(marked(), p_col(), ev$x[1], ev$y[1])
+    if (!is.null(id)) {
+      selected(id)
+      # Cleared, so that clicking the row the table still showed as
+      # selected selects it again rather than unselecting it.
+      DT::selectRows(DT::dataTableProxy("hits", session = session), NULL)
+    }
+  }, ignoreNULL = TRUE)
+
+  # The ring moves to a newly selected feature without redrawing the
+  # figure, which would undo the user's zoom.
+  shiny::observeEvent(selected(), {
+    proxy <- plotly::plotlyProxy("volcano", session)
+    if (isTRUE(volcano_marked)) plotly::plotlyProxyInvoke(proxy, "deleteTraces", list(-1L))
+    mark <- volcano_mark_trace(marked(), p_col(), selected())
+    volcano_marked <<- !is.null(mark)
+    if (!is.null(mark)) plotly::plotlyProxyInvoke(proxy, "addTraces", list(mark))
+  }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
   # An empty card before the first run read as a broken one.
   output$hits_empty <- shiny::renderUI({
@@ -247,10 +283,25 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
                       "Run the analysis to see the features that pass the thresholds.")
   })
 
-  output$hits <- DT::renderDT({
+  # The hits in the table's order: a selected row's index reads its
+  # feature from here.
+  hits_df <- shiny::reactive({
     df <- marked()
     sig <- df[df$is_significant, , drop = FALSE]
-    sig <- sig[order(-abs(sig$effect)), , drop = FALSE]
+    sig[order(-abs(sig$effect)), , drop = FALSE]
+  })
+
+  # A row clicked in the table selects its feature for the Selected
+  # feature card, the heatmap and the volcano's ring. Unselecting the row
+  # leaves the selection where it was: the card has its own Clear.
+  shiny::observeEvent(input$hits_rows_selected, {
+    i <- input$hits_rows_selected
+    ids <- hits_df()$feature_id
+    if (length(i) == 1L && i >= 1L && i <= length(ids)) selected(ids[[i]])
+  })
+
+  output$hits <- DT::renderDT({
+    sig <- hits_df()
     out <- data.frame(
       Feature   = sig$feature_symbol,
       Effect    = round(sig$effect, 3),
@@ -263,10 +314,13 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     # was read from, and the effect in the words the cards use.
     names(out)[2] <- omicsCore::effect_label(shown_bundle())
     names(out)[3] <- p_label()
+    # Redrawn (new thresholds, another comparison) with the selected
+    # feature's row still selected, when it is still a hit.
+    pre <- match(shiny::isolate(selected()) %||% NA_character_, sig$feature_id)
     DT::datatable(
       out,
       rownames  = FALSE,
-      selection = "single",
+      selection = list(mode = "single", selected = if (!is.na(pre)) pre),
       options   = list(
         pageLength = 10,
         dom        = "ftip",
@@ -276,7 +330,8 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
       )
     )
   }, server = TRUE)
-  invisible()
+  # The table's rows, in its order.
+  list(hits_df = hits_df)
 }
 
 diff_downloads_server <- function(input, output, session, active, diff_bundle, p_col,
@@ -348,7 +403,7 @@ diff_hits_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Top hits"),
       htmltools::tags$span(class = "card-sub",
-                           "largest changes first, within current thresholds")
+                           "largest changes first, within current thresholds; click a row to see it by group")
     ),
     bslib::card_body(
       shiny::uiOutput(ns("hits_empty")),
@@ -418,17 +473,179 @@ volcano_cut_text <- function(p_label, p_cut, effect_name, fc_cut) {
 
 # The volcano's legend, in plot_volcano()'s classes and colours: up in
 # red, down in blue, the rest grey. Counts when there is a result.
-volcano_legend <- function(up_n = NULL, down_n = NULL, continuous = FALSE) {
+#
+# When the grey cloud was thinned for the browser (volcano_thin_mask()),
+# its entry says how many of its points are drawn, so nobody reads the
+# gaps as features that are missing.
+volcano_legend <- function(up_n = NULL, down_n = NULL, continuous = FALSE,
+                           ns_shown = NULL, ns_total = NULL) {
   words <- if (isTRUE(continuous)) c("positive", "negative") else c("up", "down")
   count <- function(word, n) {
     if (is.null(n)) word else sprintf("%s (%s)", word, format(n, big.mark = ","))
   }
+  ns_word <- if (is.null(ns_shown) || is.null(ns_total)) "not significant" else
+    sprintf("not significant (thinned for display: %s of %s shown)",
+            format(ns_shown, big.mark = ","), format(ns_total, big.mark = ","))
   htmltools::tags$div(
     class = "legend",
     legend_swatch(count(words[[1]], up_n), omics_colors$up),
     legend_swatch(count(words[[2]], down_n), omics_colors$down),
-    legend_swatch("not significant", omics_colors$ns)
+    legend_swatch(ns_word, omics_colors$ns)
   )
+}
+
+# ---- the interactive volcano ---------------------------------------------
+
+# The plotly volcano of one comparison, as the card draws it.
+#
+# Drawn at the thresholds the controls set, so its colours agree with the
+# hit table and the stat cards beside it. The same values are saved with
+# the project (params$display_thresholds), so the report and the exported
+# script draw this same figure -- with every point: only the browser's
+# copy is thinned.
+#
+# `shown` is volcano_thin_mask()'s answer (every feature when NULL);
+# `selected` a feature id to ring; `source` the plotly source id its
+# clicks are reported under.
+volcano_figure <- function(b, p_col, p_cut, fc_cut, label_top = FALSE, width = NULL,
+                           webgl = TRUE, shown = NULL, selected = NULL, source = "A") {
+  full <- b
+  if (!is.null(shown) && !all(shown)) {
+    b$results$diff_result_df <- b$results$diff_result_df[shown, , drop = FALSE]
+  }
+  # The labels are added as plotly annotations, not drawn by
+  # plot_volcano(): ggplotly() cannot convert ggrepel's text layer and
+  # dropped it with a warning, so "Label top hits" labelled nothing.
+  p <- omicsCore::plot_volcano(b, top_n = 0L, p_basis = volcano_p_basis(p_col),
+                               p_threshold = p_cut,
+                               effect_threshold = volcano_effect_cut(fc_cut))
+  # plotly's own legend is hidden: the card's legend below the plot
+  # says the same, with the counts, and does not take width from the
+  # plot on a phone.
+  # No plotly title: the card already says "Volcano", and at phone
+  # width the title ran into the plotly toolbar.
+  fig <- plotly::ggplotly(p + ggplotly_untitled(), tooltip = "text", source = source) |>
+    drop_hoveron() |>
+    plotly::layout(showlegend = FALSE)
+  # Coordinates to four significant digits, well under a pixel at the
+  # card's size: sent with all fifteen they were 40% of what the browser
+  # downloaded, hover text included.
+  fig$x$data <- lapply(fig$x$data, function(tr) {
+    if (length(tr$x) > 2L && is.numeric(tr$x)) tr$x <- signif(tr$x, 4L)
+    if (length(tr$y) > 2L && is.numeric(tr$y)) tr$y <- signif(tr$y, 4L)
+    tr
+  })
+  if (isTRUE(label_top)) {
+    fig <- label_volcano(fig, full, 20L, p_col, width = width)
+  }
+  mark <- volcano_mark_trace(full$results$diff_result_df, p_col, selected)
+  # The last trace, where the observer that moves it expects it.
+  if (!is.null(mark)) fig$x$data <- c(fig$x$data, list(mark))
+  fig <- plotly::event_register(fig, "plotly_click")
+  # WebGL rather than one SVG node per point: 60,000 genes painted in
+  # 0.5 s instead of 4 s, with the same points and hover text.
+  if (isTRUE(webgl)) fig <- plotly::toWebGL(fig)
+  plotly::config(fig, displaylogo = FALSE,
+                 modeBarButtonsToRemove = c("lasso2d", "select2d"))
+}
+
+# Results larger than this are thinned for the browser; smaller ones are
+# sent whole. 60,000 features were 3.6 MB of JSON and 1.5 s to build.
+VOLCANO_THIN_MIN <- 5000L
+
+# Rows with a point to draw: an effect and a p-value.
+volcano_drawable <- function(df, p_col) {
+  is.finite(df$effect) & is.finite(-log10(pmax(df[[p_col]], .Machine$double.xmin)))
+}
+
+# The features "Label top hits" names: the `n` smallest p-values.
+volcano_label_ids <- function(df, p_col, n = 20L) {
+  ok <- !is.na(df[[p_col]]) & !is.na(df$effect)
+  utils::head(df$feature_id[ok][order(df[[p_col]][ok])], n)
+}
+
+# Which features of a large result the browser is sent.
+#
+# The grey (not significant) points of a 60,000-gene volcano lie mostly
+# on top of each other in a dense column at the bottom; drawing all of
+# them costs megabytes and changes nothing anyone can see. The plot area
+# is cut into an `nx` x `ny` grid -- cells of about 2 px at the card's
+# size, smaller than a point -- and among the grey points at most
+# `per_cell` are kept in each cell. A point alone in its cell (the sparse
+# edges of the cloud) is always kept, as is every significant point,
+# every feature in `keep_ids` (the labelled and the selected ones) and
+# the points furthest out in each direction, so the axes span what they
+# did. Results of `min_n` features or fewer are sent whole.
+#
+# Returns a logical vector over the rows of `df`.
+volcano_thin_mask <- function(df, p_col, sig, keep_ids = character(0), nx = 250L,
+                              ny = 150L, per_cell = 1L, min_n = VOLCANO_THIN_MIN) {
+  n <- nrow(df)
+  if (n <= min_n) return(rep(TRUE, n))
+  x <- df$effect
+  y <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
+  ok <- is.finite(x) & is.finite(y)
+  sig <- !is.na(sig) & sig
+  # Rows with nothing to draw are kept too: plot_volcano() drops them
+  # itself, and they cost nothing.
+  keep <- sig | !ok | df$feature_id %in% keep_ids
+  if (any(ok)) {
+    keep[which(ok)[c(which.max(x[ok]), which.min(x[ok]), which.max(y[ok]))]] <- TRUE
+  }
+  cand <- which(!keep)
+  if (!length(cand)) return(keep)
+  half <- max(abs(x[ok]))
+  top <- max(y[ok])
+  if (!is.finite(half) || half <= 0) half <- 1
+  if (!is.finite(top) || top <= 0) top <- 1
+  ix <- pmin(pmax(floor((x[cand] + half) / (2 * half) * nx), 0), nx - 1)
+  iy <- pmin(pmax(floor(y[cand] / top * ny), 0), ny - 1)
+  cell <- ix * ny + iy
+  rank_in_cell <- stats::ave(seq_along(cell), cell, FUN = seq_along)
+  keep[cand[rank_in_cell <= per_cell]] <- TRUE
+  keep
+}
+
+# The feature drawn at a clicked point (x = effect, y = -log10 p), or
+# NULL. The nearest point, on axes scaled to the data's spread, so a
+# click a pixel off a point still finds it.
+volcano_click_feature <- function(df, p_col, x, y) {
+  if (!is.numeric(x) || !is.numeric(y) || length(x) != 1L || length(y) != 1L ||
+      !is.finite(x) || !is.finite(y) || is.null(df) || !nrow(df)) return(NULL)
+  px <- df$effect
+  py <- -log10(pmax(df[[p_col]], .Machine$double.xmin))
+  ok <- is.finite(px) & is.finite(py)
+  if (!any(ok)) return(NULL)
+  sx <- max(diff(range(px[ok])), 1e-9)
+  sy <- max(diff(range(py[ok])), 1e-9)
+  d <- ((px - x) / sx)^2 + ((py - y) / sy)^2
+  d[!ok] <- Inf
+  df$feature_id[[which.min(d)]]
+}
+
+# A ring round the selected feature's point, with its name above it, as
+# a plotly trace (a list of its attributes), or NULL when nothing is
+# selected or the feature has no point.
+volcano_mark_trace <- function(df, p_col, id) {
+  if (is.null(id) || is.null(df)) return(NULL)
+  i <- match(id, df$feature_id)
+  if (is.na(i)) return(NULL)
+  x <- df$effect[[i]]
+  y <- -log10(pmax(df[[p_col]][[i]], .Machine$double.xmin))
+  if (!is.finite(x) || !is.finite(y)) return(NULL)
+  name <- df$feature_symbol[[i]] %||% id
+  if (is.na(name) || !nzchar(name)) name <- id
+  list(type = "scatter", mode = "markers+text", x = list(x), y = list(y),
+       text = list(name), textposition = "top center",
+       textfont = list(size = 12, color = omics_colors$fg_dark),
+       marker = list(size = 14, color = "rgba(0,0,0,0)",
+                     line = list(color = omics_colors$fg_dark, width = 2)),
+       hoverinfo = "text",
+       hovertext = list(sprintf("%s (selected)<br>%s: %.3f<br>%s: %.3g", name,
+                                omicsCore::effect_label(df$effect_type[[i]] %||% NA), x,
+                                if (identical(p_col, "p_value")) "p" else "adjusted p",
+                                df[[p_col]][[i]])),
+       name = "selected", showlegend = FALSE)
 }
 
 # ---- labelling the volcano's top features ------------------------------

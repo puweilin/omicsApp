@@ -275,29 +275,49 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
     theme_omicsCore()
 }
 
-#' Per-feature expression box / violin
+#' Per-feature expression by group
 #'
-#' Plots one or more features as boxplots (with jittered points) split by a
-#' grouping column. RNA-seq raw counts are log2-transformed automatically.
+#' Plots one or more features as boxplots with every sample drawn as a
+#' point, one box per group of `group_by`. The values are put on the scale
+#' a reader can compare between samples: raw counts become log2(CPM + 1)
+#' (library sizes from the whole matrix), linear intensities, TPM and FPKM
+#' become log2(x + 1), and values already on a log scale are drawn as
+#' they are. The y axis says which.
+#'
+#' Points are coloured by group in the same colours the PCA and the
+#' heatmap give each group (the default discrete palette over the sorted
+#' groups of the whole column), so a group is one colour everywhere. When
+#' `group_by` is numeric (a continuous design) the samples are drawn
+#' against it with a least-squares line instead.
 #'
 #' @param input A validated `omics_input`.
 #' @param features Character vector of feature IDs or symbols to plot.
 #' @param group_by Column in `meta_df` used for the x-axis grouping.
-#' @param color_by Optional column for additional color aesthetic.
+#' @param color_by Optional column for the points' colour, instead of the
+#'   group.
+#' @param group_levels Optional groups of `group_by` to show, in the order
+#'   to show them (a comparison's reference group first, for example).
+#'   Samples in other groups are left out. By default every group, sorted.
 #'
-#' @return A `ggplot` object.
+#' @return A `ggplot` object. With one feature its title is the feature's
+#'   name; with several each has its own panel.
 #' @export
 #' @family diff
-plot_feature_expression <- function(input, features, group_by, color_by = NULL) {
+plot_feature_expression <- function(input, features, group_by, color_by = NULL,
+                                    group_levels = NULL) {
   assert_character(features, "features")
   assert_string(group_by, "group_by")
   assert_string(color_by, "color_by", allow_null = TRUE)
+  assert_character(group_levels, "group_levels", allow_null = TRUE)
   validate_omics_input(input)
   if (length(features) == 0L) {
     stop("`features` must contain at least one feature.")
   }
   if (!group_by %in% colnames(input$meta_df)) {
     stop("`group_by` not found in `meta_df`: ", group_by)
+  }
+  if (!is.null(color_by) && !color_by %in% colnames(input$meta_df)) {
+    stop("`color_by` not found in `meta_df`: ", color_by)
   }
 
   feat_df <- input$feature_df
@@ -311,54 +331,127 @@ plot_feature_expression <- function(input, features, group_by, color_by = NULL) 
     hit <- feat_df$feature_id[feat_df$feature_id == f | feat_df$feature_symbol == f]
     feature_ids <- c(feature_ids, hit)
   }
-  feature_ids <- unique(feature_ids)
+  feature_ids <- intersect(unique(feature_ids), rownames(input$expr_mat))
   if (length(feature_ids) == 0L) {
     stop("None of the requested features were found in `feature_df`.")
   }
 
-  mat <- input$expr_mat
-  if (identical(input$assay_type, "raw_count")) {
-    mat <- log2(mat + 1)
+  meta <- input$meta_df
+  samples <- colnames(input$expr_mat)
+  group_all <- meta[samples, group_by]
+  numeric_group <- is.numeric(group_all)
+  keep <- !is.na(group_all)
+  if (!is.null(group_levels) && !numeric_group) {
+    keep <- keep & as.character(group_all) %in% group_levels
+    if (!any(keep)) {
+      stop("None of `group_levels` is a group of `", group_by, "`: ",
+           paste(group_levels, collapse = ", "), call. = FALSE)
+    }
   }
-  mat <- mat[feature_ids, , drop = FALSE]
+
+  # Counts drawn raw put a deeper library's samples higher for no reason
+  # of biology, and log2(count + 1) alone does the same: the library size
+  # comes from every feature, not only the ones drawn.
+  mat <- coerce_to_continuous(input$expr_mat[feature_ids, samples[keep], drop = FALSE],
+                              input$assay_type,
+                              lib_size = lib_sizes(input, samples[keep]))
+
+  sym <- feat_df$feature_symbol[match(feature_ids, feat_df$feature_id)]
+  sym <- ifelse(is.na(sym) | !nzchar(sym), feature_ids, sym)
+  # Two features with one symbol (isoforms, a duplicated gene name) would
+  # share a panel.
+  dup <- sym %in% sym[duplicated(sym)]
+  sym[dup] <- sprintf("%s (%s)", sym[dup], feature_ids[dup])
 
   long <- data.frame(
-    feature_id = rep(rownames(mat), times = ncol(mat)),
-    sample_id = rep(colnames(mat), each = nrow(mat)),
+    feature = rep(sym, times = ncol(mat)),
     value = as.numeric(mat),
     stringsAsFactors = FALSE
   )
-  long$feature_symbol <- feat_df$feature_symbol[match(long$feature_id, feat_df$feature_id)]
-  long[[group_by]] <- input$meta_df[long$sample_id, group_by]
-  if (!is.null(color_by)) {
-    if (!color_by %in% colnames(input$meta_df)) {
-      stop("`color_by` not found in `meta_df`: ", color_by)
-    }
-    long[[color_by]] <- input$meta_df[long$sample_id, color_by]
+  long$feature <- factor(long$feature, levels = sym)
+  grp <- group_all[keep]
+  long$.group <- rep(grp, each = nrow(mat))
+  if (!numeric_group) {
+    lv <- group_levels[group_levels %in% as.character(grp)] %||%
+      sort(unique(as.character(grp)))
+    if (!length(lv)) lv <- sort(unique(as.character(grp)))
+    long$.group <- factor(as.character(long$.group), levels = lv)
+  }
+  colour_col <- color_by %||% group_by
+  long$.colour <- rep(meta[samples[keep], colour_col], each = nrow(mat))
+
+  # The group's colour, the same one it has in the PCA and the heatmap.
+  colour_scale <- if (is.null(color_by) && !numeric_group) {
+    ggplot2::scale_colour_manual(values = group_colours(group_all), guide = "none")
+  } else if (is.numeric(long$.colour)) {
+    ggplot2::scale_colour_gradient(low = omics_colors$scale_low,
+                                   high = omics_colors$scale_high, name = colour_col)
+  } else {
+    group_legend_scales(long$.colour, redundant_shape = FALSE)
   }
 
-  base_aes <- ggplot2::aes(x = .data[[group_by]], y = .data$value)
-  if (!is.null(color_by)) {
-    base_aes$colour <- ggplot2::aes(color = .data[[color_by]])$colour
+  jitter <- ggplot2::position_jitter(width = 0.12, height = 0, seed = 1L)
+  p <- ggplot2::ggplot(long, ggplot2::aes(x = .data$.group, y = .data$value))
+  if (numeric_group) {
+    p <- p +
+      ggplot2::geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+                           colour = omics_colors$fg_dark, linewidth = 0.6, na.rm = TRUE) +
+      ggplot2::geom_point(ggplot2::aes(colour = .data$.colour), size = 2, alpha = 0.85,
+                          na.rm = TRUE)
+  } else {
+    p <- p +
+      ggplot2::geom_boxplot(outlier.shape = NA, fill = "#F3F5F8", colour = "#6B7585",
+                            width = 0.55, linewidth = 0.45, na.rm = TRUE) +
+      # A pinned jitter: the figure is the same on every render, and the
+      # draw leaves the caller's random stream where it was.
+      ggplot2::geom_point(ggplot2::aes(colour = .data$.colour), position = jitter,
+                          size = 2, alpha = 0.85, na.rm = TRUE) +
+      # Long group names ("Compound alpha high dose 10 uM 24 h") wrap
+      # rather than run into each other, narrower when there are many.
+      ggplot2::scale_x_discrete(labels = function(x) {
+        wrap_label(x, width = if (length(x) > 4L) 11L else 14L, max_lines = 3L)
+      })
   }
-
-  ggplot2::ggplot(long, base_aes) +
-    ggplot2::geom_boxplot(outlier.shape = NA, fill = "#EAEEF4", color = "#3F4A5A") +
-    # A pinned jitter: the figure is the same on every render, and the
-    # draw leaves the caller's random stream where it was.
-    ggplot2::geom_point(
-      position = ggplot2::position_jitter(width = 0.18, height = 0, seed = 1L),
-      alpha = 0.7, size = 1.6) +
-    ggplot2::facet_wrap(~ .data$feature_symbol, scales = "free_y") +
+  p <- p + colour_scale +
     ggplot2::labs(
-      title = "Feature expression",
-      x = group_by,
-      y = if (identical(input$assay_type, "raw_count")) "log2(count + 1)" else "value"
+      title = if (length(sym) == 1L) sym else "Feature expression",
+      x = if (numeric_group) group_by else NULL,
+      y = expression_scale_label(input$assay_type)
     ) +
     theme_omicsCore()
+  if (length(sym) > 1L) {
+    p <- p + ggplot2::facet_wrap(~ .data$feature, scales = "free_y")
+  }
+  p
 }
 
 # ---- internal helpers --------------------------------------------------
+
+# One colour per group, the one ggplot2's default discrete scale gives it
+# when every group of the column is drawn in sorted order -- which is how
+# the PCA colours its samples. A figure that shows only two of the
+# groups, or shows them reference first, keeps each group's colour.
+group_colours <- function(values) {
+  lv <- sort(unique(as.character(stats::na.omit(values))))
+  if (!length(lv)) return(character(0))
+  stats::setNames(scales::hue_pal()(length(lv)), lv)
+}
+
+# The values' scale in words, for an axis title, after
+# coerce_to_continuous() has put them on it.
+expression_scale_label <- function(assay_type) {
+  switch(as.character(assay_type %||% ""),
+         raw_count = "log2(CPM + 1)",
+         raw_intensity = "log2(intensity + 1)",
+         tpm = "log2(TPM + 1)",
+         fpkm = "log2(FPKM + 1)",
+         logcpm = "log2 CPM",
+         vst = "VST expression (log2 scale)",
+         normalized_intensity = ,
+         imputed_intensity = ,
+         filtered_intensity = "log2 intensity",
+         "value")
+}
 
 diff_result_from_bundle <- function(bundle) {
   if (!is_analysis_bundle(bundle) || !identical(bundle$analysis_name, "run_diff")) {

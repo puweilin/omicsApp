@@ -35,7 +35,14 @@ diff_view_ui <- function(id) {
       htmltools::tags$div(
         shiny::uiOutput(ns("contrast_summary")),
         diff_volcano_card(ns),
-        diff_hits_card(ns),
+        # The table and the feature a row selects, side by side where
+        # there is room, so a click shows its answer without scrolling.
+        htmltools::tags$div(
+          class = "row-grid r-7-5",
+          diff_hits_card(ns),
+          diff_feature_card(ns)
+        ),
+        diff_heatmap_card(ns),
         shiny::uiOutput(ns("anova_card"))
       )
     )
@@ -293,11 +300,21 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       df
     })
 
+    # The feature a row of the table or a point of the volcano selected
+    # (its feature id), for the Selected feature and Heatmap cards.
+    selected_feature <- shiny::reactiveVal(NULL)
+
     # The header, the notices, the stat cards, the volcano and the hit
     # table (mod_diff_results.R).
-    diff_results_server(input, output, session, navigate, active, shown_bundle,
-                        diff_bundle, diff_error, comparisons, settings_changed,
-                        marked, p_col, p_label, fdr_cut_d, fc_cut_d)
+    results <- diff_results_server(input, output, session, navigate, active, shown_bundle,
+                                   diff_bundle, diff_error, comparisons, settings_changed,
+                                   marked, p_col, p_label, fdr_cut_d, fc_cut_d,
+                                   selected = selected_feature)
+
+    # The selected feature by group, and the heatmap of the top hits
+    # (mod_diff_detail.R).
+    detail <- diff_detail_server(input, output, session, active, shown_bundle, marked,
+                                 selected = selected_feature)
 
     # ---- several contrasts side by side ------------------------------
     contrast_summary_df <- diff_contrasts_server(input, output, session, diff_bundle,
