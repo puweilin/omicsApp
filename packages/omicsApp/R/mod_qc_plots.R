@@ -122,11 +122,15 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
       selected = sel, inline = TRUE)
   })
 
-  output$missing <- shiny::renderPlot(res = PLOT_RES, alt = "Missing values per sample and per feature", fit_to_width("missing", {
+  # Built here, drawn below: the card's download saves this same figure.
+  quality_plot <- shiny::reactive({
     bundle <- last_bundle()
     shiny::req(bundle)
     omicsCore::plot_qc(bundle, view = quality_view())
-  }))
+  })
+
+  output$missing <- shiny::renderPlot(res = PLOT_RES, alt = "Missing values per sample and per feature",
+                                      fit_to_width("missing", quality_plot()))
 
   output$missing_caption <- shiny::renderUI({
     a <- active()
@@ -168,7 +172,7 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
   })
 
   list(pca_color_choices = pca_color_choices, quality_view = quality_view,
-       pca_plot = pca_plot)
+       pca_plot = pca_plot, quality_plot = quality_plot, depth_label = depth_label)
 }
 
 # Cells still missing after imputation: the ones the method could not fill.

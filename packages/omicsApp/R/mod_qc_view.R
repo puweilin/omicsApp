@@ -32,7 +32,8 @@ qc_view_ui <- function(id) {
           htmltools::tags$span(
             class = "card-sub",
             "samples projected on PC1 \u00D7 PC2"
-          )
+          ),
+          plot_download_ui(ns("pca_download"))
         ),
         bslib::card_body(
           shiny::uiOutput(ns("pca_color_picker")),
@@ -42,7 +43,8 @@ qc_view_ui <- function(id) {
       bslib::card(
         bslib::card_header(
           shiny::uiOutput(ns("quality_title"), inline = TRUE),
-          shiny::uiOutput(ns("quality_picker"), inline = TRUE)
+          shiny::uiOutput(ns("quality_picker"), inline = TRUE),
+          plot_download_ui(ns("missing_download"))
         ),
         bslib::card_body(
           shiny::plotOutput(ns("missing"), height = "360px"),
@@ -287,6 +289,20 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     pca_color_choices <- plots$pca_color_choices
     quality_view      <- plots$quality_view
     pca_plot          <- plots$pca_plot
+
+    # Each figure as a file (plot_download.R), named for the project, the
+    # figure and the layer. None for the demo: its samples are not anyone's.
+    qc_file <- function(what) function() {
+      c(plot_download_project(current_project()), what, active()$tag)
+    }
+    has_layer <- function(plot) shiny::reactive(!isTRUE(active()$is_demo) && plot_ready(plot))
+    plot_download_server("pca_download", pca_plot, qc_file("pca"),
+                         width_in = 7, height_in = 5, available = has_layer(pca_plot))
+    plot_download_server("missing_download", plots$quality_plot,
+                         function() qc_file(if (identical(quality_view(), "depth"))
+                           tolower(plots$depth_label()) else "missingness")(),
+                         width_in = 8, height_in = 4.5,
+                         available = has_layer(plots$quality_plot))
 
     # Expose the QC bundle for slice 3F (report).
     shiny::reactive(last_bundle())

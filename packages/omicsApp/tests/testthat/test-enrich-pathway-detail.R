@@ -69,6 +69,13 @@ test_that("selecting a GSEA pathway draws its running-score curve", {
     expect_match(p$labels$title, substr(row$pathway_name, 1L, 20L), fixed = TRUE)
     expect_match(p$labels$subtitle, "NES", fixed = TRUE)
     expect_false(is.null(output$gsea_curve$src))
+    # The card's download saves the curve, named for the pathway.
+    session$flushReact()
+    expect_match(paste(as.character(output[["gsea_curve_download-menu"]]$html), collapse = ""),
+                 "dropdown-item", fixed = TRUE)
+    f <- output[["gsea_curve_download-pdf"]]
+    expect_identical(rawToChar(readBin(f, "raw", 5L)), "%PDF-")
+    expect_match(basename(f), sprintf("^gsea_%s.*\\.pdf$", project_slug(row$pathway_name)))
   })
 })
 

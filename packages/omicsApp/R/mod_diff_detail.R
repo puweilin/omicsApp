@@ -263,7 +263,8 @@ diff_feature_card <- function(ns) {
   bslib::card(
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Selected feature"),
-      htmltools::tags$span(class = "card-sub", "its value in each group of this comparison")
+      htmltools::tags$span(class = "card-sub", "its value in each group of this comparison"),
+      plot_download_ui(ns("feature_plot_download"))
     ),
     bslib::card_body(
       shiny::uiOutput(ns("feature_info")),
@@ -281,7 +282,8 @@ diff_heatmap_card <- function(ns) {
   bslib::card(
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Heatmap"),
-      htmltools::tags$span(class = "card-sub", "top hits across the samples, by group")
+      htmltools::tags$span(class = "card-sub", "top hits across the samples, by group"),
+      plot_download_ui(ns("heatmap_download"))
     ),
     bslib::card_body(
       shiny::uiOutput(ns("heatmap_note")),

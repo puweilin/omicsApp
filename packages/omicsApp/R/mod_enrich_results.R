@@ -250,13 +250,16 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
     if (is.null(v) || !is.finite(v) || v <= 0 || v > 1) 0.05 else v
   })
 
-  output$dot <- shiny::renderPlot(res = PLOT_RES, alt = "Dot plot of the most enriched pathways", fit_to_width("dot", {
+  # Built here, drawn below: the card's download saves this same figure.
+  dot_plot <- shiny::reactive({
     b <- plot_bundle()
     shiny::req(b)
     omicsCore::plot_enrichment(b, view = "dot", top_n = 12L,
                                p_preference = show_p(),
                                p_cutoff = show_cutoff())
-  }))
+  })
+  output$dot <- shiny::renderPlot(res = PLOT_RES, alt = "Dot plot of the most enriched pathways",
+                                  fit_to_width("dot", dot_plot()))
 
   # The pathways in the table, in its order: a selected row's index is
   # read against this.
@@ -363,7 +366,10 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
         htmltools::tags$h3(class = "card-title", "Selected pathway"),
         htmltools::tags$span(class = "card-sub",
                              if (gsea) "running enrichment score"
-                             else "its genes in the list")),
+                             else "its genes in the list"),
+        # Shown by its server only while there is a curve: ORA's genes
+        # are a table, not a figure.
+        plot_download_ui(session$ns("gsea_curve_download"))),
       bslib::card_body(body))
   })
 
@@ -391,7 +397,8 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
   list(table_data = table_data, diff_layer_tag = diff_layer_tag,
        selected_features = selected_features, plot_bundle = plot_bundle,
        show_p = show_p, show_cutoff = show_cutoff,
-       selected_pathway = selected_pathway, gsea_curve = gsea_curve)
+       selected_pathway = selected_pathway, gsea_curve = gsea_curve,
+       dot_plot = dot_plot)
 }
 
 # The pathways of the Enriched sets table: those that pass the display
@@ -539,7 +546,8 @@ enrich_dot_card <- function(ns) {
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Pathway dotplot"),
       htmltools::tags$span(class = "card-sub",
-                           "top 12 by adjusted p \u00B7 size = overlap")
+                           "top 12 by adjusted p \u00B7 size = overlap"),
+      plot_download_ui(ns("dot_download"))
     ),
     bslib::card_body(
       shiny::plotOutput(ns("dot"), height = "420px")

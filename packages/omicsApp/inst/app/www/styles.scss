@@ -595,3 +595,29 @@ table.tbl td.num, table.tbl th.num {
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   vertical-align: top;
 }
+
+// A figure card's download menu (R/plot_download.R): an icon at the
+// right end of the header, quiet until pointed at or focused. At least
+// 32 px square, so a finger finds it on a phone. The overlap figure of
+// the Comparisons card has its menu on its control row instead.
+.plot-download { margin-left: auto; flex: none; align-self: center; }
+.plot-download-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 32px; min-height: 32px; padding: 4px 8px;
+  color: var(--fg-3); background: transparent;
+  border: 1px solid transparent; border-radius: var(--r-md);
+  font-size: 14px; line-height: 1;
+}
+.plot-download-toggle:hover,
+.plot-download-toggle.show,
+.plot-download-toggle[aria-expanded="true"] {
+  color: var(--fg-1); background: var(--bg); border-color: var(--border);
+}
+.plot-download-toggle:focus-visible {
+  color: var(--fg-1); outline: 2px solid var(--brand-500); outline-offset: 1px;
+}
+.plot-download-items { font-size: 13px; min-width: 160px; z-index: 1060; }
+.plot-download-items .dropdown-header {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg-3);
+}
+.plot-download-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

@@ -129,23 +129,27 @@ integration_results_server <- function(input, output, session, navigate, method,
         htmltools::tags$div(class = "row-grid r-6-6",
           integration_plot_card(ns("cor_scatter"),
                                 "Correlation per gene",
-                                "r across paired samples \u00B7 y = -log10 adjusted p"),
+                                "r across paired samples \u00B7 y = -log10 adjusted p",
+                                plot_download_ui(ns("cor_scatter_download"))),
           integration_table_card(ns("top_table"), "Top features",
                                  "ranked by adjusted p")))
     } else if (identical(m, "active_pathways")) {
       htmltools::tagList(
         htmltools::tags$div(class = "row-grid r-6-6",
           integration_plot_card(ns("ap_dot"), "ActivePathways",
-                                "colour = direction \u00B7 shape = which layers found it"),
+                                "colour = direction \u00B7 shape = which layers found it",
+                                plot_download_ui(ns("ap_dot_download"))),
           integration_table_card(ns("top_table"), "Pathways",
                                  "ranked by adjusted p")))
     } else {
       htmltools::tagList(
         htmltools::tags$div(class = "row-grid r-6-6",
           integration_plot_card(ns("scatter"), "Fold-change concordance",
-                                "A vs B \u00B7 dashed = agreement \u00B7 coloured = hit in both"),
+                                "A vs B \u00B7 dashed = agreement \u00B7 coloured = hit in both",
+                                plot_download_ui(ns("scatter_download"))),
           integration_plot_card(ns("top_hits"), "Top hits in both layers",
-                                "one row per feature \u00B7 one dot per layer")),
+                                "one row per feature \u00B7 one dot per layer",
+                                plot_download_ui(ns("top_hits_download")))),
         htmltools::tags$div(class = "row-grid r-6-6",
           integration_table_card(ns("top_table"), "Features",
                                  "hits in both layers first"),
@@ -416,11 +420,12 @@ feature_row_label <- function(d) {
   ifelse(shared, d$feature_id, sym)
 }
 
-integration_plot_card <- function(output_id, title, sub) {
+integration_plot_card <- function(output_id, title, sub, download = NULL) {
   bslib::card(
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", title),
-      htmltools::tags$span(class = "card-sub", sub)
+      htmltools::tags$span(class = "card-sub", sub),
+      download
     ),
     bslib::card_body(hover_plot_output(output_id, height = "320px"))
   )

@@ -242,6 +242,20 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
       source = session$ns("volcano"))
   })
 
+  # The volcano as a file. The card's is a plotly widget, whose labels
+  # are annotations laid out for the browser and whose grey cloud is
+  # thinned; a file is plot_volcano() itself, as the report draws it:
+  # every point, the card's thresholds, and ggrepel naming the top hits
+  # when "Label top hits" is on.
+  volcano_plot <- shiny::reactive({
+    b <- shown_bundle()
+    shiny::req(omicsCore::is_analysis_bundle(b))
+    omicsCore::plot_volcano(b, top_n = if (isTRUE(input$label_top)) 20L else 0L,
+                            p_basis = volcano_p_basis(p_col()),
+                            p_threshold = fdr_cut_d(),
+                            effect_threshold = volcano_effect_cut(fc_cut_d()))
+  })
+
   # A point clicked on the volcano selects its feature, as a row of the
   # table does. The click carries the point's coordinates; the feature
   # is the one drawn there.
@@ -330,8 +344,8 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
       )
     )
   }, server = TRUE)
-  # The table's rows, in its order.
-  list(hits_df = hits_df)
+  # The table's rows, in its order, and the volcano as a file draws it.
+  list(hits_df = hits_df, volcano_plot = volcano_plot)
 }
 
 diff_downloads_server <- function(input, output, session, active, diff_bundle, p_col,
@@ -389,7 +403,8 @@ diff_volcano_card <- function(ns) {
       # The cut the figure is drawn at, in words: plotly does not show
       # the caption plot_volcano() writes it into.
       shiny::textOutput(ns("volcano_cut"), container = function(...)
-        htmltools::tags$span(class = "card-sub", ...))
+        htmltools::tags$span(class = "card-sub", ...)),
+      plot_download_ui(ns("volcano_download"))
     ),
     bslib::card_body(
       plotly::plotlyOutput(ns("volcano"), height = "360px"),

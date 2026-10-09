@@ -282,6 +282,36 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
     show_p            <- results$show_p
     show_cutoff       <- results$show_cutoff
 
+    # ---- each figure as a file (plot_download.R) ------------------------
+    # Named for the project, the figure and the comparison it was run on.
+    # None for the demo pathways, which are no one's result.
+    enrich_file <- function(what) function() {
+      eb <- enrich_bundle()
+      c(plot_download_project(current_project()), what,
+        eb$params$comparison %||% diff_layer_tag())
+    }
+    not_demo <- function(plot) shiny::reactive(!isTRUE(is_demo()) && plot_ready(plot))
+    plot_download_server("dot_download", results$dot_plot,
+                         function() enrich_file(paste0(
+                           tolower(enrich_bundle()$params$type %||% "enrichment"),
+                           "_dotplot"))(),
+                         width_in = 8, height_in = 5,
+                         available = not_demo(results$dot_plot))
+    plot_download_server("gsea_curve_download", results$gsea_curve,
+                         function() enrich_file(c(
+                           "gsea", results$selected_pathway()$pathway_name))(),
+                         width_in = 7, height_in = 4.5,
+                         available = not_demo(results$gsea_curve))
+    # As tall as the card draws it for its rows, at the card's 96 px an
+    # inch; wide enough for the comparison names under it.
+    plot_download_server("compare_plot_download", compare$compare_plot,
+                         function() c(plot_download_project(current_project()),
+                                      "enrichment_across_comparisons", diff_layer_tag()),
+                         width_in = 9,
+                         height_in = function()
+                           compare_plot_px(compare_plot_rows(compare$compare_plot)) / PLOT_RES,
+                         available = not_demo(compare$compare_plot))
+
     # Expose the bundle for slice 3F (report).
     list(
       bundle = shiny::reactive(enrich_bundle()),

@@ -317,8 +317,62 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                                  selected = selected_feature)
 
     # ---- several contrasts side by side ------------------------------
-    contrast_summary_df <- diff_contrasts_server(input, output, session, diff_bundle,
-                                                 comparisons, fdr_cut_d, fc_cut_d)
+    contrasts <- diff_contrasts_server(input, output, session, diff_bundle,
+                                       comparisons, fdr_cut_d, fc_cut_d)
+    contrast_summary_df <- contrasts$summary
+
+    # ---- each figure as a file (plot_download.R) ------------------------
+    # Named for the project, the figure and the comparison on screen (the
+    # layer, for the figures that span every comparison). None for the
+    # demo project, whose data are not anyone's.
+    diff_file <- function(what, by = c("comparison", "layer")) {
+      by <- match.arg(by)
+      function() {
+        c(plot_download_project(current_project()), what,
+          if (by == "comparison") shown_bundle()$params$comparison %||% active()$tag
+          else active()$tag)
+      }
+    }
+    not_demo <- function(ready) shiny::reactive(!isTRUE(active()$is_demo) && ready())
+    # The volcano is only checked for a result: building the figure to
+    # find out would draw 60,000 points for a button.
+    plot_download_server("volcano_download", results$volcano_plot, diff_file("volcano"),
+                         width_in = 7, height_in = 5.5,
+                         available = not_demo(function()
+                           omicsCore::is_analysis_bundle(shown_bundle())))
+    plot_download_server(
+      "feature_plot_download", detail$feature_plot,
+      function() {
+        row <- tryCatch(marked()[match(selected_feature(), marked()$feature_id), , drop = FALSE],
+                        error = function(e) NULL)
+        c(plot_download_project(current_project()),
+          if (!is.null(row) && nrow(row)) feature_display_name(row) else "feature",
+          shown_bundle()$params$comparison %||% active()$tag)
+      },
+      width_in = 5, height_in = 4,
+      available = not_demo(function() plot_ready(detail$feature_plot)))
+    # As tall as the card draws it for its rows, at the card's 96 px an inch.
+    plot_download_server("heatmap_download", detail$heatmap_plot, diff_file("heatmap"),
+                         width_in = 8,
+                         height_in = function()
+                           heatmap_height(length(detail$heatmap_hits()$ids)) / PLOT_RES,
+                         available = not_demo(function() plot_ready(detail$heatmap_plot)))
+    plot_download_server("contrast_plot_download", contrasts$contrast_plot,
+                         diff_file("hits_per_comparison", "layer"),
+                         width_in = 7,
+                         height_in = function()
+                           (160 + label_rows_px(comparisons(), 20L)) / PLOT_RES,
+                         available = not_demo(function() plot_ready(contrasts$contrast_plot)),
+                         label = "Download the hits per comparison")
+    plot_download_server("overlap_plot_download", contrasts$overlap_plot,
+                         function() diff_file(switch(input$overlap_dir %||% "any",
+                                                     up = "overlap_up", down = "overlap_down",
+                                                     "overlap"), "layer")(),
+                         width_in = 7,
+                         height_in = function()
+                           (270 + label_rows_px(comparisons(), 10L)) / PLOT_RES,
+                         available = not_demo(function() plot_ready(contrasts$overlap_plot)),
+                         label = "Download the overlap figure")
 
     # ---- global test across all groups -------------------------------
     anova_hits <- diff_anova_server(input, output, session, active, default_contrast,

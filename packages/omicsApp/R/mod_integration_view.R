@@ -170,8 +170,29 @@ integration_view_server <- function(id,
     # ---- what is shown ------------------------------------------------
     # The header, the notices, the stat cards, the plots and the tables
     # (mod_integration_results.R).
-    integration_results_server(input, output, session, navigate, method, can_run, is_demo,
-                               integration_bundle, integration_error, running)
+    figures <- integration_results_server(input, output, session, navigate, method, can_run,
+                                          is_demo, integration_bundle, integration_error,
+                                          running)
+
+    # Each figure as a file (plot_download.R), named for the project, the
+    # figure and the two layers. None for the demo, which is no one's data.
+    integration_file <- function(what) function() {
+      c(plot_download_project(current_project()), what,
+        paste(integration_bundle()$params$experiments, collapse = "_"))
+    }
+    not_demo <- function(plot) shiny::reactive(!isTRUE(is_demo()) && plot_ready(plot))
+    plot_download_server("scatter_download", figures$scatter,
+                         integration_file("fold_change_concordance"),
+                         width_in = 7, height_in = 5.5, available = not_demo(figures$scatter))
+    plot_download_server("top_hits_download", figures$top_hits,
+                         integration_file("top_hits_both_layers"),
+                         width_in = 7, height_in = 5, available = not_demo(figures$top_hits))
+    plot_download_server("cor_scatter_download", figures$cor_scatter,
+                         integration_file("correlation_per_gene"),
+                         width_in = 7, height_in = 5, available = not_demo(figures$cor_scatter))
+    plot_download_server("ap_dot_download", figures$ap_dot,
+                         integration_file("activepathways"),
+                         width_in = 8, height_in = 5.5, available = not_demo(figures$ap_dot))
 
     # Exposed for the report and the project.
     shiny::reactive(integration_bundle())

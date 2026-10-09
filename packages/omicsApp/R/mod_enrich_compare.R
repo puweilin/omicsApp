@@ -37,7 +37,8 @@ enrich_compare_server <- function(input, output, session, diff_all, diff_thresho
         htmltools::tags$span(
           class = "card-sub",
           sprintf("%d comparisons \u00B7 same test, database and thresholds",
-                  length(all_comparisons())))
+                  length(all_comparisons()))),
+        plot_download_ui(session$ns("compare_plot_download"))
       ),
       bslib::card_body(
         htmltools::tags$div(
@@ -116,13 +117,9 @@ enrich_compare_server <- function(input, output, session, diff_all, diff_thresho
   # dots of neighbouring rows ran into each other. On a phone the legends
   # sit under the panel and take their own height.
   compare_plot_height <- function() {
-    p <- tryCatch(compare_plot(), error = function(e) NULL)
-    n <- if (inherits(p, "ggplot") && ".row" %in% names(p$data)) {
-      length(unique(p$data$.row))
-    } else 0L
     w <- session$clientData[[paste0("output_", session$ns("compare_plot"), "_width")]]
     narrow <- is.numeric(w) && length(w) && w < NARROW_PLOT_PX
-    compare_plot_px(n, narrow)
+    compare_plot_px(compare_plot_rows(compare_plot), narrow)
   }
 
   output$compare_plot <- shiny::renderPlot(
@@ -133,6 +130,12 @@ enrich_compare_server <- function(input, output, session, diff_all, diff_thresho
   list(compare_bundle = compare_bundle, compare_error = compare_error,
        all_comparisons = all_comparisons, compare_epoch = compare_epoch,
        compare_running = compare_running, compare_plot = compare_plot)
+}
+
+# The pathways (rows) the comparison plot draws; 0 while there is none.
+compare_plot_rows <- function(compare_plot) {
+  p <- tryCatch(compare_plot(), error = function(e) NULL)
+  if (inherits(p, "ggplot") && ".row" %in% names(p$data)) length(unique(p$data$.row)) else 0L
 }
 
 # Height of the comparison plot for `n_rows` pathways: room for the
