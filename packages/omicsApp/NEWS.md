@@ -55,3 +55,8 @@ First versioned release. Highlights since the development snapshots:
   above 5,000 features (60,000 features: 5 MB to 0.2 MB).
 * Enrichment: select a pathway to see its GSEA curve, or for ORA its
   overlapping genes with their log2FC.
+* Tables show p-values to 3 significant digits and sort numerically;
+  the enrichment table fits its card. Hover on the enrichment dot plot.
+  Card titles replace in-plot titles; phone layouts for the PCA key and
+  the overlap plot; the heatmap is drawn when scrolled into view.
+  Figure files carry the date; SVGs use svglite when installed.

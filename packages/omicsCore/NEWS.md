@@ -88,3 +88,9 @@ First versioned release.
   from the differential result. `plot_feature_expression()` scales
   counts to log2(CPM + 1) and colours groups as the PCA does;
   `plot_heatmap()` gains group blocks and a highlighted feature.
+* Figures: one colour-blind-safe group palette (`group_palette()`),
+  distinct from the up/down colours, used for groups everywhere; plain
+  titles; `plot_diff_overlap(compact = TRUE)` for narrow screens;
+  report figure heights follow their content; enrichment dot plot keys
+  under the panel; readable ActivePathways and correlation plots.
+  `enrichplot` is no longer a suggested package.
