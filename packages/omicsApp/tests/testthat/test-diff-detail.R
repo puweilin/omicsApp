@@ -65,6 +65,8 @@ test_that("a row of Top hits selects its feature for the card, the heatmap and t
     expect_identical(length(unique(h$data$x)), 8L)
     txt <- Filter(function(l) inherits(l$geom, "GeomText"), h$layers)[[1]]$data
     expect_identical(txt$face[txt$text == hits$feature_symbol[[2]]], "bold")
+    # Drawn once the card is in view (test-lazy-heatmap.R).
+    session$setInputs(heatmap_visible = TRUE)
     expect_match(output$heatmap$src, "^data:image/png")
     expect_match(output$heatmap_note$html, "scaled to its own mean")
 

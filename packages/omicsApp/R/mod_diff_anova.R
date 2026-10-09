@@ -103,12 +103,17 @@ diff_anova_server <- function(input, output, session, active, default_contrast, 
     out <- data.frame(
       Feature = df$feature_symbol %||% df$feature_id,
       Statistic = signif(df$statistic, 3),
-      p = signif(df[[p_col()]], 3),
+      p = df[[p_col()]],
       check.names = FALSE, stringsAsFactors = FALSE)
     names(out)[2] <- df$statistic_type[1] %||% "Statistic"
     names(out)[3] <- p_label()
-    DT::datatable(out, rownames = FALSE, selection = "none",
-                  options = list(pageLength = 10, dom = "ftip"))
+    # The p-value as text (table_format.R), sorted by its number.
+    tab <- dt_sortable_text(out, p_cols = p_label())
+    DT::datatable(tab$data, rownames = FALSE, selection = "none",
+                  options = list(pageLength = 10, dom = "ftip",
+                                 columnDefs = c(list(list(className = "dt-right",
+                                                          targets = 1:2)),
+                                                tab$column_defs)))
   }, server = TRUE)
 
   output$download_anova <- shiny::downloadHandler(

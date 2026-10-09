@@ -295,7 +295,11 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
                          function() enrich_file(paste0(
                            tolower(enrich_bundle()$params$type %||% "enrichment"),
                            "_dotplot"))(),
-                         width_in = 8, height_in = 5,
+                         # Taller than 5 in when the card draws it taller
+                         # for its rows.
+                         width_in = 8,
+                         height_in = function()
+                           max(5, enrich_dot_height(results$dot_plot()) / PLOT_RES),
                          available = not_demo(results$dot_plot))
     plot_download_server("gsea_curve_download", results$gsea_curve,
                          function() enrich_file(c(

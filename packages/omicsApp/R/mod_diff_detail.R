@@ -183,6 +183,13 @@ diff_detail_server <- function(input, output, session, active, shown_bundle, mar
       show_rownames = length(h$ids) <= HEATMAP_NAMED_MAX) +
       ggplot2::labs(title = NULL)
   })
+  # Drawn once the card has come into view (diff_heatmap_card()'s script
+  # sets `heatmap_visible`), not when the view opens. Clustering and
+  # drawing 50 rows took about 0.4 s, and the card sits under the volcano
+  # and the table, below the fold: Shiny holds back outputs in hidden
+  # tabs, not ones that are merely scrolled out of sight. The card keeps
+  # its height meanwhile (below), so nothing moves when it is drawn.
+  heatmap_seen <- shiny::reactive(isTRUE(input$heatmap_visible))
   output$heatmap <- shiny::renderPlot(
     res = PLOT_RES, alt = "Heatmap of the top hits across the samples, grouped",
     height = function() {
@@ -190,13 +197,23 @@ diff_detail_server <- function(input, output, session, active, shown_bundle, mar
       heatmap_height(length(heatmap_hits()$ids),
                      narrow = is.numeric(w) && length(w) && w < NARROW_PLOT_PX)
     },
-    fit_to_width("heatmap", heatmap_plot()))
+    {
+      shiny::req(heatmap_seen())
+      fit_to_width("heatmap", heatmap_plot())
+    })
+
+  # Whether there is a heatmap to save, without drawing it: the download
+  # menu is there before the card has been scrolled to, and the file is
+  # drawn when it is asked for.
+  heatmap_available <- shiny::reactive({
+    isTRUE(has_heatmap()) && inherits(active()$input, "omics_input")
+  })
 
   # The two figures' ggplots, for whatever saves a card's figure, and
   # what the cards' panels are shown by.
   list(feature_plot = feature_plot, heatmap_plot = heatmap_plot,
        heatmap_hits = heatmap_hits, has_feature = has_feature,
-       has_heatmap = has_heatmap)
+       has_heatmap = has_heatmap, heatmap_available = heatmap_available)
 }
 
 # The card height for a heatmap of `n` rows: a row of about 13 px, the
@@ -243,9 +260,10 @@ feature_display_name <- function(row) {
   if (length(sym) != 1L || is.na(sym) || !nzchar(sym)) row$feature_id else sym
 }
 
+# As the Top hits table beside the card writes it (table_format.R).
 format_p <- function(p) {
-  if (length(p) != 1L || is.na(p)) return("—")
-  formatC(p, digits = 2, format = if (p < 1e-3) "e" else "g")
+  if (length(p) != 1L) return("\u2013")
+  format_p_value(p)
 }
 
 # What the figure's values are, where the axis title alone does not say
@@ -280,6 +298,7 @@ diff_feature_card <- function(ns) {
 
 diff_heatmap_card <- function(ns) {
   bslib::card(
+    id = ns("heatmap_card"),
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", "Heatmap"),
       htmltools::tags$span(class = "card-sub", "top hits across the samples, by group"),
@@ -291,6 +310,33 @@ diff_heatmap_card <- function(ns) {
         id = ns("heatmap_panel"),
         shiny::plotOutput(ns("heatmap"), height = "auto")
       ))
-    )
+    ),
+    when_visible_script(ns("heatmap_card"), ns("heatmap_visible"))
   )
+}
+
+# Tells the server, once, that an element has come into view: sets the
+# input `input_id` to TRUE. A hidden tab's elements are not in view, nor
+# is a card below the fold until it is scrolled to; the observer starts
+# a little ahead of the card (rootMargin) so it is often drawn by the
+# time it appears. Sent again after a reconnect, which starts a new
+# session that has not heard it. Without IntersectionObserver (a very
+# old browser) it says so at once, and the card draws as it used to.
+when_visible_script <- function(element_id, input_id) {
+  htmltools::tags$script(htmltools::HTML(sprintf(
+    "(function() {
+  var el = document.getElementById('%s'), seen = false;
+  if (!el) return;
+  function tell() {
+    if (seen && window.Shiny && Shiny.shinyapp && Shiny.shinyapp.isConnected())
+      Shiny.setInputValue('%s', true);
+  }
+  $(document).on('shiny:connected', tell);
+  if (!('IntersectionObserver' in window)) { seen = true; tell(); return; }
+  var io = new IntersectionObserver(function(entries) {
+    if (!entries.some(function(e) { return e.isIntersecting; })) return;
+    io.disconnect(); seen = true; tell();
+  }, {rootMargin: '0px 0px 200px 0px'});
+  io.observe(el);
+})();", element_id, input_id)))
 }

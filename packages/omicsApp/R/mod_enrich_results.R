@@ -258,8 +258,19 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
                                p_preference = show_p(),
                                p_cutoff = show_cutoff())
   })
-  output$dot <- shiny::renderPlot(res = PLOT_RES, alt = "Dot plot of the most enriched pathways",
-                                  fit_to_width("dot", dot_plot()))
+  output$dot <- shiny::renderPlot(
+    res = PLOT_RES, alt = "Dot plot of the most enriched pathways",
+    height = function() {
+      w <- session$clientData[[paste0("output_", session$ns("dot"), "_width")]]
+      enrich_dot_height(tryCatch(dot_plot(), error = function(e) NULL),
+                        narrow = is.numeric(w) && length(w) && w < NARROW_PLOT_PX)
+    },
+    fit_to_width("dot", dot_plot()))
+  # The axis names are wrapped and long ones hard to read; hovering (or
+  # tapping) a dot gives the pathway in full with its numbers.
+  plot_hover_server("dot", dot_plot,
+                    function(row, p) enrich_dot_hover_text(row, p, show_p()),
+                    input, output, session)
 
   # The pathways in the table, in its order: a selected row's index is
   # read against this.
@@ -270,20 +281,9 @@ enrich_results_server <- function(input, output, session, navigate, diff_bundle,
   })
 
   output$hits <- DT::renderDT({
-    out <- enrich_hits_table(hits_rows(), show_p(), show_cutoff())
-    shiny::req(nrow(out) > 0L)
-    DT::datatable(
-      out,
-      rownames  = FALSE,
-      selection = "single",
-      options   = list(
-        pageLength = 10,
-        dom        = "ftip",
-        scrollX    = TRUE,
-        columnDefs = list(list(className = "dt-right",
-                               targets = c(1, 2)))
-      )
-    )
+    tab <- enrich_hits_table(hits_rows(), show_p(), show_cutoff())
+    shiny::req(nrow(tab$data) > 0L)
+    enrich_hits_datatable(tab)
   }, server = TRUE)
 
   # ---- the selected pathway -------------------------------------------
@@ -500,46 +500,123 @@ ora_gene_values <- function(genes, diff_bundle, direction = NA_character_) {
 }
 
 format_p_plain <- function(p) {
-  if (length(p) != 1L || is.na(p)) return("\u2013")
-  if (p < 0.001) formatC(p, digits = 1, format = "e") else formatC(p, digits = 3, format = "fg")
+  if (length(p) != 1L) return("\u2013")
+  format_p_value(p)
 }
 
-# The rows of the Enriched sets table, as shown.
+# The rows of the Enriched sets table, as shown: list(data =, column_defs =)
+# from dt_sortable_text(), the p-values written out and sorted by number.
+#
+# The card is about 390 px wide on a 1280 px screen, beside the dot plot,
+# and five columns did not fit in it. What a method does not need is
+# left out: ORA has no enrichment score, GSEA's direction is the sign of
+# its NES, and GSEA counts no overlap -- its pathway size is shown
+# instead. The pathway name is the one column that can give up width;
+# it wraps.
 enrich_hits_table <- function(df, show_p, show_cutoff) {
   df <- enrich_hits_rows(df, show_p, show_cutoff)
   pcol <- if (identical(show_p, "raw")) "p_value" else "adj_p_value"
-  out <- data.frame(
-    Pathway   = df$pathway_name,
-    NES       = sprintf("%+.2f", df$effect),
-    # Named for the column it holds, so the table cannot say adj.P
-    # over raw values.
-    P         = signif(df[[pcol]], 3),
-    Direction = df$direction,
-    Overlap   = sprintf("%d/%d",
-                        df$overlap_size %||% NA_integer_,
-                        df$gene_set_size %||% NA_integer_),
-    check.names = FALSE,
-    stringsAsFactors = FALSE
+  # Named for the column it holds, so the table cannot say adjusted p
+  # over raw values.
+  p_name <- if (identical(show_p, "raw")) "p" else "adjusted p"
+  na_col <- function(x) if (is.null(x)) rep(NA_real_, nrow(df)) else x
+  gsea <- any(is.finite(df$effect))
+  out <- data.frame(Pathway = df$pathway_name, check.names = FALSE,
+                    stringsAsFactors = FALSE)
+  keys <- list()
+  if (gsea) {
+    out$NES <- ifelse(is.finite(df$effect), sprintf("%+.2f", df$effect), "\u2013")
+    keys$NES <- df$effect
+  } else if (any(df$direction %in% c("up", "down"))) {
+    # ORA's direction is the gene list a pathway was found in, and the
+    # header says so: "up" under Direction read as the pathway's
+    # activity going up, which ORA does not measure. A result pooled
+    # from both lists has no such column.
+    out$`Gene list` <- ifelse(df$direction %in% c("up", "down"), df$direction, "\u2013")
+  }
+  out[[p_name]] <- df[[pcol]]
+  if (gsea) {
+    out$`Set size` <- as.integer(na_col(df$gene_set_size))
+  } else {
+    ov <- na_col(df$overlap_size)
+    size <- na_col(df$gene_set_size)
+    out$Overlap <- ifelse(is.na(ov), "\u2013",
+                          ifelse(is.na(size), format(ov),
+                                 sprintf("%d/%d", as.integer(ov), as.integer(size))))
+    keys$Overlap <- ov
+  }
+  dt_sortable_text(out, p_cols = p_name, sort_keys = keys)
+}
+
+# The Enriched sets widget for enrich_hits_table()'s rows.
+#
+# Numbers on the right and on one line; the pathway takes the rest of
+# the width and wraps (enrich_hits_css() tightens the cells). Column
+# widths are left to the browser: DataTables' own sizing set the table
+# a couple of pixels wider than its card, which then scrolled sideways
+# for nothing. On a phone the columns cannot all fit beside a readable
+# name, so the table scrolls sideways inside its card with the pathway
+# column held in place: a row of numbers without its name means nothing.
+enrich_hits_datatable <- function(tab) {
+  out <- tab$data
+  shown <- names(out)[!startsWith(names(out), ".sort_")]
+  col <- function(name) match(name, names(out)) - 1L
+  numeric_cols <- intersect(c("NES", "adjusted p", "p", "Overlap", "Set size"), shown)
+  defs <- c(list(list(className = "dt-right", targets = col(numeric_cols))),
+            tab$column_defs)
+  w <- DT::datatable(
+    out,
+    rownames   = FALSE,
+    selection  = "single",
+    extensions = "FixedColumns",
+    options    = list(
+      pageLength   = 10,
+      dom          = "ftip",
+      autoWidth    = FALSE,
+      scrollX      = TRUE,
+      fixedColumns = list(left = 1),
+      columnDefs   = defs
+    )
   )
-  names(out)[names(out) == "P"] <-
-    if (identical(show_p, "raw")) "p" else "adjusted p"
-  if (!nrow(df)) return(out)
-  # ORA's direction is the gene list a pathway was found in, which is
-  # worth saying in words: "up" next to an ORA pathway read as the
-  # pathway's activity going up, which ORA does not measure.
-  if (all(is.na(df$effect))) {
-    out$Direction <- ifelse(df$direction %in% "up", "up-regulated genes",
-                     ifelse(df$direction %in% "down", "down-regulated genes",
-                            NA_character_))
-    names(out)[names(out) == "Direction"] <- "Found among"
+  # A name with no space to break at (a long gene set id) would
+  # otherwise set the column's width by itself.
+  w <- DT::formatStyle(w, "Pathway", `overflow-wrap` = "break-word")
+  if ("Gene list" %in% shown) {
+    w <- DT::formatStyle(w, "Gene list", color = DT::styleEqual(
+      c("up", "down"), c(omics_colors$up, omics_colors$down)))
   }
-  # ORA has no enrichment score, and a direction only when it was run on
-  # one direction or on both separately; columns of NA said nothing.
-  if (all(is.na(df$effect))) out$NES <- NULL
-  if (all(is.na(df$direction))) {
-    out <- out[setdiff(names(out), c("Direction", "Found among"))]
-  }
-  out
+  w
+}
+
+# The dot plot's height for its rows, in pixels.
+#
+# At a fixed 420 px, two databases with up and down lists made three
+# panels of long GO names, wrapped to two or three lines each, and the
+# names were drawn over one another. The panels of a facet_wrap() are
+# equally tall, so the tallest panel's need sets them all. Rows are
+# evenly spaced, so a panel needs as many rows as it has times the
+# space of its most crowded neighbours -- two adjacent three-line names
+# need three lines each -- at the axis text's line height (smaller on a
+# phone, where the legends also move under the plot). A result of
+# short names in one panel keeps the old 420 px.
+ENRICH_DOT_MIN_PX <- 420
+enrich_dot_height <- function(p, narrow = FALSE) {
+  df <- if (inherits(p, "ggplot")) p$data else NULL
+  if (!is.data.frame(df) || !nrow(df) || !".label" %in% names(df)) return(ENRICH_DOT_MIN_PX)
+  list_col <- if (".list" %in% names(df)) as.character(df$.list) else rep("", nrow(df))
+  panel <- paste(df$database, list_col)
+  # In the order the axis draws them.
+  ord <- order(as.integer(factor(df$.label)))
+  lines <- lengths(strsplit(as.character(df$.label), "\n", fixed = TRUE))[ord]
+  need <- tapply(lines, panel[ord], function(l) {
+    pair <- if (length(l) > 1L) max((l[-1L] + l[-length(l)]) / 2) else l
+    # Rows of one line still need a little air between them.
+    length(l) * max(1.25, pair)
+  })
+  line_px <- if (isTRUE(narrow)) 13 else 18
+  h <- 110 + 40 * length(need) + max(need) * line_px * length(need) +
+    if (isTRUE(narrow)) 170 else 0
+  round(max(ENRICH_DOT_MIN_PX, min(1800, h)))
 }
 
 enrich_dot_card <- function(ns) {
@@ -551,7 +628,7 @@ enrich_dot_card <- function(ns) {
       plot_download_ui(ns("dot_download"))
     ),
     bslib::card_body(
-      shiny::plotOutput(ns("dot"), height = "420px")
+      hover_plot_output(ns("dot"), height = "auto")
     )
   )
 }
@@ -572,7 +649,26 @@ enrich_hits_card <- function(ns) {
       )
     ),
     bslib::card_body(
+      htmltools::tags$style(htmltools::HTML(enrich_hits_css(ns("hits")))),
       DT::DTOutput(ns("hits"))
     )
   )
+}
+
+# Tighter cells than DataTables' own, for a table that shares a row with
+# the dot plot: its header kept 26 px beside every title for the sort
+# arrows, which on four columns was a fifth of the card. Numbers stay on
+# one line; the held pathway column takes the page colour, not white,
+# so it does not stand out from the rows when nothing is scrolled.
+enrich_hits_css <- function(id) {
+  sel <- paste0("#", id, " table.dataTable")
+  paste0(
+    sel, "{font-size:13px}",
+    # DataTables' own rules name the sort state and the table classes,
+    # and outrank a rule this short.
+    sel, ">thead>tr>th{padding:6px 14px 6px 5px!important;vertical-align:bottom}",
+    sel, ">thead>tr>th:before,", sel, ">thead>tr>th:after{right:3px!important}",
+    sel, ">tbody>tr>td{padding:6px 5px!important}",
+    sel, ">tbody>tr>td.dt-right{white-space:nowrap}",
+    sel, " .dtfc-fixed-left{background-color:var(--bg)}")
 }

@@ -352,11 +352,13 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       width_in = 5, height_in = 4,
       available = not_demo(function() plot_ready(detail$feature_plot)))
     # As tall as the card draws it for its rows, at the card's 96 px an inch.
+    # Offered without drawing it (the card draws only once scrolled to);
+    # the file is drawn when asked for.
     plot_download_server("heatmap_download", detail$heatmap_plot, diff_file("heatmap"),
                          width_in = 8,
                          height_in = function()
                            heatmap_height(length(detail$heatmap_hits()$ids)) / PLOT_RES,
-                         available = not_demo(function() plot_ready(detail$heatmap_plot)))
+                         available = not_demo(detail$heatmap_available))
     plot_download_server("contrast_plot_download", contrasts$contrast_plot,
                          diff_file("hits_per_comparison", "layer"),
                          width_in = 7,

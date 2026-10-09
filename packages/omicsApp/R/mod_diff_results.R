@@ -319,7 +319,7 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     out <- data.frame(
       Feature   = sig$feature_symbol,
       Effect    = round(sig$effect, 3),
-      p         = signif(sig[[p_col()]], 3),
+      p         = sig[[p_col()]],
       Direction = ifelse(sig$effect > 0, "up", "down"),
       check.names = FALSE,
       stringsAsFactors = FALSE
@@ -328,6 +328,9 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
     # was read from, and the effect in the words the cards use.
     names(out)[2] <- omicsCore::effect_label(shown_bundle())
     names(out)[3] <- p_label()
+    # The p-value as text (table_format.R), sorted by its number.
+    tab <- dt_sortable_text(out, p_cols = p_label())
+    out <- tab$data
     # Redrawn (new thresholds, another comparison) with the selected
     # feature's row still selected, when it is still a hit.
     pre <- match(shiny::isolate(selected()) %||% NA_character_, sig$feature_id)
@@ -340,7 +343,7 @@ diff_results_server <- function(input, output, session, navigate, active, shown_
         dom        = "ftip",
         language   = list(emptyTable = "No feature passes the current thresholds."),
         scrollX    = TRUE,
-        columnDefs = list(list(className = "dt-right", targets = 1:2))
+        columnDefs = c(list(list(className = "dt-right", targets = 1:2)), tab$column_defs)
       )
     )
   }, server = TRUE)

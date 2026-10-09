@@ -47,11 +47,11 @@ test_that("the table says which gene list each ORA pathway was found in", {
     session$flushReact()
     html <<- paste(unlist(output$hits), collapse = " ")
   })
-  expect_match(html, "Found among", fixed = TRUE)
+  expect_match(html, "Gene list", fixed = TRUE)
   # The cells travel to the browser separately; the rows are built here.
-  tab <- enrich_hits_table(ora_frame(), "adjusted", 0.05)
+  tab <- enrich_hits_table(ora_frame(), "adjusted", 0.05)$data
   expect_identical(tab$Pathway, c("G2M CHECKPOINT", "ADIPOGENESIS"))
-  expect_identical(tab$`Found among`, c("up-regulated genes", "down-regulated genes"))
+  expect_identical(tab$`Gene list`, c("up", "down"))
   expect_false("NES" %in% names(tab))
 })
 
@@ -66,15 +66,17 @@ test_that("a pooled result has no direction column", {
     session$flushReact()
     html <<- paste(unlist(output$hits), collapse = " ")
   })
-  expect_false(grepl("Found among", html, fixed = TRUE))
-  tab <- enrich_hits_table(df, "adjusted", 0.05)
-  expect_false(any(c("Found among", "Direction") %in% names(tab)))
+  expect_false(grepl("Gene list", html, fixed = TRUE))
+  tab <- enrich_hits_table(df, "adjusted", 0.05)$data
+  expect_false(any(c("Gene list", "Direction") %in% names(tab)))
   expect_identical(nrow(tab), 2L)
-  # GSEA keeps its sign as Direction.
+  # GSEA's direction is the sign of its NES, which the table shows.
   g <- ora_frame()
   g$effect <- c(2.1, -1.4)
   g$effect_type <- "nes"
-  expect_identical(enrich_hits_table(g, "adjusted", 0.05)$Direction, c("up", "down"))
+  tab <- enrich_hits_table(g, "adjusted", 0.05)$data
+  expect_identical(tab$NES, c("+2.10", "-1.40"))
+  expect_false(any(c("Gene list", "Direction") %in% names(tab)))
 })
 
 test_that("a note from the run is shown with the result", {

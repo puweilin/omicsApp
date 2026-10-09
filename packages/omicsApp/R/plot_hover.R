@@ -336,3 +336,49 @@ hover_pathway_name <- function(x) {
                      error = function(e) function(x) trimws(gsub("_", " ", x, fixed = TRUE)))
   pretty(x)
 }
+
+#' Enrichment dot plot: the pathway in full, its list, overlap and p
+#'
+#' The axis shows the name wrapped; the card gives it whole.
+#' `p_preference` is the p-value the plot is coloured by ("adjusted",
+#' "raw" or "qvalue"), so the card names the same number. The panels
+#' (database x gene list) are told apart by nearPoints() from the facet
+#' columns the plot's coordmap names, so a pathway found in both lists
+#' gives the card of the panel under the pointer.
+#' @keywords internal
+#' @noRd
+enrich_dot_hover_text <- function(row, p, p_preference = "adjusted") {
+  val <- function(col) {
+    v <- if (col %in% names(row)) row[[col]][[1L]] else NA
+    if (is.factor(v)) as.character(v) else v
+  }
+  rows <- character(0)
+  effect <- suppressWarnings(as.numeric(val("effect")))
+  if (is.finite(effect)) {
+    rows[[if (identical(val("effect_type"), "nes")) "NES" else "effect"]] <-
+      sprintf("%+.2f", effect)
+  } else {
+    # ORA: the gene list the pathway was found in, as the panel's strip
+    # names it.
+    dir <- val("direction")
+    if (!is.na(dir) && dir %in% c("up", "down")) {
+      rows[["gene list"]] <- if (dir == "up") "Up" else "Down"
+    }
+  }
+  ov <- suppressWarnings(as.numeric(val("overlap_size")))
+  size <- suppressWarnings(as.numeric(val("gene_set_size")))
+  if (is.finite(ov) && is.finite(size)) {
+    rows[["overlap"]] <- sprintf("%s of %s genes", format(ov), format(size))
+  } else if (is.finite(size)) {
+    # GSEA counts no overlap; its dots are sized by the pathway.
+    rows[["set size"]] <- sprintf("%s genes", format(size))
+  }
+  p_col <- switch(p_preference %||% "adjusted",
+                  raw = "p_value", qvalue = "q_value", "adj_p_value")
+  p_name <- switch(p_col, p_value = "p", q_value = "q-value", "adjusted p")
+  # As the Enriched sets table writes it (table_format.R).
+  rows[[p_name]] <- format_p_value(val(p_col))
+  db <- val("database")
+  if (!is.na(db) && length(unique(p$data$database)) > 1L) rows[["database"]] <- db
+  list(title = as.character(val("pathway_name")), rows = rows)
+}

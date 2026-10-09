@@ -214,9 +214,11 @@ integration_results_server <- function(input, output, session, navigate, method,
     out <- integration_result_table(b$results$integration_df,
                                     b$params$method %||% "concordance",
                                     b$params$experiments)
-    DT::datatable(out, rownames = FALSE, selection = "single",
+    # The p-values as text (table_format.R), sorted by their numbers.
+    tab <- dt_sortable_text(out, p_cols = intersect(c("Combined p", "Adj. p"), names(out)))
+    DT::datatable(tab$data, rownames = FALSE, selection = "single",
                   options = list(pageLength = 10, dom = "ftip",
-                                 scrollX = TRUE))
+                                 scrollX = TRUE, columnDefs = tab$column_defs))
   }, server = TRUE)
 
   # The pathway fixture is only ever part of the demo; a live
@@ -227,22 +229,23 @@ integration_results_server <- function(input, output, session, navigate, method,
     ap <- ap_df()
     out <- data.frame(
       Pathway          = ap$pathway_name,
-      `p (A)`          = signif(ap$p_a, 3),
-      `p (B)`          = signif(ap$p_b, 3),
-      `p (combined)`   = signif(ap$p_combined, 3),
+      `p (A)`          = ap$p_a,
+      `p (B)`          = ap$p_b,
+      `p (combined)`   = ap$p_combined,
       check.names = FALSE,
       stringsAsFactors = FALSE
     )
+    tab <- dt_sortable_text(out, p_cols = c("p (A)", "p (B)", "p (combined)"))
     DT::datatable(
-      out,
+      tab$data,
       rownames  = FALSE,
       selection = "single",
       options   = list(
         pageLength = 10,
         dom        = "tip",
         scrollX    = TRUE,
-        columnDefs = list(list(className = "dt-right",
-                               targets = c(1, 2, 3)))
+        columnDefs = c(list(list(className = "dt-right",
+                                 targets = c(1, 2, 3))), tab$column_defs)
       )
     )
   }, server = TRUE)
@@ -384,7 +387,7 @@ integration_result_table <- function(df, method, experiments) {
       b = round(d$effect_b, 3),
       Quadrant = d$quadrant,
       `Hit in both` = ifelse(both[ord], "yes", ""),
-      `Combined p` = signif(d$p_value, 3),
+      `Combined p` = d$p_value,
       check.names = FALSE, stringsAsFactors = FALSE)
     names(out)[2:3] <- paste0("Effect (", exps[1:2], ")")
     return(out)
@@ -394,7 +397,7 @@ integration_result_table <- function(df, method, experiments) {
     word <- function(x) unname(ifelse(is.na(x), "\u2014", x))
     out <- data.frame(
       Pathway = d$feature_symbol,
-      `Adj. p` = signif(d$adj_p_value, 3),
+      `Adj. p` = d$adj_p_value,
       Direction = word(c(up = "up in both layers", down = "down in both layers",
                          mixed = "mixed / layers disagree")[d$direction]),
       a = word(d$direction_a),
@@ -409,7 +412,7 @@ integration_result_table <- function(df, method, experiments) {
   data.frame(
     Feature = feature_row_label(d),
     Effect = round(d$effect, 3),
-    `Adj. p` = signif(d$adj_p_value, 3),
+    `Adj. p` = d$adj_p_value,
     Direction = d$direction,
     check.names = FALSE, stringsAsFactors = FALSE)
 }
