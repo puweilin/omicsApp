@@ -138,7 +138,9 @@ integration_results_server <- function(input, output, session, navigate, method,
         htmltools::tags$div(class = "row-grid r-6-6",
           integration_plot_card(ns("ap_dot"), "ActivePathways",
                                 "colour = direction \u00B7 shape = which layers found it",
-                                plot_download_ui(ns("ap_dot_download"))),
+                                plot_download_ui(ns("ap_dot_download")),
+                                # Ten pathway rows and the keys under them.
+                                height = "460px"),
           integration_table_card(ns("top_table"), "Pathways",
                                  "ranked by adjusted p")))
     } else {
@@ -420,14 +422,14 @@ feature_row_label <- function(d) {
   ifelse(shared, d$feature_id, sym)
 }
 
-integration_plot_card <- function(output_id, title, sub, download = NULL) {
+integration_plot_card <- function(output_id, title, sub, download = NULL, height = "320px") {
   bslib::card(
     bslib::card_header(
       htmltools::tags$h3(class = "card-title", title),
       htmltools::tags$span(class = "card-sub", sub),
       download
     ),
-    bslib::card_body(hover_plot_output(output_id, height = "320px"))
+    bslib::card_body(hover_plot_output(output_id, height = height))
   )
 }
 

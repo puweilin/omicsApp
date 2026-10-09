@@ -160,8 +160,10 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
   if (method == "correlation") {
     x_aes <- "effect"
     type <- first_or_na(df$effect_type)
-    xlab <- switch(type, spearman_r = "Spearman correlation across paired samples",
-                   pearson_r = "Pearson correlation across paired samples",
+    # Short enough for a half-width card: the longer "... across paired
+    # samples" ran off both ends of the panel.
+    xlab <- switch(type, spearman_r = "Spearman correlation (paired samples)",
+                   pearson_r = "Pearson correlation (paired samples)",
                    paste0("correlation (", type, ")"))
     title <- "Correlation between layers, gene by gene"
   } else if (method == "concordance") {
@@ -202,7 +204,11 @@ plot_integration_scatter <- function(df, bundle, top_n, label_features, p_cutoff
       x = xlab,
       y = p_axis_label("adj_p_value")
     ) +
-    theme_omics_labelled()
+    theme_omics_labelled() +
+    # One short key line above the panel: beside it, it took the width the
+    # x-axis title needed on a half-width card.
+    ggplot2::theme(legend.position = "top", legend.justification = "left",
+                   legend.location = "plot")
 
   p + add_repel_layer(df, x_aes, ".neglog10p", ".label",
                       min.segment.length = 0, box.padding = 0.4,
@@ -493,7 +499,9 @@ plot_integration_dotplot <- function(df, bundle, top_n) {
   if (nrow(df) == 0L) {
     return(empty_plot("No pathways to plot."))
   }
-  df$.label <- truncate_pathway_name(prettify_gene_set_name(df$feature_symbol))
+  # Wrapped, not cut: two pathways sharing their first words must stay
+  # told apart, and the hover card gives the whole name anyway.
+  df$.label <- wrap_pathway_name(prettify_gene_set_name(df$feature_symbol), width = 28L)
   df$.label <- factor(df$.label, levels = unique(df$.label[order(-df$adj_p_value)]))
   # Bundles made before the directional rework kept the evidence class
   # in `direction` and had no pathway direction at all.
@@ -502,7 +510,7 @@ plot_integration_dotplot <- function(df, bundle, top_n) {
   subtitle <- paste(bundle$params$experiments, collapse = " vs ")
   mm <- bundle$params$merge_method
   if (!is.null(mm)) {
-    subtitle <- paste0(subtitle, " \u00B7 ",
+    subtitle <- paste0(subtitle, "\n",
                        if (mm %in% DIRECTIONAL_MERGE_METHODS)
                          "layers expected to agree in direction"
                        else "direction not used in the test")
@@ -536,9 +544,18 @@ plot_integration_dotplot <- function(df, bundle, top_n) {
     ggplot2::labs(
       title = "Pathways from both layers combined",
       subtitle = subtitle,
-      x = "-log10(adj p)", y = NULL
+      x = p_axis_label("adj_p_value"), y = NULL
     ) +
-    theme_omics_labelled()
+    ggplot2::scale_x_continuous(limits = c(0, NA),
+                                expand = ggplot2::expansion(mult = c(0, 0.08))) +
+    theme_omics_labelled() +
+    # Keys under the panel: beside it, with pathway names on the left,
+    # they left the points about 10 px of a 540 px card.
+    ggplot2::guides(colour = ggplot2::guide_legend(ncol = 2, title.position = "top", order = 1),
+                    shape = ggplot2::guide_legend(ncol = 2, title.position = "top", order = 2)) +
+    ggplot2::theme(legend.position = "bottom", legend.box = "vertical",
+                   legend.justification = "left", legend.location = "plot",
+                   plot.title.position = "plot")
 }
 
 # A pathway's direction in words, for legends and tables.
