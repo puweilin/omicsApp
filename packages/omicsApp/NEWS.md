@@ -48,3 +48,10 @@ First versioned release. Highlights since the development snapshots:
   beside the points and never overlap ("Label top hits (up to 20)").
 * QC: on a proteomics layer the depth panel is called "Intensity" and
   its caption gives the median total intensity, written short (114G).
+* Every figure has its own download (PNG 300 dpi, PDF, SVG).
+* Hovering a point in the PCA and the integration plots names it.
+* Differential: select a gene (table or volcano) to see it by group; a
+  heatmap of the hits; the volcano thins dense non-significant points
+  above 5,000 features (60,000 features: 5 MB to 0.2 MB).
+* Enrichment: select a pathway to see its GSEA curve, or for ORA its
+  overlapping genes with their log2FC.

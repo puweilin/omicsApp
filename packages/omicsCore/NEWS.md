@@ -81,3 +81,10 @@ First versioned release.
   linear scale when the layer is log2 (summing logs hid an
   under-loaded sample), and is labelled as such ("Total intensity",
   "Features quantified", "low" rather than "shallow").
+* `plot_enrichment_comparison()`: legends no longer collide with the
+  subtitle, the filled/hollow key appears only when needed, and point
+  size uses the chosen (adjusted) p with a capped scale. `plot_gsea()`
+  is a plain ggplot running-score curve that can rebuild its ranking
+  from the differential result. `plot_feature_expression()` scales
+  counts to log2(CPM + 1) and colours groups as the PCA does;
+  `plot_heatmap()` gains group blocks and a highlighted feature.
