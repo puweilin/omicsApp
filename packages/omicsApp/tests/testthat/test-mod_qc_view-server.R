@@ -347,6 +347,27 @@ test_that("the view reads kept samples, colours and missing cells from the recor
   })
 })
 
+test_that("the PCA gives the layer's reference group the first group colour", {
+  # TreatB sorts last; recorded as the reference it is coloured first, as
+  # the Differential view's boxplot and heatmap colour it.
+  p <- tutorial_project()
+  p$experiments$proteomics <- omicsCore::set_study_design(p$experiments$proteomics,
+                                                          "group", "TreatB")
+  shiny::testServer(qc_view_server, args = list(current_project = shiny::reactiveVal(p)), {
+    session$setInputs(layer = "proteomics", missing_threshold = 0.5,
+                      outlier_method = "pca", pca_color_by = "group")
+    pp <- pca_plot()
+    built <- ggplot2::ggplot_build(pp)$data[[1]]
+    first <- unique(built$colour[pp$data$group == "TreatB"])
+    expect_identical(first, omicsCore::group_palette(1))
+    # Coloured by another column, the reference does not apply.
+    session$setInputs(pca_color_by = "batch")
+    pp <- pca_plot()
+    built <- ggplot2::ggplot_build(pp)$data[[1]]
+    expect_identical(unique(built$colour[pp$data$batch == "B1"]), omicsCore::group_palette(1))
+  })
+})
+
 test_that("a QC result saved with its cleaned input still restores and draws", {
   p <- tutorial_project()
   inp <- p$experiments$proteomics

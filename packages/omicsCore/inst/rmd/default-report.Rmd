@@ -251,7 +251,8 @@ if (!is.null(qb)) {
   qc_layer <- project$experiments[[omicsCore::bundle_layer(project, qb)]]
   qc_group <- qc_layer$design$group_col
   if (is.null(qc_group) || !qc_group %in% names(qc_layer$meta_df)) qc_group <- NULL
-  safe_print(tryCatch(omicsCore::plot_qc(qb, view = "pca", color_by = qc_group),
+  safe_print(tryCatch(omicsCore::plot_qc(qb, view = "pca", color_by = qc_group,
+                                         reference = qc_layer$design$reference),
                       error = function(e) omicsCore::plot_qc(qb, view = "pca")))
 }
 ```

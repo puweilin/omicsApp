@@ -58,14 +58,16 @@ test_that("the contrast and overlap plots wrap their comparison names", {
   expect_true(all(grepl("\\(\\d+\\)$", dots$layout$panel_params[[1]]$y$get_labels())))
 })
 
-test_that("a PCA of up to six groups draws them as shapes as well as hues", {
+test_that("a PCA draws its groups as shapes as well as colours", {
   inp <- bl_diff(c("Control", "A", "B"))
   q <- run_qc(inp, outlier_method = "none", impute_method = "none")
   p <- plot_qc(q, view = "pca", color_by = "group")
   expect_true("shape" %in% names(p$mapping))
+  # Eight groups too (each its own shape), and past eight, where the
+  # group colours repeat, the shape is what tells them apart.
   inp8 <- bl_diff(LETTERS[1:8], n_per = 2L)
   q8 <- run_qc(inp8, outlier_method = "none", impute_method = "none")
-  expect_false("shape" %in% names(plot_qc(q8, view = "pca", color_by = "group")$mapping))
+  expect_true("shape" %in% names(plot_qc(q8, view = "pca", color_by = "group")$mapping))
   expect_true("shape" %in% names(plot_pca(inp, color_by = "group")$mapping))
 })
 

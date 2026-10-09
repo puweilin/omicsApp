@@ -148,30 +148,139 @@ wrap_one_label <- function(s, width, max_lines) {
   paste(lines, collapse = "\n")
 }
 
-# Scales for a sample-group legend: labels wrapped so a long group name
-# does not take the panel's width (at phone width a 60-character name
-# left a PCA panel narrower than its legend), and, for up to six groups,
-# the same groups drawn as shapes as well as hues -- six default hues
-# include a red, a pink and a gold that are hard to tell apart, and are
-# the same grey to a reader who cannot see colour.
-GROUP_SHAPES <- c(16L, 17L, 15L, 18L, 4L, 8L)
+# ---- sample groups -----------------------------------------------------
+#
+# ggplot's default hues coloured groups until this: the first group --
+# usually the control -- came out salmon red, next to the red that means
+# "up", and the third a teal-blue next to "down", so a reader could take
+# a group for a direction. Six of them were also too close for a reader
+# with deuteranopia to tell apart.
+#
+# These eight were chosen against the Machado (2009) simulation of
+# protanopia and deuteranopia (distances in OKLab x 100, the dataviz
+# palette rules):
+#   - the first six are at least 8.8 apart from one another, every pair,
+#     with and without colour vision deficiency (17 without), so any of
+#     them can sit beside any other in a PCA;
+#   - seven and eight are at least 8.8 from their neighbours in the order
+#     (a heatmap's group bar puts neighbours side by side; eight's
+#     neighbour past eight groups is one), but closer to some of the
+#     first six; past six groups the PCA's shapes carry the difference
+#     too;
+#   - every one is at least 21 from the up red and the down blue (11
+#     under the simulations), so none of them reads as a direction.
+#     There is no red, and no blue as dark as the down blue: under
+#     deuteranopia the up red turns a dark olive and a mid green turns
+#     the same olive, so there is no mid green either.
+# They sit at OKLCH lightness 0.59-0.76, lighter than most plot colours,
+# because the dark end is where up and down live. Lighter colours have
+# less contrast with the white panel (2.1:1 at worst), so a group is
+# never told by colour alone: the PCA's legend names it and gives it a
+# shape as well, the boxplot's axis names it, and so does the heatmap's
+# legend.
+#
+# Plot-only, so there is no SCSS twin. Checked in test-plot-tokens.R.
+GROUP_PALETTE <- c(
+  teal       = "#0A9282",
+  orange     = "#F59A0B",
+  violet     = "#9B59D0",
+  sky        = "#3AB0F5",
+  pink       = "#EE7FC0",
+  green      = "#5DC77E",
+  periwinkle = "#8387E3",
+  olive      = "#9F9615"
+)
 
-group_legend_scales <- function(values, redundant_shape = TRUE) {
+#' Colours for sample groups
+#'
+#' The colours every `plot_*()` function gives sample groups: the PCA's
+#' points, the selected feature's boxplot, the heatmap's group bar. The
+#' eight colours stay apart for readers with red-green colour blindness,
+#' and none of them is a red or a dark blue, so a group never looks like
+#' a direction of change (`omics_colors$up` and `omics_colors$down`).
+#'
+#' The figures deal them out in the study design's group order -- the
+#' reference group first, then the others -- over every group of the
+#' column, not only the ones a figure shows, so a group has the same
+#' colour in every figure. Past eight groups the colours repeat, and the
+#' PCA tells the ninth group from the first by its shape.
+#'
+#' @param n Number of groups.
+#' @return Character vector of `n` hex colours.
+#' @export
+#' @family plot
+#' @examples
+#' group_palette(4)
+group_palette <- function(n) {
+  assert_count(n, "n")
+  unname(GROUP_PALETTE[(seq_len(n) - 1L) %% length(GROUP_PALETTE) + 1L])
+}
+
+# The groups of a column in the order their colours are dealt: the
+# reference first, then a factor's levels or else sorted. Taken over the
+# whole column, so a figure that shows two of four groups, or shows the
+# comparison's reference first, colours each group as the PCA does.
+group_order <- function(values, reference = NULL) {
+  lv <- if (is.factor(values)) levels(droplevels(values))
+        else sort(unique(as.character(stats::na.omit(values))))
+  ref <- as.character(reference)
+  if (length(ref) == 1L && !is.na(ref) && ref %in% lv) lv <- c(ref, setdiff(lv, ref))
+  lv
+}
+
+# One colour per group, named by group.
+group_colours <- function(values, reference = NULL) {
+  lv <- group_order(values, reference)
+  stats::setNames(group_palette(length(lv)), lv)
+}
+
+# The reference group recorded on a layer, when `column` is the layer's
+# group column; NULL otherwise (a figure coloured by batch has none).
+design_reference <- function(input, column) {
+  d <- if (is_omics_input(input) && !is.null(column)) {
+    tryCatch(study_design(input), error = function(e) NULL)
+  }
+  if (!is.null(d) && identical(d$group_col, column)) d$reference
+}
+
+# Shapes for a sample-group legend, the second channel beside colour: up
+# to eight groups each have their own. Past eight, where the colours
+# repeat, the first eight groups are circles, the next eight triangles,
+# and so on, so no two of the first 64 groups share colour and shape.
+GROUP_SHAPES <- c(16L, 17L, 15L, 18L, 4L, 8L, 1L, 2L)
+
+group_shapes <- function(n) {
+  if (n <= length(GROUP_SHAPES)) return(GROUP_SHAPES[seq_len(n)])
+  GROUP_SHAPES[((seq_len(n) - 1L) %/% length(GROUP_PALETTE)) %% length(GROUP_SHAPES) + 1L]
+}
+
+# Scales for a sample-group legend: the group colours, labels wrapped so
+# a long group name does not take the panel's width (at phone width a
+# 60-character name left a PCA panel narrower than its legend), and with
+# `redundant_shape` the same groups drawn as shapes as well. `values` is
+# the whole column (see group_order()); the legend lists the groups
+# drawn, in the colours' order.
+group_legend_scales <- function(values, redundant_shape = TRUE, reference = NULL) {
   if (is.null(values) || is.numeric(values)) return(list())
-  n <- length(unique(stats::na.omit(as.character(values))))
+  pal <- group_colours(values, reference)
   lab <- function(x) wrap_label(x, width = 18L, max_lines = 3L)
   # One entry per line wherever the legend is placed: across the bottom
   # of a narrow panel, a row of long group names ran off the edge.
   guide <- ggplot2::guide_legend(ncol = 1)
-  out <- list(ggplot2::scale_colour_discrete(labels = lab, guide = guide))
-  if (redundant_shape && n <= length(GROUP_SHAPES)) {
-    out <- c(out, list(ggplot2::scale_shape_manual(values = GROUP_SHAPES, labels = lab,
-                                                   guide = guide)))
+  out <- list(ggplot2::scale_colour_manual(values = pal, breaks = names(pal),
+                                           labels = lab, guide = guide))
+  if (redundant_shape) {
+    shapes <- stats::setNames(group_shapes(length(pal)), names(pal))
+    out <- c(out, list(ggplot2::scale_shape_manual(values = shapes, breaks = names(pal),
+                                                   labels = lab, guide = guide)))
   }
   out
 }
 
+# Every discrete grouping is drawn with shapes as well: up to eight
+# groups as a second channel beside colour, past eight to tell apart the
+# groups whose colours repeat.
 use_group_shape <- function(values) {
   !is.null(values) && !is.numeric(values) &&
-    length(unique(stats::na.omit(as.character(values)))) <= length(GROUP_SHAPES)
+    length(stats::na.omit(values)) > 0L
 }

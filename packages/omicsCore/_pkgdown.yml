@@ -142,6 +142,7 @@ reference:
   - plot_integration
   - theme_omicsCore
   - omics_colors
+  - group_palette
   - wrap_label
 
 - title: Export

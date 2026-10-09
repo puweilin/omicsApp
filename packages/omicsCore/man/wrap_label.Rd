@@ -44,6 +44,7 @@ wrap_label("Treatment with a long descriptive name vs Control", width = 20)
 }
 \seealso{
 Other plot:
+\code{\link{group_palette}()},
 \code{\link{omics_colors}}
 }
 \concept{plot}

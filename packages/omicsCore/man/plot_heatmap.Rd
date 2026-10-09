@@ -87,8 +87,9 @@ shown, and the colours run blue (below the feature's mean) through
 white to red (above it).
 
 With \code{group_by}, the samples are drawn group by group (in the order of
-\code{group_levels}, or sorted), a gap between groups, under a bar coloured
-by group -- in the colours the PCA gives the same groups. \code{highlight}
+\code{group_levels}, or else the layer's reference group first and the rest
+sorted), a gap between groups, under a bar coloured by group -- in the
+colours the PCA gives the same groups (\code{\link[=group_palette]{group_palette()}}). \code{highlight}
 outlines a feature's row and names it in bold, also when there are too
 many rows to name them all.
 

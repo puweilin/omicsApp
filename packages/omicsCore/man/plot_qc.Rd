@@ -8,6 +8,7 @@ plot_qc(
   bundle,
   view = c("missing", "depth", "pca", "connectivity", "imputation"),
   color_by = NULL,
+  reference = NULL,
   ...
 )
 }
@@ -18,6 +19,11 @@ plot_qc(
 
 \item{color_by}{Optional name of a column in the cleaned input's \code{meta_df}
 used to color samples in the \code{"pca"} view.}
+
+\item{reference}{Optional group of \code{color_by} coloured first, as every
+figure colours the study design's reference group (see
+\code{\link[=group_palette]{group_palette()}}); usually \code{study_design(input)$reference}. Ignored
+when it is not a group of \code{color_by}.}
 
 \item{...}{Reserved for future arguments.}
 }

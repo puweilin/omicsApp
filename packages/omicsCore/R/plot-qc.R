@@ -8,6 +8,10 @@
 #' @param view One of `"missing"`, `"pca"`, `"connectivity"`, `"imputation"`.
 #' @param color_by Optional name of a column in the cleaned input's `meta_df`
 #'   used to color samples in the `"pca"` view.
+#' @param reference Optional group of `color_by` coloured first, as every
+#'   figure colours the study design's reference group (see
+#'   [group_palette()]); usually `study_design(input)$reference`. Ignored
+#'   when it is not a group of `color_by`.
 #' @param ... Reserved for future arguments.
 #'
 #' @return A `ggplot` object.
@@ -17,8 +21,10 @@ plot_qc <- function(bundle,
                     view = c("missing", "depth", "pca", "connectivity",
                              "imputation"),
                     color_by = NULL,
+                    reference = NULL,
                     ...) {
   assert_string(color_by, "color_by", allow_null = TRUE)
+  assert_label(reference, "reference", allow_null = TRUE)
   if (!is_analysis_bundle(bundle) || !identical(bundle$analysis_name, "run_qc")) {
     stop("`bundle` must be an analysis_bundle from run_qc().")
   }
@@ -27,7 +33,7 @@ plot_qc <- function(bundle,
   switch(view,
     missing      = plot_qc_missing(bundle),
     depth        = plot_qc_depth(bundle),
-    pca          = plot_qc_pca(bundle, color_by = color_by),
+    pca          = plot_qc_pca(bundle, color_by = color_by, reference = reference),
     connectivity = plot_qc_connectivity(bundle),
     imputation   = plot_qc_imputation(bundle)
   )
@@ -522,7 +528,7 @@ missing_feature_subtitle <- function(n, rate, cutoff, filter, n_removed) {
           sprintf(missing_filter_words(filter)$rule, format_missing_pct(cutoff)))
 }
 
-plot_qc_pca <- function(bundle, color_by = NULL) {
+plot_qc_pca <- function(bundle, color_by = NULL, reference = NULL) {
   pd <- qc_pca_data(bundle)
   if (!is.null(pd$error)) stop(pd$error, call. = FALSE)
   scores <- as.data.frame(pd$scores)
@@ -569,7 +575,7 @@ plot_qc_pca <- function(bundle, color_by = NULL) {
       x = sprintf("PC1 (%.1f%%)", var_pct[1L]),
       y = sprintf("PC2 (%.1f%%)", var_pct[2L])
     ) +
-    group_legend_scales(group_vals) +
+    group_legend_scales(group_vals, reference = reference) +
     theme_omicsCore()
 }
 

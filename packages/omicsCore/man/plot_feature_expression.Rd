@@ -24,7 +24,8 @@ group.}
 
 \item{group_levels}{Optional groups of \code{group_by} to show, in the order
 to show them (a comparison's reference group first, for example).
-Samples in other groups are left out. By default every group, sorted.}
+Samples in other groups are left out. By default every group: the
+layer's reference group (\code{\link[=study_design]{study_design()}}) first, then the rest sorted.}
 }
 \value{
 A \code{ggplot} object. With one feature its title is the feature's
@@ -40,8 +41,9 @@ they are. The y axis says which.
 }
 \details{
 Points are coloured by group in the same colours the PCA and the
-heatmap give each group (the default discrete palette over the sorted
-groups of the whole column), so a group is one colour everywhere. When
+heatmap give each group (\code{\link[=group_palette]{group_palette()}} over every group of the
+column, the layer's reference group first), so a group is one colour
+everywhere. When
 \code{group_by} is numeric (a continuous design) the samples are drawn
 against it with a least-squares line instead.
 }

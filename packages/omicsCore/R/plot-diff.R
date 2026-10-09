@@ -258,7 +258,8 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
   group_vals <- if (is.null(color_by)) NULL else scores[[color_by]]
   redundant <- is.null(shape_by) && use_group_shape(group_vals)
   if (redundant) mapping$shape <- ggplot2::aes(shape = .data[[color_by]])$shape
-  legend <- group_legend_scales(group_vals, redundant_shape = redundant)
+  legend <- group_legend_scales(group_vals, redundant_shape = redundant,
+                                reference = design_reference(input, color_by))
   if (!is.null(shape_by)) {
     legend <- c(legend, list(ggplot2::scale_shape_discrete(
       labels = function(x) wrap_label(x, width = 18L, max_lines = 3L))))
@@ -285,8 +286,9 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
 #' they are. The y axis says which.
 #'
 #' Points are coloured by group in the same colours the PCA and the
-#' heatmap give each group (the default discrete palette over the sorted
-#' groups of the whole column), so a group is one colour everywhere. When
+#' heatmap give each group ([group_palette()] over every group of the
+#' column, the layer's reference group first), so a group is one colour
+#' everywhere. When
 #' `group_by` is numeric (a continuous design) the samples are drawn
 #' against it with a least-squares line instead.
 #'
@@ -297,7 +299,8 @@ plot_pca <- function(input, color_by = NULL, shape_by = NULL, log2 = NULL) {
 #'   group.
 #' @param group_levels Optional groups of `group_by` to show, in the order
 #'   to show them (a comparison's reference group first, for example).
-#'   Samples in other groups are left out. By default every group, sorted.
+#'   Samples in other groups are left out. By default every group: the
+#'   layer's reference group ([study_design()]) first, then the rest sorted.
 #'
 #' @return A `ggplot` object. With one feature its title is the feature's
 #'   name; with several each has its own panel.
@@ -340,6 +343,7 @@ plot_feature_expression <- function(input, features, group_by, color_by = NULL,
   samples <- colnames(input$expr_mat)
   group_all <- meta[samples, group_by]
   numeric_group <- is.numeric(group_all)
+  reference <- design_reference(input, group_by)
   keep <- !is.na(group_all)
   if (!is.null(group_levels) && !numeric_group) {
     keep <- keep & as.character(group_all) %in% group_levels
@@ -373,8 +377,8 @@ plot_feature_expression <- function(input, features, group_by, color_by = NULL,
   long$.group <- rep(grp, each = nrow(mat))
   if (!numeric_group) {
     lv <- group_levels[group_levels %in% as.character(grp)] %||%
-      sort(unique(as.character(grp)))
-    if (!length(lv)) lv <- sort(unique(as.character(grp)))
+      group_order(grp, reference)
+    if (!length(lv)) lv <- group_order(grp, reference)
     long$.group <- factor(as.character(long$.group), levels = lv)
   }
   colour_col <- color_by %||% group_by
@@ -382,12 +386,14 @@ plot_feature_expression <- function(input, features, group_by, color_by = NULL,
 
   # The group's colour, the same one it has in the PCA and the heatmap.
   colour_scale <- if (is.null(color_by) && !numeric_group) {
-    ggplot2::scale_colour_manual(values = group_colours(group_all), guide = "none")
+    ggplot2::scale_colour_manual(values = group_colours(group_all, reference), guide = "none")
   } else if (is.numeric(long$.colour)) {
     ggplot2::scale_colour_gradient(low = omics_colors$scale_low,
                                    high = omics_colors$scale_high, name = colour_col)
   } else {
-    group_legend_scales(long$.colour, redundant_shape = FALSE)
+    # Over the whole column, as the PCA colours it.
+    group_legend_scales(meta[samples, colour_col], redundant_shape = FALSE,
+                        reference = design_reference(input, colour_col))
   }
 
   jitter <- ggplot2::position_jitter(width = 0.12, height = 0, seed = 1L)
@@ -426,16 +432,6 @@ plot_feature_expression <- function(input, features, group_by, color_by = NULL,
 }
 
 # ---- internal helpers --------------------------------------------------
-
-# One colour per group, the one ggplot2's default discrete scale gives it
-# when every group of the column is drawn in sorted order -- which is how
-# the PCA colours its samples. A figure that shows only two of the
-# groups, or shows them reference first, keeps each group's colour.
-group_colours <- function(values) {
-  lv <- sort(unique(as.character(stats::na.omit(values))))
-  if (!length(lv)) return(character(0))
-  stats::setNames(scales::hue_pal()(length(lv)), lv)
-}
 
 # The values' scale in words, for an axis title, after
 # coerce_to_continuous() has put them on it.

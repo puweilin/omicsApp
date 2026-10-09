@@ -58,7 +58,12 @@ qc_plots_server <- function(input, output, session, active, last_bundle) {
       color_by <- if (length(ch)) ch[[1L]] else NULL
     }
     if (identical(input$pca_color_by, "(none)")) color_by <- NULL
-    p <- omicsCore::plot_qc(bundle, view = "pca", color_by = color_by)
+    # The reference group takes the first group colour, as it does in the
+    # Differential view's figures, so a group is one colour in both.
+    design <- tryCatch(omicsCore::study_design(active()$input), error = function(e) NULL)
+    reference <- if (identical(design$group_col, color_by)) design$reference
+    p <- omicsCore::plot_qc(bundle, view = "pca", color_by = color_by,
+                            reference = reference)
     p + ggplot2::theme(legend.position = "bottom")
   })
 

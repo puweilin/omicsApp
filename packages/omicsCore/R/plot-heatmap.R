@@ -29,8 +29,9 @@
 #' white to red (above it).
 #'
 #' With `group_by`, the samples are drawn group by group (in the order of
-#' `group_levels`, or sorted), a gap between groups, under a bar coloured
-#' by group -- in the colours the PCA gives the same groups. `highlight`
+#' `group_levels`, or else the layer's reference group first and the rest
+#' sorted), a gap between groups, under a bar coloured by group -- in the
+#' colours the PCA gives the same groups ([group_palette()]). `highlight`
 #' outlines a feature's row and names it in bold, also when there are too
 #' many rows to name them all.
 #'
@@ -135,8 +136,12 @@ plot_heatmap <- function(
     if (is.null(meta) || !group_by %in% colnames(meta)) {
       stop("`group_by` not found in `meta_df`: ", group_by, call. = FALSE)
     }
-    g_all <- as.character(as.data.frame(meta)[colnames(mat), group_by])
-    lv <- if (is.null(group_levels)) sort(unique(stats::na.omit(g_all)))
+    # Ordered and coloured over the column as it is (a factor's levels),
+    # as the PCA and the boxplot order and colour it.
+    g_raw <- as.data.frame(meta)[colnames(mat), group_by]
+    g_all <- as.character(g_raw)
+    reference <- design_reference(if (inherits(x, "omics_input")) x else input, group_by)
+    lv <- if (is.null(group_levels)) group_order(g_raw, reference)
           else group_levels[group_levels %in% g_all]
     if (!length(lv)) {
       stop("None of `group_levels` is a group of `", group_by, "`: ",
@@ -146,7 +151,7 @@ plot_heatmap <- function(
     ord <- order(match(g_all[keep], lv))
     mat <- mat[, which(keep)[ord], drop = FALSE]
     groups <- factor(g_all[keep][ord], levels = lv)
-    palette <- group_colours(g_all)
+    palette <- group_colours(g_raw, reference)
   }
 
   # Scaled over the samples shown, so a gene's colours compare the
@@ -181,9 +186,10 @@ plot_heatmap <- function(
     if (is.null(groups) && length(annotation_cols) && !is.null(meta) &&
         annotation_cols[[1L]] %in% colnames(meta)) {
       group_by <- annotation_cols[[1L]]
-      g_all <- as.character(as.data.frame(meta)[colnames(mat), group_by])
-      groups <- factor(g_all)
-      palette <- group_colours(g_all)
+      g_raw <- as.data.frame(meta)[colnames(mat), group_by]
+      reference <- design_reference(if (inherits(x, "omics_input")) x else input, group_by)
+      groups <- factor(as.character(g_raw), levels = group_order(g_raw, reference))
+      palette <- group_colours(g_raw, reference)
     }
     plot_heatmap_ggplot(
       mat = mat, labels = sel$labels, title = title,
@@ -308,6 +314,12 @@ plot_heatmap_complex <- function(mat, meta, annotation_cols, cluster_rows,
     }
   }
   anno_col <- list()
+  # Other grouping columns in the group colours too: ComplexHeatmap's own
+  # are random, and as likely as not a red or a blue.
+  for (col in names(anno_df)) {
+    v <- anno_df[[col]]
+    if ((is.character(v) || is.factor(v)) && any(!is.na(v))) anno_col[[col]] <- group_colours(v)
+  }
   if (!is.null(groups)) {
     if (is.null(anno_df)) anno_df <- data.frame(row.names = colnames(mat))
     anno_df[[group_by]] <- groups
