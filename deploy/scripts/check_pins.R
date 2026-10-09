@@ -31,10 +31,10 @@ CRAN_PKGS <- c(
   "rlang", "msigdbr", "qs2",
   "ggrepel", "patchwork", "circlize", "knitr", "rmarkdown",
   "imputeLCMD", "ActivePathways", "pkgload", "data.table", "openssl",
-  "babelgene"
+  "babelgene", "ragg", "svglite"
 )
 BIOC_PKGS <- c(
-  "limma", "clusterProfiler", "DESeq2", "edgeR", "S4Vectors", "enrichplot",
+  "limma", "clusterProfiler", "DESeq2", "edgeR", "S4Vectors",
   "fgsea", "GSVA", "ComplexHeatmap", "impute", "pcaMethods", "vsn", "BiocParallel",
   "SummarizedExperiment"
 )

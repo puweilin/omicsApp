@@ -40,7 +40,6 @@ Suggests:
     S4Vectors,
     SummarizedExperiment,
     babelgene,
-    enrichplot,
     fgsea,
     GSVA,
     ActivePathways,

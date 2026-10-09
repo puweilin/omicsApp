@@ -12,6 +12,9 @@ download_test_plot <- function() {
     ggplot2::labs(title = "|log2FC| \u2265 1 \u00b7 adjusted p < 0.05")
 }
 
+# Every file name ends in the day it was saved, as the tables' do.
+today <- function() format(Sys.Date(), "%Y%m%d")
+
 png_signature <- as.raw(c(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
 
 # The pixels per metre a PNG's pHYs chunk records, or NULL without one.
@@ -54,9 +57,15 @@ expect_valid_svg <- function(path) {
   expect_gt(file.size(path), 1000)
   doc <- xml("read_xml")(path)
   expect_identical(xml("xml_name")(doc), "svg")
+  find <- xml("xml_find_all")
+  if (has_pkg("svglite")) {
+    # svglite keeps the labels as text, the title among them.
+    text <- xml("xml_text")(find(doc, "//*[local-name()='text']"))
+    expect_gt(length(text), 3L)
+    return(invisible())
+  }
   # cairo writes text as glyph outlines, each glyph defined once and
   # placed with <use>: text is drawn when glyphs are placed.
-  find <- xml("xml_find_all")
   glyphs <- find(doc, "//*[local-name()='g'][starts-with(@id, 'glyph')]")
   uses <- find(doc, "//*[local-name()='use']")
   expect_gt(length(glyphs), 10L)
@@ -71,9 +80,11 @@ test_that("each format is a valid file of the asked size, through the menu's han
   ), {
     session$flushReact()
     expect_valid_png(output$png, 6, 4)
-    # The file is named for its parts, made safe; Chinese kept.
-    expect_identical(basename(output$png), "Cheek_\u00b7_\u4e2d\u6587_pca_proteomics.png")
-    expect_identical(basename(output$svg), "Cheek_\u00b7_\u4e2d\u6587_pca_proteomics.svg")
+    # The file is named for its parts, made safe, Chinese kept, and dated.
+    expect_identical(basename(output$png),
+                     sprintf("Cheek_\u00b7_\u4e2d\u6587_pca_proteomics_%s.png", today()))
+    expect_identical(basename(output$svg),
+                     sprintf("Cheek_\u00b7_\u4e2d\u6587_pca_proteomics_%s.svg", today()))
     expect_valid_pdf(output$pdf)
     expect_valid_svg(output$svg)
   })
@@ -85,6 +96,52 @@ test_that("the cairo PNG is used where ragg is not installed, at the same size",
   f <- withr::local_tempfile(fileext = ".png")
   save_plot_file(download_test_plot(), f, "png", width_in = 3, height_in = 2)
   expect_valid_png(f, 3, 2)
+})
+
+test_that("the SVG goes through svglite, its text kept editable, where svglite is installed", {
+  # svglite is not installed on every machine the tests run on, so a
+  # stand-in with its arguments records the call and draws the file with
+  # cairo, as svglite would draw it.
+  seen <- NULL
+  fake_svglite <- function(filename = "Rplot%03d.svg", width = 10, height = 8,
+                           bg = "white", pointsize = 12, standalone = TRUE,
+                           fix_text_size = TRUE, file) {
+    seen <<- as.list(match.call())[-1]
+    grDevices::svg(if (missing(file)) filename else file, width = width,
+                   height = height, bg = bg)
+  }
+  local_mocked_bindings(has_pkg = function(pkg) TRUE,
+                        svglite_device = function() fake_svglite,
+                        .package = "omicsApp")
+  f <- withr::local_tempfile(fileext = ".svg")
+  save_plot_file(download_test_plot(), f, "svg", width_in = 5, height_in = 3)
+  expect_identical(seen$file, f)
+  expect_equal(c(seen$width, seen$height), c(5, 3))
+  expect_identical(seen$bg, "white")
+  # Labels left at their own width, so a retyped one is not stretched.
+  expect_false(seen$fix_text_size)
+  expect_gt(file.size(f), 1000)
+
+  # An svglite before 2.0, without fix_text_size, is not given it.
+  old_svglite <- function(file = "Rplot%03d.svg", width = 10, height = 8,
+                          bg = "white", pointsize = 12, standalone = TRUE) {
+    seen <<- as.list(match.call())[-1]
+    grDevices::svg(file, width = width, height = height, bg = bg)
+  }
+  local_mocked_bindings(svglite_device = function() old_svglite, .package = "omicsApp")
+  save_plot_file(download_test_plot(), f, "svg", width_in = 5, height_in = 3)
+  expect_identical(seen$file, f)
+  expect_null(seen$fix_text_size)
+})
+
+test_that("the cairo SVG is used where svglite is not installed", {
+  local_mocked_bindings(has_pkg = function(pkg) !identical(pkg, "svglite"),
+                        svglite_device = function() stop("svglite is not installed"),
+                        .package = "omicsApp")
+  expect_identical(plot_svg_device(), grDevices::svg)
+  f <- withr::local_tempfile(fileext = ".svg")
+  save_plot_file(download_test_plot(), f, "svg", width_in = 5, height_in = 3)
+  expect_valid_svg(f)
 })
 
 test_that("a patchwork figure (the QC quality panels) saves in every format", {
@@ -150,16 +207,27 @@ test_that("an empty figure is told from a real one", {
   expect_true(plot_ready(function() download_test_plot()))
 })
 
-test_that("file names are the project, the figure and the comparison, made safe", {
-  expect_identical(plot_download_name(c("My project", "volcano", "TreatA_vs_Control")),
-                   "My_project_volcano_TreatA_vs_Control")
+test_that("file names are the project, the figure and the comparison, made safe, and dated", {
+  day <- as.Date("2026-10-09")
+  expect_identical(plot_download_name(c("My project", "volcano", "TreatA_vs_Control"), day),
+                   "My_project_volcano_TreatA_vs_Control_20261009")
   # Chinese kept whole; slashes and the characters Windows refuses taken out.
-  expect_identical(plot_download_name(c("\u4e2d\u6587 \u9879\u76ee", "heatmap", "A/B: C?")),
-                   "\u4e2d\u6587_\u9879\u76ee_heatmap_A_B_C")
+  expect_identical(plot_download_name(c("\u4e2d\u6587 \u9879\u76ee", "heatmap", "A/B: C?"), day),
+                   "\u4e2d\u6587_\u9879\u76ee_heatmap_A_B_C_20261009")
   # Empty and missing parts are dropped; nothing at all is "figure".
-  expect_identical(plot_download_name(list(NULL, "pca", NA, "")), "pca")
-  expect_identical(plot_download_name(NULL), "figure")
-  expect_lte(nchar(plot_download_name(c(strrep("a", 90), strrep("b", 90))), type = "bytes"), 150L)
+  expect_identical(plot_download_name(list(NULL, "pca", NA, ""), day), "pca_20261009")
+  expect_identical(plot_download_name(NULL, day), "figure_20261009")
+  # Today's date by default, in the tables' format; none when asked.
+  expect_identical(plot_download_name("pca"), paste0("pca_", today()))
+  expect_identical(plot_download_name("pca", date = NULL), "pca")
+  # A long name is shortened before the date goes on: the date survives.
+  long <- plot_download_name(c(strrep("a", 90), strrep("b", 90)), day)
+  expect_lte(nchar(long, type = "bytes"), 150L)
+  expect_match(long, "^a+_b+_20261009$")
+  long_cn <- plot_download_name(strrep("\u4e2d", 80), day)
+  expect_lte(nchar(long_cn, type = "bytes"), 150L)
+  expect_true(validUTF8(long_cn))
+  expect_match(long_cn, "_20261009$")
   expect_identical(plot_download_size(function() 6.5, 7), 6.5)
   expect_identical(plot_download_size(function() stop("no"), 7), 7)
   expect_identical(plot_download_size(NA, 4.5), 4.5)
@@ -182,11 +250,12 @@ test_that("the QC view offers its figures for a project and not for the demo", {
                  "dropdown-item")
     f <- output[["pca_download-png"]]
     expect_valid_png(f, 7, 5)
-    expect_identical(basename(f), sprintf("%s_pca_%s.png", project_slug(example_project()$name),
-                                          active()$tag))
+    expect_identical(basename(f), sprintf("%s_pca_%s_%s.png", project_slug(example_project()$name),
+                                          active()$tag, today()))
     # The quality panel is named for the panel shown.
     session$setInputs(quality_view = "depth")
-    expect_match(basename(output[["missing_download-pdf"]]), "_intensity_proteomics\\.pdf$")
+    expect_match(basename(output[["missing_download-pdf"]]),
+                 sprintf("_intensity_proteomics_%s\\.pdf$", today()))
   })
 })
 
@@ -234,7 +303,7 @@ test_that("the Differential view's figures are saved at their sizes, with the co
     f <- output[["volcano_download-pdf"]]
     expect_valid_pdf(f)
     cmp <- shown_bundle()$params$comparison
-    expect_identical(basename(f), sprintf("Drug_screen_volcano_%s.pdf", cmp))
+    expect_identical(basename(f), sprintf("Drug_screen_volcano_%s_%s.pdf", cmp, today()))
 
     # The heatmap as tall as the card draws it for its rows.
     n <- length(detail$heatmap_hits()$ids)
@@ -243,7 +312,7 @@ test_that("the Differential view's figures are saved at their sizes, with the co
 
     session$setInputs(overlap_dir = "up")
     expect_match(basename(output[["overlap_plot_download-svg"]]),
-                 "^Drug_screen_overlap_up_proteomics\\.svg$")
+                 sprintf("^Drug_screen_overlap_up_proteomics_%s\\.svg$", today()))
 
     # A selected feature's figure is named for the feature.
     session$setInputs(hits_rows_selected = 1L)
@@ -251,7 +320,7 @@ test_that("the Differential view's figures are saved at their sizes, with the co
     expect_match(menu("feature_plot_download"), "dropdown-item")
     sym <- results$hits_df()$feature_symbol[[1]]
     expect_identical(basename(output[["feature_plot_download-png"]]),
-                     sprintf("Drug_screen_%s_%s.png", sym, cmp))
+                     sprintf("Drug_screen_%s_%s_%s.png", sym, cmp, today()))
   })
 })
 

@@ -72,7 +72,8 @@ RUN R -q -e 'pkgs <- c( \
       "tibble","dplyr","stringr","readxl","openxlsx","jsonlite","scales", \
       "rlang","msigdbr","qs2", \
       "ggrepel","patchwork","circlize","knitr","rmarkdown", \
-      "imputeLCMD","ActivePathways","pkgload","data.table","openssl","babelgene"); \
+      "imputeLCMD","ActivePathways","pkgload","data.table","openssl","babelgene", \
+      "ragg","svglite"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("CRAN packages failed to install: ", \
@@ -99,8 +100,9 @@ RUN R -q -e 'pkgs <- c( \
 # Override BIOC_MIRROR to build somewhere the upstream is fast:
 #   docker build --build-arg BIOC_MIRROR=https://bioconductor.org ...
 #
-# 12 packages pull in 168: clusterProfiler alone accounts for 120,
-# enrichplot 118 and GSVA 101, overlapping heavily. That closure, all
+# 12 packages pull in 168: clusterProfiler alone accounts for 120
+# (enrichplot among them, which it imports; the app no longer calls it)
+# and GSVA 101, overlapping heavily. That closure, all
 # built from source because p3m carries no Bioconductor binaries, is
 # what the 30-45 minutes here is.
 #
@@ -138,7 +140,7 @@ RUN R -q -e 'pkgs <- c("fgsea","DESeq2","BiocParallel","SummarizedExperiment"); 
 
 # 3c. The long tail: 62 packages, most of the time, and the whole
 # clusterProfiler/enrichplot/ggtree chain.
-RUN R -q -e 'pkgs <- c("GSVA","enrichplot","clusterProfiler"); \
+RUN R -q -e 'pkgs <- c("GSVA","clusterProfiler"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("Bioconductor 3c failed: ", \

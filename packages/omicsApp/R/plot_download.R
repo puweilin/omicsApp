@@ -88,7 +88,8 @@ plot_download_menu <- function(ns, label = "Download figure") {
 #' @param filename_stem A function returning the parts of the file name,
 #'   e.g. `c(project, "volcano", comparison)`. Each part is made safe for a
 #'   file name (project_slug(), as for the report's downloads), empty parts
-#'   are dropped, and the parts are joined by "_".
+#'   are dropped, the parts are joined by "_", and the day's date ends the
+#'   name, as it ends the tables' (plot_download_name()).
 #' @param width_in,height_in The size of the file in inches: a number, or
 #'   a function returning one (a figure as tall as its rows).
 #' @param available Optional reactive: FALSE hides the menu. By default
@@ -151,12 +152,13 @@ plot_download_server <- function(id, plot_reactive, filename_stem,
 #' Draw a figure to a file
 #'
 #' PNG at 300 dpi (ragg when it is installed, otherwise cairo), PDF
-#' through cairo, which embeds its fonts, and SVG through cairo, which
-#' turns text into outlines -- svglite would keep it as text but is not
-#' installed. Cairo is the one that draws "≥", "·" and Chinese
-#' labels, from whichever installed font has them; the plain pdf() device
-#' replaced them with dots. The background is white, not transparent: a
-#' transparent PNG on a dark slide loses its black text.
+#' through cairo, which embeds its fonts, and SVG through svglite when it
+#' is installed, which keeps the text as text that Illustrator or Inkscape
+#' can edit, otherwise through cairo, which turns text into outlines.
+#' Cairo is the one that draws "≥", "·" and Chinese labels, from
+#' whichever installed font has them; the plain pdf() device replaced them
+#' with dots. The background is white, not transparent: a transparent PNG
+#' on a dark slide loses its black text.
 #' @keywords internal
 #' @noRd
 save_plot_file <- function(p, file, format = c("png", "pdf", "svg"),
@@ -166,16 +168,18 @@ save_plot_file <- function(p, file, format = c("png", "pdf", "svg"),
   device <- switch(format,
                    png = plot_png_device(),
                    pdf = grDevices::cairo_pdf,
-                   svg = grDevices::svg)
+                   svg = plot_svg_device())
   ggplot2::ggsave(file, plot = p, device = device, width = width_in,
                   height = height_in, units = "in", dpi = PLOT_DOWNLOAD_DPI,
                   bg = "white", limitsize = FALSE)
   invisible(file)
 }
 
-# ragg draws text a little more evenly than cairo's PNG and is what
+# ragg draws text a little more evenly than cairo's PNG, records the 300
+# dpi in the file (cairo's PNG records none, so a slide program places it
+# at screen resolution, three or four times too big), and is what
 # ggplot2 itself prefers. Looked up rather than called with `::`: it is
-# not a dependency, and the cairo PNG is a fine figure too.
+# a Suggests, and the cairo PNG is a fine figure too.
 plot_png_device <- function() {
   if (has_pkg("ragg")) return(getExportedValue("ragg", "agg_png"))
   function(filename, width, height, units = "in", res = PLOT_DOWNLOAD_DPI,
@@ -184,6 +188,36 @@ plot_png_device <- function() {
                    res = res, bg = bg, type = "cairo")
   }
 }
+
+# svglite writes each label as an SVG <text> element, so a figure opened
+# in Illustrator or Inkscape has words to retype rather than the glyph
+# outlines cairo's svg() writes. Looked up like ragg: it is a Suggests,
+# and where it is missing the cairo SVG is still a good figure.
+#
+# Not verified against a real svglite: it could not be installed where
+# this was written, so the tests check only that it is chosen and called
+# as below. The deploy image installs it from the pinned CRAN snapshot
+# (deploy/scripts/check_pins.R lists it with the other Suggests); the
+# first image built with it should run check_pins.R and have one SVG
+# saved from the app and opened, to see text in it rather than outlines.
+#
+# `fix_text_size = FALSE`: svglite otherwise stretches each label to the
+# width it measured (a textLength attribute), so a retyped label is
+# squeezed or spread to the old one's width. Passed only to a version
+# that has it (2.0 and later). `file =` is how ggplot2's own "svg" device
+# calls it.
+plot_svg_device <- function() {
+  if (!has_pkg("svglite")) return(grDevices::svg)
+  svglite <- svglite_device()
+  function(filename, width, height, bg = "white", ...) {
+    args <- list(file = filename, width = width, height = height, bg = bg)
+    if ("fix_text_size" %in% names(formals(svglite))) args$fix_text_size <- FALSE
+    do.call(svglite, args)
+  }
+}
+
+# A seam, so a test can stand in for svglite where it is not installed.
+svglite_device <- function() getExportedValue("svglite", "svglite")
 
 #' Whether a reactive gives a figure worth saving
 #'
@@ -219,26 +253,33 @@ plot_download_size <- function(x, default) {
 
 #' The file name (without extension) from its parts
 #'
-#' `c("My project", "volcano", "TreatA_vs_Control")` gives
-#' `"My_project_volcano_TreatA_vs_Control"`. Each part goes through
-#' project_slug(), as the report's downloads do -- the store's rule, which
-#' keeps Chinese names whole and takes out slashes and the characters
-#' Windows refuses -- and the whole is kept under 150 bytes, which every
-#' file system takes.
+#' `c("My project", "volcano", "TreatA_vs_Control")` on 9 October 2026
+#' gives `"My_project_volcano_TreatA_vs_Control_20261009"`. Each part goes
+#' through project_slug(), as the report's downloads do -- the store's
+#' rule, which keeps Chinese names whole and takes out slashes and the
+#' characters Windows refuses -- and the whole is kept under 150 bytes,
+#' which every file system takes.
+#'
+#' The date comes last, as YYYYMMDD, as on the result tables' downloads
+#' ("differential_proteomics_20261009.csv"): a figure and the table saved
+#' beside it carry the same day, and a figure saved again after a re-run
+#' another day does not overwrite the first. It is added after the
+#' shortening, so a long name loses its end and never its date.
+#' @param date The day to name, or NULL for none.
 #' @keywords internal
 #' @noRd
-plot_download_name <- function(parts) {
+plot_download_name <- function(parts, date = Sys.Date()) {
+  stamp <- if (is.null(date)) "" else paste0("_", format(as.Date(date), "%Y%m%d"))
   parts <- vapply(as.list(unlist(parts, use.names = FALSE)), function(x) {
     if (length(x) != 1L || is.na(x)) return("")
     s <- project_slug(as.character(x))
     if (is.na(s)) "" else s
   }, character(1))
   parts <- parts[nzchar(parts)]
-  if (!length(parts)) return("figure")
-  out <- paste(parts, collapse = "_")
-  out <- truncate_bytes(out, 150L)
+  out <- if (length(parts)) paste(parts, collapse = "_") else ""
+  out <- truncate_bytes(out, 150L - nchar(stamp, type = "bytes"))
   out <- gsub("[._]+$", "", out)
-  if (nzchar(out)) out else "figure"
+  paste0(if (nzchar(out)) out else "figure", stamp)
 }
 
 # The project's name for a file name, or nothing for the demo (which has

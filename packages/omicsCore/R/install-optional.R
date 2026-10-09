@@ -12,7 +12,7 @@ OPTIONAL_GROUPS <- list(
   rnaseq      = c("DESeq2", "edgeR", "SummarizedExperiment", "BiocParallel"),
   proteomics  = c("limma", "imputeLCMD", "pcaMethods", "vsn"),
   enrichment  = c("clusterProfiler", "msigdbr", "babelgene", "fgsea", "GSVA",
-                  "enrichplot", "ActivePathways"),
+                  "ActivePathways"),
   imputation  = c("imputeLCMD", "impute", "pcaMethods"),
   viz         = c("ComplexHeatmap", "circlize", "ggrepel", "patchwork"),
   io          = c("data.table"),
@@ -23,7 +23,7 @@ OPTIONAL_GROUPS <- list(
 # pick the right installer when `pak` is not available.
 BIOC_PACKAGES <- c(
   "DESeq2", "edgeR", "SummarizedExperiment", "BiocParallel", "limma",
-  "clusterProfiler", "enrichplot", "fgsea", "GSVA", "ComplexHeatmap",
+  "clusterProfiler", "fgsea", "GSVA", "ComplexHeatmap",
   "pcaMethods", "vsn", "impute"
 )
 

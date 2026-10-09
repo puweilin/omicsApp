@@ -88,6 +88,7 @@ A few suites are deliberately opt-in:
 | `*/tests/testthat/test-c-locale.R` | `callr` installed | the package in a child process running under `LC_ALL=C`, as a container without a locale would |
 | `omicsCore/tests/testthat/test-api-contract.R` (heavy sweep) | `OMICSCORE_FUZZ_TESTS=1` | every argument of the enrichment, GSVA, integration and report functions given every wrong value in turn |
 | `omicsApp/tests/testthat/test-two-sessions.R` | Chrome available | two browsers on one R process; what one imports the other must not see |
+| `omicsApp/tests/testthat/test-integration-correlation-browser.R` | Chrome available | a saved paired-sample project's correlation scatter in a browser: a hovered point's card, and the dated PNG download |
 
 `omicsCore/tests/testthat/fixtures/omp/` is a corpus of `.omp` files written
 by past versions; every file in it must keep opening. When the schema

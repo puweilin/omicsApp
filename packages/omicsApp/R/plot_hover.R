@@ -321,5 +321,18 @@ active_pathways_hover_text <- function(row, p) {
   found <- c(shared = "both layers", unique = "one layer",
              combined = "only combined")[ev]
   if (!is.na(found)) rows[["found by"]] <- unname(found)
-  list(title = as.character(row$feature_symbol[[1L]]), rows = rows)
+  list(title = hover_pathway_name(row$feature_symbol[[1L]]), rows = rows)
+}
+
+# The pathway as the dot plot's axis names it, but whole: the axis drops
+# the collection prefix and the underscores and then shortens a long
+# name; the card shows the full name. The raw id,
+# "HALLMARK_INFLAMMATORY_RESPONSE", did not match the row the reader
+# pointed at, and with no spaces it broke mid-word on a phone.
+hover_pathway_name <- function(x) {
+  x <- as.character(x)
+  if (is.na(x)) return("—")
+  pretty <- tryCatch(utils::getFromNamespace("prettify_gene_set_name", "omicsCore"),
+                     error = function(e) function(x) trimws(gsub("_", " ", x, fixed = TRUE)))
+  pretty(x)
 }

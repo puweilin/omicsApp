@@ -205,7 +205,13 @@ test_that("hovering an ActivePathways dot gives the pathway in full and its adju
   i <- which(d$feature_symbol == df$feature_symbol[3])
   row <- plot_hover_row(p, hover_event_at(p, d$effect[i], d$.label[i]))
   txt <- active_pathways_hover_text(row, p)
-  expect_identical(txt$title, df$feature_symbol[3])
+  # In the axis's words -- no collection prefix, no underscores -- but
+  # whole where the axis shortens it.
+  expect_identical(txt$title, "A VERY LONG PATHWAY NAME NUMBER 3")
+  axis <- sub("…$|\\.\\.\\.$", "", as.character(d$.label[i]))
+  expect_true(startsWith(txt$title, axis))
+  expect_identical(hover_pathway_name("REACTOME_CELL_CYCLE"), "CELL CYCLE")
+  expect_identical(hover_pathway_name("my own set"), "my own set")
   expect_identical(txt$rows[["adjusted p"]], hover_p(df$adj_p_value[3]))
   expect_identical(txt$rows[["found by"]], "only combined")
   expect_identical(txt$rows[["direction"]], "mixed / layers disagree")
