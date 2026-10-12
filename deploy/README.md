@@ -47,6 +47,7 @@ memory cannot take anyone else down with it.
 | `logrotate/omicsapp` | Rotation for the per-session app logs and the cron jobs' logs. |
 | `scripts/add_user.sh` | Creates an account in Keycloak and its storage directory, in that order. |
 | `scripts/list_users.sh` | Maps the UUID directory names back to people. |
+| `upgrade-checklist-1.0.md` | Step-by-step checklist (in Chinese) for a server still on `omicsapp:1.0`: backups and the restore drill, per-session logs, the signing key, loopback-only session ports. |
 
 ## The one thing every deployment sets
 
@@ -663,8 +664,9 @@ snapshot** of:
   restore gives you every file and nobody who can log in to reach it —
   the directory names are UUIDs, so there is no way to work out whose is
   whose after the fact;
-* the rendered configuration (`application.yml`, nginx, Keycloak `.env`
-  and realm, `host.env`), the TLS certificate and key, the cron files and
+* the live ShinyProxy configuration (`/etc/shinyproxy/application.yml`,
+  which alone holds the client secret and `OMICSAPP_SIGNING_KEY`) and
+  the rendered configuration (nginx, Keycloak `.env` and realm, `host.env`), the TLS certificate and key, the cron files and
   the refreshed gene-set cache — what it takes to stand the service up
   again, plus `/etc/docker/daemon.json`, the logrotate file and the
   egress unit;

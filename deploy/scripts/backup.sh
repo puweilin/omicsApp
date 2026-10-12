@@ -68,7 +68,13 @@ ALERT_WEBHOOK="${ALERT_WEBHOOK:-}"
 ALERT_EMAIL="${ALERT_EMAIL:-}"
 DOCKER="${DOCKER:-docker}"
 # Extra files worth keeping, space-separated (absolute paths).
-EXTRA_PATHS="${EXTRA_PATHS:-/etc/ssl/certs/omicsapp.crt /etc/ssl/private/omicsapp.key /etc/cron.d/omicsapp-backup /etc/cron.d/omicsapp-genesets /etc/docker/daemon.json /etc/logrotate.d/omicsapp /etc/systemd/system/omicsapp-egress.service}"
+#
+# The live ShinyProxy configuration first. The copy under REPO_DIR is the
+# rendered template, without the OIDC client secret or
+# OMICSAPP_SIGNING_KEY, which are pasted into the live file only. A
+# restore without the signing key gives back every project and an app
+# that refuses to open any of them.
+EXTRA_PATHS="${EXTRA_PATHS:-$SP_CONF /etc/ssl/certs/omicsapp.crt /etc/ssl/private/omicsapp.key /etc/cron.d/omicsapp-backup /etc/cron.d/omicsapp-genesets /etc/docker/daemon.json /etc/logrotate.d/omicsapp /etc/systemd/system/omicsapp-egress.service}"
 # Logs kept with each snapshot, space-separated (directories or files).
 # Missing ones are skipped, and one that cannot be read is noted rather
 # than fatal: a log line must never cost the night's backup of the work.
