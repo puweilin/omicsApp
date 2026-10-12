@@ -100,8 +100,15 @@ jobs:
       # its root filesystem would fail here first.
       - name: The image serves the app, confined
         run: |
+          # A tmpfs mount belongs to root unless told otherwise; the app's
+          # own home and data directories have to be the app user's, or
+          # Shiny cannot even change back into its working directory.
+          app_uid="$(docker run --rm "$IMAGE" id -u)"
+          app_gid="$(docker run --rm "$IMAGE" id -g)"
+          owned="uid=${app_uid},gid=${app_gid},mode=0700"
           docker run -d --name smoke -p 3838:3838 \
-            --read-only --tmpfs /tmp:rw,exec,size=1g --tmpfs /home/omics --tmpfs /data \
+            --read-only --tmpfs /tmp:rw,exec,size=1g \
+            --tmpfs "/home/omics:rw,${owned}" --tmpfs "/data:rw,${owned}" \
             --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 \
             --memory 6g --cpus 2 "$IMAGE"
           # Whatever happens, say how the container ended and what it

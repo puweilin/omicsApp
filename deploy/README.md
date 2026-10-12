@@ -1102,7 +1102,7 @@ which would exempt everyone behind it.
 | No capabilities, no privilege gain | runs as an unprivileged user; the image strips every setuid/setgid bit and file capability, and the build fails if one survives | `docker/Dockerfile` |
 | Process cap | `ulimit -u ${OMICSAPP_MAX_PROCS:-2048}` before R starts | `docker/Dockerfile` (`CMD`) |
 | no-new-privileges, log rotation | daemon-wide defaults | `docker/daemon.json` (below) |
-| Read-only root filesystem | not available through ShinyProxy; CI runs the image with `--read-only` and tmpfs `/tmp`, `/home/omics`, `/data` so it is known to work | `.github/workflows/production-image.yaml` |
+| Read-only root filesystem | not available through ShinyProxy; CI runs the image with `--read-only` and tmpfs `/tmp`, `/home/omics`, `/data` (the last two owned by the app user, as a writable home must be) so it is known to work | `.github/workflows/production-image.yaml` |
 
 The gaps are ShinyProxy's, not choices: its Docker backend (3.2.x,
 `ContainerSpec`/`DockerEngineBackend` in containerproxy) passes memory
