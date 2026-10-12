@@ -94,6 +94,14 @@ export_report <- function(
   dir.create(scratch)
   on.exit(unlink(scratch, recursive = TRUE), add = TRUE)
 
+  # knitr records each chunk on a png device opened on tempfile(), and
+  # unlinks that file before it closes the device; a device that writes
+  # on close (Quartz, on macOS) then leaves a "file1a2b3c" PNG per chunk
+  # in tempdir(). The ones that appear during the render are those.
+  knitr_tmp <- function() list.files(tempdir(), pattern = "^file[0-9a-f]+$")
+  before_tmp <- knitr_tmp()
+  on.exit(unlink(file.path(tempdir(), setdiff(knitr_tmp(), before_tmp))), add = TRUE)
+
   rmarkdown::render(
     input = rmd_path,
     output_file = basename(path),
