@@ -262,16 +262,19 @@ test_that("package code seeds the stream only where it puts it back", {
   # from a copy with no R/ next to them, so CI names the checkout in
   # OMICSAPP_REPO_ROOT (see test-deploy-contract.R in omicsApp). Set, it
   # must hold the sources -- a skip there would hide the check again.
+  # covr runs them from the installed package, whose R/ exists but
+  # holds no sources, so "beside" means a directory with .R files in it.
   repo <- Sys.getenv("OMICSAPP_REPO_ROOT", "")
+  has_sources <- function(d) dir.exists(d) && length(list.files(d, pattern = "\\.R$")) > 0L
   r_dir <- file.path("..", "..", "R")
-  if (!dir.exists(r_dir) && nzchar(repo)) {
+  if (!has_sources(r_dir) && nzchar(repo)) {
     r_dir <- file.path(repo, "packages", "omicsCore", "R")
     if (!dir.exists(r_dir)) {
       stop("OMICSAPP_REPO_ROOT is set to '", repo, "', but it has no packages/omicsCore/R.",
            call. = FALSE)
     }
   }
-  skip_if_not(dir.exists(r_dir), "package source is not beside the tests")
+  skip_if_not(has_sources(r_dir), "package source is not beside the tests")
   files <- list.files(r_dir, pattern = "\\.R$", full.names = TRUE)
   seeders <- Filter(function(f) {
     code <- grep("^\\s*#", readLines(f, warn = FALSE), value = TRUE, invert = TRUE)

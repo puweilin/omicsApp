@@ -283,13 +283,19 @@ test_that("reading an uploaded object loads no package and runs no method", {
   skip_if_not_installed("callr")
   se <- make_se(list(counts = se_counts()))
   path <- save_rds(se)
-  pkg <- testthat::test_path("..", "..")
+  # The sources when the tests sit in them; otherwise (R CMD check,
+  # covr) the omicsCore installed for this run, which the subprocess
+  # finds on the same library paths.
+  src <- testthat::test_path("..", "..")
+  is_src <- file.exists(file.path(src, "DESCRIPTION")) &&
+    length(list.files(file.path(src, "R"), pattern = "\\.R$")) > 0L
   loaded <- callr::r(function(path, pkg) {
-    pkgload::load_all(pkg, quiet = TRUE, export_all = FALSE)
+    if (is.null(pkg)) loadNamespace("omicsCore")
+    else pkgload::load_all(pkg, quiet = TRUE, export_all = FALSE)
     before <- loadedNamespaces()
     res <- omicsCore::read_omics(path, omics_type = "rnaseq")
     list(new = setdiff(loadedNamespaces(), before), ok = !is.null(res$input))
-  }, args = list(path = path, pkg = pkg))
+  }, args = list(path = path, pkg = if (is_src) src))
   expect_true(loaded$ok)
   expect_false(any(c("SummarizedExperiment", "S4Vectors", "DESeq2", "GenomicRanges") %in% loaded$new))
 })
