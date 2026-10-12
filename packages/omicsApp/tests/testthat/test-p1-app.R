@@ -40,6 +40,7 @@ test_that("a restored result is not flagged until a control is changed", {
 
 test_that("an enrichment whose controls or thresholds moved says so until re-run", {
   skip_if_not(has_pkg("clusterProfiler"))
+  skip_if_not(has_pkg("msigdbr"))
   p <- tutorial_project()
   d <- omicsCore::run_diff(p$experiments$proteomics, method = "limma", group_col = "group",
                            control_group = "Control", case_group = "TreatA")

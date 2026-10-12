@@ -119,6 +119,7 @@ test_that("untested features are not counted as tested", {
 
 test_that("an opened project shows its saved results, and never the demo pathways", {
   skip_if_not(has_pkg("clusterProfiler"))
+  skip_if_not(has_pkg("msigdbr"))
   r4_store()
   p <- tutorial_project()
   d <- omicsCore::run_diff(p$experiments$proteomics, method = "limma", group_col = "group",

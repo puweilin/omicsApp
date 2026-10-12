@@ -72,6 +72,7 @@ test_that("the global test runs from the Differential view for counts and intens
 
 test_that("the Enrichment view enriches every comparison side by side", {
   skip_if_not(has_pkg("clusterProfiler"))
+  skip_if_not(has_pkg("msigdbr"))
   p <- tutorial_project()
   full <- omicsCore::run_diff(p$experiments$proteomics, method = "limma",
                               group_col = "group", control_group = "Control",

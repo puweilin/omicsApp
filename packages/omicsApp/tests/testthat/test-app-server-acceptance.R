@@ -182,6 +182,7 @@ test_that("the volcano is drawn at the stated cut, and follows the sliders with 
 test_that("enrichment reads the thresholds the hit table is read at", {
   skip_if_no_xlsx()
   skip_if_not_installed("clusterProfiler")
+  skip_if_not_installed("msigdbr")
   store <- local_store()
   file_a <- workbook(1)
   shiny::testServer(app_server, {

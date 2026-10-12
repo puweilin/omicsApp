@@ -50,6 +50,7 @@ Suggests:
     readxl,
     rmarkdown,
     clusterProfiler,
+    msigdbr,
     vsn,
     pkgload,
     ragg,
