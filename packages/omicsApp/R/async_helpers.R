@@ -39,14 +39,14 @@ run_async <- function(func, on_success, on_error, message = "Running...",
 
   session <- shiny::getDefaultReactiveDomain()
   task <- async_task_new(session, message)
-  func <- with_step_file(func, task$step_file)
+  job <- with_step_file(func, task$step_file)
 
   # future() can throw before anything is submitted -- most reliably by
   # refusing to export globals over future.globals.maxSize. Thrown from
   # inside an observer that is what kills the session and greys the
   # page, so it is routed to on_error like any other failure.
   f <- tryCatch(
-    .future({ tryCatch(func(), error = function(e) e) }, seed = TRUE),
+    .future({ tryCatch(job(), error = function(e) e) }, seed = TRUE),
     error = function(e) e
   )
   if (inherits(f, "error")) {
@@ -202,6 +202,11 @@ async_progress_ui <- function(message, secs, id, step = NULL) {
 # and the notification, redrawn every second, reads it. The file is
 # written whole and renamed into place, so a read never sees half a line.
 with_step_file <- function(func, step_file) {
+  # The wrapped function is held as `task_fn`, not `func`: run_async()
+  # hands future a global called `func` (this wrapper), and the future
+  # and globals versions in the production image merge same-named
+  # globals found inside a closure with the outer one -- the wrapper
+  # then called itself until R gave up ("evaluation nested too deeply").
   detached_call(
     function() {
       options(omicsCore.progress = function(step) {
@@ -209,9 +214,9 @@ with_step_file <- function(func, step_file) {
         writeLines(step, tmp)
         file.rename(tmp, step_file)
       })
-      func()
+      task_fn()
     },
-    func = func, step_file = step_file
+    task_fn = func, step_file = step_file
   )
 }
 
