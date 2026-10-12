@@ -96,6 +96,7 @@ test_that("an uploaded .rds of a SummarizedExperiment reads as the object does",
 })
 
 test_that("a ranged object's feature names come from its rowRanges", {
+  skip_if_not_installed("GenomicRanges")
   m <- se_counts(20)
   gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(seq_len(20) * 10, width = 5),
                                gene_name = paste0("g", 1:20))

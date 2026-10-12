@@ -50,7 +50,7 @@ dot_hover_event <- function(coordmap, row) {
       identical(as.character(pv[[v]]), as.character(row[[col]]))
     }, logical(1))
     if (!all(same)) next
-    xcol <- plot_aes_column(list(mapping = list(x = rlang::parse_expr(panel$mapping$x))), "x")
+    xcol <- plot_aes_column(list(mapping = list(x = str2lang(panel$mapping$x))), "x")
     yn <- match(as.character(row$.label), unlist(panel$domain$discrete_limits$y))
     px <- shiny:::scaleCoords(row[[xcol]], yn, panel)
     return(c(panel[c("domain", "range", "log", "mapping")], pv,

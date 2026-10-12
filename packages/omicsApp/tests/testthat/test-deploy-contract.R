@@ -115,8 +115,13 @@ test_that("every package the image installs is one the packages declare", {
   # in neither list is the finding this test exists for: it would be
   # missing from the image and, because omicsCore gates on
   # requireNamespace(), silently missing as a feature.
+  # The Bioconductor containers and htmlwidgets are named by tests only;
+  # the image gets them anyway, as dependencies of SummarizedExperiment
+  # and plotly.
   dev_only <- c("testthat", "withr", "callr", "shinytest2", "chromote",
-                "writexl", "later", "pkgload", "methods", "R", "omicsCore")
+                "writexl", "later", "pkgload", "methods", "R", "omicsCore",
+                "DelayedArray", "GenomicRanges", "IRanges", "Matrix",
+                "htmlwidgets")
   expect_length(setdiff(wanted, c(pinned, documented_out, dev_only)), 0L)
 })
 

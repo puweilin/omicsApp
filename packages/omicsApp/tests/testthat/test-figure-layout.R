@@ -52,6 +52,7 @@ test_that("a figure's title is dropped in its card, and its subtitle kept", {
   expect_identical(p$labels$title, "PCA of cleaned input")
   # A patchwork loses its overall title; its panels keep theirs, which
   # say which panel is which.
+  skip_if_not_installed("patchwork")
   pw <- patchwork::wrap_plots(p, p) +
     patchwork::plot_annotation(title = "Overall", subtitle = "thresholds")
   out <- fit_to_width("x", pw, session = layout_session("x", 640))
