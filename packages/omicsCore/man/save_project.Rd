@@ -4,7 +4,7 @@
 \alias{save_project}
 \title{Save an omics_project to disk}
 \usage{
-save_project(project, path, overwrite = FALSE)
+save_project(project, path, overwrite = FALSE, signing_key = NULL)
 }
 \arguments{
 \item{project}{An \code{\link[=is_omics_project]{omics_project}}.}
@@ -14,6 +14,10 @@ the convention is \code{.omp} for projects produced by \code{omicsCore}.}
 
 \item{overwrite}{If \code{FALSE} (default) and \code{path} already exists,
 \code{save_project()} raises an error. Set to \code{TRUE} to replace.}
+
+\item{signing_key}{\code{NULL} (default) for an unsigned file, or the key to
+sign it with: a non-empty string (taken as its UTF-8 bytes) or a raw
+vector.}
 }
 \value{
 Invisibly returns \code{path}.
@@ -25,7 +29,12 @@ write is atomic: the payload first goes to \code{path.tmp}, then renames
 over \code{path}, so an interrupted save will not corrupt an existing file.
 }
 \details{
+With \code{signing_key}, the file ends in an HMAC-SHA256 signature under
+that key, which \code{\link[=load_project]{load_project()}} checks before reading anything when
+given the same key. Readers that do not ask for a signature ignore it.
+
 Requires the \code{qs2} package; install it with \code{install_optional("persistence")}.
+Signing also requires \code{openssl}.
 }
 \examples{
 \dontrun{
@@ -39,6 +48,7 @@ Other persistence:
 \code{\link{export_bundle}()},
 \code{\link{export_report}()},
 \code{\link{export_script}()},
-\code{\link{load_project}()}
+\code{\link{load_project}()},
+\code{\link{sign_project_file}()}
 }
 \concept{persistence}

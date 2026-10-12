@@ -4,7 +4,12 @@
 \alias{normalize_omics}
 \title{Normalize a proteomics \code{omics_input}}
 \usage{
-normalize_omics(input, method = c("vsn", "log2"), offset = 1)
+normalize_omics(
+  input,
+  method = c("vsn", "log2"),
+  offset = 1,
+  center = c("none", "median")
+)
 }
 \arguments{
 \item{input}{An \code{omics_input} with \code{omics_type = "proteomics"} carrying
@@ -12,12 +17,18 @@ linear intensities.}
 
 \item{method}{\code{"vsn"} (default) or \code{"log2"}.}
 
-\item{offset}{Added before the log for \code{method = "log2"}, so that zeros
-survive. Ignored by \code{"vsn"}.}
+\item{offset}{Added before the log for \code{method = "log2"}. Zeros and
+negative values are treated as not detected and become \code{NA} first, so
+the offset only shifts the observed values. Ignored by \code{"vsn"}.}
+
+\item{center}{\code{"none"} (default) or \code{"median"}: after the log2
+transform, align the samples on their medians (see Details). Only for
+\code{method = "log2"}; vsn calibrates the samples itself.}
 }
 \value{
 The \code{omics_input} with \code{expr_mat} normalized, \code{raw_mat} holding the
-input matrix, and \code{assay_type} set to \code{"normalized_intensity"}.
+input matrix, \code{assay_type} set to \code{"normalized_intensity"}, and
+\code{normalization} recording the method, offset and centring.
 }
 \description{
 Turns linear intensities into analysis-ready values and records that in
@@ -35,6 +46,14 @@ staying finite near zero.
 
 The original matrix is kept in \code{raw_mat}, so the un-normalized values remain
 available for QC views.
+
+\code{"log2"} on its own only changes the scale: a sample that was loaded
+with more material stays brighter across the board, and every fold
+change between groups carries that difference. \code{center = "median"}
+removes it the usual way -- each sample's median log2 intensity is
+subtracted -- and then adds back the median of those sample medians, so
+the values stay on a recognisable log2-intensity scale rather than
+being centred on zero.
 }
 \examples{
 expr <- matrix(2^rnorm(200, 20, 2), nrow = 50, dimnames = list(
@@ -46,21 +65,25 @@ input <- omics_input(expr, meta, feat, omics_type = "proteomics",
                      assay_type = "raw_intensity")
 normalized <- normalize_omics(input, method = "log2")
 normalized$assay_type
+centred <- normalize_omics(input, method = "log2", center = "median")
+apply(centred$expr_mat, 2, median)
 }
 \seealso{
-Other omics_input: 
+Other omics_input:
 \code{\link{LOG_SCALE_ASSAY_TYPES}},
 \code{\link{SUPPORTED_ASSAY_TYPES}},
-\code{\link{check_assay_scale}()},
-\code{\link{drop_meta_na}()},
-\code{\link{infer_assay_type}()},
-\code{\link{is_omics_input}()},
-\code{\link{omics_input}()},
-\code{\link{select_complete_cases}()},
-\code{\link{subset_omics}()},
-\code{\link{subset_omics_features}()},
-\code{\link{subset_omics_samples}()},
-\code{\link{summarize_omics}()},
-\code{\link{validate_omics_input}()}
+\code{\link[=check_assay_scale]{check_assay_scale()}},
+\code{\link[=drop_meta_na]{drop_meta_na()}},
+\code{\link[=infer_assay_type]{infer_assay_type()}},
+\code{\link[=is_omics_input]{is_omics_input()}},
+\code{\link[=omics_input]{omics_input()}},
+\code{\link[=select_complete_cases]{select_complete_cases()}},
+\code{\link[=set_study_design]{set_study_design()}},
+\code{\link[=study_design]{study_design()}},
+\code{\link[=subset_omics]{subset_omics()}},
+\code{\link[=subset_omics_features]{subset_omics_features()}},
+\code{\link[=subset_omics_samples]{subset_omics_samples()}},
+\code{\link[=summarize_omics]{summarize_omics()}},
+\code{\link[=validate_omics_input]{validate_omics_input()}}
 }
 \concept{omics_input}

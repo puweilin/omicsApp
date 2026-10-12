@@ -23,8 +23,8 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #'   analyses, classified into the four sign quadrants and combined via
 #'   Fisher's method.
 #' * `"active_pathways"` -- pathway-level combined-p enrichment via the
-#'   `ActivePathways` package, fed by the p-values of two differential
-#'   analyses.
+#'   `ActivePathways` package, fed by the p-values and fold-change signs
+#'   of two differential analyses.
 #'
 #' All methods return an `analysis_bundle` whose `results$integration_df`
 #' follows the schema documented in [check_integration_result_schema()].
@@ -36,9 +36,50 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #'   `NULL` and the project has exactly two layers, both are used.
 #' @param diff_bundles Named list of [`run_diff()`] bundles keyed by
 #'   experiment tag. Required for `"concordance"` and `"active_pathways"`.
-#' @param by Feature key used to join layers (default `"feature_symbol"`).
+#' @param by Feature key used to join layers when there is no feature
+#'   link (default `"feature_symbol"`).
+#' @param feature_link Optional table saying which feature of one layer is
+#'   which feature of the other: a data frame with a column named after
+#'   each of the two layers (e.g. `data.frame(prot = "P04637", rna =
+#'   "TP53")`), as [read_feature_link()] returns. When `NULL` (default),
+#'   the project's own `feature_link` is used if it has a column for both
+#'   layers, and features are otherwise matched on `by`. See *Matching
+#'   features* below.
 #' @param ... Method-specific arguments forwarded to the backend. See
 #'   the per-method sections below.
+#'
+#' @section Matching features:
+#' Without a feature link, features are matched on `by` ignoring case and
+#' surrounding whitespace. With one, the link decides alone: a feature
+#' it does not name is not paired. A value in the link names a feature
+#' when it is the feature's id (or one member of a `;`-separated protein
+#' group), the canonical accession of a UniProt isoform id (`P04637`
+#' names `P04637-2` unless the link also names `P04637-2` itself), or the
+#' feature's `by` value -- whichever is most specific.
+#'
+#' Every feature is kept, so where several proteins (isoforms, several
+#' protein groups) map to one gene there are several protein-gene pairs:
+#'
+#' * concordance and correlation report each pair as a row of its own,
+#'   and correct the p-values across pairs. `feature_id` is the gene when
+#'   it has one pair and the gene followed by the feature that tells its
+#'   pairs apart otherwise (`"TP53 (P04637-2)"`); `feature_symbol` is the
+#'   gene; `feature_id_a` / `feature_id_b` name the two features.
+#' * ActivePathways scores genes, so a gene with several features in a
+#'   layer takes its most significant feature's p-value, corrected for
+#'   the number of features (Sidak: `1 - (1 - p_min)^k`), and that
+#'   feature's fold change; the bundle's warnings say how many genes this
+#'   concerned.
+#'
+#' Before features were linked, only the most abundant feature of each
+#' gene was kept. Results for data with one feature per gene are
+#' unchanged.
+#'
+#' The bundle records how features were matched in
+#' `params$feature_link_source` (`source` is `"symbol"`, `"project"` or
+#' `"supplied"`; `path` and `columns` say which file the link was read
+#' from, when known) and the counts of the pairing in
+#' `params$method_info$feature_pairing`.
 #'
 #' @section Correlation arguments:
 #' * `cor_method` -- `"spearman"` (default) or `"pearson"`.
@@ -47,9 +88,20 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #' * `p_cutoff` -- significance cutoff (default `0.05`).
 #'
 #' @section Concordance arguments:
-#' * `p_preference` -- `"adjusted"` (default) or `"raw"`.
+#' * `p_preference` -- `"adjusted"` (default) or `"raw"`: which p-value of
+#'   each layer is held to `p_cutoff` when deciding whether a feature is a
+#'   hit in that layer. The combined (Fisher) p-value is always built from
+#'   the raw p-values and corrected once across features.
 #' * `p_cutoff` -- significance cutoff (default `0.05`).
+#' * `effect_cutoff` -- minimum absolute effect in each layer for a
+#'   feature to count as a hit there (default `0`, no bound).
 #' * `p_adjust_method` -- defaults to `"BH"`.
+#'
+#' Besides the schema columns, the concordance table keeps what each layer
+#' said on its own: `effect_a`, `effect_b`, `p_value_a`, `p_value_b`,
+#' `adj_p_value_a`, `adj_p_value_b`, `significant_a`, `significant_b`,
+#' `feature_id_a`, `feature_id_b`. One row per protein-gene pair (see
+#' *Matching features*).
 #'
 #' @section ActivePathways arguments:
 #' * `database` -- MSigDB shorthand (default `"hallmark"`).
@@ -60,8 +112,32 @@ SUPPORTED_INTEGRATION_METHODS <- c("correlation", "concordance", "active_pathway
 #' * `significant` -- pathway-level cutoff (default `0.05`).
 #' * `geneset_filter` -- length-2 integer vector of min/max gene-set sizes
 #'   (default `c(5L, 1000L)`).
-#' * `merge_method` -- `"Brown"` (default) or another method accepted by
-#'   `ActivePathways::ActivePathways()`.
+#' * `merge_method` -- `"DPM"` (default), the directional extension of
+#'   Brown's method, or another method accepted by
+#'   `ActivePathways::ActivePathways()` (`"Brown"` ignores direction, as
+#'   results made before the directional method did).
+#' * `constraints_vector` -- for a directional `merge_method`, the expected
+#'   sign relation of the two layers' fold changes. Default `c(1, 1)`: the
+#'   layers are expected to move the same way (RNA and protein of a gene
+#'   rise together), so genes whose layers disagree are penalised and
+#'   contribute less to any pathway. `c(1, -1)` would expect them to move
+#'   oppositely.
+#'
+#' With a directional merge, the ActivePathways table also says which way
+#' each pathway went: `direction` is `"up"` or `"down"` when the genes that
+#' drove it (ActivePathways' overlap) moved that way in both layers, and
+#' `"mixed"` when the layers disagree; `direction_a` / `direction_b` give
+#' each layer's own reading (the sign most driving genes share in it),
+#' `layers_agree` whether those match, and `n_genes_agree` /
+#' `n_genes_disagree` count the driving genes measured in both layers
+#' whose signs agree or not. `evidence` says which layers found the
+#' pathway on their own: `"shared"` (both), `"unique"` (one), or
+#' `"combined"` (only once merged). Results made before this held the
+#' evidence in `direction`. The direction is reported for a non-directional
+#' merge too, but there it describes the result without having shaped it.
+#' When the installed ActivePathways predates the directional method (it
+#' needs 2.0 or later), Brown's method is used instead, the bundle's
+#' `params$merge_method` records `"Brown"`, and a warning says so.
 #'
 #' @return An [`analysis_bundle`][is_analysis_bundle()] with
 #'   `results$integration_df` (standardized schema) and, for
@@ -90,6 +166,7 @@ run_integration <- function(
   experiments = NULL,
   diff_bundles = NULL,
   by = "feature_symbol",
+  feature_link = NULL,
   ...
 ) {
   method <- match.arg(method)
@@ -99,6 +176,7 @@ run_integration <- function(
   tag_a <- experiments[[1L]]
   tag_b <- experiments[[2L]]
   dots <- list(...)
+  linked <- resolve_feature_link(project, tag_a, tag_b, feature_link)
 
   if (method %in% c("concordance", "active_pathways") && is.null(diff_bundles)) {
     stop("`diff_bundles` is required for method = '", method, "'.")
@@ -117,7 +195,8 @@ run_integration <- function(
       by = by,
       p_adjust_method = p_adjust_method,
       min_samples = min_samples,
-      p_cutoff = p_cutoff
+      p_cutoff = p_cutoff,
+      link = linked$link
     )
     integration_df <- backend$std
     integration_raw <- NULL
@@ -132,6 +211,8 @@ run_integration <- function(
     p_preference <- dots$p_preference %||% "adjusted"
     p_cutoff <- dots$p_cutoff %||% 0.05
     p_adjust_method <- dots$p_adjust_method %||% "BH"
+    effect_cutoff <- dots$effect_cutoff %||% 0
+    assert_number(effect_cutoff, "effect_cutoff", lower = 0)
 
     backend <- run_integration_concordance(
       project = project,
@@ -140,7 +221,9 @@ run_integration <- function(
       by = by,
       p_preference = p_preference,
       p_cutoff = p_cutoff,
-      p_adjust_method = p_adjust_method
+      p_adjust_method = p_adjust_method,
+      effect_cutoff = effect_cutoff,
+      link = linked$link
     )
     integration_df <- backend$std
     integration_raw <- NULL
@@ -148,6 +231,7 @@ run_integration <- function(
     method_params <- list(
       p_preference = p_preference,
       p_cutoff = p_cutoff,
+      effect_cutoff = effect_cutoff,
       p_adjust_method = p_adjust_method
     )
   } else {
@@ -156,7 +240,8 @@ run_integration <- function(
     p_preference <- dots$p_preference %||% "raw"
     significant <- dots$significant %||% 0.05
     geneset_filter <- dots$geneset_filter %||% c(5L, 1000L)
-    merge_method <- dots$merge_method %||% "Brown"
+    merge_method <- dots$merge_method %||% "DPM"
+    constraints_vector <- dots$constraints_vector %||% c(1, 1)
 
     backend <- run_integration_active_pathways(
       project = project,
@@ -168,18 +253,24 @@ run_integration <- function(
       p_preference = p_preference,
       significant = significant,
       geneset_filter = geneset_filter,
-      merge_method = merge_method
+      merge_method = merge_method,
+      constraints_vector = constraints_vector,
+      link = linked$link
     )
     integration_df <- backend$std
     integration_raw <- backend$raw
     method_info <- backend$info
+    # The method that actually ran: a directional request on an older
+    # ActivePathways falls back to Brown's, and the script must repeat
+    # what ran.
     method_params <- list(
       database = normalize_enrich_database(database),
       organism = normalize_organism(organism),
       p_preference = p_preference,
       significant = significant,
       geneset_filter = geneset_filter,
-      merge_method = merge_method
+      merge_method = method_info$merge_method %||% merge_method,
+      constraints_vector = method_info$constraints_vector
     )
   }
 
@@ -212,7 +303,15 @@ run_integration <- function(
       by = by
     ),
     method_params,
-    list(method_info = method_info)
+    list(method_info = method_info,
+         feature_link_source = feature_link_provenance(linked)),
+    # How each layer's differential result was made, so export_script()
+    # can make them again: the partner layer's run happens inside the
+    # app and exists nowhere else.
+    if (!is.null(diff_bundles)) {
+      list(diff_params = lapply(diff_bundles[intersect(experiments, names(diff_bundles))],
+                                function(b) b$params))
+    }
   )
 
   results <- list(integration_df = integration_df)
@@ -220,10 +319,41 @@ run_integration <- function(
     results$integration_raw <- integration_raw
   }
 
+  warns <- as.character(method_info$notes %||% character(0))
+  n_amb <- method_info$n_ambiguous_samples %||% 0L
+  if (n_amb > 0L) {
+    warns <- c(warns, sprintf(
+      "%d sample(s) share a donor with another sample of the same layer and were left out of the pairing; only one sample per donor and layer is correlated.",
+      n_amb))
+  }
+
   new_analysis_bundle(
     analysis_name = "run_integration",
     input_info = input_info,
     params = params,
-    results = results
+    results = results,
+    warnings = warns
   )
 }
+
+# How a run matched features, for the record and for export_script(): the
+# source, the file the link was read from (when it was read with
+# read_feature_link()), and -- for a small link that came from no file --
+# the link itself, so the script can write it out.
+feature_link_provenance <- function(linked) {
+  if (identical(linked$source, "symbol")) return(list(source = "symbol"))
+  file <- linked$file
+  list(
+    source = linked$source,
+    n_rows = nrow(linked$link),
+    path = file$path,
+    columns = file$columns,
+    table = if (is.null(file$path) && nrow(linked$link) <= FEATURE_LINK_INLINE_ROWS)
+      linked$link
+  )
+}
+
+# Above this many rows a link with no file behind it is not written into
+# the exported script (it would be a wall of text no one checks); the
+# script says to supply it instead.
+FEATURE_LINK_INLINE_ROWS <- 500L

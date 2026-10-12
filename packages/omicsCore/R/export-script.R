@@ -80,7 +80,7 @@ render_call <- function(fn_name, first, params, arg_names, assign_to = NULL) {
     if (!nm %in% names(params)) next
     value <- params[[nm]]
     if (is.null(value)) next
-    rendered <- render_value(value)
+    rendered <- if (inherits(value, "script_code")) unclass(value) else render_value(value)
     if (is.na(rendered)) {
       notes <- c(notes, sprintf(
         "%s: `%s` was not a literal and is omitted; the call below is incomplete.",
@@ -109,6 +109,92 @@ render_call <- function(fn_name, first, params, arg_names, assign_to = NULL) {
   )
 }
 
+# Code written into a call as it stands (a variable, a list of them).
+script_code <- function(x) structure(x, class = "script_code")
+
+# The run_diff() call that made a bundle, followed by the selection when
+# the bundle is one contrast taken out of a shared fit: re-running only
+# its two groups would give different p-values, since the shared fit
+# pools the variance of every group in the model.
+diff_call_lines <- function(params, input_var, var) {
+  all_cases <- params$all_case_groups
+  all_specs <- params$all_contrasts
+  shown <- params$comparison
+  selected <- FALSE
+  if (length(shown) == 1L && length(all_specs) > 1L) {
+    params$contrasts <- all_specs
+    params$case_group <- NULL
+    selected <- TRUE
+  } else if (length(shown) == 1L && length(all_cases) > 1L) {
+    params$case_group <- all_cases
+    selected <- TRUE
+  }
+  call <- render_call("run_diff", input_var, params,
+                      script_arg_names(run_diff), assign_to = var)
+  lines <- call$lines
+  if (selected) {
+    lines <- c(lines, sprintf("%s <- select_comparison(%s, %s)", var, var,
+                              render_value(shown)))
+  }
+  list(lines = lines, notes = call$notes, selected = selected)
+}
+
+# A data frame as the code that builds it, or NA when a column is not a
+# literal.
+render_data_frame <- function(df) {
+  cols <- vapply(names(df), function(nm) {
+    v <- render_value(as.vector(df[[nm]]))
+    if (is.na(v)) NA_character_ else sprintf("%s = %s", render_name(nm), v)
+  }, character(1))
+  if (anyNA(cols)) return(NA_character_)
+  sprintf("data.frame(%s, stringsAsFactors = FALSE)", paste(cols, collapse = ", "))
+}
+
+# The lines that rebuild the feature link an integration ran with, and
+# the argument that passes it on. Nothing for a run that matched symbols
+# (or one saved before links existed). A link read from a file is read
+# from the archived copy; a small one that came from no file is written
+# out; anything else gets a placeholder that fails where it stands,
+# rather than a script that quietly matches symbols instead.
+feature_link_script_lines <- function(src, experiments) {
+  none <- list(lines = character(0), notes = character(0), arg = NULL)
+  if (is.null(src) || identical(src$source, "symbol")) return(none)
+  arg <- script_code("feature_link")
+  if (!is.null(src$path)) {
+    call <- render_call("read_feature_link",
+                        render_value(file.path("raw", basename(src$path))),
+                        params = list(columns = src$columns),
+                        arg_names = "columns", assign_to = "feature_link")
+    return(list(lines = c("# Which feature of one layer is which feature of the other:",
+                          call$lines),
+                notes = call$notes, arg = arg))
+  }
+  code <- if (is.data.frame(src$table)) render_data_frame(src$table) else NA_character_
+  if (!is.na(code)) {
+    return(list(lines = c("# Which feature of one layer is which feature of the other:",
+                          paste0("feature_link <- ", code)),
+                notes = character(0), arg = arg))
+  }
+  tags <- experiments %||% c("layer_a", "layer_b")
+  cols <- stats::setNames(rep("<column>", length(tags)), tags)
+  list(
+    lines = c("# Which feature of one layer is which feature of the other:",
+              sprintf("feature_link <- read_feature_link(%s, columns = %s)",
+                      render_value("<path-to-feature-link-file>"), render_value(cols))),
+    notes = sprintf(paste(
+      "run_integration() matched features with a feature link (%s rows) that",
+      "was not archived; fill in its file and columns below."),
+      format(src$n_rows %||% NA_integer_)),
+    arg = arg)
+}
+
+# The figures plot_integration() draws for each method.
+INTEGRATION_FIGURES <- list(
+  correlation = "scatter",
+  concordance = c("effect_pair", "top_hits", "quadrant"),
+  active_pathways = "dotplot"
+)
+
 # Text bound for a comment. A newline in a project name ended the
 # comment and handed the rest of the name to the parser as code -- and
 # an apostrophe in what followed opened a string that ran to the next
@@ -134,19 +220,14 @@ as_notes <- function(notes) {
   paste0("# NOTE: ", comment_text(notes))
 }
 
-# Find the experiment a bundle was computed on. Bundles record the
-# omics_type they ran against, which is also the tag app_server() files
-# experiments under, so this resolves in the common case and degrades to
-# the first experiment with a note otherwise.
+# Find the experiment a bundle was computed on (bundle_layer()), and
+# degrade to the first experiment, with a note elsewhere, when it is
+# about none of them.
 resolve_tag <- function(project, bundle) {
-  want <- bundle$input_info$omics_type
   tags <- names(project$experiments)
   if (length(tags) == 0L) return(NULL)
-  if (is.null(want)) return(tags[[1L]])
-  types <- vapply(project$experiments,
-                  function(e) e$omics_type %||% "", character(1))
-  hit <- tags[types %in% want]
-  if (length(hit) == 0L) tags[[1L]] else hit[[1L]]
+  hit <- bundle_layer(project, bundle)
+  if (is.na(hit)) tags[[1L]] else hit
 }
 
 # One variable per layer. Through make.names(): a tag is whatever the
@@ -223,6 +304,39 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     for (tag in names(experiments)) {
       exp <- experiments[[tag]]
       var <- input_vars[[tag]]
+      # A layer merged from Salmon / RSEM / kallisto files is read back
+      # the way it was built, from the archived files under the names
+      # they were uploaded with (those names are the sample names).
+      if (!is.null(exp$quant_source$paths)) {
+        qs <- exp$quant_source
+        call <- render_call(
+          "read_quant_files", render_value(file.path("raw", basename(qs$paths))),
+          params = list(file_names = qs$names,
+                        sample_sheet = if (!is.null(exp$sample_sheet_path))
+                          file.path("raw", basename(exp$sample_sheet_path))),
+          arg_names = script_arg_names(read_quant_files),
+          assign_to = var)
+        last <- length(call$lines)
+        call$lines[last] <- paste0(call$lines[last], "$input")
+        lines <- c(lines, "# read_quant_files() returns the merged input and its import report.",
+                   call$lines)
+        notes <- c(notes, call$notes)
+        if (length(exp$excluded_samples)) {
+          lines <- c(lines,
+                     "# Samples excluded in QC:",
+                     sprintf("%s <- subset_omics(%s, samples = setdiff(colnames(%s$expr_mat), %s))",
+                             var, var, var, render_value(as.character(exp$excluded_samples))))
+        }
+        if (!is.null(exp$design$group_col)) {
+          dc <- render_call("set_study_design", var,
+                            params = exp$design[c("group_col", "reference")],
+                            arg_names = script_arg_names(set_study_design),
+                            assign_to = var)
+          lines <- c(lines, dc$lines)
+          notes <- c(notes, dc$notes)
+        }
+        next
+      }
       src <- exp$source_path %||% NA_character_
       if (is.na(src)) {
         notes <- c(notes, sprintf(
@@ -232,10 +346,25 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
       } else {
         src <- file.path("raw", basename(src))
       }
+      # A layer normalized in the app is read as the file holds it and
+      # normalized again here. Reading it with the normalized label
+      # skipped the transform and ran every step on linear values.
+      norm <- exp$normalization
+      file_assay <- if (!is.null(norm)) norm$from_assay_type %||% "raw_intensity"
+                    else exp$assay_type
+      if (is.null(norm) && !is.null(exp$normalized_mat)) {
+        notes <- c(notes, sprintf(paste(
+          "'%s' was normalized in the app before the normalization was",
+          "recorded; add the normalize_omics() call it used after reading."), tag))
+      }
       call <- render_call(
         "read_omics", render_value(src),
         params = list(omics_type = exp$omics_type,
-                      assay_type = exp$assay_type),
+                      assay_type = file_assay,
+                      sheet_roles = exp$sheet_roles,
+                      orientation = exp$orientation,
+                      sample_sheet = if (!is.null(exp$sample_sheet_path))
+                        file.path("raw", basename(exp$sample_sheet_path))),
         arg_names = script_arg_names(read_omics),
         assign_to = var
       )
@@ -249,6 +378,32 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
                  "# read_omics() returns the parsed input and its import report.",
                  call$lines)
       notes <- c(notes, call$notes)
+      if (!is.null(norm)) {
+        # `center` only when it was used, so a script for an uncentred
+        # layer reads as it always has (and runs on older omicsCore).
+        norm_args <- norm[c("method", "offset")]
+        if (!identical(norm$center %||% "none", "none")) norm_args$center <- norm$center
+        nc <- render_call("normalize_omics", var,
+                          params = norm_args,
+                          arg_names = script_arg_names(normalize_omics),
+                          assign_to = var)
+        lines <- c(lines, nc$lines)
+        notes <- c(notes, nc$notes)
+      }
+      if (length(exp$excluded_samples)) {
+        lines <- c(lines,
+                   "# Samples excluded in QC:",
+                   sprintf("%s <- subset_omics(%s, samples = setdiff(colnames(%s$expr_mat), %s))",
+                           var, var, var, render_value(as.character(exp$excluded_samples))))
+      }
+      if (!is.null(exp$design$group_col)) {
+        dc <- render_call("set_study_design", var,
+                          params = exp$design[c("group_col", "reference")],
+                          arg_names = script_arg_names(set_study_design),
+                          assign_to = var)
+        lines <- c(lines, dc$lines)
+        notes <- c(notes, dc$notes)
+      }
     }
   }
 
@@ -287,21 +442,59 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
   if (!is.null(bundles$qc)) {
     emit("qc", "Quality control", "run_qc", run_qc, input_for("qc"), "qc")
   }
+  diff_var_for_enrich <- "diff"
   if (!is.null(bundles$diff)) {
-    emit("diff", "Differential analysis", "run_diff", run_diff,
-         input_for("diff"), "diff")
+    # One contrast taken out of a shared fit is reproduced as that fit
+    # followed by the selection. Re-running only its two groups would
+    # give different p-values: the shared fit pools the variance of every
+    # group in the model.
+    shown <- bundles$diff$params$comparison
+    dc <- diff_call_lines(bundles$diff$params, input_for("diff"), "diff")
+    lines <- c(lines, section("Differential analysis"), dc$lines)
+    notes <- c(notes, dc$notes)
+    # A bundle holding every contrast of a run: the downstream steps each
+    # ran on one of them, so that one is taken out for them by name.
+    if (length(shown) > 1L &&
+        (!is.null(bundles$enrich) || !is.null(bundles$integration))) {
+      pick <- bundles$enrich$params$comparison %||%
+        bundles$diff$params$shown_comparison %||% shown[[1L]]
+      lines <- c(lines,
+                 "# The steps below ran on one of these comparisons:",
+                 sprintf("diff_shown <- select_comparison(diff, %s)",
+                         render_value(pick[[1L]])))
+      diff_var_for_enrich <- "diff_shown"
+    }
   }
   if (!is.null(bundles$gsva)) {
+    if (isTRUE(bundles$gsva$params$gene_sets_supplied)) {
+      # The sets were the caller's own; they are in the bundle, not in
+      # any database the script could name.
+      bundles$gsva$params$database <- NULL
+      notes <- c(notes, paste(
+        "run_gsva() ran on gene sets supplied by hand; pass them as",
+        "`gene_sets =` (they are in the bundle's results$gsva_gene_sets)."))
+    }
     emit("gsva", "Gene-set variation", "run_gsva", run_gsva,
          input_for("gsva"), "gsva")
   }
   if (!is.null(bundles$enrich)) {
     emit("enrich", "Pathway enrichment", "run_enrichment", run_enrichment,
-         "diff", "enrich")
+         diff_var_for_enrich, "enrich")
     if (is.null(bundles$diff)) {
       notes <- c(notes,
                  "enrichment ran on a differential result the project no longer holds.")
     }
+  }
+  if (!is.null(bundles$enrich_compare)) {
+    # compare_enrichment() hands its settings to run_enrichment() through
+    # `...`, so the arguments rendered are run_enrichment()'s.
+    call <- render_call("compare_enrichment", "diff",
+                        bundles$enrich_compare$params[
+                          setdiff(names(bundles$enrich_compare$params), "comparison")],
+                        script_arg_names(run_enrichment),
+                        assign_to = "enrich_compare")
+    lines <- c(lines, section("Enrichment across comparisons"), call$lines)
+    notes <- c(notes, call$notes)
   }
   if (!is.null(bundles$integration)) {
     lines <- c(lines, section("Multi-omics integration"))
@@ -309,28 +502,62 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     # fact: an earlier version ran a sub() over every line to append the
     # comma, which would have edited any other line that happened to
     # start with a `name` argument.
+    ip <- bundles$integration$params %||% list()
+    # The sample pairing correlation relies on, when the project has one.
+    link <- project$sample_link
+    link_code <- if (!is.null(link) && nrow(link) > 0L) render_data_frame(link)
+    if (!is.null(link_code) && is.na(link_code)) {
+      notes <- c(notes, "the project's sample_link could not be written out; set it before run_integration().")
+      link_code <- NULL
+    }
     lines <- c(
       lines,
       "project <- omics_project(",
       sprintf("  name        = %s,",
               render_value(project$name %||% "project")),
-      sprintf("  experiments = list(%s)",
+      sprintf("  experiments = list(%s)%s",
               paste(sprintf("%s = %s", vapply(names(input_vars), render_name, ""),
-                            unname(input_vars)), collapse = ", ")),
+                            unname(input_vars)), collapse = ", "),
+              if (!is.null(link_code)) "," else ""),
+      if (!is.null(link_code)) sprintf("  sample_link = %s", link_code),
       ")"
     )
-    call <- render_call("run_integration", "project",
-                        bundles$integration$params %||% list(),
-                        script_arg_names(run_integration),
+    # The feature link the run matched features with, read from the file
+    # it was uploaded as (archived under raw/), so the pairs are the same.
+    fl <- feature_link_script_lines(ip$feature_link_source, ip$experiments)
+    lines <- c(lines, fl$lines)
+    notes <- c(notes, fl$notes)
+    ip$feature_link <- fl$arg
+    # Each layer's differential result, made the way it was made --
+    # including the partner layer's, which the app computes itself.
+    if (length(ip$diff_params)) {
+      dvars <- character(0)
+      for (tag in names(ip$diff_params)) {
+        var <- make.names(paste0("diff_", tag))
+        dc <- diff_call_lines(ip$diff_params[[tag]],
+                              input_vars[[tag]] %||% "input", var)
+        lines <- c(lines, sprintf("# The differential result for '%s':", comment_text(tag)),
+                   dc$lines)
+        notes <- c(notes, dc$notes)
+        dvars[[tag]] <- var
+      }
+      ip$diff_bundles <- script_code(sprintf("list(%s)", paste(
+        sprintf("%s = %s", vapply(names(dvars), render_name, ""), dvars),
+        collapse = ", ")))
+    } else if (!identical(ip$method, "correlation")) {
+      notes <- c(notes, paste(
+        "run_integration() was given differential results that this project",
+        "does not record; supply `diff_bundles =` for both layers."))
+    }
+    # The method's own settings travel through `...`, so they are named
+    # here; omitting them ran every method at its defaults.
+    method_args <- setdiff(names(ip), c(script_arg_names(run_integration), "method_info",
+                                        "diff_params", "feature_link_source"))
+    call <- render_call("run_integration", "project", ip,
+                        c(script_arg_names(run_integration), method_args),
                         assign_to = "integration")
     lines <- c(lines, call$lines)
     notes <- c(notes, call$notes)
-    if (!"diff_bundles" %in% names(bundles$integration$params %||% list())) {
-      notes <- c(notes, paste(
-        "run_integration() was given differential bundles that are not",
-        "recorded in params; add `diff_bundles = list(diff)` if the",
-        "method needs them."))
-    }
   }
 
   if (isTRUE(include_plots)) {
@@ -341,19 +568,39 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
                  'plot_qc(qc, view = "missing")')
     }
     if (!is.null(bundles$diff)) {
-      lines <- c(lines,
-        "# Drawn at plot_volcano()'s default cut, which is the figure the",
-        "# app shows: its threshold sliders filter the hit table, not this.",
-        "# The cut is printed in the plot's caption.",
-        "plot_volcano(diff)")
+      # One comparison per figure: a bundle holding several is refused.
+      vol_target <- if (length(bundles$diff$params$comparison) > 1L) {
+        if (identical(diff_var_for_enrich, "diff_shown")) "diff_shown"
+        else sprintf("select_comparison(diff, %s)", render_value(
+          (bundles$diff$params$shown_comparison %||% bundles$diff$params$comparison)[[1L]]))
+      } else "diff"
+      thr <- bundles$diff$params$display_thresholds
+      vol <- if (is.null(thr)) {
+        list(lines = c(
+          "# Drawn at plot_volcano()'s default cut; the project records no",
+          "# other. The cut is printed in the plot's caption.",
+          sprintf("plot_volcano(%s)", vol_target)))
+      } else {
+        call <- render_call("plot_volcano", vol_target, list(
+          p_basis = if (identical(thr$p_preference, "raw")) "raw" else "adjusted",
+          p_threshold = thr$p_cutoff,
+          effect_threshold = if ((thr$effect_cutoff %||% 0) > 0) thr$effect_cutoff),
+          c("p_basis", "p_threshold", "effect_threshold"))
+        list(lines = c(
+          "# Drawn at the thresholds the app's controls were set to, as the",
+          "# app drew it and as the hit counts were read. The cut is printed",
+          "# in the plot's caption.",
+          call$lines), notes = call$notes)
+      }
+      lines <- c(lines, vol$lines)
+      notes <- c(notes, vol$notes)
     }
     if (!is.null(bundles$enrich)) {
       lines <- c(lines, 'plot_enrichment(enrich, view = "dot", top_n = 12L)')
     }
     if (!is.null(bundles$integration)) {
-      lines <- c(lines,
-                 'plot_integration(integration, view = "dual_volcano")',
-                 'plot_integration(integration, view = "effect_pair")')
+      views <- INTEGRATION_FIGURES[[bundles$integration$params$method %||% "concordance"]]
+      lines <- c(lines, sprintf('plot_integration(integration, view = "%s")', views))
     }
   }
 

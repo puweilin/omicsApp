@@ -19,6 +19,10 @@ project_view_ui <- function(id) {
   ns <- shiny::NS(id)
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
+    # First thing on the first page: what this app does, the order to do
+    # it in, and a project to try it on. Replaced by a progress checklist
+    # once a project is loaded.
+    shiny::uiOutput(ns("guide")),
     shiny::uiOutput(ns("stats")),
     shiny::uiOutput(ns("body")),
     shiny::uiOutput(ns("storage"))
@@ -35,8 +39,20 @@ project_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
-                                on_view_layer = function(tag) NULL) {
+                                on_view_layer = function(tag) NULL,
+                                navigate = NULL,
+                                replace_project = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
+
+    # A whole new project (Open, Restore, the example): through the
+    # caller, which tells the analysis views to let go of what they
+    # hold. Setting current_project() alone left them holding the
+    # previous project's results whenever the new one was built from the
+    # same files, and those results then replaced the ones it was saved
+    # with.
+    set_project <- function(p) {
+      if (is.function(replace_project)) replace_project(p) else current_project(p)
+    }
 
     # Render against the live project when present, otherwise the
     # built-in demo. We keep a single source of truth (resolved())
@@ -59,7 +75,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           htmltools::HTML(" &middot; "),
           htmltools::tags$span(
             class = "muted",
-            if (r$is_demo) "demo project (built-in)"
+            if (r$is_demo) "demo data (built-in)"
             else sprintf("%d layer%s loaded",
                          length(r$project$experiments),
                          if (length(r$project$experiments) == 1L) "" else "s")
@@ -77,7 +93,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         return(htmltools::tags$div(
           class = "stat-grid",
           stat_card(
-            label  = "Experiments",
+            label  = "Layers",
             value  = 0L,
             trend  = "import a file to populate",
             accent = "brand"
@@ -94,7 +110,7 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       htmltools::tags$div(
         class = "stat-grid",
         stat_card(
-          label  = "Experiments",
+          label  = "Layers",
           value  = n_experiments,
           trend  = paste(vapply(experiments,
                                 project_omics_label,
@@ -104,9 +120,12 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         ),
         stat_card(
           label = "Samples",
-          value = unname(n_samples_per_exp[1L]),
-          trend = sprintf("%d per omics layer",
-                          unname(n_samples_per_exp[1L])),
+          value = sum(n_samples_per_exp),
+          trend = paste(sprintf("%s: %d",
+                                vapply(experiments, project_omics_label,
+                                       character(1)),
+                                n_samples_per_exp),
+                        collapse = " \u00B7 "),
           mono  = TRUE
         ),
         stat_card(
@@ -121,11 +140,13 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           mono  = TRUE
         ),
         stat_card(
-          label  = "Analyses cached",
-          value  = if (r$is_demo) 1L else 0L,
-          trend  = if (r$is_demo) "1 diff (limma, G2 vs G1)"
-                   else "run from the Differential view",
-          accent = if (r$is_demo) "ok" else "brand"
+          label  = "Analyses",
+          value  = if (r$is_demo) 0L else length(r$project$bundles),
+          trend  = if (r$is_demo) "load a project to run them"
+                   else if (length(r$project$bundles))
+                     paste(names(r$project$bundles), collapse = " \u00B7 ")
+                   else "none yet \u2014 start with Quality control",
+          accent = if (!r$is_demo && length(r$project$bundles)) "ok" else "brand"
         )
       )
     })
@@ -138,6 +159,11 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
         project_activity_card(r$project, is_demo = r$is_demo)
       )
     })
+
+    # ---- getting started ---------------------------------------------
+    # The welcome card, the workflow checklist and the example project
+    # (mod_project_guide.R).
+    project_guide_server(input, output, session, current_project, navigate, set_project)
 
     # One observer per experiment row, registered the first time a row
     # at that position exists. Registering inside an observer rather
@@ -205,11 +231,18 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (is.null(proj) || is.null(tag) || !tag %in% names(proj$experiments)) {
         return()
       }
+      # And the results computed on it: the report and the script
+      # carried them as if the layer were still there.
+      proj$bundles <- drop_layer_bundles(proj$bundles, tag, proj)
       proj$experiments[[tag]] <- NULL
       # A link naming a layer that is gone would pair samples to nothing.
       if (!is.null(proj$sample_link) && nrow(proj$sample_link) > 0L) {
         proj$sample_link <- proj$sample_link[proj$sample_link$tag != tag, ,
                                              drop = FALSE]
+      }
+      # Likewise a feature mapping table with a column for that layer.
+      if (!is.null(proj$feature_link) && tag %in% names(proj$feature_link)) {
+        proj$feature_link <- NULL
       }
       current_project(proj)
       pending_drop(NULL)
@@ -218,191 +251,12 @@ project_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     })
 
     # ---- saved-project store -----------------------------------------
-    # `store_tick` is bumped after every mutation so the card re-reads
-    # the directory. Reading it inside the reactives below is what makes
-    # them invalidate; the value itself is never used.
-    store_tick <- shiny::reactiveVal(0L)
-    bump_store <- function() {
-      store_tick(shiny::isolate(store_tick()) + 1L)
-    }
-
-    saved_projects <- shiny::reactive({
-      store_tick()
-      list_saved_projects()
-    })
-
-    autosave_stamp <- shiny::reactive({
-      store_tick()
-      autosave_mtime()
-    })
-
-    output$storage <- shiny::renderUI({
-      saved <- saved_projects()
-      stamp <- autosave_stamp()
-      have_project <- !is.null(current_project())
-      choices <- if (nrow(saved) == 0L) character(0) else saved$slug
-
-      htmltools::tags$div(
-        class = "row-grid r-7-5",
-        bslib::card(
-          bslib::card_header(
-            htmltools::tags$h3(class = "card-title", "My projects"),
-            htmltools::tags$span(class = "card-sub", usage_label())
-          ),
-          bslib::card_body(
-            if (length(choices) == 0L) {
-              htmltools::tags$div(
-                class = "muted", style = "font-size:13px;padding:4px 0 10px",
-                "No saved projects yet. Save the current one to keep it ",
-                "across sessions."
-              )
-            } else {
-              htmltools::tagList(
-                shiny::selectInput(session$ns("saved_pick"), label = NULL,
-                                   choices = choices, selectize = FALSE,
-                                   size = min(6L, length(choices))),
-                htmltools::tags$div(
-                  style = "display:flex;gap:8px",
-                  shiny::actionButton(session$ns("open_project"), "Open",
-                                      class = "btn btn-sm btn-primary"),
-                  shiny::actionButton(session$ns("delete_project"), "Delete",
-                                      class = "btn btn-sm btn-outline-danger")
-                ),
-                saved_projects_table(saved)
-              )
-            }
-          )
-        ),
-        bslib::card(
-          bslib::card_header(
-            htmltools::tags$h3(class = "card-title", "Save / restore")
-          ),
-          bslib::card_body(
-            shiny::textInput(session$ns("save_name"), "Project name",
-                             placeholder = "e.g. cheek_G2_vs_G1"),
-            shiny::checkboxInput(session$ns("save_overwrite"),
-                                 "Overwrite if it exists", value = FALSE),
-            shiny::actionButton(session$ns("save_project"), "Save as\u2026",
-                                class = "btn btn-sm btn-primary"),
-            if (!have_project) {
-              htmltools::tags$div(
-                class = "muted", style = "font-size:12px;padding-top:8px",
-                "The built-in demo cannot be saved \u2014 import a file first."
-              )
-            },
-            if (!is.null(stamp)) {
-              htmltools::tagList(
-                htmltools::tags$hr(),
-                htmltools::tags$div(
-                  class = "muted", style = "font-size:12px;padding-bottom:6px",
-                  sprintf("Autosave from %s",
-                          format(stamp, "%Y-%m-%d %H:%M"))
-                ),
-                shiny::actionButton(session$ns("restore_autosave"),
-                                    "Restore last session",
-                                    class = "btn btn-sm btn-outline-primary")
-              )
-            }
-          )
-        )
-      )
-    })
-
-    shiny::observeEvent(input$save_project, {
-      proj <- current_project()
-      if (is.null(proj)) {
-        shiny::showNotification(
-          "Nothing to save yet \u2014 import a file first.", type = "warning")
-        return()
-      }
-      res <- store_save_project(
-        proj,
-        slug      = project_slug(input$save_name %||% ""),
-        overwrite = isTRUE(input$save_overwrite)
-      )
-      shiny::showNotification(res$message,
-                              type = if (isTRUE(res$ok)) "message" else "error")
-      if (isTRUE(res$ok)) bump_store()
-    })
-
-    shiny::observeEvent(input$open_project, {
-      res <- store_load_project(input$saved_pick %||% NA_character_)
-      shiny::showNotification(res$message,
-                              type = if (isTRUE(res$ok)) "message" else "error")
-      if (isTRUE(res$ok)) current_project(res$project)
-    })
-
-    shiny::observeEvent(input$delete_project, {
-      res <- store_delete_project(input$saved_pick %||% NA_character_)
-      shiny::showNotification(res$message,
-                              type = if (isTRUE(res$ok)) "message" else "error")
-      if (isTRUE(res$ok)) bump_store()
-    })
-
-    shiny::observeEvent(input$restore_autosave, {
-      proj <- store_read_autosave()
-      if (is.null(proj)) {
-        shiny::showNotification("No readable autosave found.", type = "error")
-        return()
-      }
-      current_project(proj)
-      shiny::showNotification("Restored the last autosaved session.",
-                              type = "message")
-    })
-
-    # Restore on arrival rather than on a click. The autosave is the
-    # user's own last state, and asking them to ask for it every login
-    # meant landing on the built-in demo each morning -- a page that is
-    # useful once and then noise.
-    #
-    # Deliberately narrow: only when nothing is loaded, and only once
-    # per session, so it cannot overwrite an import that happened first
-    # or fire again after the user clears the project.
-    #
-    # The button stays, because it is now the way back to the autosave
-    # after the project has been changed in-session.
-    shiny::observe({
-      if (!is.null(current_project())) return()
-      proj <- tryCatch(store_read_autosave(), error = function(e) NULL)
-      if (is.null(proj)) return()
-      current_project(proj)
-      shiny::showNotification("Restored your last session.", type = "message")
-    }) |> shiny::bindEvent(TRUE, once = TRUE, ignoreInit = FALSE)
+    # My projects, Save / restore, and the autosave (mod_project_saved.R).
+    project_saved_server(input, output, session, current_project, set_project)
   })
 }
 
 # ---- internal helpers ------------------------------------------------
-
-# Compact listing under the project picker: size and last-modified for
-# each saved `.omp`, so a user can tell two similarly-named projects
-# apart before opening one.
-saved_projects_table <- function(saved) {
-  if (!is.data.frame(saved) || nrow(saved) == 0L) return(NULL)
-  htmltools::tags$table(
-    class = "tbl",
-    style = "margin-top:12px",
-    htmltools::tags$thead(
-      htmltools::tags$tr(
-        htmltools::tags$th("Project"),
-        htmltools::tags$th(class = "num", "Size"),
-        htmltools::tags$th("Modified")
-      )
-    ),
-    htmltools::tags$tbody(
-      lapply(seq_len(nrow(saved)), function(i) {
-        htmltools::tags$tr(
-          htmltools::tags$td(
-            htmltools::tags$span(class = "text-mono", saved$slug[[i]])),
-          htmltools::tags$td(class = "num",
-                             sprintf("%.1f MB", saved$size_mb[[i]])),
-          htmltools::tags$td(
-            class = "muted",
-            format(saved$modified[[i]], "%Y-%m-%d %H:%M"))
-        )
-      })
-    )
-  )
-}
 
 # Human-readable display label for an omics_input layer.
 project_omics_label <- function(x) {
@@ -421,7 +275,7 @@ project_omics_label <- function(x) {
 project_experiments_card <- function(experiments, ns = NULL) {
   bslib::card(
     bslib::card_header(
-      htmltools::tags$h3(class = "card-title", "Experiments"),
+      htmltools::tags$h3(class = "card-title", "Omics layers"),
       htmltools::tags$span(
         class = "card-sub",
         sprintf("%d layer%s loaded", length(experiments),
@@ -433,14 +287,14 @@ project_experiments_card <- function(experiments, ns = NULL) {
         htmltools::tags$div(
           class = "muted",
           style = "font-size:13px;padding:8px 0",
-          "No experiments yet. Use the Import view to upload a file."
+          "No layers yet. Use the Import view to upload a file."
         )
       } else {
         htmltools::tags$table(
           class = "tbl",
           htmltools::tags$thead(
             htmltools::tags$tr(
-              htmltools::tags$th("Tag"),
+              htmltools::tags$th("Layer"),
               htmltools::tags$th("Omics"),
               htmltools::tags$th(class = "num", "Samples"),
               htmltools::tags$th(class = "num", "Features"),
@@ -510,17 +364,13 @@ project_activity_card <- function(project, is_demo = TRUE) {
     bslib::card_body(
       style = "padding-top:8px",
       if (isTRUE(is_demo)) {
-        htmltools::tagList(
-          bullet("--brand-500", "Differential \u00B7 Proteomics \u00B7 limma",
-                 "G2 vs G1, age-adjusted \u00B7 just now"),
-          bullet("--ok",        "Imported RNA-seq experiment",
-                 sprintf("%d samples \u00B7 just now",
-                         ncol(example_input("rnaseq")$expr_mat))),
-          bullet("--ok",        "Imported Proteomics experiment",
-                 sprintf("%d samples \u00B7 just now",
-                         ncol(example_proteomics_input()$expr_mat))),
-          bullet("--accent-500","Created demo project",
-                 "Cheek \u00B7 G2 vs G1 \u00B7 just now")
+        # Nothing has happened yet, and the card says so. It used to list
+        # a limma run "just now" that no view had performed -- the
+        # Differential page then opened empty, contradicting it.
+        htmltools::tags$div(
+          class = "muted", style = "font-size:12px",
+          "Nothing yet. Load the example project or import a file, and the ",
+          "layers and analyses appear here."
         )
       } else {
         experiments <- project$experiments
@@ -536,15 +386,39 @@ project_activity_card <- function(project, is_demo = TRUE) {
               exp <- experiments[[tag]]
               bullet(
                 if (exp$omics_type == "rnaseq") "--brand-500" else "--ok",
-                sprintf("Imported %s experiment",
+                sprintf("Imported %s layer",
                         project_omics_label(exp)),
-                sprintf("tag = %s \u00B7 %d samples \u00B7 %d features",
+                sprintf("layer %s \u00B7 %d samples \u00B7 %d features",
                         tag, ncol(exp$expr_mat), nrow(exp$expr_mat))
               )
+            }),
+            lapply(names(project$bundles %||% list()), function(nm) {
+              b <- project$bundles[[nm]]
+              what <- switch(nm, qc = "Quality control", diff = "Differential",
+                             enrich = "Enrichment", integration = "Integration", nm)
+              prm <- if (is.list(b)) b$params else NULL
+              detail <- paste(c(prm$method, prm$comparison, prm$type,
+                                prm$database),
+                              collapse = " \u00B7 ")
+              bullet("--accent-500", what,
+                     gsub("_vs_", " vs ", if (nzchar(detail)) detail else "done"))
             })
           )
         }
       }
     )
   )
+}
+
+# The bundles computed on a layer: by the layer they record
+# (omicsCore::bundle_layer(), read against `project` as it was with the
+# layer still in it), and for integration by the pair of layers it names.
+drop_layer_bundles <- function(bundles, tag, project) {
+  if (!length(bundles)) return(bundles)
+  keep <- vapply(bundles, function(b) {
+    if (!omicsCore::is_analysis_bundle(b)) return(TRUE)
+    if (tag %in% (b$params$experiments %||% character(0))) return(FALSE)
+    !identical(omicsCore::bundle_layer(project, b), tag)
+  }, logical(1))
+  bundles[keep]
 }

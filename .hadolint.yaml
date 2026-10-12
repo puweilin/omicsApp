@@ -1,0 +1,29 @@
+# hadolint configuration for deploy/docker/Dockerfile (run by the lint
+# job in .github/workflows/R-CMD-check.yaml).
+#
+# Every finding at any severity fails CI, so a new one is either fixed or
+# added here with its reason. The ones below were read one by one and are
+# deliberate; the real findings (a pipeline without pipefail) were fixed
+# in the Dockerfile instead.
+failure-threshold: info
+
+ignored:
+  # Pin versions in apt-get install. The packages come from the Ubuntu
+  # archive of a base image that is itself pinned by digest
+  # (deploy/docker/base-digests.lock). The archive keeps only the current
+  # build of each package, so an exact `pandoc=<version>` pin stops
+  # resolving at the next security update and breaks the build, which is
+  # the opposite of what pinning is for. The digest is the pin.
+  - DL3008
+
+  # Multiple consecutive RUN instructions. The Bioconductor install is
+  # split into three layers on purpose (see the comment above step 3a in
+  # the Dockerfile): each is a long source build, and a failure in the
+  # last one should not discard the cached hour before it.
+  - DL3059
+
+  # Non-numeric user id in USER. The image creates `omics` itself with
+  # the uid given in APP_UID, so the name always resolves inside the
+  # container, and the host only ever sees the number (the bind-mount
+  # comment in step 7 explains why that number is what matters).
+  - DL3066

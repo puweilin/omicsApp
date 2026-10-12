@@ -64,9 +64,9 @@ test_that("the panel states how many features went in", {
   })
   expect_true(grepl("120 of 3000 features", html, fixed = TRUE))
   # `<` renders escaped, so assert on the parts that survive it: which
-  # column was used and at what cutoff.
-  expect_true(grepl("p_value", html, fixed = TRUE))
-  expect_false(grepl("adj_p_value", html, fixed = TRUE))
+  # p-value was used, in the words the controls use, and at what cutoff.
+  expect_true(grepl("selected at p ", html, fixed = TRUE))
+  expect_false(grepl("adjusted p", html, fixed = TRUE))
   expect_true(grepl("0.05", html, fixed = TRUE))
 })
 
@@ -86,9 +86,13 @@ test_that("an empty selection says so, and says where to change it", {
 test_that("features carrying no gene symbol are called out", {
   # feature_symbol falls back to feature_id when the workbook has no
   # gene column; clusterProfiler then maps nothing and returns NULL,
-  # which arrives as an empty result rather than a complaint.
+  # which arrives as an empty result rather than a complaint. The check
+  # reads the values, not whether symbol equals id (a matrix keyed by
+  # gene symbols has both the same), so the ids here are UniProt-shaped.
   b <- split_bundle()
-  b$results$diff_result_df$feature_symbol <- b$results$diff_result_df$feature_id
+  acc <- sprintf("P%05d", seq_len(nrow(b$results$diff_result_df)))
+  b$results$diff_result_df$feature_id <- acc
+  b$results$diff_result_df$feature_symbol <- acc
   html <- NULL
   shiny::testServer(enrich_view_server,
                     args = enrich_args(b, p_preference = "raw"), {

@@ -8,12 +8,13 @@
 # `scale = "log2"` (the default, and what every pre-existing caller gets)
 # writes values around 18, the shape an already-normalized matrix has.
 # `"linear"` writes raw instrument intensities, which is what makes the import
-# view offer its normalization step.
+# view offer its normalization step. `"counts"` rounds those to whole
+# numbers, which is what RNA-seq read counts look like.
 write_tiny_omics_xlsx <- function(path,
                                   n_features = 5L,
                                   n_samples  = 6L,
                                   seed       = 2031L,
-                                  scale      = c("log2", "linear")) {
+                                  scale      = c("log2", "linear", "counts")) {
   scale <- match.arg(scale)
   set.seed(seed)
   feat_ids <- sprintf("P%04d", seq_len(n_features))
@@ -21,6 +22,7 @@ write_tiny_omics_xlsx <- function(path,
 
   values <- rnorm(n_features * n_samples, mean = 18, sd = 1.2)
   if (identical(scale, "linear")) values <- 2^values
+  if (identical(scale, "counts")) values <- round(2^values)
 
   expr <- matrix(
     values,

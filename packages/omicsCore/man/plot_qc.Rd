@@ -8,6 +8,7 @@ plot_qc(
   bundle,
   view = c("missing", "depth", "pca", "connectivity", "imputation"),
   color_by = NULL,
+  reference = NULL,
   ...
 )
 }
@@ -19,18 +20,26 @@ plot_qc(
 \item{color_by}{Optional name of a column in the cleaned input's \code{meta_df}
 used to color samples in the \code{"pca"} view.}
 
+\item{reference}{Optional group of \code{color_by} coloured first, as every
+figure colours the study design's reference group (see
+\code{\link[=group_palette]{group_palette()}}); usually \code{study_design(input)$reference}. Ignored
+when it is not a group of \code{color_by}.}
+
 \item{...}{Reserved for future arguments.}
 }
 \value{
 A \code{ggplot} object.
 }
 \description{
-Builds standard ggplot panels from a \code{\link[=run_qc]{run_qc()}} bundle.
+Builds standard ggplot panels from a \code{\link[=run_qc]{run_qc()}} bundle. They are drawn
+from what \code{\link[=run_qc]{run_qc()}} stored in it, so neither the input nor the cleaned
+input is needed.
 }
 \seealso{
 Other qc: 
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link{impute_matrix}()},
+\code{\link{qc_cleaned_input}()},
 \code{\link{qc_depth}()},
 \code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},

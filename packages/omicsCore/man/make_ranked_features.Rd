@@ -28,16 +28,24 @@ input to preranked GSEA (e.g., \code{fgsea::fgsea(stats = ...)}). Duplicate
 feature labels are dropped, keeping the first occurrence after the sort.
 }
 \seealso{
-Other diff: 
+Other diff:
 \code{\link{SUPPORTED_DIFF_METHODS}},
-\code{\link{applicable_diff_methods}()},
-\code{\link{filter_diff_results}()},
-\code{\link{plot_feature_expression}()},
-\code{\link{plot_heatmap}()},
-\code{\link{plot_ma}()},
-\code{\link{plot_pca}()},
-\code{\link{plot_volcano}()},
-\code{\link{run_diff}()},
-\code{\link{run_diff_continuous}()}
+\code{\link[=applicable_diff_methods]{applicable_diff_methods()}},
+\code{\link[=contrast_labels]{contrast_labels()}},
+\code{\link[=diff_comparisons]{diff_comparisons()}},
+\code{\link[=diff_hit_sets]{diff_hit_sets()}},
+\code{\link[=filter_diff_results]{filter_diff_results()}},
+\code{\link[=pairwise_contrasts]{pairwise_contrasts()}},
+\code{\link[=plot_diff_contrasts]{plot_diff_contrasts()}},
+\code{\link[=plot_diff_overlap]{plot_diff_overlap()}},
+\code{\link[=plot_feature_expression]{plot_feature_expression()}},
+\code{\link[=plot_heatmap]{plot_heatmap()}},
+\code{\link[=plot_ma]{plot_ma()}},
+\code{\link[=plot_pca]{plot_pca()}},
+\code{\link[=plot_volcano]{plot_volcano()}},
+\code{\link[=run_diff]{run_diff()}},
+\code{\link[=run_diff_continuous]{run_diff_continuous()}},
+\code{\link[=select_comparison]{select_comparison()}},
+\code{\link[=summarize_diff_contrasts]{summarize_diff_contrasts()}}
 }
 \concept{diff}

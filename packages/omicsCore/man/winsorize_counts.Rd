@@ -4,28 +4,61 @@
 \alias{winsorize_counts}
 \title{Winsorize per-gene outliers in a count matrix}
 \usage{
-winsorize_counts(count_mat, k = 20)
+winsorize_counts(count_mat, k = 20, min_expressed = 3L, legacy = FALSE)
 }
 \arguments{
 \item{count_mat}{Integer or numeric count matrix (genes × samples).}
 
 \item{k}{IQR multiplier for the upper fence. Larger values are more
 conservative (fewer values clipped). Default \code{20}.}
+
+\item{min_expressed}{Minimum number of samples with a non-zero count for
+a gene to be winsorized. Default \code{3}. Ignored when \code{legacy = TRUE}.}
+
+\item{legacy}{Use the legacy pipeline's rule (see Details). Default
+\code{FALSE}.}
 }
 \value{
 A list with components:
 \item{\code{count_mat}}{Winsorized count matrix (same dimensions / names).}
-\item{\code{stats}}{\code{data.frame} with per-gene outlier statistics.}
+\item{\code{stats}}{\code{data.frame} with per-gene outlier statistics:
+\code{feature_id}, \code{q1}, \code{q3}, \code{iqr}, \code{threshold} (\code{NA} for a gene that
+was not winsorized), \code{max_original}, \code{n_clipped}, \code{n_nonzero} and
+\code{winsorized}.}
 \item{\code{n_clipped}}{Total number of values clipped.}
 \item{\code{n_genes_affected}}{Number of genes with at least one clipped value.}
 \item{\code{k}}{The multiplier used.}
+\item{\code{min_expressed}}{The expression floor used (\code{NA} for legacy).}
+\item{\code{legacy}}{Whether the legacy rule was used.}
 }
 \description{
-For each gene (row), values exceeding \code{Q3 + k * IQR} are clipped to that
-threshold. This removes extreme leverage points that can drive spurious
-differential expression results while preserving the overall distribution.
+For each expressed gene (row), counts above \code{Q3 + k * IQR} are clipped
+to that bound. This removes extreme leverage points that can drive
+spurious differential expression results while preserving the overall
+distribution.
 }
 \details{
+The quartiles are taken over the gene's non-zero counts, and only genes
+with at least \code{min_expressed} non-zero counts are winsorized. A gene that
+is switched on in some samples and off in the rest is the case this
+protects: over all its counts its quartiles are both 0, the bound is 0,
+and every sample where it is expressed used to be clipped to zero --
+turning the strongest kind of difference into no difference at all.
+Zeros are never changed.
+
+A gene whose non-zero counts do not spread at all (an IQR of 0) is left
+alone too: there is no scale to measure an outlier against, and clipping
+at its upper quartile would flatten every count above it.
+
+Clipped values are rounded down to a whole number, so the matrix stays
+a count matrix that DESeq2 and edgeR accept; an integer matrix stays
+integer.
+
+\code{legacy = TRUE} reproduces the legacy pipeline exactly: quartiles over
+all counts (zeros included), every gene eligible, and clipping to the
+unrounded bound. It is kept so results produced with that pipeline can
+be reproduced; it has the on/off problem described above.
+
 Pure base R; no \code{matrixStats} dependency.
 }
 \seealso{
@@ -33,6 +66,7 @@ Other qc:
 \code{\link{IMPUTE_METHOD_ASSUMPTION}},
 \code{\link{impute_matrix}()},
 \code{\link{plot_qc}()},
+\code{\link{qc_cleaned_input}()},
 \code{\link{qc_depth}()},
 \code{\link{qc_depth_outliers}()},
 \code{\link{qc_missingness}()},

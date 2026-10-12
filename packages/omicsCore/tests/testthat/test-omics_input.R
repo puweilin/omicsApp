@@ -108,3 +108,24 @@ test_that("select_complete_cases applies missingness cutoff", {
   expect_false("g1" %in% rownames(y$expr_mat))
   expect_false("g2" %in% rownames(y$expr_mat))
 })
+
+test_that("a study design is recorded, read back, checked and kept by subsets", {
+  expr <- matrix(1:24 + 10, 3, dimnames = list(paste0("g", 1:3), paste0("s", 1:8)))
+  meta <- data.frame(treatment = rep(c("DMSO", "DrugA", "DrugB", "DMSO"), 2),
+                     row.names = paste0("s", 1:8))
+  feat <- data.frame(feature_id = paste0("g", 1:3), row.names = paste0("g", 1:3))
+  x <- omics_input(expr, meta, feat, omics_type = "proteomics",
+                   assay_type = "normalized_intensity")
+  expect_null(study_design(x))
+  y <- set_study_design(x, "treatment", "DMSO")
+  expect_identical(study_design(y), list(group_col = "treatment", reference = "DMSO"))
+  expect_error(set_study_design(x, "nope"), "not a column")
+  expect_error(set_study_design(x, "treatment", "Placebo"), "not a level")
+  sub <- subset_omics_samples(y, paste0("s", 1:4))
+  expect_identical(study_design(sub)$reference, "DMSO")
+  expect_identical(study_design(subset_omics_features(y, "g1"))$group_col, "treatment")
+  # A subset that loses the reference keeps the column only.
+  noref <- subset_omics_samples(y, c("s2", "s3"))
+  expect_null(study_design(noref)$reference)
+  expect_null(study_design(set_study_design(y, NULL)))
+})

@@ -16,6 +16,14 @@
 #' object (or `NULL`) and a structured [`ImportReport`][new_import_report()]
 #' so the UI can show what was detected before the user commits.
 #'
+#' Workbooks may be `.xlsx`, `.xlsm` (macros are never run; only the cells
+#' are read) or `.xls`. Delimited text may be gzip-compressed
+#' (`.csv.gz`, `.tsv.gz`, `.txt.gz`, a Salmon `quant.sf.gz`); it is
+#' unpacked up to the `options(omicsCore.max_unpacked_mb)` limit (2 GB by
+#' default). An `.rds` file may hold an `omics_input`, a data frame or
+#' matrix, or a `SummarizedExperiment` / `DESeqDataSet`, which is read as
+#' [read_summarized_experiment()] reads one.
+#'
 #' @param path Path to a file. The extension drives auto-detection.
 #' @param type One of `"auto"`, `"excel"`, `"csv"`, or `"rds"`.
 #' @param omics_type Optional omics modality. If `NULL`, callers (the
@@ -29,8 +37,22 @@
 #'   an unconfident one: a metadata sheet read as the matrix produces an
 #'   `omics_input` that analyses cleanly and means nothing. This is how a
 #'   caller lets the user correct it without re-implementing the reader.
+#' @param orientation Optional `"features_in_rows"` or `"samples_in_rows"`
+#'   for the matrix sheet, overriding the guess. The guess is reported
+#'   with its confidence; below 0.6 the report says it was a guess, and
+#'   this is how the caller corrects it (an Olink NPX table has samples in
+#'   rows and protein names that look like gene symbols on both axes).
+#' @param sample_sheet Optional path to a separate sample sheet (Excel or
+#'   CSV/TSV), for a matrix file that carries no sample information --
+#'   a featureCounts table beside a samples.csv, the usual RNA-seq
+#'   layout. Its rows are matched to the matrix's samples by name and
+#'   replace any sample information found in `path`.
 #' @param ... Forwarded to the underlying reader (`readxl::read_excel`,
-#'   `utils::read.csv`).
+#'   `utils::read.table`). Delimited text is otherwise read with
+#'   `data.table::fread()` when that is installed, giving the table
+#'   `read.table` would give in a fraction of the time; passing any
+#'   argument here, or setting `options(omicsCore.use_fread = FALSE)`,
+#'   reads it with `read.table` instead.
 #'
 #' @return A list with two elements:
 #'   * `input`: an `omics_input` or `NULL`.
@@ -43,31 +65,109 @@ read_omics <- function(
   omics_type = NULL,
   assay_type = NULL,
   sheet_roles = NULL,
+  orientation = NULL,
+  sample_sheet = NULL,
   ...
 ) {
   type <- match.arg(type)
+  assert_string(sample_sheet, "sample_sheet", allow_null = TRUE)
+  if (!is.null(sample_sheet) && !file.exists(sample_sheet)) {
+    stop("Sample sheet does not exist: ", sample_sheet, call. = FALSE)
+  }
   sheet_roles <- validate_sheet_roles(sheet_roles)
+  assert_choice(orientation, "orientation", c("features_in_rows", "samples_in_rows"),
+                allow_null = TRUE)
   if (!is.character(path) || length(path) != 1L || !nzchar(path)) {
     stop("`path` must be a non-empty single string.")
   }
   if (!file.exists(path)) {
     stop("File does not exist: ", path)
   }
+  guard_archive(path)
   if (type == "auto") {
     type <- detect_file_type(path)
   }
-  switch(type,
+  out <- switch(type,
     excel = read_omics_excel(path, omics_type = omics_type,
                              assay_type = assay_type,
-                             sheet_roles = sheet_roles, ...),
+                             sheet_roles = sheet_roles,
+                             orientation = orientation, ...),
     csv = read_omics_csv(path, omics_type = omics_type,
                          assay_type = assay_type,
-                         sheet_roles = sheet_roles, ...),
+                         sheet_roles = sheet_roles,
+                             orientation = orientation, ...),
     rds = read_omics_rds(path, omics_type = omics_type,
                          assay_type = assay_type,
-                         sheet_roles = sheet_roles, ...),
+                         sheet_roles = sheet_roles,
+                             orientation = orientation, ...),
     stop("Unsupported type: ", type)
   )
+  # Kept on the input so export_script() can read the file the same way.
+  if (!is.null(sheet_roles) && is_omics_input(out$input)) {
+    out$input$sheet_roles <- sheet_roles
+  }
+  if (!is.null(orientation) && is_omics_input(out$input)) {
+    out$input$orientation <- orientation
+  }
+  if (!is.null(sample_sheet) && is_omics_input(out$input)) {
+    out <- attach_sample_sheet(out, sample_sheet)
+  }
+  out
+}
+
+# A separate sample sheet, matched to the matrix's samples by name.
+attach_sample_sheet <- function(out, path) {
+  guard_archive(path)
+  sheet <- tryCatch(read_sample_table(path), error = function(e) e)
+  if (inherits(sheet, "error") || !is.data.frame(sheet) || !nrow(sheet)) {
+    out$report <- add_import_warning(out$report, paste0(
+      "The sample sheet could not be read",
+      if (inherits(sheet, "error")) paste0(": ", conditionMessage(sheet)) else ".", ""))
+    return(out)
+  }
+  note <- encoding_note(attr(sheet, "encoding"), "The sample sheet")
+  if (!is.null(note)) out$report <- add_import_warning(out$report, note)
+  attr(sheet, "encoding") <- NULL
+  meta <- materialize_metadata(sheet, sample_ids = colnames(out$input$expr_mat))
+  for (note in attr(meta, "notes")) out$report <- add_import_warning(out$report, note)
+  attr(meta, "notes") <- NULL
+  if (ncol(meta) <= 1L) return(out)
+  out$input$meta_df <- meta
+  out$input$sample_sheet_path <- path
+  out$report <- add_import_warning(out$report, sprintf(
+    "Sample information (%s) was taken from the separate sample sheet.",
+    paste(utils::head(setdiff(names(meta), "sample_id"), 6L), collapse = ", ")))
+  out
+}
+
+read_sample_table <- function(path) {
+  if (is_excel_file(path)) {
+    sheets <- readxl::excel_sheets(path)
+    dfs <- lapply(sheets, function(nm) as.data.frame(read_excel_sheet(path, nm),
+                                                       stringsAsFactors = FALSE))
+    roles <- vapply(seq_along(dfs), function(i) classify_sheet_role(dfs[[i]], sheets[[i]])$role,
+                    character(1))
+    i <- which(roles == "metadata")[1L]
+    if (is.na(i)) i <- 1L
+    return(dfs[[i]])
+  }
+  # The same decoding as the matrix file: a sample sheet typed in Excel
+  # on a Chinese or Western Windows machine is the commonest non-UTF-8
+  # file there is. What it was read as travels on attribute "encoding".
+  plain <- gunzip_text_file(path)
+  if (isTRUE(plain$converted)) on.exit(unlink(plain$path), add = TRUE)
+  text <- utf8_text_file(plain$path)
+  if (isTRUE(text$converted)) on.exit(unlink(text$path), add = TRUE)
+  first <- readLines(text$path, n = 1L, warn = FALSE, encoding = "UTF-8")
+  sep <- detect_delimiter(text$path, line = first)
+  out <- utils::read.table(text$path, header = TRUE, sep = sep, check.names = FALSE,
+                           stringsAsFactors = FALSE, encoding = "UTF-8",
+                           quote = if (identical(sep, "\t")) "" else "\"",
+                           dec = if (identical(sep, ";")) "," else ".",
+                           comment.char = "", fill = TRUE, strip.white = TRUE)
+  if (ncol(out) > 0L) colnames(out) <- strip_bom(colnames(out))
+  attr(out, "encoding") <- text$encoding
+  out
 }
 
 # Roles the caller may assign, checked before any file is opened so a typo
@@ -120,37 +220,114 @@ is_excel_file <- function(path) {
     identical(magic, as.raw(c(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1)))
 }
 
+# A workbook is a zip archive and an .rds a gzip stream. A small upload
+# can inflate to gigabytes -- a "zip bomb" -- and the readers inflate it
+# in memory before looking at a single cell, which takes the session (and
+# on a shared server, its neighbours) down with it. The sizes the archive
+# declares are checked first; the limit is
+# `options(omicsCore.max_unpacked_mb =)`, 2 GB by default.
+guard_archive <- function(path,
+                          max_mb = getOption("omicsCore.max_unpacked_mb", 2048)) {
+  con <- file(path, "rb")
+  magic <- tryCatch(readBin(con, "raw", 4L), finally = close(con))
+  limit <- max_mb * 1024^2
+  too_big <- function(bytes, what) {
+    stop(sprintf(paste(
+      "This %s unpacks to %s, more than the %s this server reads.",
+      "Save the matrix as CSV (which needs far less memory) and upload that,",
+      "or raise options(omicsCore.max_unpacked_mb)."),
+      what, format_mb(bytes), format_mb(limit)), call. = FALSE)
+  }
+  if (length(magic) >= 4L && identical(magic[1:4], as.raw(c(0x50, 0x4b, 0x03, 0x04)))) {
+    entries <- tryCatch(utils::unzip(path, list = TRUE), error = function(e) NULL)
+    if (is.null(entries)) {
+      stop("The file looks like a workbook but its archive could not be read; ",
+           "it may be damaged or encrypted.", call. = FALSE)
+    }
+    if (nrow(entries) > 10000L) {
+      stop("The workbook holds ", nrow(entries), " parts; a spreadsheet has a ",
+           "few dozen. Refusing to unpack it.", call. = FALSE)
+    }
+    total <- sum(as.numeric(entries$Length), na.rm = TRUE)
+    if (total > limit) too_big(total, "workbook")
+  } else if (length(magic) >= 2L && identical(magic[1:2], as.raw(c(0x1f, 0x8b)))) {
+    # gzip records the unpacked size (mod 2^32) in its last four bytes.
+    size <- file.size(path)
+    if (size >= 18) {
+      con <- file(path, "rb")
+      isize <- tryCatch({
+        seek(con, size - 4)
+        sum(as.numeric(readBin(con, "raw", 4L)) * 256^(0:3))
+      }, finally = close(con))
+      # A truncated file ends mid-stream, and its "size" is whatever
+      # bytes it stops on; the message allows for both.
+      if (isize > limit) {
+        stop(sprintf(paste(
+          "This compressed file says it unpacks to %s, more than the %s this",
+          "server reads -- or it is damaged. Upload a smaller or complete file,",
+          "or raise options(omicsCore.max_unpacked_mb)."),
+          format_mb(isize), format_mb(limit)), call. = FALSE)
+      }
+    }
+  }
+  invisible(TRUE)
+}
+
+format_mb <- function(bytes) {
+  if (bytes >= 1024^3) sprintf("%.1f GB", bytes / 1024^3) else sprintf("%.0f MB", bytes / 1024^2)
+}
+
 detect_file_type <- function(path) {
   ext <- tolower(tools::file_ext(path))
+
+  # Compressed text, named for what it holds: counts.csv.gz,
+  # quant.sf.gz. A browser upload arrives renamed "0.gz", with nothing
+  # left to say what is inside; text is what a .gz holds in this field.
+  if (identical(ext, "gz")) {
+    inner <- tolower(tools::file_ext(sub("\\.gz$", "", path, ignore.case = TRUE)))
+    if (inner %in% c("", GZ_TEXT_EXTENSIONS)) return("csv")
+    stop("A compressed (.gz) file is read when it holds delimited text ",
+         "(.csv.gz, .tsv.gz, .txt.gz); this one holds '.", inner, "'.", call. = FALSE)
+  }
 
   # Trust the bytes over the name. RNA-seq pipelines routinely write
   # tab-separated text and call it .xls -- a 170 MB expression table
   # with that extension is normal output, not a mistake -- and handing
   # it to readxl fails with a message about the workbook rather than
   # about the format, which sends you looking at the wrong thing.
-  if (ext %in% c("xls", "xlsx") && file.exists(path) && !is_excel_file(path)) {
+  if (ext %in% c("xls", "xlsx", "xlsm") && file.exists(path) && !is_excel_file(path)) {
     return("csv")
   }
 
   switch(ext,
     xlsx = "excel",
+    # A workbook with macros: the same file format, and the macros are
+    # never run -- readxl reads the cells only.
+    xlsm = "excel",
     xls  = "excel",
     csv  = "csv",
     tsv  = "csv",
     txt  = "csv",
+    # Salmon's quant.sf and RSEM's *.results are tab-separated text.
+    sf      = "csv",
+    results = "csv",
+    tab  = "csv",
     rds  = "rds",
     stop("Cannot auto-detect file type for extension: ", ext)
   )
 }
 
 read_omics_excel <- function(path, omics_type, assay_type,
-                             sheet_roles = NULL, ...) {
+                             sheet_roles = NULL, orientation = NULL, ...) {
   sheet_names <- readxl::excel_sheets(path)
   sheets <- list()
   rows <- list()
   for (nm in sheet_names) {
     df <- tryCatch(
-      as.data.frame(readxl::read_excel(path, sheet = nm, ...),
+      # guess_max: readxl types a column from its first 1000 rows, so a
+      # sample whose values start further down was read as logical and
+      # vanished.
+      as.data.frame(read_excel_sheet(path, nm, ...),
                     stringsAsFactors = FALSE),
       error = function(e) NULL
     )
@@ -178,7 +355,8 @@ read_omics_excel <- function(path, omics_type, assay_type,
   }
   sheet_table <- apply_sheet_roles(do.call(rbind, rows), sheet_roles)
   build_input_from_sheets(sheets, sheet_table, source = path,
-                          omics_type = omics_type, assay_type = assay_type)
+                          omics_type = omics_type, assay_type = assay_type,
+                          orientation = orientation)
 }
 
 # From the header line, not the extension: a .xls that turned out to be
@@ -222,35 +400,202 @@ count_leading_comment_lines <- function(path) {
   skip
 }
 
-read_omics_csv <- function(path, omics_type, assay_type,
-                           sheet_roles = NULL, ...) {
+# The header's fields, read with the scan() call read.table makes for
+# its header line -- quotes honoured, surrounding white space stripped,
+# text marked UTF-8 -- so the names are the ones read.table would give.
+# Splitting on the delimiter by hand miscounted a quoted name holding
+# one -- "Sample, A" became two fields -- which made the colClasses one
+# longer than the table, and reported repeated names that were not.
+parse_header_fields <- function(path, skip, sep, quote, header_line) {
+  if (length(header_line) == 0L || is.na(header_line)) return(character(0))
+  fields <- tryCatch(
+    scan(path, what = "", sep = sep, quote = quote, skip = skip,
+         nlines = 1L, quiet = TRUE, strip.white = TRUE,
+         na.strings = character(0), comment.char = "", encoding = "UTF-8"),
+    # Whatever scan() could not read, read.table will not either, and
+    # says so; the old split serves until it does.
+    error = function(e) strsplit(header_line, sep, fixed = TRUE)[[1L]]
+  )
+  strip_bom(fields)
+}
+
+# A byte-order mark belongs to the file, not to the first column's name.
+# Compared as bytes: a sub() on "^\ufeff" matches nothing under a C
+# locale, and the mark stayed on the name there.
+strip_bom <- function(x) {
+  if (length(x) == 0L || is.na(x[1L])) return(x)
+  b <- charToRaw(x[1L])
+  if (length(b) >= 3L && identical(b[1:3], as.raw(c(0xef, 0xbb, 0xbf)))) {
+    rest <- rawToChar(b[-(1:3)])
+    Encoding(rest) <- "UTF-8"
+    x[1L] <- rest
+  }
+  x
+}
+
+# read.table, but in a fraction of the time: a 30k x 60 matrix of
+# decimals (31 MB) takes read.table 3.3 s, most of it turning every cell
+# into a string before turning it back into a number, and this 0.1 s,
+# checks included. Returns
+# NULL whenever it cannot promise read.table's answer, and the caller
+# then asks read.table itself, so an unusual file costs time, never a
+# different table. `options(omicsCore.use_fread = FALSE)` always defers.
+#
+# What fread does differently, and what is done about each:
+#   * a ragged row makes it stop early with a warning, or take a later
+#     line for the header -- any warning, or a header that is not the
+#     one parse_header_fields() found, hands the file to read.table,
+#     which then fails the way it always has;
+#   * a quote inside an unquoted field is kept where read.table drops
+#     it -- a quote character in any text column hands the file over;
+#   * it reads Excel's error cells as missing ("#N/A" -> NA, "#DIV/0!"
+#     -> NaN) where read.table keeps them as text for
+#     clean_numeric_text() to count and report, and dates as dates --
+#     a numeric column with any non-finite value, or a column of any
+#     other class, is checked against its raw text and retyped the way
+#     read.table types it where they differ;
+#   * it leaves as text what read.table's type.convert() reads as
+#     logical ("T", "F") or numeric ("0x1A") -- every text column is
+#     passed through type.convert() as read.table would.
+read_delimited_fast <- function(path, sep, skip, quote, dec, header_fields) {
+  if (!isTRUE(getOption("omicsCore.use_fread", TRUE)) ||
+      !is_installed("data.table") || length(header_fields) == 0L) {
+    return(NULL)
+  }
+  fread_raw <- function(...) {
+    warned <- FALSE
+    out <- tryCatch(
+      withCallingHandlers(
+        data.table::fread(
+          path, sep = sep, quote = quote, dec = dec, skip = skip,
+          header = TRUE, data.table = FALSE, check.names = FALSE,
+          encoding = "UTF-8", strip.white = FALSE, blank.lines.skip = TRUE,
+          fill = FALSE, integer64 = "double", showProgress = FALSE, ...),
+        warning = function(w) {
+          warned <<- TRUE
+          invokeRestart("muffleWarning")
+        }),
+      error = function(e) NULL)
+    if (warned) NULL else out
+  }
+
+  df <- fread_raw(na.strings = "NA", colClasses = list(character = 1L))
+  if (!is.data.frame(df) || ncol(df) != length(header_fields)) return(NULL)
+  # fread names an empty header cell "V2"; read.table leaves it empty.
+  named <- nzchar(header_fields)
+  if (!identical(trimws(names(df))[named], header_fields[named])) return(NULL)
+  if (nzchar(quote)) {
+    quoted_inside <- vapply(df, function(x) {
+      is.character(x) && any(grepl(quote, x, fixed = TRUE))
+    }, logical(1L))
+    if (any(quoted_inside)) return(NULL)
+  }
+
+  # read.table's typing: scan() to text with "NA" as missing, quoted or
+  # not, then type.convert() each column not given a class.
+  first <- df[[1L]]
+  first[first %in% "NA"] <- NA_character_
+  df[[1L]] <- first
+  basic <- c("logical", "integer", "numeric", "character")
+  # Every spreadsheet error fread reads as NA is spelled with a "#"
+  # ("#N/A", "#REF!"); with none in the data, a missing cell was "NA" or
+  # empty and needs no second look. Worth asking: a proteomics matrix
+  # has gaps in every column, and re-reading them all as text is most
+  # of what made read.table slow.
+  hash_in_data <- NULL
+  suspect <- integer(0)
+  for (j in seq_along(df)[-1L]) {
+    x <- df[[j]]
+    if (is.character(x)) {
+      df[[j]] <- utils::type.convert(x, as.is = TRUE, dec = dec,
+                                     numerals = "allow.loss", na.strings = "NA")
+      next
+    }
+    odd_value <- is.double(x) && (any(is.nan(x)) || any(is.infinite(x)))
+    if (!odd_value && anyNA(x) && is.null(hash_in_data)) {
+      hash_in_data <- file_has_byte_after(path, "#", data_offset(path, skip))
+    }
+    if (!class(x)[1L] %in% basic || odd_value || (anyNA(x) && hash_in_data)) {
+      suspect <- c(suspect, j)
+    }
+  }
+  if (length(suspect) > 0L) {
+    raw <- fread_raw(na.strings = NULL, colClasses = "character", select = suspect)
+    if (!is.data.frame(raw) || ncol(raw) != length(suspect) ||
+        nrow(raw) != nrow(df)) {
+      return(NULL)
+    }
+    for (k in seq_along(suspect)) {
+      j <- suspect[[k]]
+      x <- df[[j]]
+      r <- raw[[k]]
+      gap <- if (is.double(x)) !is.finite(x) else is.na(x)
+      # Missing where the file says "NA" or nothing is missing in
+      # read.table too; anything else is retyped from the text.
+      if (class(x)[1L] %in% basic && all(r[gap] %in% c("NA", ""))) next
+      r[r %in% "NA"] <- NA_character_
+      df[[j]] <- utils::type.convert(r, as.is = TRUE, dec = dec,
+                                     numerals = "allow.loss",
+                                     na.strings = character(0))
+    }
+  }
+  names(df) <- header_fields
+  df
+}
+
+# Bytes taken by the preamble and the header, counted as if lines ended
+# in a bare newline: with CRLF the true offset is larger, so the search
+# below starts early, never late.
+data_offset <- function(path, skip) {
+  head_lines <- readLines(path, n = skip + 1L, warn = FALSE)
+  sum(nchar(head_lines, type = "bytes")) + length(head_lines)
+}
+
+# Whether `byte` occurs at or after `offset`, read in slices so a large
+# file is never held in memory whole just to answer yes or no.
+file_has_byte_after <- function(path, byte, offset = 0) {
+  con <- file(path, "rb")
+  on.exit(close(con), add = TRUE)
+  if (offset > 0) seek(con, offset)
+  pattern <- charToRaw(byte)
+  repeat {
+    chunk <- readBin(con, "raw", n = 8L * 1024L^2)
+    if (length(chunk) == 0L) return(FALSE)
+    if (length(grepRaw(pattern, chunk, fixed = TRUE)) > 0L) return(TRUE)
+  }
+}
+
+# The delimited table as read.table reads it, with the header's repeated
+# names alongside (read_omics_csv() reports them).
+read_delimited_table <- function(path, ...) {
+  # Unpacked first when gzip-compressed (see io-gzip.R): everything
+  # below reads the file more than once and by byte offset.
+  plain <- gunzip_text_file(path)
+  if (isTRUE(plain$converted)) on.exit(unlink(plain$path), add = TRUE)
+  path <- plain$path
+  # Decoded to UTF-8 first unless the caller said how to decode it; a
+  # Windows-1252 or GBK file used to stop the import with "invalid
+  # UTF-8" (see io-encoding.R).
+  dots <- list(...)
+  encoding <- "UTF-8"
+  if (is.null(dots$fileEncoding) && is.null(dots$encoding)) {
+    text <- utf8_text_file(path)
+    if (isTRUE(text$converted)) on.exit(unlink(text$path), add = TRUE)
+    path <- text$path
+    encoding <- text$encoding
+  }
   skip <- count_leading_comment_lines(path)
-  header_line <- tryCatch(readLines(path, n = skip + 1L, warn = FALSE)[skip + 1L],
-                          error = function(e) NA_character_)
+  header_line <- tryCatch(
+    readLines(path, n = skip + 1L, warn = FALSE, encoding = "UTF-8")[skip + 1L],
+    error = function(e) NA_character_)
   sep <- detect_delimiter(path, line = header_line)
 
   args <- list(path, header = TRUE, sep = sep, skip = skip,
                check.names = FALSE, stringsAsFactors = FALSE, ...)
-  # The first column is the identifiers, whatever they look like, and
-  # they are text: an Entrez id is a number that must not be summed, and
-  # a probe id "0001" read as a number comes back "1". Only the first
-  # column is forced; the rest keep read.table's typing, which on a 63k
-  # by 258 file is the difference between seconds and a minute.
-  header_fields <- if (is.na(header_line)) character(0) else
-    strsplit(header_line, sep, fixed = TRUE)[[1L]]
-  if (is.null(args$colClasses) && length(header_fields) > 0L) {
-    args$colClasses <- c("character", rep(NA_character_, length(header_fields) - 1L))
-  }
-  duplicated_headers <- unique(header_fields[duplicated(trimws(header_fields))])
-  duplicated_headers <- duplicated_headers[nzchar(duplicated_headers)]
-  # Mark the text as UTF-8 rather than as "whatever the process locale
-  # is". The files are UTF-8 -- every pipeline and spreadsheet writes
-  # them so -- but a container without a configured locale runs R in C,
-  # where an unmarked non-ASCII name survives as bytes only: it compares
-  # unequal to the same name from a workbook, and Shiny's JSON layer
-  # renders it as <e5><9f><ba>. `encoding` marks without converting, so
-  # it costs nothing on ASCII and is right on everything else.
-  if (is.null(args$encoding)) args$encoding <- "UTF-8"
+  # A ";"-separated file is what a spreadsheet writes where the comma is
+  # the decimal mark. "12,345" there is twelve point three, and stripping
+  # the comma as a thousands separator made it 1000 times too large.
+  if (identical(sep, ";") && is.null(list(...)$dec)) args$dec <- ","
 
   # Quoting rules differ by ecosystem, so they follow the delimiter.
   # Tab-separated files from bioinformatics pipelines do not quote
@@ -265,14 +610,61 @@ read_omics_csv <- function(path, omics_type, assay_type,
   if (is.null(args$quote)) {
     args$quote <- if (identical(sep, "\t")) "" else "\""
   }
+
+  # The first column is the identifiers, whatever they look like, and
+  # they are text: an Entrez id is a number that must not be summed, and
+  # a probe id "0001" read as a number comes back "1". Only the first
+  # column is forced; the rest keep read.table's typing, which on a 63k
+  # by 258 file is the difference between seconds and a minute.
+  header_fields <- parse_header_fields(path, skip, sep, args$quote, header_line)
+  if (is.null(args$colClasses) && length(header_fields) > 0L) {
+    args$colClasses <- c("character", rep(NA_character_, length(header_fields) - 1L))
+  }
+  duplicated_headers <- unique(header_fields[duplicated(trimws(header_fields))])
+  duplicated_headers <- duplicated_headers[nzchar(duplicated_headers)]
+  # Mark the text as UTF-8 rather than as "whatever the process locale
+  # is". The files are UTF-8 -- every pipeline and spreadsheet writes
+  # them so -- but a container without a configured locale runs R in C,
+  # where an unmarked non-ASCII name survives as bytes only: it compares
+  # unequal to the same name from a workbook, and Shiny's JSON layer
+  # renders it as <e5><9f><ba>. `encoding` marks without converting, so
+  # it costs nothing on ASCII and is right on everything else.
+  if (is.null(args$encoding)) args$encoding <- "UTF-8"
+
   # Never: `#` is a legal character in a gene description and truncating
   # the line at one loses columns silently.
   if (is.null(args$comment.char)) args$comment.char <- ""
 
-  df <- do.call(utils::read.table, args)
+  # Arguments passed through `...` are read.table's, and only read.table
+  # knows what they mean; the fast path is for the call the wizard makes.
+  df <- if (length(list(...)) == 0L) {
+    read_delimited_fast(path, sep = sep, skip = skip, quote = args$quote,
+                        dec = args$dec %||% ".", header_fields = header_fields)
+  }
+  if (is.null(df)) df <- do.call(utils::read.table, args)
   # A byte-order mark is not part of the first column's name.
-  if (ncol(df) > 0L) colnames(df)[1L] <- sub("^\ufeff", "", colnames(df)[1L])
-  nm <- tools::file_path_sans_ext(basename(path))
+  if (ncol(df) > 0L) colnames(df) <- strip_bom(colnames(df))
+  list(df = df, duplicated_headers = duplicated_headers, encoding = encoding)
+}
+
+read_omics_csv <- function(path, omics_type, assay_type,
+                           sheet_roles = NULL, orientation = NULL, ...) {
+  read <- read_delimited_table(path, ...)
+  df <- read$df
+  # One sample's Salmon / RSEM / kallisto output: its Length, TPM and
+  # read columns are not four samples (see io-quant.R).
+  if (!is.na(detect_quant_format(df))) {
+    out <- read_quant_files(path)
+    if (!is.null(omics_type) && !identical(omics_type, "rnaseq")) {
+      out$report <- add_import_warning(out$report, sprintf(
+        "Quantification files hold RNA-seq reads, so this was read as RNA-seq, not %s.",
+        omics_type))
+    }
+    return(out)
+  }
+  duplicated_headers <- read$duplicated_headers
+  # "counts.csv.gz" is the sheet "counts".
+  nm <- tools::file_path_sans_ext(basename(path), compression = TRUE)
   cls <- classify_sheet_role(df, name = nm)
   sheet_table <- data.frame(
     name = nm, role = cls$role,
@@ -285,7 +677,13 @@ read_omics_csv <- function(path, omics_type, assay_type,
   sheets <- setNames(list(df), nm)
   sheet_table <- apply_sheet_roles(sheet_table, sheet_roles)
   out <- build_input_from_sheets(sheets, sheet_table, source = path,
-                                 omics_type = omics_type, assay_type = assay_type)
+                                 omics_type = omics_type, assay_type = assay_type,
+                                 orientation = orientation)
+  note <- encoding_note(read$encoding)
+  if (!is.null(note)) {
+    out$report <- add_import_warning(out$report, note)
+    out$report$suggested_input$encoding <- read$encoding
+  }
   # read.table renames a repeated column quietly ("S01.1"); a sample
   # sheet will not match the new name, and the user should know why.
   if (length(duplicated_headers) > 0L) {
@@ -297,11 +695,38 @@ read_omics_csv <- function(path, omics_type, assay_type,
 }
 
 read_omics_rds <- function(path, omics_type, assay_type,
-                           sheet_roles = NULL, ...) {
+                           sheet_roles = NULL, orientation = NULL, ...) {
   obj <- readRDS(path)
+  # A SummarizedExperiment or DESeqDataSet: S4, and so refused by the
+  # walk below. Read slot by slot instead, its code never touched, and
+  # what is copied out goes through the same walk (see io-se.R).
+  if (is_se_object(obj, trusted = FALSE)) {
+    return(read_se_object(obj, omics_type = omics_type, assay_type = assay_type,
+                          source = path, trusted = FALSE))
+  }
+  # An uploaded .rds is a file from anywhere, and an R object can carry
+  # code (a function, an environment, a promise) as easily as data. The
+  # same walk an untrusted project gets: data only, of known classes.
+  unsafe <- tryCatch({ check_project_structure(obj); NULL },
+                     omp_unsafe_error = function(e) conditionMessage(e))
+  if (!is.null(unsafe)) {
+    return(list(input = NULL, report = new_import_report(
+      warnings = sub("which a project never holds", "which a data table never holds",
+                     unsafe, fixed = TRUE),
+      source = path)))
+  }
   if (inherits(obj, "omics_input")) {
     if (!is.null(omics_type)) obj$omics_type <- omics_type
     if (!is.null(assay_type)) obj$assay_type <- assay_type
+    # A saved object is checked like a built one: it may come from an
+    # older version, or from anywhere.
+    bad <- tryCatch({ validate_omics_input(obj); NULL },
+                    error = function(e) conditionMessage(e))
+    if (!is.null(bad)) {
+      return(list(input = NULL, report = new_import_report(
+        warnings = paste0("The saved omics_input is not valid: ", bad),
+        source = path)))
+    }
     sheet_table <- data.frame(
       name = "rds", role = "matrix",
       n_rows = as.integer(nrow(obj$expr_mat)),
@@ -353,7 +778,8 @@ read_omics_rds <- function(path, omics_type, assay_type,
   sheets <- setNames(list(df), nm)
   sheet_table <- apply_sheet_roles(sheet_table, sheet_roles)
   build_input_from_sheets(sheets, sheet_table, source = path,
-                          omics_type = omics_type, assay_type = assay_type)
+                          omics_type = omics_type, assay_type = assay_type,
+                          orientation = orientation)
 }
 
 # ---- internal: assembling an omics_input from classifier output --------
@@ -362,14 +788,23 @@ read_omics_rds <- function(path, omics_type, assay_type,
 # matrix / metadata / feature_annot sheets and try to glue them into an
 # `omics_input`. Returns list(input, report) without raising.
 build_input_from_sheets <- function(sheets, sheet_table, source,
-                                    omics_type, assay_type) {
+                                    omics_type, assay_type, orientation = NULL) {
   report <- new_import_report(sheets = sheet_table, source = source)
   if (nrow(sheet_table) == 0L) {
     report <- add_import_warning(report, "No readable sheets in the input.")
     return(list(input = NULL, report = report))
   }
 
-  matrix_sheet <- pick_best_sheet(sheet_table, "matrix")
+  # Two sheets that both look like a matrix: one is often the sample
+  # sheet, all numbers (numeric ids, age, BMI, a 0/1 group). It used to
+  # win on confidence alone and the import analysed the metadata. A sheet
+  # whose values name the other sheet's columns is that sheet's metadata.
+  resolved <- resolve_matrix_candidates(sheets, sheet_table)
+  sheet_table <- resolved$sheet_table
+  report$sheets <- sheet_table
+  for (note in resolved$notes) report <- add_import_warning(report, note)
+
+  matrix_sheet <- pick_best_sheet(sheet_table, "matrix", sheets)
   metadata_sheet <- pick_best_sheet(sheet_table, "metadata")
   feature_sheet <- pick_best_sheet(sheet_table, "feature_annot")
 
@@ -384,14 +819,46 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   }
 
   orient <- sheet_table$orientation[sheet_table$name == matrix_sheet]
+  # Judged on the identifiers and the numbers only. A "Genes" annotation
+  # column beside the samples broke the sample-name test and put a
+  # "check the orientation" warning on nearly every ordinary file.
+  block <- numeric_block(select_sample_columns(sheets[[matrix_sheet]])$df)
+  od <- detect_orientation(block)
+  orient_conf <- od$confidence
+  if (is.null(orientation) && od$confidence >= 0.6) orient <- od$orientation
+  if (!is.null(orientation)) {
+    orient <- orientation
+    sheet_table$orientation[sheet_table$name == matrix_sheet] <- orientation
+    report$sheets <- sheet_table
+  } else if (orient_conf < 0.6) {
+    report <- add_import_warning(report, sprintf(paste(
+      "Whether samples are the columns or the rows of '%s' was a guess",
+      "(read as %s). Check the sample count below, and switch the",
+      "orientation if it is the number of features instead."),
+      matrix_sheet, gsub("_", " ", orient)))
+  }
   # Vendor tables carry QC counts and annotation beside the samples; the
   # numeric ones would otherwise become samples. Done on the table, where
   # the column names still say what each column is.
   cols <- select_sample_columns(sheets[[matrix_sheet]])
   for (note in cols$notes) report <- add_import_warning(report, note)
   mat <- materialize_matrix(cols$df, orient)
-  for (note in attr(mat, "notes")) report <- add_import_warning(report, note)
+  mat_notes <- attr(mat, "notes")
   attr(mat, "notes") <- NULL
+  # With samples in rows, the text columns of the matrix sheet describe
+  # samples (an Olink table's Disease, Sex) -- they are the sample
+  # sheet, not feature annotation to throw away.
+  side_meta <- NULL
+  if (identical(orient, "samples_in_rows") && is.null(metadata_sheet)) {
+    side_meta <- side_sample_columns(sheets[[matrix_sheet]])
+    if (!is.null(side_meta)) {
+      mat_notes <- mat_notes[!grepl("^Left out .* as annotation", mat_notes)]
+      mat_notes <- c(mat_notes, sprintf(
+        "Read %d text column(s) beside the measurements as sample information: %s.",
+        ncol(side_meta) - 1L, paste(names(side_meta)[-1L], collapse = ", ")))
+    }
+  }
+  for (note in mat_notes) report <- add_import_warning(report, note)
   if (is.null(mat)) {
     report <- add_import_warning(report,
       "Could not coerce the picked matrix sheet to a numeric matrix.")
@@ -414,20 +881,42 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   if (!is.null(picked$note)) {
     report <- add_import_warning(report, picked$note)
   }
+  # GENCODE's empty chromosome-Y copies of the pseudoautosomal genes
+  # (see feature-symbols.R).
+  par <- par_y_rows(mat)
+  if (!all(par$keep)) mat <- mat[par$keep, , drop = FALSE]
+  for (note in par$notes) report <- add_import_warning(report, note)
 
-  meta <- materialize_metadata(if (is.null(metadata_sheet)) NULL
-                               else sheets[[metadata_sheet]],
-                               sample_ids = colnames(mat))
+  # A sample sheet the classifier could not place -- headings in Chinese,
+  # say, where it knows only English ones -- is still recognisable by its
+  # contents: one column names the matrix's samples.
+  if (is.null(metadata_sheet) && is.null(side_meta)) {
+    found <- find_sample_sheet(sheets, sheet_table, matrix_sheet, colnames(mat))
+    if (!is.null(found)) {
+      metadata_sheet <- found
+      sheet_table$role[sheet_table$name == found] <- "metadata"
+      sheet_table$notes[sheet_table$name == found] <- "names the samples of the matrix"
+      report$sheets <- sheet_table
+      report <- add_import_warning(report, sprintf(
+        "Sheet '%s' was not recognised from its headings, but one of its columns names the samples, so it was read as the sample sheet.",
+        found))
+    }
+  }
+  meta_source <- if (!is.null(metadata_sheet)) sheets[[metadata_sheet]] else side_meta
+  meta <- materialize_metadata(meta_source, sample_ids = colnames(mat))
+  for (note in attr(meta, "notes")) report <- add_import_warning(report, note)
+  attr(meta, "notes") <- NULL
   # A separate annotation sheet wins; failing that, the annotation
   # columns the matrix sheet itself carried.
-  feat_source <- if (!is.null(feature_sheet)) sheets[[feature_sheet]] else cols$annotation
+  feat_source <- if (!is.null(feature_sheet)) sheets[[feature_sheet]]
+                 else if (is.null(side_meta)) cols$annotation
   feat <- materialize_feature_annot(feat_source, feature_ids = rownames(mat))
 
   # An Ensembl-keyed matrix needs symbols before any pathway database can
   # be matched against it. Done here rather than left to the user,
   # because the alternative -- an empty enrichment result -- is
   # indistinguishable from a real one that found nothing.
-  sym <- attach_hgnc_symbols(feat, rownames(mat))
+  sym <- attach_gene_symbols(feat, rownames(mat))
   feat <- sym$feature_df
   if (!is.null(sym$note)) report <- add_import_warning(report, sym$note)
 
@@ -436,6 +925,8 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
     metadata_sheet = metadata_sheet,
     feature_sheet = feature_sheet,
     orientation = orient,
+    orientation_confidence = if (!is.null(orientation)) 1 else orient_conf,
+    orientation_source = if (!is.null(orientation)) "user" else "detected",
     omics_type = omics_type,
     assay_type = assay_type,
     id_column = attr(feat, "id_column")
@@ -459,11 +950,62 @@ build_input_from_sheets <- function(sheets, sheet_table, source,
   list(input = input, report = report)
 }
 
-pick_best_sheet <- function(sheet_table, role) {
+pick_best_sheet <- function(sheet_table, role, sheets = NULL) {
   cand <- sheet_table[sheet_table$role == role, , drop = FALSE]
   if (nrow(cand) == 0L) return(NULL)
-  cand <- cand[order(cand$confidence, decreasing = TRUE), , drop = FALSE]
-  cand$name[[1L]]
+  # Confidence first, and for the matrix the larger table on a near tie:
+  # an expression matrix has thousands of cells, a sample sheet dozens.
+  size <- as.numeric(cand$n_rows) * as.numeric(cand$n_cols)
+  score <- cand$confidence
+  if (identical(role, "matrix")) score <- round(score, 1) + 1e-9 * size
+  cand$name[[order(score, decreasing = TRUE)[[1L]]]]
+}
+
+# Candidates for the matrix role, checked against each other. When the
+# values of one sheet name the columns (or rows) of another, the first is
+# the second's sample sheet: it is relabelled metadata, and the report
+# says so.
+resolve_matrix_candidates <- function(sheets, sheet_table) {
+  notes <- character(0)
+  cand <- sheet_table$name[sheet_table$role == "matrix" & sheet_table$name %in% names(sheets)]
+  if (length(cand) < 2L) return(list(sheet_table = sheet_table, notes = notes))
+  labels_of <- function(df) unique(trimws(c(colnames(df), as.character(df[[1L]]))))
+  values_of <- function(df) {
+    lapply(df, function(col) unique(trimws(as.character(stats::na.omit(col)))))
+  }
+  is_meta <- stats::setNames(rep(FALSE, length(cand)), cand)
+  owner <- stats::setNames(rep(NA_character_, length(cand)), cand)
+  by_user <- sheet_table$name[sheet_table$notes %in% "role set by user"]
+  for (a in setdiff(cand, by_user)) for (b in setdiff(cand, a)) {
+    da <- sheets[[a]]
+    db <- sheets[[b]]
+    # A sample sheet is the smaller one: one row per sample.
+    if (nrow(da) * ncol(da) >= nrow(db) * ncol(db)) next
+    lab_b <- labels_of(db)
+    hit <- vapply(values_of(da), function(v) {
+      length(v) >= 2L && mean(v %in% lab_b) >= 0.8
+    }, logical(1))
+    if (any(hit)) {
+      is_meta[[a]] <- TRUE
+      owner[[a]] <- b
+    }
+  }
+  for (a in cand[is_meta]) {
+    i <- sheet_table$name == a
+    sheet_table$role[i] <- "metadata"
+    sheet_table$orientation[i] <- NA_character_
+    sheet_table$notes[i] <- paste0("names the samples of '", owner[[a]], "'")
+    notes <- c(notes, sprintf(
+      "Sheet '%s' looked like a matrix, but its values name the samples of '%s'; it was read as the sample sheet.",
+      a, owner[[a]]))
+  }
+  remaining <- setdiff(cand, cand[is_meta])
+  if (length(remaining) >= 2L) {
+    notes <- c(notes, sprintf(
+      "Several sheets look like an expression matrix (%s); the largest, most confident one was used. Change the roles if that is wrong.",
+      paste(sprintf("'%s'", remaining), collapse = ", ")))
+  }
+  list(sheet_table = sheet_table, notes = notes)
 }
 
 # Suffixes a sequencing vendor uses to say what a column measures. Only
@@ -558,13 +1100,153 @@ first_column_is_id <- function(df) {
   # numbers. Without this the column became a sample, and with the
   # sheet now mostly "samples in rows" the whole matrix came out
   # transposed, with no warning anywhere.
+  # A duplicate or a missing id used to demote the column to a sample
+  # (an "EntrezID" sample, features named "1".."40"); the name says what
+  # it is, and duplicates are made unique downstream.
   is.numeric(first) && ncol(df) > 1L &&
-    grepl(ID_COLUMN_NAME_RE, tolower(colnames(df)[1L])) &&
-    !anyNA(first) && !anyDuplicated(first)
+    grepl(ID_COLUMN_NAME_RE, tolower(colnames(df)[1L]))
 }
 
 # Rows a spreadsheet adds under the data and a pipeline never would.
 SUMMARY_ROW_RE <- "^(total|totals|sum|mean|average|grand total)$"
+
+# Summary columns: what a spreadsheet adds beside the samples. Names
+# map to the statistic the column should then hold.
+SUMMARY_COLUMN_STATS <- c(
+  total = "sum", totals = "sum", sum = "sum", `grand total` = "sum",
+  mean = "mean", average = "mean", avg = "mean", median = "median",
+  sd = "sd", stdev = "sd", stddev = "sd", `std dev` = "sd", std = "sd",
+  `standard deviation` = "sd", min = "min", minimum = "min",
+  max = "max", maximum = "max", count = "count", n = "count", cv = "cv"
+)
+
+# Words a summary column's name may carry around the statistic: "Mean
+# intensity", "Row total", "Total counts", "Sum of samples". Only these;
+# "Control_Mean1" or "Total_RNA_1" is a sample with a name, not a summary.
+SUMMARY_COLUMN_QUALIFIERS <- c(
+  "row", "overall", "all", "intensity", "intensities", "count", "counts",
+  "expression", "value", "values", "reads", "abundance", "signal", "area",
+  "lfq", "tpm", "fpkm", "cpm", "of samples", "across samples",
+  "of all samples", "all samples"
+)
+
+# Bare words that are also plausible sample or protein names -- "N" for
+# a normal sample beside "T", the MAX protein in a samples-in-rows table.
+# Dropped only when the values say they are the statistic.
+SUMMARY_COLUMN_AMBIGUOUS <- c("n", "count", "min", "max", "minimum", "maximum")
+
+# The statistic each column name announces (NA for none), and whether
+# the name was the bare word with no qualifier.
+summary_column_stat <- function(nm) {
+  x <- tolower(trimws(nm))
+  x <- trimws(gsub("[^a-z0-9]+", " ", x))
+  longest_first <- function(v) paste(v[order(-nchar(v))], collapse = "|")
+  re <- sprintf("^(?:(?:%s) )?(%s)(?: (?:%s))?$",
+                longest_first(SUMMARY_COLUMN_QUALIFIERS),
+                longest_first(names(SUMMARY_COLUMN_STATS)),
+                longest_first(SUMMARY_COLUMN_QUALIFIERS))
+  hit <- regmatches(x, regexec(re, x, perl = TRUE))
+  word <- vapply(hit, function(h) if (length(h) >= 2L) h[[2L]] else NA_character_,
+                 character(1))
+  list(stat = unname(SUMMARY_COLUMN_STATS[word]),
+       bare = !is.na(word) & word == x,
+       word = word)
+}
+
+# Row-wise statistics of `base`, under the names a summary column takes.
+row_summaries <- function(base) {
+  mu <- rowMeans(base, na.rm = TRUE)
+  sdv <- apply(base, 1L, stats::sd, na.rm = TRUE)
+  list(
+    sum = rowSums(base, na.rm = TRUE), mean = mu,
+    median = apply(base, 1L, stats::median, na.rm = TRUE), sd = sdv,
+    min = suppressWarnings(apply(base, 1L, min, na.rm = TRUE)),
+    max = suppressWarnings(apply(base, 1L, max, na.rm = TRUE)),
+    # "Count" is either how many samples have a value or how many
+    # detected the feature.
+    count = rowSums(!is.na(base)), count = rowSums(base > 0, na.rm = TRUE),
+    cv = sdv / mu, cv = 100 * sdv / mu)
+}
+
+# Which columns of `mat` (features in rows, samples in columns) are
+# summaries of the others. Two signals, the values the stronger:
+#   * the name is a summary word, alone or with a qualifier from the list
+#     above -- enough on its own, except for the ambiguous bare words;
+#   * the column equals a statistic of the other columns row by row, on
+#     at least 95% of the rows where those differ (a summary rounded to
+#     two decimals still matches). A column equal to the row sum or mean
+#     of three or more other columns is a summary whatever it is called;
+#     no measured sample lands there.
+find_summary_columns <- function(mat) {
+  n <- ncol(mat)
+  none <- rep(FALSE, n)
+  if (is.null(colnames(mat)) || n < 3L || nrow(mat) < 3L) return(none)
+  named <- summary_column_stat(colnames(mat))
+  flagged <- !is.na(named$stat)
+  by_name <- flagged & !(named$bare & named$word %in% SUMMARY_COLUMN_AMBIGUOUS)
+  close_enough <- function(x, target, rows) {
+    ok <- rows & is.finite(x) & is.finite(target)
+    sum(ok) >= 3L &&
+      mean(abs(x[ok] - target[ok]) <= 0.0051 + 1e-3 * abs(target[ok])) >= 0.95
+  }
+  # Rows where the columns compared against are all equal say nothing
+  # (zero everywhere, say), and are left out of every comparison.
+  varying_rows <- function(base) {
+    cols <- lapply(seq_len(ncol(base)), function(k) base[, k])
+    v <- do.call(pmax, c(cols, na.rm = TRUE)) > do.call(pmin, c(cols, na.rm = TRUE))
+    v & !is.na(v)
+  }
+
+  # Sum and mean of the *other* columns, for every column the name did
+  # not flag. One pass over the matrix, and a first look at a few
+  # hundred rows that rules a real sample out at once: a 60k x 250
+  # table is checked in well under a second.
+  by_value <- none
+  base_cols <- which(!flagged)
+  if (length(base_cols) >= 4L) {
+    base <- if (length(base_cols) == n) mat else mat[, base_cols, drop = FALSE]
+    tot <- rowSums(base, na.rm = TRUE)
+    cnt <- if (anyNA(base)) rowSums(!is.na(base)) else rep(ncol(base), nrow(base))
+    head_rows <- seq_len(min(nrow(base), 2000L))
+    probe <- utils::head(head_rows[varying_rows(base[head_rows, , drop = FALSE])], 300L)
+    varies <- NULL
+    candidate <- function(k, rows, sel) {
+      x <- base[rows, k]
+      miss <- is.na(x)
+      rest <- tot[rows] - ifelse(miss, 0, x)
+      close_enough(x, rest, sel) ||
+        close_enough(x, rest / (cnt[rows] - !miss), sel)
+    }
+    for (k in seq_along(base_cols)) {
+      if (!candidate(k, probe, rep(TRUE, length(probe)))) next
+      if (is.null(varies)) varies <- varying_rows(base)
+      if (candidate(k, seq_len(nrow(base)), varies)) by_value[[base_cols[[k]]]] <- TRUE
+    }
+  }
+
+  # Every statistic, for the bare ambiguous names, which are all the
+  # name alone does not settle. Compared against the columns that are
+  # neither named nor found as summaries, so "N" counts the samples and
+  # not the samples and "Total".
+  by_name_and_value <- none
+  ambiguous <- which(flagged & !by_name)
+  sample_cols <- which(!flagged & !by_value)
+  if (length(ambiguous) && length(sample_cols) >= 2L) {
+    base <- mat[, sample_cols, drop = FALSE]
+    varies <- varying_rows(base)
+    st <- row_summaries(base)
+    for (j in ambiguous) {
+      by_name_and_value[[j]] <- any(vapply(st, function(t) close_enough(mat[, j], t, varies),
+                                           logical(1)))
+    }
+  }
+
+  drop <- by_name | by_name_and_value | by_value
+  # Never every column: a file of nothing but summaries is not one this
+  # can make sense of, and an empty matrix explains nothing.
+  if (all(drop)) return(none)
+  drop
+}
 
 materialize_matrix <- function(df, orientation) {
   if (is.null(df)) return(NULL)
@@ -578,10 +1260,38 @@ materialize_matrix <- function(df, orientation) {
   # Text columns are read as numbers where every cell is a number or a
   # way of writing "missing". Drop the rest.
   df[] <- lapply(df, function(c) if (is.numeric(c)) c else clean_numeric_text(c))
+  # A column of numbers with a few spreadsheet error cells ("#DIV/0!",
+  # "<LOD", "n.q.") is a sample with missing values, not text: one such
+  # cell used to drop the whole sample without a word.
+  bad_cells <- 0L
   numeric_cols <- vapply(df, function(c) {
-    is.numeric(c) || all(is.na(suppressWarnings(as.numeric(as.character(c)))) ==
-                         is.na(c))
+    if (is.numeric(c)) return(TRUE)
+    v <- suppressWarnings(as.numeric(as.character(c)))
+    odd <- !is.na(c) & is.na(v)
+    # Empty columns go through, to be dropped below with their own note.
+    if (all(is.na(c))) return(TRUE)
+    if (!any(!is.na(v))) return(FALSE)
+    if (!any(odd)) return(TRUE)
+    all(grepl(CELL_ERROR_RE, trimws(as.character(c[odd])), ignore.case = TRUE))
   }, logical(1))
+  for (nm in names(df)[numeric_cols]) {
+    c <- df[[nm]]
+    if (is.numeric(c)) next
+    v <- suppressWarnings(as.numeric(as.character(c)))
+    bad_cells <- bad_cells + sum(!is.na(c) & is.na(v))
+    df[[nm]] <- v
+  }
+  if (bad_cells > 0L) {
+    notes <- c(notes, sprintf(
+      "%d cell(s) holding spreadsheet errors or limit markers (e.g. '#DIV/0!', '<LOD') were read as missing values.",
+      bad_cells))
+  }
+  dropped <- names(df)[!numeric_cols]
+  if (length(dropped) && any(numeric_cols)) {
+    notes <- c(notes, sprintf(
+      "Left out %d non-numeric column(s) as annotation, not samples: %s.",
+      length(dropped), paste(utils::head(dropped, 8L), collapse = ", ")))
+  }
   df <- df[, numeric_cols, drop = FALSE]
   if (ncol(df) == 0L) return(NULL)
   mat <- as.matrix(as.data.frame(lapply(df, function(c) {
@@ -602,6 +1312,16 @@ materialize_matrix <- function(df, orientation) {
                               sum(empty), paste(colnames(mat)[empty], collapse = ", ")))
     mat <- mat[, !empty, drop = FALSE]
   }
+  # A "Total" or "Mean" column beside the samples is the same thing
+  # turned sideways, and it used to become a sample -- one that sits at
+  # the centre of every PCA and correlates with everything.
+  summary_col <- find_summary_columns(mat)
+  if (any(summary_col)) {
+    notes <- c(notes, sprintf("Dropped %d summary column(s): %s.",
+                              sum(summary_col),
+                              paste(colnames(mat)[summary_col], collapse = ", ")))
+    mat <- mat[, !summary_col, drop = FALSE]
+  }
   # And a "Total" row is a spreadsheet's sum, not a feature.
   summary_row <- grepl(SUMMARY_ROW_RE, tolower(trimws(rownames(mat))))
   if (any(summary_row) && !all(summary_row)) {
@@ -621,6 +1341,11 @@ materialize_matrix <- function(df, orientation) {
 # exports "#N/A", people write "n.d."; read as text, any one of them
 # turned a whole sample column non-numeric, and the column was dropped
 # without a word -- a missing sample rather than a missing value.
+# Cells a spreadsheet or an instrument writes in place of a number.
+CELL_ERROR_RE <- paste0(
+  "^(#.*|<.*|>.*|n\\.?q\\.?|n\\.?d\\.?|nan|inf|-inf|null|none|na|n/a|",
+  "below.*|above.*|lod|loq|bdl|nf|not found|error)$")
+
 MISSING_TOKENS <- c("", "na", "n/a", "#n/a", "#na", "nan", "null", "none",
                     "filtered", "n.d.", "nd", "-", "--", "?")
 
@@ -665,6 +1390,14 @@ strip_vendor_decoration <- function(x) {
   x <- sub("^.*[\\\\/]", "", x)
   x <- sub("\\.(PG|PEP|EG|FG)\\.[A-Za-z]+$", "", x)
   x <- sub("\\.(raw|d|wiff|mzML|mzXML|bam|sam|cram)$", "", x, ignore.case = TRUE)
+  # What aligners and BAM tools append before the extension: STAR's
+  # "Aligned.sortedByCoord.out", samtools' ".sorted", Picard's ".dedup".
+  # "ctrl_1.sorted" no longer matched "ctrl_1" in the sample sheet.
+  for (i in 1:3) {
+    x <- sub(paste0("[._-]?(Aligned\\.sortedByCoord\\.out|Aligned\\.out|sortedByCoord|",
+                    "sorted|dedup|markdup|rmdup|filtered|uniq|unique)$"), "", x,
+             ignore.case = TRUE)
+  }
   x
 }
 
@@ -727,37 +1460,103 @@ select_sample_columns <- function(df) {
   list(df = df, notes = notes, annotation = annotation)
 }
 
+# Metadata rows, one per matrix column, in the matrix's order.
+#
+# Matched by sample id, never by position. This used to name the rows
+# and leave them in the sheet's order, so a metadata sheet listing S6..S1
+# against a matrix S1..S6 paired every sample with the wrong row for the
+# analyses that read metadata by position (a continuous fit's p-value
+# went from 2.9e-7 to 0.057 on reordering alone); and when no column
+# matched it assigned rows by position outright, which reversed the
+# groups of a file whose ids differed only by "-" vs "_". Now:
+#   * the column whose values cover most sample ids is the id column;
+#     ids are compared as text, with numbers written out in full
+#     (100000, not 1e+05);
+#   * failing an exact match, ids that agree ignoring case and
+#     punctuation are matched, and the report says so;
+#   * samples without a metadata row get NA metadata, extra rows are
+#     dropped, duplicated ids keep their first row -- each said in the
+#     report;
+#   * with no match at all, no metadata is attached and the report says
+#     why, rather than guessing.
+# The notes travel on attribute "notes".
 materialize_metadata <- function(df, sample_ids) {
-  if (is.null(df)) {
-    # Build a minimal metadata frame so validate_omics_input() passes.
-    return(data.frame(
-      sample_id = sample_ids,
-      row.names = sample_ids,
-      stringsAsFactors = FALSE
-    ))
+  minimal <- function() {
+    data.frame(sample_id = sample_ids, row.names = sample_ids,
+               stringsAsFactors = FALSE)
   }
+  if (is.null(df)) return(minimal())
   df <- as.data.frame(df, stringsAsFactors = FALSE)
-  # Find a column that overlaps with sample IDs.
-  match_col <- NULL
-  best_overlap <- 0L
-  for (col in colnames(df)) {
-    vals <- as.character(df[[col]])
-    overlap <- sum(vals %in% sample_ids)
-    if (overlap > best_overlap) {
-      best_overlap <- overlap
-      match_col <- col
+  notes <- character(0)
+  as_id <- function(x) {
+    if (is.numeric(x)) {
+      out <- format(x, scientific = FALSE, trim = TRUE, digits = 15)
+      out[is.na(x)] <- NA_character_
+      out
+    } else {
+      trimws(as.character(x))
     }
   }
-  if (!is.null(match_col) && best_overlap > 0L) {
-    rownames(df) <- make_unique_labels(df[[match_col]])
-  } else if (nrow(df) == length(sample_ids)) {
-    rownames(df) <- sample_ids
-  } else {
-    # Fall back: align by truncation/padding to keep validate_omics_input() honest.
-    df <- data.frame(sample_id = sample_ids,
-                     row.names = sample_ids, stringsAsFactors = FALSE)
+  loose <- function(x) gsub("[^[:alnum:]]", "", tolower(x))
+
+  best <- function(key) {
+    match_col <- NULL
+    best_overlap <- 0L
+    for (col in colnames(df)) {
+      overlap <- sum(unique(key(as_id(df[[col]]))) %in% key(sample_ids))
+      if (overlap > best_overlap) {
+        best_overlap <- overlap
+        match_col <- col
+      }
+    }
+    list(col = match_col, n = best_overlap)
   }
-  df
+  hit <- best(identity)
+  key <- identity
+  if (is.null(hit$col) || hit$n < length(sample_ids)) {
+    loose_hit <- best(loose)
+    if (!is.null(loose_hit$col) && loose_hit$n > hit$n &&
+        !anyDuplicated(loose(sample_ids))) {
+      hit <- loose_hit
+      key <- loose
+      notes <- c(notes, sprintf(
+        "Metadata column '%s' was matched to the sample names ignoring case and punctuation (e.g. '%s').",
+        hit$col, as_id(df[[hit$col]])[1L]))
+    }
+  }
+  if (is.null(hit$col)) {
+    notes <- c(notes, paste0(
+      "No metadata column matches the sample names, so no metadata was attached. ",
+      "Add a column holding exactly the matrix's sample names (e.g. 'sample_id')."))
+    out <- minimal()
+    attr(out, "notes") <- notes
+    return(out)
+  }
+
+  ids <- key(as_id(df[[hit$col]]))
+  dup <- duplicated(ids) & !is.na(ids)
+  if (any(dup)) {
+    notes <- c(notes, sprintf(
+      "%d sample id(s) appear more than once in the metadata; the first row of each was used: %s.",
+      sum(dup), paste(utils::head(unique(as_id(df[[hit$col]])[dup]), 5L), collapse = ", ")))
+  }
+  idx <- match(key(sample_ids), ids)
+  missing <- sample_ids[is.na(idx)]
+  extra <- setdiff(ids[!is.na(ids)], key(sample_ids))
+  if (length(missing)) {
+    notes <- c(notes, sprintf(
+      "%d sample(s) have no metadata row and get missing values: %s.",
+      length(missing), paste(utils::head(missing, 5L), collapse = ", ")))
+  }
+  if (length(extra)) {
+    notes <- c(notes, sprintf(
+      "%d metadata row(s) name samples that are not in the matrix and were left out: %s.",
+      length(extra), paste(utils::head(extra, 5L), collapse = ", ")))
+  }
+  out <- df[idx, , drop = FALSE]
+  rownames(out) <- sample_ids
+  attr(out, "notes") <- notes
+  out
 }
 
 materialize_feature_annot <- function(df, feature_ids) {
@@ -802,6 +1601,14 @@ materialize_feature_annot <- function(df, feature_ids) {
     df <- rbind(df, pad[, colnames(df), drop = FALSE])
   }
   df <- df[feature_ids, , drop = FALSE]
+  # feature_id is the matrix's row name, de-duplicated label included. It
+  # used to keep the sheet's raw id, so two rows of P04637 were
+  # "P04637" and "P04637" here and P04637 / P04637_1 in the matrix, and
+  # anything matching on feature_id (QC, subsetting) produced NA rows.
+  if (!identical(as.character(df$feature_id), feature_ids)) {
+    df$source_feature_id <- df$feature_id
+    df$feature_id <- feature_ids
+  }
   attr(df, "id_column") <- id_col
   sym_col <- pick_symbol_column(df, exclude = id_col)
   if (!is.null(sym_col)) {
@@ -819,7 +1626,9 @@ SYMBOL_COLUMN_NAMES <- c(
   "genesymbol", "genesymbols", "symbol", "symbols",
   "gene", "genes", "genename", "genenames",
   "pggenes",        # Spectronaut
-  "hgncsymbol", "hgnc"
+  "hgncsymbol", "hgnc",
+  "mgisymbol",      # mouse
+  "externalgenename" # biomaRt, often the rowData of a SummarizedExperiment
 )
 
 # Which column holds the gene symbol, or NULL.
@@ -872,4 +1681,57 @@ make_unique_labels <- function(x) {
   x <- as.character(x)
   x[is.na(x) | !nzchar(x)] <- "._missing"
   make.unique(x, sep = "_")
+}
+
+# One sheet, typed from every row rather than the first thousand.
+read_excel_sheet <- function(path, sheet, ...) {
+  args <- list(path, sheet = sheet, ...)
+  if (is.null(args$guess_max)) args$guess_max <- 1e6
+  suppressWarnings(do.call(readxl::read_excel, args))
+}
+
+# The identifier column and the numeric columns of a sheet: what the
+# orientation is judged on.
+numeric_block <- function(df) {
+  if (!is.data.frame(df) || ncol(df) < 3L) return(df)
+  num <- vapply(df[-1L], function(c) {
+    if (is.numeric(c)) return(TRUE)
+    v <- suppressWarnings(as.numeric(as.character(c)))
+    mean(!is.na(v[!is.na(c)])) >= 0.9 && any(!is.na(c))
+  }, logical(1))
+  if (sum(num) < 2L) return(df)
+  df[, c(TRUE, num), drop = FALSE]
+}
+
+# Text columns of a samples-in-rows sheet, keyed by its first column.
+side_sample_columns <- function(df) {
+  if (!is.data.frame(df) || ncol(df) < 3L) return(NULL)
+  text <- vapply(df[-1L], function(c) {
+    if (is.numeric(c) || is.logical(c)) return(FALSE)
+    v <- suppressWarnings(as.numeric(as.character(c)))
+    mean(is.na(v[!is.na(c)])) > 0.5
+  }, logical(1))
+  if (!any(text)) return(NULL)
+  out <- df[, c(TRUE, text), drop = FALSE]
+  names(out)[1L] <- "sample_id"
+  out
+}
+
+# A sheet (not the matrix) one of whose columns covers most sample names.
+find_sample_sheet <- function(sheets, sheet_table, matrix_sheet, sample_ids) {
+  key <- function(x) tolower(gsub("[^[:alnum:]]", "", trimws(as.character(x))))
+  ids <- key(sample_ids)
+  cand <- sheet_table$name[sheet_table$role %in% c("unknown", "feature_annot", "ignore") &
+                             sheet_table$name != matrix_sheet &
+                             sheet_table$name %in% names(sheets)]
+  for (nm in cand) {
+    df <- sheets[[nm]]
+    if (!is.data.frame(df) || nrow(df) < 2L) next
+    hit <- vapply(df, function(col) {
+      v <- unique(key(stats::na.omit(col)))
+      length(v) >= 2L && mean(ids %in% v) >= 0.8
+    }, logical(1))
+    if (any(hit)) return(nm)
+  }
+  NULL
 }

@@ -23,6 +23,8 @@ reference:
   desc: Smart input parser and import report
   contents:
   - read_omics
+  - read_quant_files
+  - read_summarized_experiment
   - omics_input
   - is_omics_input
   - new_omics_input
@@ -37,14 +39,18 @@ reference:
   contents:
   - omics_project
   - is_omics_project
+  - bundle_layer
   - add_experiment
   - remove_experiment
   - experiment_tags
   - load_project
   - save_project
+  - sign_project_file
   - suggest_sample_link
   - derive_sample_link
   - sample_pairing_preview
+  - read_feature_link
+  - feature_pairing_preview
 
 - title: Vocabularies
   desc: Assay types, differential backends and imputation methods, as the package names them
@@ -68,6 +74,8 @@ reference:
   - subset_omics
   - subset_omics_features
   - subset_omics_samples
+  - study_design
+  - set_study_design
   - summarize_omics
 
 - title: Quality control
@@ -82,6 +90,7 @@ reference:
   desc: Run QC, differential, enrichment, and integration
   contents:
   - run_qc
+  - qc_cleaned_input
   - run_diff
   - run_diff_continuous
   - run_enrichment
@@ -94,6 +103,13 @@ reference:
   - is_analysis_bundle
   - new_analysis_bundle
   - filter_diff_results
+  - diff_comparisons
+  - select_comparison
+  - summarize_diff_contrasts
+  - diff_hit_sets
+  - pairwise_contrasts
+  - contrast_labels
+  - compare_enrichment
   - filter_enrich_results
   - make_ranked_features
 
@@ -101,6 +117,7 @@ reference:
   desc: MSigDB gene sets, the on-disk cache, and gene symbols
   contents:
   - list_gene_sets
+  - enrichment_species
   - geneset_cache_status
   - refresh_geneset_cache
   - map_ensembl_symbols
@@ -113,6 +130,10 @@ reference:
   - plot_pca
   - plot_heatmap
   - plot_volcano
+  - plot_diff_contrasts
+  - plot_diff_overlap
+  - effect_label
+  - plot_enrichment_comparison
   - plot_ma
   - plot_feature_expression
   - plot_enrichment
@@ -121,6 +142,8 @@ reference:
   - plot_integration
   - theme_omicsCore
   - omics_colors
+  - group_palette
+  - wrap_label
 
 - title: Export
   desc: Save results and render reports

@@ -1,0 +1,232 @@
+# The PCA and quality panels of the QC view.
+#
+# Split out of mod_qc_view.R and called from inside its module server,
+# so the ids stay "qc-pca", "qc-quality_view". Returns the colouring
+# choices and the quality panel shown.
+qc_plots_server <- function(input, output, session, active, last_bundle) {
+  # Which metadata column colours the samples. It used to be a column
+  # literally called `group` or nothing -- so the app's own template,
+  # whose column is `condition`, drew an uncoloured PCA -- and the
+  # legend under the plot was four fixed CSS colours that stopped
+  # matching the points from the fifth group on. Now the column is the
+  # user's choice (the Differential view's best guess by default) and
+  # the legend is the plot's own.
+  pca_color_choices <- shiny::reactive({
+    bundle <- last_bundle()
+    shiny::req(bundle)
+    meta <- qc_bundle_meta(bundle)
+    if (is.null(meta) || !ncol(meta)) return(character(0))
+    cands <- grouping_candidates(meta)
+    # Results saved before run_qc() stopped storing the cleaned input
+    # carry its design; otherwise the layer's is the one.
+    design <- if (!is.null(bundle$results$cleaned_input)) {
+      tryCatch(omicsCore::study_design(bundle$results$cleaned_input),
+               error = function(e) NULL)
+    }
+    if (is.null(design)) {
+      design <- tryCatch(omicsCore::study_design(active()$input),
+                         error = function(e) NULL)
+    }
+    if (!is.null(design) && design$group_col %in% names(meta)) {
+      cands <- c(design$group_col, setdiff(cands, design$group_col))
+    }
+    extra <- setdiff(names(meta)[vapply(meta, function(x) {
+      n <- length(unique(stats::na.omit(x)))
+      n >= 2L && n < nrow(meta)
+    }, logical(1))], cands)
+    c(cands, extra)
+  })
+
+  output$pca_color_picker <- shiny::renderUI({
+    ch <- pca_color_choices()
+    if (!length(ch)) return(NULL)
+    sel <- shiny::isolate(input$pca_color_by)
+    if (is.null(sel) || !sel %in% c(ch, "(none)")) sel <- ch[[1L]]
+    htmltools::tags$div(
+      class = "inline-control",
+      shiny::selectInput(session$ns("pca_color_by"), label = "Colour by",
+                         choices = c(ch, "(none)"), selected = sel,
+                         width = "220px"))
+  })
+
+  pca_plot <- shiny::reactive({
+    bundle <- last_bundle()
+    shiny::req(bundle)
+    ch <- pca_color_choices()
+    color_by <- input$pca_color_by
+    if (is.null(color_by) || !color_by %in% ch) {
+      color_by <- if (length(ch)) ch[[1L]] else NULL
+    }
+    if (identical(input$pca_color_by, "(none)")) color_by <- NULL
+    # The reference group takes the first group colour, as it does in the
+    # Differential view's figures, so a group is one colour in both.
+    design <- tryCatch(omicsCore::study_design(active()$input), error = function(e) NULL)
+    reference <- if (identical(design$group_col, color_by)) design$reference
+    # The key beside the points, as the report draws it. Under them, one
+    # group to a line, six long group names took two thirds of a desktop
+    # card and four short ones a third. On a phone fit_to_width() puts it
+    # under the points, two groups to a row.
+    omicsCore::plot_qc(bundle, view = "pca", color_by = color_by,
+                       reference = reference)
+  })
+
+  # As tall as the desktop card on a wide screen; on a phone, taller by
+  # the rows of the key under the points, so they keep about 230 px
+  # however many groups there are.
+  pca_height <- function() {
+    narrow <- is_narrow_width(plot_output_width("pca", session))
+    p <- tryCatch(pca_plot(), error = function(e) NULL)
+    pca_plot_px(pca_key_entries(p), narrow)
+  }
+
+  output$pca <- shiny::renderPlot(res = PLOT_RES, alt = "Principal component plot of the samples",
+                                  height = pca_height,
+                                  fit_to_width("pca", pca_plot()))
+
+  # Which sample is the one off on its own: hovering (or tapping) a
+  # point names it, with its group and coordinates.
+  plot_hover_server("pca", pca_plot, pca_hover_text, input, output, session)
+
+  # Which quality panel this modality is actually asking about.
+  #
+  # Missingness is the proteomics question: a peptide that was not
+  # detected is a hole in the matrix. A counts matrix has no holes --
+  # every gene has a number for every sample, most of them zero -- so
+  # the panel reported "63,241 features, all at 0%", which is true and
+  # says nothing, in the space that should have been showing whether a
+  # library was under-sequenced.
+  #
+  # A default per modality, not a lock: an intensity matrix has a
+  # meaningful total too, and someone with an imputed counts matrix may
+  # well want the missingness view.
+  # A proteomics layer's "depth" is its summed intensity: there is no
+  # library, and nothing was sequenced.
+  is_proteomics <- shiny::reactive(identical(active()$input$omics_type %||% "", "proteomics"))
+  depth_label <- shiny::reactive(if (is_proteomics()) "Intensity" else "Depth")
+
+  default_quality_view <- shiny::reactive({
+    if (identical(active()$input$omics_type %||% "", "rnaseq")) "depth"
+    else "missing"
+  })
+  quality_view <- shiny::reactive({
+    v <- input$quality_view
+    if (is.null(v) || !v %in% c("missing", "depth")) default_quality_view()
+    else v
+  })
+
+  output$quality_title <- shiny::renderUI({
+    depth <- identical(quality_view(), "depth")
+    htmltools::tagList(
+      htmltools::tags$h3(class = "card-title",
+                         if (depth) depth_label() else "Missingness"),
+      htmltools::tags$span(
+        class = "card-sub",
+        if (depth && is_proteomics()) "total intensity and features quantified"
+        else if (depth) "library size and features detected"
+        else "per-sample and per-feature missing rate")
+    )
+  })
+
+  output$quality_picker <- shiny::renderUI({
+    # isolate(), for the reason the layer picker documents: this output
+    # writes input$quality_view and quality_view() reads it.
+    sel <- shiny::isolate(input$quality_view)
+    if (is.null(sel) || !sel %in% c("missing", "depth")) {
+      sel <- default_quality_view()
+    }
+    shiny::radioButtons(
+      session$ns("quality_view"), label = NULL,
+      choices = stats::setNames(c("depth", "missing"), c(depth_label(), "Missingness")),
+      selected = sel, inline = TRUE)
+  })
+
+  # Built here, drawn below: the card's download saves this same figure.
+  quality_plot <- shiny::reactive({
+    bundle <- last_bundle()
+    shiny::req(bundle)
+    omicsCore::plot_qc(bundle, view = quality_view())
+  })
+
+  output$missing <- shiny::renderPlot(res = PLOT_RES, alt = "Missing values per sample and per feature",
+                                      fit_to_width("missing", quality_plot()))
+
+  output$missing_caption <- shiny::renderUI({
+    a <- active()
+    bundle <- last_bundle()
+    shiny::req(bundle)
+    caption <- if (identical(quality_view(), "depth")) {
+      d <- bundle$results$qc_summary$depth
+      if (is.null(d) || nrow(d) == 0L) {
+        "No depth summary for this layer."
+      } else {
+        low <- omicsCore::qc_depth_outliers(d)
+        low_word <- if (is_proteomics()) "low" else "shallow"
+        sprintf("%d samples \u00b7 median %s %s \u00b7 %s",
+                nrow(d), if (is_proteomics()) "total intensity" else "library",
+                short_number(stats::median(d$library_size)),
+                if (length(low) == 0L) paste("none", low_word)
+                else sprintf("%s: %s", low_word, paste(low, collapse = ", ")))
+      }
+    } else if (a$is_demo) {
+      "Demo fixture: ~5% of cells set to NA at random."
+    } else {
+      raw <- a$input$expr_mat
+      raw_pct <- 100 * mean(is.na(raw))
+      n_na <- qc_missing_after(bundle)
+      n_cells <- bundle$input_info$n_features_out * bundle$input_info$n_samples_out
+      if (!is.null(bundle$results$qc_summary$imputation)) {
+        sprintf("Imported layer: %.1f%% of cells missing; after imputation for this view: %.1f%%.",
+                raw_pct, 100 * n_na / max(n_cells, 1L))
+      } else {
+        sprintf("Imported layer: %d / %d cells missing (%.1f%%).",
+                sum(is.na(raw)), length(raw), raw_pct)
+      }
+    }
+    htmltools::tags$div(
+      class = "muted",
+      style = "font-size:12px;margin-top:6px",
+      caption
+    )
+  })
+
+  list(pca_color_choices = pca_color_choices, quality_view = quality_view,
+       pca_plot = pca_plot, quality_plot = quality_plot, depth_label = depth_label)
+}
+
+# The PCA's height in CSS px. 360 on a wide screen. On a phone the key
+# is under the points: a line for its title, then a row (two lines) for
+# every two groups, or a colour bar for a numeric colouring (`n` NA).
+pca_plot_px <- function(n, narrow = FALSE) {
+  if (!isTRUE(narrow)) return(360L)
+  key <- if (is.na(n)) 60 else if (n > 0L) 22 + 34 * ceiling(n / 2) else 0
+  as.integer(max(360, 290 + key))
+}
+
+# Entries in the PCA's colour key: the groups coloured, 0 for none, NA
+# for a numeric column (a colour bar).
+pca_key_entries <- function(p) {
+  col <- if (inherits(p, "ggplot")) plot_aes_column(p, "colour")
+  if (is.null(col) || !col %in% names(p$data)) return(0L)
+  v <- p$data[[col]]
+  if (is.numeric(v)) return(NA_integer_)
+  length(unique(stats::na.omit(as.character(v))))
+}
+
+# Cells still missing after imputation: the ones the method could not fill.
+qc_missing_after <- function(bundle) {
+  if (!is.null(bundle$results$cleaning)) {
+    sum(is.na(bundle$results$cleaning$imputed_values))
+  } else {
+    sum(is.na(bundle$results$cleaned_input$expr_mat))
+  }
+}
+
+# 2,400,000 as "2.4M" and a proteomics total of 113,588,296,286 as
+# "114G": the caption sits on one line under the panel.
+short_number <- function(x) {
+  if (!is.finite(x)) return("NA")
+  for (u in list(c(1e12, "T"), c(1e9, "G"), c(1e6, "M"))) {
+    if (abs(x) >= as.numeric(u[[1]])) return(paste0(signif(x / as.numeric(u[[1]]), 3), u[[2]]))
+  }
+  format(round(x), big.mark = ",")
+}

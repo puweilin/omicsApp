@@ -39,18 +39,28 @@ Which features count as significant is decided here, from the
 thresholds this call is given — the same contract as \code{\link[=plot_volcano]{plot_volcano()}},
 and for the same reason: \code{run_diff()} applies no cutoff, so its
 \code{is_significant} column is \code{NA} and has nothing to colour by.
+Significant features are coloured by direction, as in \code{\link[=plot_volcano]{plot_volcano()}}.
 }
 \seealso{
-Other diff: 
+Other diff:
 \code{\link{SUPPORTED_DIFF_METHODS}},
-\code{\link{applicable_diff_methods}()},
-\code{\link{filter_diff_results}()},
-\code{\link{make_ranked_features}()},
-\code{\link{plot_feature_expression}()},
-\code{\link{plot_heatmap}()},
-\code{\link{plot_pca}()},
-\code{\link{plot_volcano}()},
-\code{\link{run_diff}()},
-\code{\link{run_diff_continuous}()}
+\code{\link[=applicable_diff_methods]{applicable_diff_methods()}},
+\code{\link[=contrast_labels]{contrast_labels()}},
+\code{\link[=diff_comparisons]{diff_comparisons()}},
+\code{\link[=diff_hit_sets]{diff_hit_sets()}},
+\code{\link[=effect_label]{effect_label()}},
+\code{\link[=filter_diff_results]{filter_diff_results()}},
+\code{\link[=make_ranked_features]{make_ranked_features()}},
+\code{\link[=pairwise_contrasts]{pairwise_contrasts()}},
+\code{\link[=plot_diff_contrasts]{plot_diff_contrasts()}},
+\code{\link[=plot_diff_overlap]{plot_diff_overlap()}},
+\code{\link[=plot_feature_expression]{plot_feature_expression()}},
+\code{\link[=plot_heatmap]{plot_heatmap()}},
+\code{\link[=plot_pca]{plot_pca()}},
+\code{\link[=plot_volcano]{plot_volcano()}},
+\code{\link[=run_diff]{run_diff()}},
+\code{\link[=run_diff_continuous]{run_diff_continuous()}},
+\code{\link[=select_comparison]{select_comparison()}},
+\code{\link[=summarize_diff_contrasts]{summarize_diff_contrasts()}}
 }
 \concept{diff}

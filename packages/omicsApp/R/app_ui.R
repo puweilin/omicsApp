@@ -20,15 +20,24 @@ app_ui <- function() {
     theme = app_theme(),
     fillable = FALSE,
     window_title = "omicsApp",
+    lang = "en",
     sidebar = bslib::sidebar(
       id = "main_sidebar",
-      open = "always",
+      # Always open on a desktop; on a phone a toggle, so the navigation
+      # is not stacked below the whole page (it sat at y = 2695).
+      open = list(desktop = "always", mobile = "closed"),
       width = 232,
       bg = "#161A26",
       padding = c(14, 12, 14, 12),
       gap = 2,
       app_sidebar_content()
     ),
+    # A spinner on any output that is recomputing and a pulse along the
+    # top while the server is busy: a plot being redrawn no longer looks
+    # like a plot that has stopped.
+    shiny::useBusyIndicators(spinners = TRUE, pulse = TRUE),
+    app_favicon(),
+    webgl_probe(),
     shiny::tabsetPanel(
       id = "view",
       type = "hidden",
@@ -42,6 +51,35 @@ app_ui <- function() {
       shiny::tabPanelBody("report",      report_view_ui("report"))
     )
   )
+}
+
+# The brand hexagon as the tab icon, inline. Without a declared icon
+# every page load asked for /favicon.ico, which the app does not serve:
+# a 404 in every browser console and every server log.
+# Whether this browser can draw WebGL, told to the server once on
+# connect (as input `omics_webgl`): the volcano uses WebGL only where it
+# will be drawn.
+webgl_probe <- function() {
+  htmltools::tags$script(htmltools::HTML(paste(
+    "$(document).on('shiny:connected', function() {",
+    "  var ok = false;",
+    "  try { var c = document.createElement('canvas');",
+    "        ok = !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl'))); }",
+    "  catch (e) { ok = false; }",
+    "  Shiny.setInputValue('omics_webgl', ok);",
+    "});")))
+}
+
+app_favicon <- function() {
+  svg <- paste0(
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>",
+    "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>",
+    "<stop offset='0' stop-color='#3D52B8'/><stop offset='1' stop-color='#1FBF9E'/>",
+    "</linearGradient></defs>",
+    "<path fill='url(#g)' d='M16 1.5 29 9v14L16 30.5 3 23V9z'/></svg>")
+  htmltools::tags$head(htmltools::tags$link(
+    rel = "icon", type = "image/svg+xml",
+    href = paste0("data:image/svg+xml,", utils::URLencode(svg, reserved = TRUE))))
 }
 
 # ---- sidebar contents -------------------------------------------------

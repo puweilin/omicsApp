@@ -5,7 +5,8 @@
 \title{Report which optional dependency groups are installed}
 \usage{
 check_install(
-  features = c("rnaseq", "proteomics", "enrichment", "imputation", "viz", "persistence")
+  features = c("rnaseq", "proteomics", "enrichment", "imputation", "viz", "io",
+    "persistence")
 )
 }
 \arguments{
@@ -21,7 +22,7 @@ package count, how many are installed, and the names of any missing
 packages. Useful as a pre-flight check in the Shiny app.
 }
 \seealso{
-Other install: 
-\code{\link{install_optional}()}
+Other install:
+\code{\link[=install_optional]{install_optional()}}
 }
 \concept{install}

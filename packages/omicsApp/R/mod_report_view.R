@@ -36,9 +36,9 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
     output$header <- shiny::renderUI({
       proj <- current_project()
       subtitle <- if (is.null(proj)) {
-        "Demo fixture \u00B7 rmarkdown"
+        "Demo data \u00B7 rmarkdown"
       } else {
-        sprintf("%s \u00B7 %d experiment(s)",
+        sprintf("%s \u00B7 %d layer(s)",
                 proj$name %||% "Project",
                 length(proj$experiments))
       }
@@ -48,26 +48,34 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       # message is indistinguishable from a broken one, and that is what
       # it looked like.
       ready <- have_rmd && !is.null(proj)
-      dl <- function(id, label, primary) {
+      dl <- function(id, label, primary, extra_ok = TRUE,
+                     extra_why = NULL) {
+        ok <- ready && extra_ok
         btn <- shiny::downloadButton(
           ns(id), label,
-          class = paste("btn", if (ready && primary) "btn-primary" else "btn-ghost"))
-        if (ready) return(btn)
+          class = paste("btn", if (ok && primary) "btn-primary" else "btn-ghost"))
+        if (ok) return(btn)
         # `disabled` on the anchor, plus the pointer-events guard,
         # because a download link is an <a> and browsers do not honour
         # the attribute on its own.
+        # And out of the keyboard's reach: Tab + Enter still started a
+        # PDF export that failed on the missing LaTeX.
         htmltools::tagAppendAttributes(
-          btn, disabled = NA,
+          btn, disabled = NA, tabindex = "-1", `aria-disabled` = "true",
           style = "pointer-events:none;opacity:0.55",
           title = if (!have_rmd) "rmarkdown is not installed"
-                  else "Import a project first")
+                  else if (is.null(proj)) "Import a project first"
+                  else extra_why)
       }
       view_header(
         title    = "Report",
         subtitle = subtitle,
         actions  = htmltools::tagList(
           dl("download_html", "Generate HTML", TRUE),
-          dl("download_pdf", "Generate PDF", FALSE)
+          # PDF needs LaTeX, which most servers do not have; the button
+          # used to be live and fail after a long render.
+          dl("download_pdf", "Generate PDF", FALSE, extra_ok = have_latex(),
+             extra_why = "PDF needs a LaTeX installation (e.g. tinytex::install_tinytex())")
         )
       )
     })
@@ -110,7 +118,7 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
           tagged <- htmltools::tagAppendChild(
             tagged,
             notice(
-              title  = "No analysis bundles yet",
+              title  = "No results yet",
               detail = paste0(
                 "Run QC, differential, enrichment, or integration ",
                 "before generating a report."
@@ -173,10 +181,16 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
         } else "Not yet run"
 
         diff_desc <- if (diff_ready) {
-          sprintf("%d features \u00B7 %s vs %s",
-                  nrow(bnd$diff$results$diff_result_df),
-                  bnd$diff$params$case_group %||% "case",
-                  bnd$diff$params$control_group %||% "control")
+          cmps <- tryCatch(omicsCore::diff_comparisons(bnd$diff),
+                           error = function(e) character(0))
+          if (length(cmps) > 1L) {
+            sprintf("%d comparisons: %s", length(cmps),
+                    paste(gsub("_vs_", " vs ", cmps), collapse = ", "))
+          } else {
+            sprintf("%d features \u00B7 %s",
+                    nrow(bnd$diff$results$diff_result_df),
+                    gsub("_vs_", " vs ", bnd$diff$params$comparison %||% "case vs control"))
+          }
         } else "Not yet run"
 
         enrich_desc <- if (enrich_ready) {
@@ -200,14 +214,14 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
                    if (enrich_ready) toupper(bnd$enrich$params$type %||% "ora") else "pending",
                    enrich_ready),
           make_row("4", "Integration", int_desc,
-                   if (int_ready) "concordance" else "pending",
+                   if (int_ready) bnd$integration$params$method %||% "integration" else "pending",
                    int_ready)
         )
       }
 
       bslib::card(
         bslib::card_header(
-          htmltools::tags$h3(class = "card-title", "Bundles available"),
+          htmltools::tags$h3(class = "card-title", "Results in the report"),
           htmltools::tags$span(class = "card-sub",
                                "ready for the report template")
         ),
@@ -223,9 +237,19 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       shiny::req(have_rmd)
       proj <- current_project()
       shiny::req(proj)
+      if (identical(format, "pdf") && !have_latex()) {
+        shiny::showNotification(
+          "PDF needs a LaTeX installation on the server; use Generate HTML instead.",
+          type = "warning", duration = 8)
+        shiny::req(FALSE)
+      }
+      # A download link gives no sign that anything is happening, and an
+      # HTML report takes about 4 s to render; the panel says it is.
       tryCatch(
-        omicsCore::export_report(proj, file, format = format,
-                                 overwrite = TRUE),
+        shiny::withProgress(
+          message = sprintf("Rendering the %s report", toupper(format)),
+          value = 0.3,
+          omicsCore::export_report(proj, file, format = format, overwrite = TRUE)),
         error = function(e) {
           shiny::showNotification(
             sprintf("Report export failed (%s): %s",
@@ -242,7 +266,7 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       filename = function() {
         proj <- current_project()
         nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
-        sprintf("%s_report.html", gsub("[^A-Za-z0-9_.-]+", "_", nm))
+        sprintf("%s_report.html", download_stem(nm))
       },
       content = function(file) do_export(file, "html")
     )
@@ -251,7 +275,7 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       filename = function() {
         proj <- current_project()
         nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
-        sprintf("%s_report.pdf", gsub("[^A-Za-z0-9_.-]+", "_", nm))
+        sprintf("%s_report.pdf", download_stem(nm))
       },
       content = function(file) do_export(file, "pdf")
     )
@@ -297,7 +321,11 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
           htmltools::tags$div(
             style = "display:flex;justify-content:flex-end;padding-bottom:8px",
             shiny::downloadButton(session$ns("download_script"), "Download .R",
-                                  class = "btn btn-sm btn-primary")
+                                  class = "btn btn-sm btn-primary"),
+            # The script reads raw/<file>: without the files it points
+            # at, a downloaded script could not run anywhere.
+            shiny::downloadButton(session$ns("download_bundle"), "Script + data files",
+                                  class = "btn btn-sm btn-ghost")
           ),
           htmltools::tags$pre(
             class = "text-mono",
@@ -310,11 +338,55 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       )
     })
 
+    # The script, the archived uploads it reads (raw/...) and a README,
+    # as one archive that runs where it is unpacked: setwd() to the
+    # folder and source() the script.
+    output$download_bundle <- shiny::downloadHandler(
+      filename = function() {
+        proj <- current_project()
+        nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
+        sprintf("%s_analysis.%s", download_stem(nm), if (nzchar(Sys.which("zip"))) "zip" else "tar.gz")
+      },
+      content = function(file) {
+        proj <- current_project()
+        lines <- script_lines()
+        shiny::req(proj, lines)
+        dir <- file.path(tempfile("omicsapp-bundle-"), "analysis")
+        dir.create(file.path(dir, "raw"), recursive = TRUE)
+        on.exit(unlink(dirname(dir), recursive = TRUE), add = TRUE)
+        writeLines(lines, file.path(dir, "analysis.R"))
+        srcs <- unique(stats::na.omit(unlist(lapply(proj$experiments, function(e)
+          c(e$source_path %||% NA_character_, e$sample_sheet_path %||% NA_character_,
+            e$quant_source$paths %||% NA_character_)))))
+        # The mapping table the integration matched features with, which
+        # the script reads from raw/ too.
+        srcs <- unique(c(srcs, proj$bundles$integration$params$feature_link_source$path))
+        srcs <- srcs[file.exists(srcs)]
+        file.copy(srcs, file.path(dir, "raw", basename(srcs)))
+        writeLines(c(
+          "Reproducing this analysis",
+          "",
+          "1. Install R and the omicsCore package.",
+          "2. In R: setwd(\"<this folder>\"); source(\"analysis.R\")",
+          "",
+          if (length(srcs)) c("Data files in raw/:", paste0("  ", basename(srcs)))
+          else "No data file was archived with this project; edit the read_omics() path(s) in analysis.R."),
+          file.path(dir, "README.txt"))
+        old <- setwd(dirname(dir))
+        on.exit(setwd(old), add = TRUE)
+        if (nzchar(Sys.which("zip"))) {
+          utils::zip(file, "analysis", flags = "-rq9X", zip = Sys.which("zip"))
+        } else {
+          utils::tar(file, "analysis", compression = "gzip", tar = "internal")
+        }
+      }
+    )
+
     output$download_script <- shiny::downloadHandler(
       filename = function() {
         proj <- current_project()
         nm <- if (!is.null(proj)) proj$name %||% "omics" else "omics"
-        sprintf("%s_analysis.R", gsub("[^A-Za-z0-9_.-]+", "_", nm))
+        sprintf("%s_analysis.R", download_stem(nm))
       },
       content = function(file) {
         lines <- script_lines()
@@ -323,4 +395,19 @@ report_view_server <- function(id, current_project = shiny::reactiveVal(NULL)) {
       }
     )
   })
+}
+
+# Whether a PDF report can be built here.
+have_latex <- function() {
+  nzchar(Sys.which("pdflatex")) || nzchar(Sys.which("xelatex")) ||
+    # Looked up rather than called with `::`: tinytex is not a dependency.
+    (has_pkg("tinytex") && isTRUE(tryCatch(
+      getExportedValue("tinytex", "is_tinytex")(), error = function(e) FALSE)))
+}
+
+# A file name stem for downloads: the store's slug, which keeps Chinese
+# and other non-ASCII names ("\u4e2d\u6587\u9879\u76ee" came out as "__report.html").
+download_stem <- function(nm) {
+  st <- project_slug(nm %||% "")
+  if (is.na(st) || !nzchar(st)) "project" else st
 }

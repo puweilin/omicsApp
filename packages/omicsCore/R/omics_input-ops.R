@@ -51,7 +51,7 @@ subset_omics_samples <- function(omics_input, sample_ids) {
   } else NULL
   meta_df <- omics_input$meta_df[sample_ids, , drop = FALSE]
 
-  new_omics_input(
+  out <- new_omics_input(
     omics_type = omics_input$omics_type,
     assay_type = omics_input$assay_type,
     expr_mat = expr_mat,
@@ -61,6 +61,9 @@ subset_omics_samples <- function(omics_input, sample_ids) {
     feature_df = omics_input$feature_df,
     raw_object = omics_input$raw_object
   )
+  # The study design names a column, which a subset keeps; and where the
+  # data came from and what was done to it still holds.
+  carry_input_provenance(out, omics_input)
 }
 
 #' Subset an `omics_input` by feature IDs
@@ -92,7 +95,7 @@ subset_omics_features <- function(omics_input, feature_ids) {
   ]
   rownames(feature_df) <- feature_df$feature_id
 
-  new_omics_input(
+  out <- new_omics_input(
     omics_type = omics_input$omics_type,
     assay_type = omics_input$assay_type,
     expr_mat = expr_mat,
@@ -102,6 +105,9 @@ subset_omics_features <- function(omics_input, feature_ids) {
     feature_df = feature_df,
     raw_object = omics_input$raw_object
   )
+  # The study design names a column, which a subset keeps; and where the
+  # data came from and what was done to it still holds.
+  carry_input_provenance(out, omics_input)
 }
 
 #' Drop samples with missing metadata
@@ -142,4 +148,14 @@ select_complete_cases <- function(omics_input, feature_missing_cutoff = 1) {
   feature_missing <- rowMeans(is.na(omics_input$expr_mat))
   keep_features <- names(feature_missing)[feature_missing <= feature_missing_cutoff]
   subset_omics_features(omics_input, keep_features)
+}
+
+carry_input_provenance <- function(out, from) {
+  # `misc` holds the tximport lengths DESeq2 and edgeR correct with; a
+  # layer that lost them on a QC exclusion was modelled without them.
+  for (nm in c("design", "source_path", "source_fingerprint", "misc", "quant_source",
+               "normalization", "sheet_roles", "orientation", "sample_sheet_path", "excluded_samples")) {
+    out[[nm]] <- from[[nm]]
+  }
+  out
 }

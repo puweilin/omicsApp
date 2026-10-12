@@ -10,6 +10,8 @@ read_omics(
   omics_type = NULL,
   assay_type = NULL,
   sheet_roles = NULL,
+  orientation = NULL,
+  sample_sheet = NULL,
   ...
 )
 }
@@ -32,8 +34,24 @@ an unconfident one: a metadata sheet read as the matrix produces an
 \code{omics_input} that analyses cleanly and means nothing. This is how a
 caller lets the user correct it without re-implementing the reader.}
 
+\item{orientation}{Optional \code{"features_in_rows"} or \code{"samples_in_rows"}
+for the matrix sheet, overriding the guess. The guess is reported
+with its confidence; below 0.6 the report says it was a guess, and
+this is how the caller corrects it (an Olink NPX table has samples in
+rows and protein names that look like gene symbols on both axes).}
+
+\item{sample_sheet}{Optional path to a separate sample sheet (Excel or
+CSV/TSV), for a matrix file that carries no sample information --
+a featureCounts table beside a samples.csv, the usual RNA-seq
+layout. Its rows are matched to the matrix's samples by name and
+replace any sample information found in \code{path}.}
+
 \item{...}{Forwarded to the underlying reader (\code{readxl::read_excel},
-\code{utils::read.csv}).}
+\code{utils::read.table}). Delimited text is otherwise read with
+\code{data.table::fread()} when that is installed, giving the table
+\code{read.table} would give in a fraction of the time; passing any
+argument here, or setting \code{options(omicsCore.use_fread = FALSE)},
+reads it with \code{read.table} instead.}
 }
 \value{
 A list with two elements:
@@ -49,14 +67,25 @@ to build a candidate \code{omics_input}. Always returns both the built
 object (or \code{NULL}) and a structured \code{\link[=new_import_report]{ImportReport}}
 so the UI can show what was detected before the user commits.
 }
+\details{
+Workbooks may be \code{.xlsx}, \code{.xlsm} (macros are never run; only the cells
+are read) or \code{.xls}. Delimited text may be gzip-compressed
+(\code{.csv.gz}, \code{.tsv.gz}, \code{.txt.gz}, a Salmon \code{quant.sf.gz}); it is
+unpacked up to the \code{options(omicsCore.max_unpacked_mb)} limit (2 GB by
+default). An \code{.rds} file may hold an \code{omics_input}, a data frame or
+matrix, or a \code{SummarizedExperiment} / \code{DESeqDataSet}, which is read as
+\code{\link[=read_summarized_experiment]{read_summarized_experiment()}} reads one.
+}
 \seealso{
-Other io: 
-\code{\link{classify_sheet_role}()},
-\code{\link{detect_id_columns}()},
-\code{\link{detect_orientation}()},
-\code{\link{import_report_sheets}()},
-\code{\link{import_report_warnings}()},
-\code{\link{is_import_report}()},
-\code{\link{new_import_report}()}
+Other io:
+\code{\link[=classify_sheet_role]{classify_sheet_role()}},
+\code{\link[=detect_id_columns]{detect_id_columns()}},
+\code{\link[=detect_orientation]{detect_orientation()}},
+\code{\link[=import_report_sheets]{import_report_sheets()}},
+\code{\link[=import_report_warnings]{import_report_warnings()}},
+\code{\link[=is_import_report]{is_import_report()}},
+\code{\link[=new_import_report]{new_import_report()}},
+\code{\link[=read_quant_files]{read_quant_files()}},
+\code{\link[=read_summarized_experiment]{read_summarized_experiment()}}
 }
 \concept{io}

@@ -47,6 +47,7 @@ Other persistence:
 \code{\link{export_bundle}()},
 \code{\link{export_report}()},
 \code{\link{load_project}()},
-\code{\link{save_project}()}
+\code{\link{save_project}()},
+\code{\link{sign_project_file}()}
 }
 \concept{persistence}

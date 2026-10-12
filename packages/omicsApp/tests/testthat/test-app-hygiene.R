@@ -69,7 +69,19 @@ test_that("a frame that seeds twice restores to its first state", {
 })
 
 test_that("package code seeds the stream only through local_seed()", {
+  # Beside the tests in the source tree; under R CMD check the tests run
+  # from a copy with no R/ next to them, so CI names the checkout in
+  # OMICSAPP_REPO_ROOT (see test-deploy-contract.R). Set, it must hold the
+  # sources -- a skip there would hide the check again.
+  repo <- Sys.getenv("OMICSAPP_REPO_ROOT", "")
   r_dir <- file.path("..", "..", "R")
+  if (!dir.exists(r_dir) && nzchar(repo)) {
+    r_dir <- file.path(repo, "packages", "omicsApp", "R")
+    if (!dir.exists(r_dir)) {
+      stop("OMICSAPP_REPO_ROOT is set to '", repo, "', but it has no packages/omicsApp/R.",
+           call. = FALSE)
+    }
+  }
   skip_if_not(dir.exists(r_dir), "package source is not beside the tests")
   files <- list.files(r_dir, pattern = "\\.R$", full.names = TRUE)
   seeders <- Filter(function(f) {

@@ -16,7 +16,7 @@
 
 services:
   keycloak-db:
-    image: postgres:16
+    image: postgres:16@sha256:65b16a8b326e0cfbdf33fa7e783f2a0cb352a61448616ccccfd616ef42aa0f65
     container_name: keycloak-db
     restart: unless-stopped
     environment:
@@ -34,6 +34,29 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    # ---- confinement ----------------------------------------------------
+    # The account database: the one container whose compromise hands out
+    # everybody's login, so it gets everything Docker offers. The
+    # entrypoint starts as root to chown the data directory and then
+    # drops to `postgres` with gosu; the five capabilities kept are the
+    # ones those two steps use, and no-new-privileges still holds (gosu
+    # gives privileges up, it never gains them).
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    # Writes go to the data volume above and to these two tmpfs mounts,
+    # nowhere else.
+    read_only: true
+    tmpfs:
+      - /var/run/postgresql
+      - /tmp
+    pids_limit: 512
+    mem_limit: 1g
+    cpus: 1.0
+    # Rotated, so a chatty night cannot fill /var/lib/docker.
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "5"}
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.3
@@ -99,6 +122,25 @@ services:
       # here do nothing until you re-import deliberately.
       - ./omicsapp-realm.json:/opt/keycloak/data/import/omicsapp-realm.json:ro
     networks: [sp-net]
+    # ---- confinement ----------------------------------------------------
+    # Keycloak runs as an unprivileged user on an unprivileged port, so it
+    # needs no capability at all.
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    # Java counts every thread as a process; Keycloak idles at a few
+    # hundred.
+    pids_limit: 2048
+    mem_limit: 2g
+    cpus: 2.0
+    # Not read_only. `start` re-augments the server when its build-time
+    # options (KC_DB above) differ from the image's, which writes under
+    # /opt/keycloak/lib, and it keeps working files in /opt/keycloak/data.
+    # A read-only root needs a pre-built ("optimized") image, which is a
+    # Dockerfile of its own to maintain -- not worth it for a container
+    # that only nginx and ShinyProxy can reach.
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "5"}
 
 networks:
   sp-net:

@@ -1,6 +1,6 @@
 Package: omicsApp
 Title: Shiny Web Interface for Multi-Omics Analysis
-Version: 0.0.0.9000
+Version: 0.2.0
 Authors@R:
     person("Weilin", "Pu", email = "puweilin@gmail.com", role = c("aut", "cre"))
 Description: A modern Shiny application providing interactive visualization
@@ -17,7 +17,7 @@ Depends:
     R (>= 4.2)
 Imports:
     omicsCore,
-    shiny (>= 1.8.0),
+    shiny (>= 1.8.1),
     bslib (>= 0.7.0),
     bsicons,
     sass,
@@ -28,7 +28,8 @@ Imports:
     shinyWidgets,
     shinyjs,
     promises,
-    future
+    future,
+    openssl
 Remotes:
     omicsCore=puweilin/omicsApp/packages/omicsCore
 Suggests:
@@ -39,25 +40,25 @@ Suggests:
     imputeLCMD,
     DESeq2,
     edgeR,
-    GSVA,
-    fgsea,
-    enrichplot,
-    ComplexHeatmap,
-    circlize,
     impute,
     pcaMethods,
     ActivePathways,
     shinytest2,
     chromote,
     callr,
-    ggrepel,
-    knitr,
     openxlsx,
     readxl,
     rmarkdown,
     clusterProfiler,
+    msigdbr,
     vsn,
-    pkgload
+    pkgload,
+    ragg,
+    svglite,
+    SummarizedExperiment,
+    S4Vectors,
+    patchwork,
+    htmlwidgets
 Config/testthat/edition: 3
 URL: https://github.com/puweilin/omicsApp, https://puweilin.github.io/omicsApp/omicsApp/
 BugReports: https://github.com/puweilin/omicsApp/issues

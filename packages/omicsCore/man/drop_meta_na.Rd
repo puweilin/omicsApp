@@ -19,19 +19,21 @@ Retains only samples whose \code{meta_df} rows are complete on the requested
 columns.
 }
 \seealso{
-Other omics_input: 
+Other omics_input:
 \code{\link{LOG_SCALE_ASSAY_TYPES}},
 \code{\link{SUPPORTED_ASSAY_TYPES}},
-\code{\link{check_assay_scale}()},
-\code{\link{infer_assay_type}()},
-\code{\link{is_omics_input}()},
-\code{\link{normalize_omics}()},
-\code{\link{omics_input}()},
-\code{\link{select_complete_cases}()},
-\code{\link{subset_omics}()},
-\code{\link{subset_omics_features}()},
-\code{\link{subset_omics_samples}()},
-\code{\link{summarize_omics}()},
-\code{\link{validate_omics_input}()}
+\code{\link[=check_assay_scale]{check_assay_scale()}},
+\code{\link[=infer_assay_type]{infer_assay_type()}},
+\code{\link[=is_omics_input]{is_omics_input()}},
+\code{\link[=normalize_omics]{normalize_omics()}},
+\code{\link[=omics_input]{omics_input()}},
+\code{\link[=select_complete_cases]{select_complete_cases()}},
+\code{\link[=set_study_design]{set_study_design()}},
+\code{\link[=study_design]{study_design()}},
+\code{\link[=subset_omics]{subset_omics()}},
+\code{\link[=subset_omics_features]{subset_omics_features()}},
+\code{\link[=subset_omics_samples]{subset_omics_samples()}},
+\code{\link[=summarize_omics]{summarize_omics()}},
+\code{\link[=validate_omics_input]{validate_omics_input()}}
 }
 \concept{omics_input}

@@ -7,7 +7,7 @@
 run_limma_continuous(
   input,
   continuous_col,
-  method = c("linear", "spline"),
+  model = c("linear", "spline"),
   df = 3,
   covariates = NULL,
   paired_col = NULL
@@ -18,7 +18,9 @@ run_limma_continuous(
 
 \item{continuous_col}{Continuous metadata column.}
 
-\item{method}{Either \code{"linear"} or \code{"spline"}.}
+\item{model}{Either \code{"linear"} or \code{"spline"}. (Called \code{model} rather
+than \code{method} because \code{\link[=run_diff]{run_diff()}} has a \code{method} of its own, and the
+clash made the spline unreachable: \code{run_diff_continuous(..., method = "spline")} failed, and \code{df = 3} alone ran a linear fit.)}
 
 \item{df}{Degrees of freedom for spline fits.}
 

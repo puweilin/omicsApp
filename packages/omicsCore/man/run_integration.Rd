@@ -10,6 +10,7 @@ run_integration(
   experiments = NULL,
   diff_bundles = NULL,
   by = "feature_symbol",
+  feature_link = NULL,
   ...
 )
 }
@@ -25,7 +26,15 @@ two experiments to integrate.}
 \item{diff_bundles}{Named list of \code{\link[=run_diff]{run_diff()}} bundles keyed by
 experiment tag. Required for \code{"concordance"} and \code{"active_pathways"}.}
 
-\item{by}{Feature key used to join layers (default \code{"feature_symbol"}).}
+\item{by}{Feature key used to join layers when there is no feature
+link (default \code{"feature_symbol"}).}
+
+\item{feature_link}{Optional table saying which feature of one layer is
+which feature of the other: a data frame with a column named after
+each of the two layers (e.g. \code{data.frame(prot = "P04637", rna = "TP53")}), as \code{\link[=read_feature_link]{read_feature_link()}} returns. When \code{NULL} (default),
+the project's own \code{feature_link} is used if it has a column for both
+layers, and features are otherwise matched on \code{by}. See \emph{Matching
+features} below.}
 
 \item{...}{Method-specific arguments forwarded to the backend. See
 the per-method sections below.}
@@ -49,13 +58,49 @@ that share donors.
 analyses, classified into the four sign quadrants and combined via
 Fisher's method.
 \item \code{"active_pathways"} -- pathway-level combined-p enrichment via the
-\code{ActivePathways} package, fed by the p-values of two differential
-analyses.
+\code{ActivePathways} package, fed by the p-values and fold-change signs
+of two differential analyses.
 }
 
 All methods return an \code{analysis_bundle} whose \code{results$integration_df}
 follows the schema documented in \code{\link[=check_integration_result_schema]{check_integration_result_schema()}}.
 }
+\section{Matching features}{
+
+Without a feature link, features are matched on \code{by} ignoring case and
+surrounding whitespace. With one, the link decides alone: a feature
+it does not name is not paired. A value in the link names a feature
+when it is the feature's id (or one member of a \verb{;}-separated protein
+group), the canonical accession of a UniProt isoform id (\code{P04637}
+names \code{P04637-2} unless the link also names \code{P04637-2} itself), or the
+feature's \code{by} value -- whichever is most specific.
+
+Every feature is kept, so where several proteins (isoforms, several
+protein groups) map to one gene there are several protein-gene pairs:
+\itemize{
+\item concordance and correlation report each pair as a row of its own,
+and correct the p-values across pairs. \code{feature_id} is the gene when
+it has one pair and the gene followed by the feature that tells its
+pairs apart otherwise (\code{"TP53 (P04637-2)"}); \code{feature_symbol} is the
+gene; \code{feature_id_a} / \code{feature_id_b} name the two features.
+\item ActivePathways scores genes, so a gene with several features in a
+layer takes its most significant feature's p-value, corrected for
+the number of features (Sidak: \code{1 - (1 - p_min)^k}), and that
+feature's fold change; the bundle's warnings say how many genes this
+concerned.
+}
+
+Before features were linked, only the most abundant feature of each
+gene was kept. Results for data with one feature per gene are
+unchanged.
+
+The bundle records how features were matched in
+\code{params$feature_link_source} (\code{source} is \code{"symbol"}, \code{"project"} or
+\code{"supplied"}; \code{path} and \code{columns} say which file the link was read
+from, when known) and the counts of the pairing in
+\code{params$method_info$feature_pairing}.
+}
+
 \section{Correlation arguments}{
 
 \itemize{
@@ -69,10 +114,21 @@ follows the schema documented in \code{\link[=check_integration_result_schema]{c
 \section{Concordance arguments}{
 
 \itemize{
-\item \code{p_preference} -- \code{"adjusted"} (default) or \code{"raw"}.
+\item \code{p_preference} -- \code{"adjusted"} (default) or \code{"raw"}: which p-value of
+each layer is held to \code{p_cutoff} when deciding whether a feature is a
+hit in that layer. The combined (Fisher) p-value is always built from
+the raw p-values and corrected once across features.
 \item \code{p_cutoff} -- significance cutoff (default \code{0.05}).
+\item \code{effect_cutoff} -- minimum absolute effect in each layer for a
+feature to count as a hit there (default \code{0}, no bound).
 \item \code{p_adjust_method} -- defaults to \code{"BH"}.
 }
+
+Besides the schema columns, the concordance table keeps what each layer
+said on its own: \code{effect_a}, \code{effect_b}, \code{p_value_a}, \code{p_value_b},
+\code{adj_p_value_a}, \code{adj_p_value_b}, \code{significant_a}, \code{significant_b},
+\code{feature_id_a}, \code{feature_id_b}. One row per protein-gene pair (see
+\emph{Matching features}).
 }
 
 \section{ActivePathways arguments}{
@@ -86,9 +142,33 @@ correction across pathways.
 \item \code{significant} -- pathway-level cutoff (default \code{0.05}).
 \item \code{geneset_filter} -- length-2 integer vector of min/max gene-set sizes
 (default \code{c(5L, 1000L)}).
-\item \code{merge_method} -- \code{"Brown"} (default) or another method accepted by
-\code{ActivePathways::ActivePathways()}.
+\item \code{merge_method} -- \code{"DPM"} (default), the directional extension of
+Brown's method, or another method accepted by
+\code{ActivePathways::ActivePathways()} (\code{"Brown"} ignores direction, as
+results made before the directional method did).
+\item \code{constraints_vector} -- for a directional \code{merge_method}, the expected
+sign relation of the two layers' fold changes. Default \code{c(1, 1)}: the
+layers are expected to move the same way (RNA and protein of a gene
+rise together), so genes whose layers disagree are penalised and
+contribute less to any pathway. \code{c(1, -1)} would expect them to move
+oppositely.
 }
+
+With a directional merge, the ActivePathways table also says which way
+each pathway went: \code{direction} is \code{"up"} or \code{"down"} when the genes that
+drove it (ActivePathways' overlap) moved that way in both layers, and
+\code{"mixed"} when the layers disagree; \code{direction_a} / \code{direction_b} give
+each layer's own reading (the sign most driving genes share in it),
+\code{layers_agree} whether those match, and \code{n_genes_agree} /
+\code{n_genes_disagree} count the driving genes measured in both layers
+whose signs agree or not. \code{evidence} says which layers found the
+pathway on their own: \code{"shared"} (both), \code{"unique"} (one), or
+\code{"combined"} (only once merged). Results made before this held the
+evidence in \code{direction}. The direction is reported for a non-directional
+merge too, but there it describes the result without having shaped it.
+When the installed ActivePathways predates the directional method (it
+needs 2.0 or later), Brown's method is used instead, the bundle's
+\code{params$merge_method} records \code{"Brown"}, and a warning says so.
 }
 
 \examples{
@@ -108,7 +188,9 @@ correction across pathways.
 }
 }
 \seealso{
-Other integration: 
-\code{\link{plot_integration}()}
+Other integration:
+\code{\link[=feature_pairing_preview]{feature_pairing_preview()}},
+\code{\link[=plot_integration]{plot_integration()}},
+\code{\link[=read_feature_link]{read_feature_link()}}
 }
 \concept{integration}

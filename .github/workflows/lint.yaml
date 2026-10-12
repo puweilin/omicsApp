@@ -1,0 +1,127 @@
+# Static checks: the deploy scripts, the Dockerfile, the workflows
+# themselves, and the R code's style.
+#
+#   shell       shellcheck on deploy/scripts/*.sh and .github/scripts/*.sh.
+#               Blocking: every finding was fixed or carries a
+#               `# shellcheck disable=` with its reason beside it.
+#   dockerfile  hadolint on deploy/docker/Dockerfile, with .hadolint.yaml
+#               (which lists the rules ignored and why). Blocking.
+#   workflows   actionlint on .github/workflows (it runs shellcheck on
+#               every `run:` block too), and every third-party action
+#               pinned to a full commit SHA. Blocking.
+#   r-lint      lintr with the repository's .lintr, on both packages.
+#               Reporting, not blocking, for now: lintr has never been
+#               run over this code, so the first run reports a backlog
+#               rather than a regression. Findings appear as annotations
+#               on the pull request's changed lines. Once the backlog is
+#               cleared, set LINTR_ERROR_ON_LINT to "true" below and the
+#               job starts failing on new lints.
+#
+# The three linters are fixed versions checked against recorded
+# checksums (.github/scripts/install-lint-tools.sh), so a new linter
+# release cannot fail a build that changed nothing.
+name: lint
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore:
+      - "docs/**"
+      - "mockup/**"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "mockup/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: shell, Dockerfile and workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install the pinned linters
+        run: |
+          bin="$(.github/scripts/install-lint-tools.sh "$RUNNER_TEMP/lint-tools")"
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck deploy/scripts/*.sh .github/scripts/*.sh
+
+      - name: The deploy scripts parse
+        run: |
+          for s in deploy/scripts/*.sh; do bash -n "$s"; done
+
+      - name: hadolint
+        run: |
+          hadolint --version
+          hadolint --config .hadolint.yaml deploy/docker/Dockerfile
+
+      - name: actionlint
+        run: |
+          actionlint -version
+          actionlint -color
+
+      # Every `uses:` is owner/repo@<40-hex SHA> # <tag>. Checked here
+      # offline, by shape; .github/scripts/pin-actions.sh also checks that
+      # each SHA is what its tag says, which needs the network.
+      - name: Third-party actions are pinned to commit SHAs
+        run: |
+          unpinned="$(grep -nE '^[[:space:]-]*uses:' .github/workflows/*.y*ml \
+            | grep -v 'uses: \./' \
+            | grep -vE 'uses:[[:space:]]*[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]*v[0-9]' || true)"
+          if [ -n "$unpinned" ]; then
+            echo "Not pinned to a commit SHA with its version in a comment:"
+            echo "$unpinned"
+            exit 1
+          fi
+
+  r-lint:
+    name: lintr
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      # One config for both packages, at the repository root, so neither
+      # package carries a hidden file R CMD check would note.
+      R_LINTR_LINTER_FILE: ${{ github.workspace }}/.lintr
+      # Report, do not fail (see the header). "true" makes it blocking.
+      LINTR_ERROR_ON_LINT: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      # The packages' own dependencies too, so lintr can parse code that
+      # uses their exported operators and does not report every call into
+      # them; the cache is shared in shape with R-CMD-check's.
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          working-directory: packages/omicsApp
+          cache-version: 2
+          extra-packages: |
+            local::../omicsCore
+            any::lintr
+          needs: lint
+
+      - name: lintr
+        run: |
+          for pkg in omicsCore omicsApp; do
+            echo "::group::$pkg"
+            Rscript -e "lints <- lintr::lint_package('packages/$pkg'); print(lints); cat(length(lints), 'lints in $pkg\n')"
+            echo "::endgroup::"
+          done

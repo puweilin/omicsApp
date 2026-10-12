@@ -1,5 +1,6 @@
 ---
-title: "omicsCore report"
+title: "`r gsub('[<>&\"]', ' ', params$project_name)`"
+subtitle: "Multi-omics analysis report"
 date: "`r format(Sys.time(), '%Y-%m-%d %H:%M')`"
 output:
   html_document:
@@ -14,7 +15,7 @@ params:
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.width = 7, fig.height = 5)
+                      fig.width = 7, fig.height = 4.5, fig.align = "center")
 `%||%` <- function(a, b) if (is.null(a)) b else a
 # Anything a person typed -- a project name, a layer tag, a group
 # label, a feature id -- is inserted into markdown here, and markdown
@@ -35,61 +36,513 @@ esc_df <- function(df) {
   names(df) <- esc(names(df))
   df
 }
+# p-values as a reader expects them: 3 significant digits, and "< 1e-300"
+# rather than 0.
+fmt_p <- function(p) {
+  out <- ifelse(is.na(p), "", formatC(p, digits = 3, format = "g"))
+  out[!is.na(p) & p < 1e-300] <- "< 1e-300"
+  out
+}
+fmt_n <- function(x) format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
+and_list <- function(x) {
+  x <- as.character(x)
+  if (length(x) <= 1L) return(x)
+  paste(paste(x[-length(x)], collapse = ", "), "and", x[length(x)])
+}
+scale_label <- function(a) {
+  switch(a %||% "",
+         raw_intensity = "raw (linear) intensities",
+         normalized_intensity = "log2 intensities",
+         imputed_intensity = "log2 intensities with missing values imputed",
+         filtered_intensity = "filtered log2 intensities",
+         raw_count = "raw read counts",
+         logcpm = "log2 counts per million",
+         vst = "variance-stabilised counts",
+         tpm = "TPM", fpkm = "FPKM", a %||% "unknown")
+}
+method_label <- function(m) {
+  switch(m %||% "",
+         limma = "limma (linear models with empirical Bayes moderation)",
+         edger = "edgeR (quasi-likelihood negative binomial GLM)",
+         deseq2 = "DESeq2 (negative binomial GLM, Wald test)",
+         ttest = "Welch's t-test", lm = "ordinary linear models", m %||% "")
+}
+safe_print <- function(expr) {
+  p <- tryCatch(expr, error = function(e) NULL)
+  if (!is.null(p)) { print(p); cat("\n\n") }
+  invisible(NULL)
+}
+# Figure heights that follow what a figure holds. At one fixed 4.5 in,
+# 30 pathway rows were squeezed into it with their names overlapping,
+# three comparisons' bars sat in a mostly empty panel, and a PCA's key
+# of six long group names ran off the bottom. Each such figure is drawn
+# in a chunk of its own whose fig.height is worked out here, from the
+# figure, in the chunk before it.
+fig_h <- function(inches, lo = 3, hi = 14) round(min(hi, max(lo, inches)), 2)
+# Lines of text down a figure's discrete y axes, every panel's added up
+# (a pathway name wrapped over two lines counts two).
+y_label_lines <- function(p) {
+  b <- tryCatch(ggplot2::ggplot_build(p), error = function(e) NULL)
+  if (is.null(b)) return(0)
+  sum(vapply(b$layout$panel_params, function(pp) {
+    labs <- tryCatch(as.character(pp$y$get_labels()), error = function(e) character(0))
+    as.numeric(sum(lengths(strsplit(labs[!is.na(labs)], "\n", fixed = TRUE))))
+  }, numeric(1)))
+}
+# Lines of text in a figure's colour key (a group name wrapped over
+# three lines counts three); 0 without one.
+key_lines <- function(p) {
+  b <- tryCatch(ggplot2::ggplot_build(p), error = function(e) NULL)
+  s <- if (!is.null(b)) b$plot$scales$get_scales("colour")
+  if (is.null(s) || !s$is_discrete()) return(0)
+  labs <- tryCatch(as.character(s$get_labels()), error = function(e) character(0))
+  sum(lengths(strsplit(labs, "\n", fixed = TRUE)))
+}
+# The height of a figure whose rows each carry a label: the title,
+# axis and legends around them, then about a quarter inch a line.
+rows_h <- function(p, base = 1.6, per_line = 0.24, lo = 3) {
+  fig_h(base + per_line * y_label_lines(p), lo = lo)
+}
+# The figures, built before the chunk that draws them so that chunk's
+# height can be read from them; NULL where the report has no such figure.
+try_plot <- function(expr) tryCatch(expr, error = function(e) NULL)
 project <- params$project
 project_name <- params$project_name
 bundles <- if (is.null(project$bundles)) list() else project$bundles
-```
-
-# `r esc(project_name)`
-
-## Project overview
-
-- **Project:** `r esc(project$name %||% project_name)`
-- **Experiments:** `r paste(esc(omicsCore::experiment_tags(project)), collapse = ", ")`
-- **Sample link:** `r if (!is.null(project$sample_link)) paste0(nrow(project$sample_link), " mapping rows") else "none"`
-
-```{r overview-table}
 exp_tags <- omicsCore::experiment_tags(project)
-if (length(exp_tags) > 0L) {
-  rows <- lapply(exp_tags, function(t) {
-    x <- project$experiments[[t]]
-    data.frame(
-      tag = t,
-      omics_type = x$omics_type %||% NA_character_,
-      assay_type = x$assay_type %||% NA_character_,
-      n_features = nrow(x$expr_mat),
-      n_samples = ncol(x$expr_mat),
-      stringsAsFactors = FALSE
-    )
-  })
-  knitr::kable(esc_df(do.call(rbind, rows)))
+diff_b <- bundles$diff
+thr <- diff_b$params$display_thresholds %||%
+  list(p_cutoff = 0.05, p_preference = "adjusted", effect_cutoff = 0)
+p_col <- if (identical(thr$p_preference, "raw")) "p_value" else "adj_p_value"
+p_name <- if (identical(thr$p_preference, "raw")) "p" else "adjusted p (BH)"
+is_hit <- function(df) {
+  !is.na(df[[p_col]]) & !is.na(df$effect) & df[[p_col]] < thr$p_cutoff &
+    abs(df$effect) >= (thr$effect_cutoff %||% 0)
 }
 ```
 
-## Bundles
+## Summary
 
-```{r bundles-section, results = "asis"}
+```{r overview-table}
+if (length(exp_tags) > 0L) {
+  rows <- lapply(exp_tags, function(t) {
+    x <- project$experiments[[t]]
+    d <- tryCatch(omicsCore::study_design(x), error = function(e) NULL)
+    data.frame(
+      Layer = t,
+      Type = switch(x$omics_type %||% "", proteomics = "Proteomics",
+                    rnaseq = "RNA-seq", x$omics_type %||% ""),
+      Values = scale_label(x$assay_type),
+      Features = fmt_n(nrow(x$expr_mat)),
+      Samples = fmt_n(ncol(x$expr_mat)),
+      Groups = if (!is.null(d$group_col) && d$group_col %in% names(x$meta_df)) {
+        tab <- table(as.character(x$meta_df[[d$group_col]]))
+        paste(sprintf("%s (%d)", names(tab), as.integer(tab)), collapse = ", ")
+      } else "",
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+  })
+  knitr::kable(esc_df(do.call(rbind, rows)), align = "llllrrl")
+}
+```
+
+```{r analyses-run, results = "asis"}
 if (length(bundles) == 0L) {
-  cat("_No analysis_bundle objects attached to this project._\n")
+  cat("_No analyses have been run yet._\n")
 } else {
-  for (nm in names(bundles)) {
-    b <- bundles[[nm]]
-    cat("\n### ", esc(nm), " (", esc(b$analysis_name), ")\n\n", sep = "")
-    cat("- Params:", length(b$params), "entries\n")
-    cat("- Result keys: ", paste(esc(names(b$results)), collapse = ", "), "\n\n")
-    for (rk in names(b$results)) {
-      obj <- b$results[[rk]]
-      if (is.data.frame(obj) && nrow(obj) > 0L) {
-        cat("\n**", esc(rk), "** (top 10 rows)\n\n", sep = "")
-        print(knitr::kable(esc_df(utils::head(obj, 10L))))
-      }
+  labels <- c(qc = "quality control", diff = "differential analysis",
+              anova = "a global test across groups", enrich = "pathway enrichment",
+              enrich_compare = "enrichment across comparisons",
+              integration = "multi-omics integration", gsva = "gene-set variation analysis")
+  run <- labels[intersect(names(labels), names(bundles))]
+  cat("Analyses in this report: ", and_list(run), ".\n", sep = "")
+}
+```
+
+## Methods
+
+```{r methods, results = "asis"}
+para <- character(0)
+for (t in exp_tags) {
+  x <- project$experiments[[t]]
+  s <- sprintf("The %s layer (%s features, %s samples) was imported as %s",
+               esc(t), fmt_n(nrow(x$expr_mat)), fmt_n(ncol(x$expr_mat)),
+               scale_label(x$normalization$from_assay_type %||% x$assay_type))
+  if (!is.null(x$normalization)) {
+    s <- paste0(s, sprintf(" and normalised with %s%s",
+                           if (identical(x$normalization$method, "vsn"))
+                             "variance-stabilising normalisation (vsn)"
+                           else sprintf("log2(x + %s)", x$normalization$offset),
+                           if (identical(x$normalization$center, "median"))
+                             ", with each sample's median aligned to the median of all samples"
+                           else ""))
+  }
+  if (length(x$excluded_samples)) {
+    s <- paste0(s, sprintf("; %s excluded after quality control",
+                           esc(and_list(x$excluded_samples))))
+  }
+  para <- c(para, paste0(s, "."))
+}
+if (!is.null(bundles$qc)) {
+  q <- bundles$qc$params
+  # The method that ran: MinProb falls back to MinDet when it cannot be
+  # estimated, and the result records that.
+  imp_used <- bundles$qc$results$qc_summary$imputation$method %||% q$impute_method
+  para <- c(para, sprintf(paste(
+    "Quality control flagged features missing in more than %.0f%% of samples and",
+    "screened samples for outliers by %s (threshold %s)%s."),
+    100 * (q$missing_threshold %||% 0.5),
+    and_list(q$outlier_method %||% "none"), q$outlier_sd_threshold %||% 3,
+    if (!identical(q$impute_method %||% "none", "none"))
+      sprintf("; missing values were imputed with %s for the QC views%s", imp_used,
+              if (!identical(imp_used, q$impute_method))
+                sprintf(" (%s could not be estimated on these data)", q$impute_method)
+              else "") else ""))
+}
+if (!is.null(diff_b)) {
+  d <- diff_b$params
+  design <- if (identical(d$analysis_type, "continuous")) {
+    sprintf("a trend with %s", esc(d$continuous_col %||% "the variable"))
+  } else if (length(d$all_contrasts %||% d$contrasts)) {
+    sprintf("the comparisons %s", esc(and_list(gsub("_vs_", " vs ", d$comparison))))
+  } else {
+    sprintf("%s against %s (column %s)",
+            esc(and_list(d$all_case_groups %||% d$case_group)),
+            esc(d$control_group %||% ""), esc(d$group_col %||% ""))
+  }
+  s <- sprintf("Differential abundance was tested with %s for %s",
+               method_label(d$method), design)
+  if (length(d$covariates)) s <- paste0(s, sprintf(", adjusting for %s", esc(and_list(d$covariates))))
+  if (length(d$paired_col)) s <- paste0(s, sprintf(", with samples paired by %s", esc(d$paired_col)))
+  s <- paste0(s, sprintf(". P-values were adjusted for multiple testing (Benjamini-Hochberg). Features were called significant at %s < %s",
+                         p_name, thr$p_cutoff))
+  if ((thr$effect_cutoff %||% 0) > 0) {
+    eff <- omicsCore::effect_label(diff_b)
+    s <- paste0(s, if (identical(eff, "log2FC")) {
+      sprintf(" and |log2 fold change| >= %.3g (%.2g-fold)", thr$effect_cutoff,
+              2^thr$effect_cutoff)
+    } else {
+      sprintf(" and |%s| >= %.3g", eff, thr$effect_cutoff)
+    })
+  }
+  para <- c(para, paste0(s, "."))
+}
+if (!is.null(bundles$enrich)) {
+  e <- bundles$enrich$params
+  ora_what <- switch(e$direction %||% "both",
+    separate = paste("the up-regulated and the down-regulated hits, tested as two separate",
+                     "lists each with its own multiple-testing correction,"),
+    up = "the up-regulated hits",
+    down = "the down-regulated hits",
+    "the significant hits (up and down pooled into one list)")
+  para <- c(para, sprintf(
+    "Pathway enrichment used %s on %s gene sets (%s, MSigDB via msigdbr)%s.%s%s",
+    if (identical(e$type, "gsea")) sprintf("preranked GSEA (ranking: %s)", e$rank_metric %||% "test statistic")
+    else sprintf("over-representation analysis of %s against the tested genes", ora_what),
+    esc(and_list(e$database)), e$organism %||% "Homo sapiens",
+    sprintf(", gene-set size %s-%s", e$min_size %||% 10, e$max_size %||% 500),
+    if (length(e$database) > 1L)
+      if (identical(e$p_adjust_scope, "all"))
+        " P-values were adjusted across all databases together."
+      else " P-values were adjusted within each database."
+    else "",
+    if (identical(e$symbol_case, "ignored"))
+      " Gene names were matched to the gene sets ignoring upper and lower case." else ""))
+}
+if (!is.null(bundles$integration)) {
+  ip <- bundles$integration$params
+  para <- c(para, sprintf("Layers %s were integrated by %s.",
+                          esc(and_list(ip$experiments)),
+                          switch(ip$method %||% "",
+                                 correlation = sprintf("per-feature %s correlation across paired samples",
+                                                       ip$cor_method %||% "Spearman"),
+                                 concordance = "comparing each feature's fold change between layers (Fisher's combined p)",
+                                 active_pathways = if ((ip$merge_method %||% "Brown") %in%
+                                                       c("DPM", "Fisher_directional",
+                                                         "Stouffer_directional", "Strube_directional"))
+                                   paste("combined pathway enrichment (ActivePathways, directional",
+                                         "merge expecting the layers to change in the same direction)")
+                                 else sprintf("combined pathway enrichment (ActivePathways, %s's method)",
+                                              ip$merge_method %||% "Brown"),
+                                 ip$method %||% "")))
+}
+if (length(para)) cat(paste(para, collapse = " "), "\n") else cat("_Nothing to describe yet._\n")
+```
+
+```{r qc-section, results = "asis"}
+qb <- bundles$qc
+if (!is.null(qb)) {
+  cat("\n## Quality control\n\n")
+  qs <- qb$results$qc_summary
+  flagged <- qs$outliers$flagged_samples
+  cat(sprintf("%s of %s samples and %s of %s features kept. ",
+              fmt_n(qb$input_info$n_samples_out), fmt_n(qb$input_info$n_samples_in),
+              fmt_n(qb$input_info$n_features_out), fmt_n(qb$input_info$n_features_in)))
+  cat(if (length(flagged)) sprintf("Possible outlier sample(s): %s.\n\n", esc(and_list(flagged)))
+      else "No sample was flagged as an outlier.\n\n")
+  # Coloured by the layer's groups, as the app shows it: a PCA without
+  # them cannot show whether samples cluster by condition.
+  qc_layer <- project$experiments[[omicsCore::bundle_layer(project, qb)]]
+  qc_group <- qc_layer$design$group_col
+  if (is.null(qc_group) || !qc_group %in% names(qc_layer$meta_df)) qc_group <- NULL
+  pca_fig <- try_plot(tryCatch(omicsCore::plot_qc(qb, view = "pca", color_by = qc_group,
+                                                  reference = qc_layer$design$reference),
+                               error = function(e) omicsCore::plot_qc(qb, view = "pca")))
+}
+# Tall enough for its key beside the points: a line of a group's name
+# is about a fifth of an inch.
+pca_h <- if (!is.null(qb)) fig_h(1.2 + 0.2 * key_lines(pca_fig), lo = 4.5) else 4.5
+```
+
+```{r qc-pca, results = "asis", fig.height = pca_h}
+if (!is.null(qb)) safe_print(pca_fig)
+```
+
+```{r diff-section, results = "asis"}
+has_diff <- !is.null(diff_b) && is.data.frame(diff_b$results$diff_result_df)
+comps <- character(0)
+if (has_diff) {
+  cat("\n## Differential analysis\n\n")
+  comps <- tryCatch(omicsCore::diff_comparisons(diff_b), error = function(e) character(0))
+  if (length(comps) > 1L) {
+    cat("The comparisons were fitted together in one model, so they share one estimate of variability.\n\n")
+    s <- omicsCore::summarize_diff_contrasts(diff_b, p_cutoff = thr$p_cutoff,
+                                             p_preference = thr$p_preference,
+                                             effect_cutoff = thr$effect_cutoff %||% 0)
+    print(knitr::kable(esc_df(s)))
+    cat("\n\n")
+  }
+}
+# A row per comparison in both figures, as tall as its name (wrapped
+# over up to three lines); the app sizes its cards the same way.
+cmp_lines <- if (length(comps)) omicsCore::comparison_label_lines(comps) else 0
+contrasts_h <- fig_h((160 + sum(20 + 19 * cmp_lines)) / 96, lo = 2.5)
+overlap_h <- fig_h((270 + sum(10 + 19 * cmp_lines)) / 96, lo = 3.5)
+```
+
+```{r diff-contrasts, results = "asis", fig.height = contrasts_h}
+if (has_diff && length(comps) > 1L) safe_print(omicsCore::plot_diff_contrasts(diff_b))
+```
+
+```{r diff-overlap, results = "asis", fig.height = overlap_h}
+if (has_diff && length(comps) > 1L && length(comps) <= 8L) {
+  safe_print(omicsCore::plot_diff_overlap(diff_b))
+}
+```
+
+```{r diff-comparisons, results = "asis"}
+if (has_diff) {
+  for (cmp in comps) {
+    one <- if (length(comps) > 1L) omicsCore::select_comparison(diff_b, cmp) else diff_b
+    df <- one$results$diff_result_df
+    tested <- sum(!is.na(df$p_value))
+    hit <- is_hit(df)
+    cat(sprintf("\n### %s\n\n", esc(gsub("_vs_", " vs ", cmp))))
+    cat(sprintf("%s features tested%s; %s significant (%s up, %s down).\n\n",
+                fmt_n(tested),
+                if (tested < nrow(df)) sprintf(" (%s not testable)", fmt_n(nrow(df) - tested)) else "",
+                fmt_n(sum(hit)), fmt_n(sum(hit & df$effect > 0)), fmt_n(sum(hit & df$effect < 0))))
+    if (!identical(one$params$analysis_type, "continuous")) {
+      # At the cut the counts above were read at, so the red and blue
+      # points are the "up" and "down" just counted.
+      safe_print(omicsCore::plot_volcano(
+        one, top_n = 10L,
+        p_basis = if (identical(thr$p_preference, "raw")) "raw" else "adjusted",
+        p_threshold = thr$p_cutoff,
+        effect_threshold = if ((thr$effect_cutoff %||% 0) > 0) thr$effect_cutoff))
+    }
+    df <- df[order(df$p_value, na.last = NA), , drop = FALSE]
+    top <- utils::head(df, 15L)
+    if (nrow(top)) {
+      tab <- data.frame(
+        Feature = ifelse(is.na(top$feature_symbol) | !nzchar(top$feature_symbol),
+                         top$feature_id, top$feature_symbol),
+        effect = formatC(top$effect, digits = 3, format = "f"),
+        p = fmt_p(top$p_value), `adjusted p` = fmt_p(top$adj_p_value),
+        check.names = FALSE, stringsAsFactors = FALSE)
+      names(tab)[2] <- omicsCore::effect_label(one)
+      cat("Top features by p-value:\n\n")
+      print(knitr::kable(esc_df(tab), align = "lrrr"))
+      cat("\n\n")
     }
   }
 }
 ```
 
-## Session info
+```{r anova-section, results = "asis"}
+ab <- bundles$anova
+if (!is.null(ab)) {
+  df <- ab$results$diff_result_df
+  cat("\n## Global test across groups\n\n")
+  cat(sprintf("%s of %s features differ between the groups of %s (%s < %s).\n\n",
+              fmt_n(sum(df[[p_col]] < thr$p_cutoff, na.rm = TRUE)), fmt_n(nrow(df)),
+              esc(ab$params$group_col %||% ""), p_name, thr$p_cutoff))
+  df <- utils::head(df[order(df$p_value, na.last = NA), , drop = FALSE], 10L)
+  if (nrow(df)) {
+    print(knitr::kable(esc_df(data.frame(
+      Feature = ifelse(is.na(df$feature_symbol), df$feature_id, df$feature_symbol),
+      p = fmt_p(df$p_value), `adjusted p` = fmt_p(df$adj_p_value), check.names = FALSE))))
+    cat("\n\n")
+  }
+}
+```
 
-```{r session-info}
-sessionInfo()
+```{r enrich-section, results = "asis"}
+eb <- bundles$enrich
+enrich_df <- if (!is.null(eb)) eb$results$enrich_result_df
+has_enrich <- !is.null(enrich_df) && nrow(enrich_df) > 0L
+if (!is.null(eb)) {
+  cat("\n## Pathway enrichment\n\n")
+  if (!has_enrich) cat("No pathway reached significance.\n\n")
+}
+dot_fig <- if (has_enrich) try_plot(omicsCore::plot_enrichment(eb, view = "dot", top_n = 12L))
+# Never below 4 in: the colour bar and the size key stacked beside the
+# panel need that much, however few pathways there are.
+dot_h <- if (!is.null(dot_fig)) rows_h(dot_fig, lo = 4) else 4.5
+```
+
+```{r enrich-dot, results = "asis", fig.height = dot_h}
+if (has_enrich) safe_print(dot_fig)
+```
+
+```{r enrich-table, results = "asis"}
+if (has_enrich) {
+  df <- enrich_df
+  df <- utils::head(df[order(df$adj_p_value), , drop = FALSE], 15L)
+  tab <- data.frame(Pathway = df$pathway_name,
+                    Genes = ifelse(is.na(df$overlap_size), "",
+                                   sprintf("%s / %s", df$overlap_size, df$gene_set_size)),
+                    `adjusted p` = fmt_p(df$adj_p_value), check.names = FALSE,
+                    stringsAsFactors = FALSE)
+  if (!all(is.na(df$effect))) tab$NES <- formatC(df$effect, digits = 2, format = "f")
+  if (!all(is.na(df$direction))) {
+    # ORA tested up and down as separate lists: say which list, in words.
+    tab$Direction <- if (identical(eb$params$type, "ora"))
+      ifelse(df$direction %in% "up", "up-regulated genes",
+             ifelse(df$direction %in% "down", "down-regulated genes", ""))
+    else df$direction
+  }
+  print(knitr::kable(esc_df(tab)))
+  cat("\n\n")
+}
+cb <- bundles$enrich_compare
+if (!is.null(cb)) cat("\n### Pathways across comparisons\n\n")
+compare_fig <- if (!is.null(cb)) try_plot(omicsCore::plot_enrichment_comparison(cb))
+# A row per pathway, as in the app (compare_plot_px()), with room under
+# the panel for the slanted comparison names.
+compare_h <- if (!is.null(compare_fig)) rows_h(compare_fig, base = 2.4, lo = 4.5) else 4.5
+```
+
+```{r enrich-compare, results = "asis", fig.height = compare_h}
+if (!is.null(cb)) safe_print(compare_fig)
+```
+
+```{r integration-section, results = "asis"}
+ib <- bundles$integration
+if (!is.null(ib)) {
+  ip <- ib$params
+  cat("\n## Multi-omics integration\n\n")
+  info <- ip$method_info %||% list()
+  if (identical(ip$method, "concordance")) {
+    cat(sprintf("%s features were significant in both layers: %s change the same way, %s in opposite directions.\n\n",
+                fmt_n(info$n_significant_both %||% 0), fmt_n(info$n_concordant %||% 0),
+                fmt_n(info$n_discordant %||% 0)))
+  }
+  # How the two layers' features were put together: by gene symbol, or
+  # by a table the user supplied (proteins to genes, isoforms included).
+  fp <- info$feature_pairing
+  src <- ip$feature_link_source$source %||% "symbol"
+  if (!is.null(fp$n_pairs)) {
+    cat(sprintf("Features were matched across layers %s: %s pairs%s.\n\n",
+                if (src %in% c("project", "supplied")) "with the mapping table supplied for this project"
+                else "by gene symbol",
+                fmt_n(fp$n_pairs),
+                if (isTRUE(fp$n_a_sharing > 0)) sprintf(", %s features sharing their gene with another",
+                                                       fmt_n(fp$n_a_sharing)) else ""))
+  }
+  link <- project$sample_link
+  if (identical(ip$method, "correlation")) {
+    cat(sprintf("Samples were paired across layers %s.\n\n",
+                if (!is.null(link) && nrow(link)) sprintf("through the sample link (%s rows)", nrow(link))
+                else "by their donor or shared sample-name prefix"))
+  }
+  view <- switch(ip$method %||% "", correlation = "scatter",
+                 concordance = "effect_pair", active_pathways = "dotplot", "scatter")
+  safe_print(omicsCore::plot_integration(ib, view = view))
+}
+# The scatter shows where the hits sit; the ranked list names them.
+top_hits_fig <- if (!is.null(ib) && identical(ib$params$method, "concordance")) {
+  try_plot(omicsCore::plot_integration(ib, view = "top_hits", top_n = 15L))
+}
+top_hits_h <- if (!is.null(top_hits_fig)) rows_h(top_hits_fig) else 4.5
+```
+
+```{r integration-top-hits, results = "asis", fig.height = top_hits_h}
+if (!is.null(top_hits_fig)) safe_print(top_hits_fig)
+```
+
+```{r integration-table, results = "asis"}
+if (!is.null(ib)) {
+  df <- ib$results$integration_df
+  if (identical(ip$method, "active_pathways") && is.data.frame(df) && nrow(df) &&
+      "evidence" %in% names(df)) {
+    sig <- df$is_significant %in% TRUE
+    cat(sprintf("%s pathways were significant: %s up in both layers, %s down in both, %s mixed or with the layers disagreeing.\n\n",
+                fmt_n(sum(sig)), fmt_n(sum(sig & df$direction %in% "up")),
+                fmt_n(sum(sig & df$direction %in% "down")),
+                fmt_n(sum(sig & df$direction %in% "mixed"))))
+  }
+  if (is.data.frame(df) && nrow(df)) {
+    df <- utils::head(df[order(df$adj_p_value, na.last = NA), , drop = FALSE], 15L)
+    # The gene's name, unless several proteins of one gene each have a
+    # row: then the row's own id ("TP53 (P04637-2)"), or the table would
+    # list the same gene twice with nothing to tell the rows apart.
+    feat <- df$feature_symbol %||% df$feature_id
+    if (!is.null(df$feature_symbol) && !is.null(df$feature_id)) {
+      dup <- !is.na(feat) & (duplicated(feat) | duplicated(feat, fromLast = TRUE))
+      feat[dup] <- df$feature_id[dup]
+    }
+    tab <- data.frame(
+      Feature = feat,
+      Effect = formatC(df$effect, digits = 3, format = "f"),
+      `adjusted p` = fmt_p(df$adj_p_value),
+      Class = df$direction %||% "", check.names = FALSE, stringsAsFactors = FALSE)
+    # A directional ActivePathways result: the direction and which layers
+    # found the pathway are two different things, each its own column.
+    if ("evidence" %in% names(df)) {
+      names(tab)[names(tab) == "Class"] <- "Direction"
+      tab$`Found by` <- df$evidence
+    }
+    print(knitr::kable(esc_df(tab)))
+    cat("\n\n")
+  }
+}
+```
+
+```{r notes, results = "asis"}
+warns <- unique(unlist(lapply(bundles, function(b) b$warnings)))
+if (length(warns)) {
+  cat("\n## Notes\n\n")
+  cat(paste0("- ", esc(warns), collapse = "\n"), "\n")
+}
+```
+
+## Appendix
+
+```{r appendix, results = "asis"}
+cat("<details><summary>Analysis settings</summary>\n\n")
+for (nm in names(bundles)) {
+  b <- bundles[[nm]]
+  p <- b$params[vapply(b$params, function(v) is.atomic(v) && length(v) <= 20L, logical(1))]
+  if (!length(p)) next
+  cat(sprintf("\n**%s** (%s)\n\n", esc(nm), esc(b$analysis_name)))
+  print(knitr::kable(esc_df(data.frame(
+    Setting = names(p),
+    Value = vapply(p, function(v) paste(as.character(v), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE))))
+  cat("\n")
+}
+cat("\n</details>\n\n<details><summary>Software versions</summary>\n\n<pre>\n")
+cat(esc(utils::capture.output(print(utils::sessionInfo()))), sep = "\n")
+cat("</pre>\n</details>\n")
 ```

@@ -75,7 +75,9 @@ export_report <- function(
   }
 
   output_format <- switch(format,
-    html = rmarkdown::html_document(self_contained = TRUE),
+    # mathjax = NULL: the report has no equations, and the default
+    # makes pandoc print a deprecation warning on every render.
+    html = rmarkdown::html_document(self_contained = TRUE, mathjax = NULL),
     pdf  = rmarkdown::pdf_document()
   )
 
@@ -91,6 +93,14 @@ export_report <- function(
   scratch <- tempfile("omicsCore-report-")
   dir.create(scratch)
   on.exit(unlink(scratch, recursive = TRUE), add = TRUE)
+
+  # knitr records each chunk on a png device opened on tempfile(), and
+  # unlinks that file before it closes the device; a device that writes
+  # on close (Quartz, on macOS) then leaves a "file1a2b3c" PNG per chunk
+  # in tempdir(). The ones that appear during the render are those.
+  knitr_tmp <- function() list.files(tempdir(), pattern = "^file[0-9a-f]+$")
+  before_tmp <- knitr_tmp()
+  on.exit(unlink(file.path(tempdir(), setdiff(knitr_tmp(), before_tmp))), add = TRUE)
 
   rmarkdown::render(
     input = rmd_path,

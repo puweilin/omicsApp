@@ -94,6 +94,7 @@ test_that("ORA enriches exactly the features the thresholds admit", {
   df <- b$results$diff_result_df
   for (pref in c("adjusted", "raw")) {
     res <- run_enrichment(b, type = "ora", database = "hallmark",
+                          direction = "both",
                           p_cutoff = 0.01, p_preference = pref,
                           effect_cutoff = 0.5)
     handed <- res$results$enrich_object[["both__hallmark"]]@gene

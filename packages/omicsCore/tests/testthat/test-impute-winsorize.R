@@ -226,3 +226,99 @@ test_that("winsorize_counts stats df has expected columns", {
   expect_s3_class(res$stats, "data.frame")
   expect_true(all(c("feature_id", "q1", "q3", "iqr", "threshold", "n_clipped") %in% colnames(res$stats)))
 })
+
+# ---- winsorize_counts: expressed genes only, whole numbers -------------
+
+test_that("winsorize_counts leaves an on/off gene's expressed samples alone", {
+  # Expressed in 4 of 20 samples, zero in the rest. Over all counts its
+  # quartiles are both 0, and the old rule clipped every expressed sample
+  # to zero.
+  m <- rbind(on_off = c(rep(0, 16), 480, 510, 495, 530),
+             steady = c(100, 105, 98, 102, 99, 101, 103, 97, 100, 104,
+                        96, 100, 99, 101, 102, 98, 100, 103, 97, 101))
+  colnames(m) <- paste0("s", 1:20)
+  storage.mode(m) <- "integer"
+  res <- winsorize_counts(m, k = 3)
+  expect_identical(res$count_mat["on_off", ], m["on_off", ])
+  expect_identical(res$stats$n_clipped[res$stats$feature_id == "on_off"], 0L)
+  expect_true(res$stats$winsorized[res$stats$feature_id == "on_off"])
+
+  legacy <- winsorize_counts(m, k = 3, legacy = TRUE)
+  expect_true(all(legacy$count_mat["on_off", ] == 0))
+})
+
+test_that("winsorize_counts computes the bound from the non-zero counts", {
+  set.seed(3)
+  x <- c(rep(0, 20), rpois(19, 200), 50000)
+  m <- matrix(as.integer(x), nrow = 1, dimnames = list("g", paste0("s", seq_along(x))))
+  res <- winsorize_counts(m, k = 5)
+  nz <- x[x > 0]
+  q <- stats::quantile(nz, c(0.25, 0.75), names = FALSE)
+  bound <- q[2] + 5 * diff(q)
+  expect_equal(res$stats$threshold, round(bound, 2))
+  expect_identical(res$n_clipped, 1L)
+  expect_identical(res$count_mat[1, 40], as.integer(floor(bound)))
+  # Zeros stay zero
+  expect_true(all(res$count_mat[1, 1:20] == 0L))
+})
+
+test_that("winsorize_counts keeps counts whole and integer", {
+  set.seed(4)
+  m <- matrix(rpois(200, 40), nrow = 10,
+              dimnames = list(paste0("g", 1:10), paste0("s", 1:20)))
+  m[1, 1] <- 100000L
+  m[2, 5] <- 77777L
+  res <- winsorize_counts(m, k = 3)
+  expect_true(is.integer(res$count_mat))
+  expect_gte(res$n_clipped, 2L)
+  # A double matrix of counts gets whole numbers back too
+  md <- m
+  storage.mode(md) <- "double"
+  resd <- winsorize_counts(md, k = 3)
+  expect_true(all(resd$count_mat == round(resd$count_mat)))
+  expect_equal(resd$count_mat, res$count_mat + 0)
+  # Every clipped value lies at or under its bound
+  st <- res$stats
+  for (i in which(st$n_clipped > 0)) {
+    expect_lte(max(res$count_mat[i, ]), st$threshold[i])
+  }
+})
+
+test_that("winsorize_counts skips genes expressed in too few samples", {
+  m <- rbind(rare = c(0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 9000),
+             flat = c(10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 900))
+  colnames(m) <- paste0("s", 1:11)
+  res <- winsorize_counts(m, k = 3, min_expressed = 3)
+  expect_identical(res$count_mat, m)
+  expect_identical(res$stats$winsorized, c(FALSE, FALSE))
+  expect_true(all(is.na(res$stats$threshold)))
+  expect_identical(res$stats$n_nonzero, c(2L, 11L))
+  # A lower floor lets the rare gene through; the flat gene has no spread
+  # to measure an outlier against and stays untouched.
+  res1 <- winsorize_counts(m, k = 3, min_expressed = 2)
+  expect_identical(res1$stats$winsorized, c(TRUE, FALSE))
+})
+
+test_that("winsorize_counts legacy = TRUE is the old rule, unrounded", {
+  set.seed(5)
+  m <- matrix(rpois(120, 30), nrow = 6,
+              dimnames = list(paste0("g", 1:6), paste0("s", 1:20)))
+  m[1, 1] <- 5000L
+  m[2, 1:16] <- 0L
+  res <- winsorize_counts(m, k = 2, legacy = TRUE)
+  q <- apply(m, 1, stats::quantile, probs = c(0.25, 0.75))
+  thr <- q[2, ] + 2 * (q[2, ] - q[1, ])
+  expect_equal(res$stats$threshold, unname(round(thr, 2)))
+  expected <- m + 0
+  for (i in seq_len(nrow(m))) expected[i, m[i, ] > thr[i]] <- thr[i]
+  expect_equal(res$count_mat, expected)
+  expect_true(res$legacy)
+  # The on/off gene: zero in 16 of 20, so the old bound is 0
+  expect_true(all(res$count_mat[2, ] == 0))
+})
+
+test_that("winsorize_counts validates its new arguments", {
+  m <- matrix(1:6, nrow = 1, dimnames = list("g1", paste0("s", 1:6)))
+  expect_error(winsorize_counts(m, min_expressed = 0), "min_expressed")
+  expect_error(winsorize_counts(m, legacy = NA), "legacy")
+})

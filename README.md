@@ -11,8 +11,8 @@ This monorepo contains two R packages:
 
 | Package | Purpose | Status |
 |---|---|---|
-| [`omicsCore`](./packages/omicsCore) | Headless analysis engine: QC, differential expression, enrichment (ORA/GSEA/GSVA), and multi-omics integration | Phase 0 — skeleton |
-| [`omicsApp`](./packages/omicsApp) | Shiny web interface built on `omicsCore`: smart input parsing, interactive plots, project sessions | Phase 0 — skeleton |
+| [`omicsCore`](./packages/omicsCore) | Headless analysis engine: QC, differential expression, enrichment (ORA/GSEA/GSVA), and multi-omics integration | 0.2.0 |
+| [`omicsApp`](./packages/omicsApp) | Shiny web interface built on `omicsCore`: smart input parsing, interactive plots, project sessions | 0.2.0 |
 
 ## Design goals
 
@@ -52,12 +52,28 @@ pipeline. It looks for `data/SkinProteomics/Proteomics_Data.xlsx` by walking
 up from the working directory, or wherever `OMICSAPP_PROTEOMICS_XLSX` points; it
 skips when the file is absent, so a clone without the data still runs green.
 
-The omicsApp suite tests the omicsCore *source tree* beside it, not the
-installed copy (`tests/testthat/setup.R` loads `packages/omicsCore` with
-pkgload), and the shinytest2 smoke test boots `inst/app` from source with
-both packages loaded the same way (`OMICSAPP_DEV_ROOT`, see
-`inst/app/app.R`). Neither test therefore depends on when
-`install_local()` was last run.
+Which omicsCore the omicsApp suite tests depends on how omicsApp itself
+is loaded (`packages/omicsApp/tests/testthat/setup.R`):
+
+- **From source** (`devtools::test()`, `testthat::test_local()`,
+  `load_all()`): the omicsCore *source tree* beside it, loaded with
+  pkgload, not the installed copy, so a development run does not depend
+  on when `install_local()` was last run. The shinytest2 tests boot
+  `inst/app` from source with both packages loaded the same way
+  (`OMICSAPP_DEV_ROOT`, see `inst/app/app.R`).
+- **Installed** (`R CMD check`, `testthat::test_check()` or
+  `test_package()`): the installed packages only; no source is ever
+  loaded, and the browser tests run the installed app. Install omicsCore
+  from the same checkout first, as CI does (`R CMD INSTALL
+  packages/omicsCore` in `.github/workflows/R-CMD-check.yaml`).
+
+`OMICSAPP_TEST_CORE=installed` or `OMICSAPP_TEST_CORE=source` forces one or
+the other, e.g. to run the development suite against an installed
+omicsCore:
+
+```sh
+OMICSAPP_TEST_CORE=installed NOT_CRAN=true Rscript -e 'devtools::test("packages/omicsApp")'
+```
 
 A few suites are deliberately opt-in:
 
@@ -72,6 +88,7 @@ A few suites are deliberately opt-in:
 | `*/tests/testthat/test-c-locale.R` | `callr` installed | the package in a child process running under `LC_ALL=C`, as a container without a locale would |
 | `omicsCore/tests/testthat/test-api-contract.R` (heavy sweep) | `OMICSCORE_FUZZ_TESTS=1` | every argument of the enrichment, GSVA, integration and report functions given every wrong value in turn |
 | `omicsApp/tests/testthat/test-two-sessions.R` | Chrome available | two browsers on one R process; what one imports the other must not see |
+| `omicsApp/tests/testthat/test-integration-correlation-browser.R` | Chrome available | a saved paired-sample project's correlation scatter in a browser: a hovered point's card, and the dated PNG download |
 
 `omicsCore/tests/testthat/fixtures/omp/` is a corpus of `.omp` files written
 by past versions; every file in it must keep opening. When the schema
@@ -101,7 +118,12 @@ again.
 
 ## Status
 
-Pre-alpha. See [docs/export-manifest.md](./docs/export-manifest.md) for the planned public API and [docs/roadmap.md](./docs/roadmap.md) for the delivery plan.
+Version 0.2.0 (see each package's `NEWS.md`). The reviews and the plan for
+the next releases are in [`docs/`](./docs): [review-2026-10.md](./docs/review-2026-10.md)
+and [review-2026-10-round4.md](./docs/review-2026-10-round4.md) record the
+October 2026 audits and fixes, and [next-release-plan.md](./docs/next-release-plan.md)
+lists what is done and what remains. [docs/export-manifest.md](./docs/export-manifest.md)
+describes the public API.
 
 The legacy `omics_core` framework in the parent project's `scripts/frameworks/omics_core/` remains **frozen** as the production code path for the existing analyses. `omicsCore` is a parallel, properly-packaged rewrite that does not affect those scripts.
 

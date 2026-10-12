@@ -15,11 +15,17 @@
 # function whose formals are `input, output, session` is a server, and
 # any other function with an `input` formal hides the Shiny one.
 
+# The module files, grouped by module. A module may span several files
+# (mod_diff_view.R, mod_diff_params.R, ...): its server calls functions
+# from the others with its own input and output, so they are read as one.
 module_files <- function() {
   r_dir <- file.path("..", "..", "R")
   skip_if_not(dir.exists(r_dir), "package source is not beside the tests")
-  list.files(r_dir, pattern = "^mod_.*\\.R$", full.names = TRUE)
+  files <- list.files(r_dir, pattern = "^mod_.*\\.R$", full.names = TRUE)
+  split(files, sub("^mod_([a-z]+)_.*$", "\\1", basename(files)))
 }
+
+module_ids <- function(files) unique(do.call(rbind, lapply(files, collect_ids)))
 
 # One row per reference: kind = input / output / ns, the id, and the
 # name of the call the reference sits in.
@@ -79,7 +85,9 @@ collect_ids <- function(file) {
 # literal to match. Named here so the check stays exact everywhere else.
 dynamic_ids <- list(
   # The report's download buttons come from a helper that takes the id.
-  mod_report_view.R = c("download_html", "download_pdf")
+  report = c("download_html", "download_pdf"),
+  # DT reports a table's selected rows as "<table id>_rows_selected".
+  enrich = "hits_rows_selected"
 )
 
 control_re <- "(Input|Button|Buttons|Link|Switch|Slider|Checkbox|Picker)$"
@@ -87,30 +95,36 @@ download_re <- "^download(Button|Link)$"
 output_re <- "Output$"
 
 test_that("every input a module reads is a control it draws", {
-  for (file in module_files()) {
-    ids <- collect_ids(file)
-    declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[basename(file)]])
+  mods <- module_files()
+  for (mod in names(mods)) {
+    ids <- module_ids(mods[[mod]])
+    declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[mod]])
+    # A DT table declares the inputs it reports itself: `hits_rows_selected`
+    # comes from the DTOutput placed as ns("hits").
+    declared <- c(declared, paste0(declared, "_rows_selected"))
     read <- unique(ids$id[ids$kind == "input"])
     missing <- setdiff(read, declared)
     expect_identical(missing, character(0),
-                     label = sprintf("%s reads inputs it never declares", basename(file)))
+                     label = sprintf("%s reads inputs it never declares", mod))
   }
 })
 
 test_that("every output a module assigns has a placeholder", {
-  for (file in module_files()) {
-    ids <- collect_ids(file)
-    declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[basename(file)]])
+  mods <- module_files()
+  for (mod in names(mods)) {
+    ids <- module_ids(mods[[mod]])
+    declared <- c(ids$id[ids$kind == "ns"], dynamic_ids[[mod]])
     assigned <- unique(ids$id[ids$kind == "output"])
     missing <- setdiff(assigned, declared)
     expect_identical(missing, character(0),
-                     label = sprintf("%s assigns outputs it never places", basename(file)))
+                     label = sprintf("%s assigns outputs it never places", mod))
   }
 })
 
 test_that("every control a module draws is read back, and every placeholder filled", {
-  for (file in module_files()) {
-    ids <- collect_ids(file)
+  mods <- module_files()
+  for (mod in names(mods)) {
+    ids <- module_ids(mods[[mod]])
     ns_ids <- ids[ids$kind == "ns", , drop = FALSE]
     is_download <- grepl(download_re, ns_ids$caller)
     controls <- ns_ids$id[grepl(control_re, ns_ids$caller) & !is_download]
@@ -118,9 +132,9 @@ test_that("every control a module draws is read back, and every placeholder fill
     read <- ids$id[ids$kind == "input"]
     assigned <- ids$id[ids$kind == "output"]
     expect_identical(setdiff(controls, read), character(0),
-                     label = sprintf("%s draws controls nothing reads", basename(file)))
+                     label = sprintf("%s draws controls nothing reads", mod))
     expect_identical(setdiff(placeholders, assigned), character(0),
-                     label = sprintf("%s places outputs nothing fills", basename(file)))
+                     label = sprintf("%s places outputs nothing fills", mod))
   }
 })
 
@@ -167,4 +181,92 @@ test_that("the walker tells a Shiny input from an omics_input", {
   expect_setequal(ids$id[ids$kind == "output"], c("x", "y"))
   expect_setequal(ids$id[ids$kind == "ns"], c("a", "c"))
   expect_identical(ids$caller[ids$kind == "ns" & ids$id == "a"], "textInput")
+})
+
+# ---- every figure can be saved -------------------------------------------
+#
+# Each figure a module draws has a download menu (R/plot_download.R) under
+# "<output id>_download": its server, plot_download_server("<id>_download",
+# ...), and its place in the card, plot_download_ui(ns("<id>_download")).
+# A figure added without one fails here.
+
+# The outputs a file assigns a figure to: `output$x <- renderPlot(...)` or
+# renderPlotly(), with or without the package prefix.
+figure_outputs <- function(file) {
+  found <- character(0)
+  fn_name <- function(fn) {
+    if (is.symbol(fn)) return(as.character(fn))
+    if (is.call(fn) && identical(fn[[1L]], as.name("::"))) return(as.character(fn[[3L]]))
+    ""
+  }
+  walk <- function(expr) {
+    if (!is.call(expr)) return(invisible())
+    if (fn_name(expr[[1L]]) %in% c("<-", "=") && length(expr) == 3L) {
+      lhs <- expr[[2L]]
+      rhs <- expr[[3L]]
+      is_output <- is.call(lhs) && length(lhs) == 3L && identical(lhs[[2L]], as.name("output")) &&
+        (identical(lhs[[1L]], as.name("$")) ||
+           (identical(lhs[[1L]], as.name("[[")) && is.character(lhs[[3L]])))
+      if (is_output && is.call(rhs) && fn_name(rhs[[1L]]) %in% c("renderPlot", "renderPlotly")) {
+        found <<- c(found, as.character(lhs[[3L]]))
+      }
+    }
+    for (i in seq_along(expr)[-1L]) if (!is.null(expr[[i]])) walk(expr[[i]])
+    invisible()
+  }
+  for (e in suppressWarnings(parse(file, keep.source = FALSE))) walk(e)
+  unique(found)
+}
+
+# The ids a file passes to plot_download_server() as a literal.
+download_servers <- function(file) {
+  found <- character(0)
+  walk <- function(expr) {
+    if (!is.call(expr)) return(invisible())
+    if (identical(expr[[1L]], as.name("plot_download_server")) && length(expr) >= 2L &&
+        is.character(expr[[2L]])) {
+      found <<- c(found, expr[[2L]])
+    }
+    for (i in seq_along(expr)[-1L]) if (!is.null(expr[[i]])) walk(expr[[i]])
+    invisible()
+  }
+  for (e in suppressWarnings(parse(file, keep.source = FALSE))) walk(e)
+  unique(found)
+}
+
+test_that("every figure a module draws has a download menu, served and placed", {
+  mods <- module_files()
+  all_figures <- character(0)
+  for (mod in names(mods)) {
+    files <- mods[[mod]]
+    figures <- unique(unlist(lapply(files, figure_outputs)))
+    all_figures <- c(all_figures, figures)
+    served <- unique(unlist(lapply(files, download_servers)))
+    ids <- module_ids(files)
+    placed <- ids$id[ids$kind == "ns" & ids$caller == "plot_download_ui"]
+    want <- sprintf("%s_download", figures)
+    expect_identical(setdiff(want, served), character(0),
+                     label = sprintf("%s figures without a download server", mod))
+    expect_identical(setdiff(want, placed), character(0),
+                     label = sprintf("%s figures whose card has no download menu", mod))
+    # And no menu for a figure that is not there.
+    expect_identical(setdiff(c(served, placed), want), character(0),
+                     label = sprintf("%s download menus for no figure", mod))
+  }
+  # The walk finds the figures there are: the QC, Differential,
+  # Enrichment and Integration figures.
+  expect_true(all(c("pca", "missing", "volcano", "feature_plot", "heatmap",
+                    "contrast_plot", "overlap_plot", "dot", "compare_plot",
+                    "gsea_curve", "scatter", "top_hits", "cor_scatter", "ap_dot") %in%
+                    all_figures))
+})
+
+test_that("no figure is drawn outside the module files the check above reads", {
+  r_dir <- file.path("..", "..", "R")
+  skip_if_not(dir.exists(r_dir), "package source is not beside the tests")
+  others <- setdiff(list.files(r_dir, pattern = "\\.R$", full.names = TRUE),
+                    unlist(module_files()))
+  for (f in others) {
+    expect_identical(figure_outputs(f), character(0), label = basename(f))
+  }
 })

@@ -2,7 +2,7 @@
 % Please edit documentation in R/feature-symbols.R
 \name{map_ensembl_symbols}
 \alias{map_ensembl_symbols}
-\title{Map Ensembl gene ids to HGNC symbols}
+\title{Map Ensembl gene ids to gene symbols}
 \usage{
 map_ensembl_symbols(ids)
 }
@@ -12,25 +12,39 @@ version suffix.}
 }
 \value{
 Character vector the same length as \code{ids}; \code{NA} where the id
-has no approved HGNC symbol.
+has no symbol (no approved HGNC symbol for a human id; no human
+ortholog, or babelgene not installed, for a mouse id).
 }
 \description{
-Map Ensembl gene ids to HGNC symbols
+Human ids (\code{ENSG...}) are mapped to HGNC symbols from a table bundled
+with the package (see \code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}}). Mouse ids
+(\code{ENSMUSG...}) are mapped to MGI symbols through the ortholog table of
+the babelgene package -- the one msigdbr uses to write its mouse gene
+sets -- when that is installed; it covers the mouse genes with a human
+counterpart, which are the genes a mouse gene set can contain.
+}
+\details{
+The version suffix is ignored (\code{ENSG00000141510.17} is TP53), and so
+is GENCODE's \verb{_PAR_Y} suffix on the chromosome-Y copy of a
+pseudoautosomal gene, which names the same gene as its X copy.
 }
 \examples{
 map_ensembl_symbols(c("ENSG00000141510", "ENSG00000012048"))
 }
 \seealso{
-Other enrich: 
-\code{\link{filter_enrich_results}()},
-\code{\link{geneset_cache_status}()},
-\code{\link{hgnc_map_provenance}()},
-\code{\link{list_gene_sets}()},
-\code{\link{plot_enrichment}()},
-\code{\link{plot_gsea}()},
-\code{\link{plot_gsva_heatmap}()},
-\code{\link{refresh_geneset_cache}()},
-\code{\link{run_enrichment}()},
-\code{\link{run_gsva}()}
+Other enrich:
+\code{\link[=compare_enrichment]{compare_enrichment()}},
+\code{\link[=enrichment_species]{enrichment_species()}},
+\code{\link[=filter_enrich_results]{filter_enrich_results()}},
+\code{\link[=geneset_cache_status]{geneset_cache_status()}},
+\code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}},
+\code{\link[=list_gene_sets]{list_gene_sets()}},
+\code{\link[=plot_enrichment]{plot_enrichment()}},
+\code{\link[=plot_enrichment_comparison]{plot_enrichment_comparison()}},
+\code{\link[=plot_gsea]{plot_gsea()}},
+\code{\link[=plot_gsva_heatmap]{plot_gsva_heatmap()}},
+\code{\link[=refresh_geneset_cache]{refresh_geneset_cache()}},
+\code{\link[=run_enrichment]{run_enrichment()}},
+\code{\link[=run_gsva]{run_gsva()}}
 }
 \concept{enrich}

@@ -33,7 +33,7 @@ app_theme <- function() {
     "border-radius"     = "8px",
     "card-border-color" = "#E5E7EB",
     "card-cap-bg"       = "#FFFFFF",
-    "font-family-base"      = "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    "font-family-base"      = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
     "font-family-monospace" = "'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace"
   )
 

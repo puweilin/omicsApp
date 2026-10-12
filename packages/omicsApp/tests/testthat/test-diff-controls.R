@@ -57,7 +57,7 @@ test_that("significance follows the chosen p column", {
 test_that("the label follows the column, so no figure says adj.P over raw p", {
   shiny::testServer(diff_view_server, args = list(), {
     session$setInputs(p_kind = "adj")
-    expect_identical(p_label(), "adj.P")
+    expect_identical(p_label(), "adjusted p")
     expect_identical(p_col(), "adj_p_value")
 
     session$setInputs(p_kind = "raw")
@@ -151,7 +151,7 @@ test_that("a project with no experiments says so rather than blaming the contras
     args = list(current_project = shiny::reactiveVal(empty)),
     {
       session$setInputs(rerun = 1)
-      expect_match(diff_error() %||% "", "no experiments", ignore.case = TRUE)
+      expect_match(diff_error() %||% "", "no layers", ignore.case = TRUE)
     }
   )
 })

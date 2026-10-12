@@ -103,6 +103,37 @@ Returns `analysis_bundle` with:
 - `bundle$results$diff_object`: backend-native object (DESeqDataSet, MArrayLM, etc.)
 - `bundle$params`: full parameter record for provenance
 
+`case_group` may name several groups: they are fitted with the control in
+one model (limma / DESeq2 / edgeR) and stacked in `diff_result_df` under
+their `comparison` labels.
+
+### `diff_comparisons(bundle)`, `select_comparison(bundle, comparison)`
+
+List the contrasts of a multi-contrast bundle, and take one out as an
+ordinary single-contrast bundle that every downstream function accepts.
+
+### `summarize_diff_contrasts(bundle, p_cutoff, p_preference, effect_cutoff)`, `plot_diff_contrasts(...)`
+
+Up / down hit counts per comparison, as a table and a diverging bar chart.
+
+### `run_diff(..., contrasts = )`, `pairwise_contrasts(levels)`, `contrast_labels(contrasts, levels)`
+
+Any comparisons between groups: `"pairwise"`, or expressions such as
+`"TreatB - TreatA"` and `"(TreatA + TreatB)/2 - Control"`, all read off one
+fit (limma / edgeR / DESeq2).
+
+### `diff_hit_sets(bundle, ...)`, `plot_diff_overlap(bundle, ...)`
+
+The hits of every comparison as sets, and their overlap as an UpSet plot.
+
+### `run_diff(..., analysis_type = "anova")`
+
+A global test across all groups: limma F-test, edgeR QL F-test or DESeq2 LRT.
+
+### `study_design(input)`, `set_study_design(input, group_col, reference)`
+
+The group column and reference level recorded on a layer at import.
+
 ### `run_diff_continuous(input, continuous_col, covariates = NULL, smooth = FALSE, ...)`
 
 Convenience wrapper for continuous-outcome differential analysis (e.g. age trajectories).
@@ -122,6 +153,11 @@ Returns `analysis_bundle` with:
 Returns `analysis_bundle` with:
 - `bundle$results$gsva_matrix`: pathways × samples
 - `bundle$results$gsva_diff`: per-pathway diff result if a contrast was provided
+
+### `compare_enrichment(diff_bundle, comparisons = NULL, ...)`, `plot_enrichment_comparison(bundle, ...)`
+
+Every comparison enriched with the same settings, and a pathway x comparison
+dot plot (compareCluster-style).
 
 ### `list_gene_sets(database, organism = "Hs")`
 

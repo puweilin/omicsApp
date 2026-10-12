@@ -92,7 +92,9 @@ resolve_impute_method <- function(omics_type) {
 #'   minimum (MNAR). The default for proteomics.
 #' * `"MinDet"` — a low quantile of the observed values, deterministic (MNAR).
 #' * `"QRILC"` — quantile regression for left-censored data (MNAR).
-#' * `"min"` — the observed minimum of that feature (MNAR).
+#' * `"min"` — the observed minimum of that feature (MNAR); a feature with
+#'   no observed value gets 0. (DEP's `"min"` uses the minimum of the whole
+#'   matrix instead.)
 #' * `"zero"` — zero (MNAR). Offered for parity; it distorts variance.
 #' * `"knn"` — k-nearest neighbours (MAR).
 #' * `"MLE"` — maximum likelihood (MAR).
@@ -103,6 +105,14 @@ resolve_impute_method <- function(omics_type) {
 #' MNAR methods assume log-scale data, which is the scale DEP's workflow
 #' imputes on. On linear intensities they will place imputed values on a
 #' scale the observed values are not on.
+#'
+#' MinProb estimates the spread of its draws from the features measured in
+#' more than half of the samples, and needs at least two of them. With
+#' fewer -- a small panel, or a matrix that is mostly missing -- imputeLCMD
+#' either stops with an error (one such feature) or returns the matrix with
+#' every gap still empty (none). `impute_matrix()` then imputes with MinDet,
+#' the same low quantile of each sample without the random spread, and
+#' says so in a warning of class `omics_impute_fallback`.
 #'
 #' @param mat A numeric matrix, features in rows.
 #' @param method One of [IMPUTE_METHODS].
@@ -119,6 +129,19 @@ impute_matrix <- function(mat, method = IMPUTE_METHODS, ...) {
     return(mat)
   }
 
+  if (method == "MinProb") {
+    why <- minprob_unestimable(mat)
+    if (!is.null(why)) {
+      warning(impute_fallback_condition(why))
+      # MinDet takes `q` and nothing else MinProb does.
+      args <- list(...)
+      args <- args[intersect(names(args), c("q", "seed"))]
+      out <- do.call(lcmd_call, c(list("impute.MinDet", mat), args))
+      dimnames(out) <- dimnames(mat)
+      return(out)
+    }
+  }
+
   out <- switch(method,
     min     = impute_row_min(mat),
     zero    = impute_constant(mat, 0),
@@ -126,13 +149,44 @@ impute_matrix <- function(mat, method = IMPUTE_METHODS, ...) {
     MinProb = lcmd_call("impute.MinProb", mat, ...),
     MinDet  = lcmd_call("impute.MinDet", mat, ...),
     QRILC   = lcmd_qrilc(mat, ...),
-    knn     = lcmd_call("impute.wrapper.KNN", mat, K = 10, ...),
+    knn     = impute_knn(mat, ...),
     MLE     = lcmd_call("impute.wrapper.MLE", mat, ...),
     bpca    = impute_bpca(mat, ...),
     mixed   = impute_mixed(mat, ...)
   )
   dimnames(out) <- dimnames(mat)
   out
+}
+
+# Why MinProb cannot be estimated on `mat`, or NULL when it can.
+#
+# Mirrors imputeLCMD::impute.MinProb(): the sd of its draws is the median
+# per-feature sd over the features observed in more than half of the
+# samples. One such feature and it subsets the matrix to a vector and
+# stops ("dim(X) must have a positive length"); none, or none with a
+# finite sd, and the sd is NA, rnorm() returns NA, and every gap stays
+# empty without a word. Two is the least that works, so two is the test.
+minprob_unestimable <- function(mat) {
+  well_seen <- rowMeans(!is.na(mat)) > 0.5
+  n_seen <- sum(well_seen)
+  if (n_seen >= 2L) {
+    sds <- apply(mat[well_seen, , drop = FALSE], 1L, stats::sd, na.rm = TRUE)
+    if (is.finite(stats::median(sds, na.rm = TRUE))) return(NULL)
+  }
+  sprintf(paste(
+    "MinProb could not be used: it estimates how widely to spread its",
+    "values from features measured in more than half of the samples, and",
+    "needs at least two such features (this data has %d). Missing values",
+    "were imputed with MinDet instead, which fills each gap with a value",
+    "near the lowest observed in that sample, without the random spread."),
+    n_seen)
+}
+
+impute_fallback_condition <- function(message) {
+  structure(
+    class = c("omics_impute_fallback", "warning", "condition"),
+    list(message = message, call = NULL, used_method = "MinDet")
+  )
 }
 
 # ---- backends ----------------------------------------------------------
@@ -206,6 +260,16 @@ impute_mixed <- function(mat, mar = "KNN", mnar = "MinProb", ...) {
       out <- f(mat, sel, method.MAR = mar, method.MNAR = mnar))
     as.matrix(out)
   })
+}
+
+# K = 10 unless the caller says otherwise -- passing `K` used to fail
+# with "formal argument matched by multiple actual arguments", and `k`
+# (the spelling in impute::impute.knn) was passed on and rejected. Never
+# more neighbours than there are other features.
+impute_knn <- function(mat, K = NULL, k = NULL, ...) {
+  K <- K %||% k %||% 10L
+  K <- max(1L, min(as.integer(K), nrow(mat) - 1L))
+  lcmd_call("impute.wrapper.KNN", mat, K = K, ...)
 }
 
 impute_row_min <- function(mat) {

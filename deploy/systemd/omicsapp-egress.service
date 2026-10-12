@@ -1,0 +1,26 @@
+# Re-applies deploy/scripts/egress.sh after every boot and Docker restart:
+# the rules that stop app containers opening connections live in the
+# kernel's tables, which a reboot empties.
+#
+#   sudo cp deploy/systemd/omicsapp-egress.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now omicsapp-egress
+#
+# The path assumes the deployed checkout at /opt/omicsApp, as the cron
+# file does; edit both lines if it is elsewhere.
+
+[Unit]
+Description=omicsApp: block outbound connections from app containers
+After=docker.service
+Requires=docker.service
+# Restarted along with Docker, so the rules are back after Docker is.
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/omicsApp/deploy/scripts/egress.sh apply
+ExecStop=/opt/omicsApp/deploy/scripts/egress.sh remove
+
+[Install]
+WantedBy=multi-user.target docker.service

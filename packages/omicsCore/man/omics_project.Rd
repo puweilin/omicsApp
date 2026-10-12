@@ -22,8 +22,11 @@ experiment tags. May be empty; use \code{\link[=add_experiment]{add_experiment()
 \code{tag}, \code{sample_id}, \code{donor_id}. \code{tag} matches a name in \code{experiments}.
 Each row links a per-experiment sample to a shared donor.}
 
-\item{feature_link}{Optional \code{data.frame} mapping feature IDs across
-omics (e.g. columns \code{uniprot}, \code{gene_symbol}).}
+\item{feature_link}{Optional \code{data.frame} mapping features across
+layers: one column per layer, named after it, each row naming a
+feature of each (e.g. a UniProt accession and a gene symbol). See
+\code{\link[=read_feature_link]{read_feature_link()}} and the \emph{Matching features} section of
+\code{\link[=run_integration]{run_integration()}}.}
 
 \item{metadata}{Optional named list of arbitrary project-level metadata.}
 }

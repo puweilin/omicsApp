@@ -88,3 +88,21 @@ launch <- function(port = NULL,
     ...
   )
 }
+
+#' The omicsApp Shiny application object
+#'
+#' Builds the application without running it: the object
+#' [shiny::runApp()], Shiny Server or Posit Connect expect, and what the
+#' app directory's `app.R` returns. [launch()] runs the same app with
+#' the worker and upload settings a served instance needs.
+#'
+#' @return A `shiny.appobj`.
+#' @export
+#' @examples
+#' if (interactive()) shiny::runApp(shiny_app())
+shiny_app <- function() {
+  shiny::shinyApp(
+    ui = htmltools::tagList(shinyjs::useShinyjs(), app_ui()),
+    server = app_server
+  )
+}

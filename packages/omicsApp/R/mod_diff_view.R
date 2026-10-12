@@ -9,8 +9,13 @@
 #' button is gated by `bindEvent`; failures surface in a notice
 #' strip instead of Shiny's red overlay.
 #'
-#' When the project is `NULL`, the view falls back to
-#' `example_diff_bundle()` so the volcano + hits stay visible.
+#' With several treatment groups the Case control takes more than one
+#' level: every chosen group is fitted against the Control in one model
+#' (see [omicsCore::run_diff()]), a "Showing" selector picks which
+#' contrast the volcano, the hit table and everything downstream read,
+#' and a summary card compares the contrasts side by side.
+#'
+#' Nothing runs until the user presses Run.
 #'
 #' Reference markup: `omicsApp/mockup/index.html:753-915`.
 #'
@@ -28,8 +33,17 @@ diff_view_ui <- function(id) {
       class = "row-grid r-3-9",
       diff_params_card(ns),
       htmltools::tags$div(
+        shiny::uiOutput(ns("contrast_summary")),
         diff_volcano_card(ns),
-        diff_hits_card(ns)
+        # The table and the feature a row selects, side by side where
+        # there is room, so a click shows its answer without scrolling.
+        htmltools::tags$div(
+          class = "row-grid r-7-5",
+          diff_hits_card(ns),
+          diff_feature_card(ns)
+        ),
+        diff_heatmap_card(ns),
+        shiny::uiOutput(ns("anova_card"))
       )
     )
   )
@@ -41,179 +55,23 @@ diff_view_ui <- function(id) {
 #' @keywords internal
 #' @noRd
 diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
-                             invalidate = shiny::reactiveVal(0L)) {
+                             invalidate = shiny::reactiveVal(0L),
+                             navigate = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
 
-    # Active experiment: whichever layer the user picked, else
-    # proteomics, else the first of any kind.
-    #
-    # The layer is a control rather than a fixed choice because the
-    # engines available depend on it: applicable_diff_methods() offers
-    # deseq2 and edger only for rnaseq raw counts. Pinned to proteomics,
-    # as this was, those two could never be reached from the interface
-    # at all -- the gate was right and there was no way to the side of
-    # it where it opens.
-    #
-    # The demo resolves through example_project() for the same reason,
-    # rather than being handed a fixed proteomics input: its rnaseq
-    # layer is raw counts, so it is the one place a user can see the
-    # method list change without importing anything.
-    active <- shiny::reactive({
-      proj <- current_project()
-      is_demo <- is.null(proj)
-      if (is_demo) proj <- example_project()
-      exps <- proj$experiments
-      if (length(exps) == 0L) {
-        return(list(input = NULL, tag = NULL, is_demo = TRUE))
-      }
-      want <- input$layer
-      tag <- if (!is.null(want) && want %in% names(exps)) {
-        want
-      } else {
-        default_layer_tag(exps)
-      }
-      list(input = exps[[tag]], tag = tag, is_demo = is_demo)
-    })
+    # The layer a restored result was computed on, until the control exists.
+    preferred_layer <- shiny::reactiveVal(NULL)
+    skip_layer_clear <- FALSE
 
-    output$ui_layer <- shiny::renderUI({
-      proj <- current_project() %||% example_project()
-      tags_avail <- names(proj$experiments)
-      if (length(tags_avail) == 0L) return(NULL)
-      # isolate(), because active() reads input$layer and this output
-      # writes it. Reading it here closed the loop: re-rendering the
-      # control re-sent its value, which invalidated active(), which
-      # re-rendered the control.
-      sel <- shiny::isolate(input$layer)
-      if (is.null(sel) || !sel %in% tags_avail) {
-        sel <- default_layer_tag(proj$experiments)
-      }
-      shiny::selectInput(
-        session$ns("layer"), label = "Experiment layer",
-        choices = tags_avail, selected = sel
-      )
-    })
-
-    # Method dropdown, restricted to the engines whose assumptions the
-    # active layer meets. DESeq2 handed continuous intensities does not
-    # error: it rounds them to integers and reports p-values for a
-    # negative-binomial model the data never fitted. Nothing downstream
-    # can tell that apart from a real result, so the guard has to be
-    # here, at the point of choosing.
-    output$ui_method <- shiny::renderUI({
-      a <- active()
-      inp <- a$input
-      choices <- omicsCore::applicable_diff_methods(inp)
-      shiny::selectInput(session$ns("method"), label = NULL,
-                         choices = choices, selected = "auto")
-    })
-
-    output$method_note <- shiny::renderUI({
-      a <- active()
-      inp <- a$input
-      dropped <- setdiff(omicsCore::SUPPORTED_DIFF_METHODS,
-                         omicsCore::applicable_diff_methods(inp))
-      if (length(dropped) == 0L) return(NULL)
-      htmltools::tags$div(
-        class = "muted", style = "font-size:11.5px;padding-top:4px",
-        sprintf("%s hidden: not valid for %s data.",
-                paste(dropped, collapse = ", "),
-                inp$assay_type %||% inp$omics_type)
-      )
-    })
-
-    # The contrast the controls will default to, computed from the data
-    # rather than read back off them.
-    #
-    # do_run() fires once as soon as active() settles, and at that
-    # moment the controls do not exist yet: they are renderUI output,
-    # and Shiny has not been round the loop. Reading input$group_col
-    # there gets NULL, which used to surface as "Pick a group column
-    # with distinct Control and Case levels" on a view the user had
-    # only just opened. Deriving the default in one place means the
-    # first run and the rendered controls cannot disagree about it.
-    default_contrast <- shiny::reactive({
-      meta <- active()$input$meta_df
-      if (is.null(meta) || !ncol(meta)) {
-        return(list(group_col = NULL, control = NULL, case = NULL,
-                    levels = character(0), candidates = character(0)))
-      }
-      cands <- grouping_candidates(meta)
-      if (length(cands) == 0L) cands <- names(meta)
-      gc <- cands[1L]
-      lv <- sort(unique(as.character(stats::na.omit(meta[[gc]]))))
-      list(
-        group_col  = gc,
-        control    = if (length(lv)) lv[1L] else NULL,
-        case       = if (length(lv) >= 2L) lv[2L] else NULL,
-        levels     = lv,
-        candidates = cands
-      )
-    })
-
-    # Group column dropdown: any meta_df column with >= 2 unique
-    # non-NA values (continuous columns like `age` are excluded
-    # for the simple "control vs case" UI in this slice).
-    output$ui_group_col <- shiny::renderUI({
-      d <- default_contrast()
-      if (!length(d$candidates)) return(NULL)
-      # Keep what the user picked. This output re-renders whenever the
-      # layer or the project changes, and re-rendering with the default
-      # threw away their choice -- they selected condition / G1 / G2,
-      # ran it, and the control came back reading `label`.
-      sel <- shiny::isolate(input$group_col)
-      if (is.null(sel) || !sel %in% d$candidates) sel <- d$group_col
-      shiny::selectInput(session$ns("group_col"),
-                         label    = "Group column",
-                         choices  = d$candidates,
-                         selected = sel)
-    })
-
-    # Reactive level set for the chosen group column.
-    levels_ <- shiny::reactive({
-      a <- active()
-      meta <- a$input$meta_df
-      gc <- input$group_col %||% default_contrast()$group_col
-      if (is.null(gc) || !(gc %in% names(meta))) return(character(0))
-      sort(unique(as.character(stats::na.omit(meta[[gc]]))))
-    })
-
-    output$ui_contrast <- shiny::renderUI({
-      lv <- levels_()
-      if (length(lv) < 2L) {
-        return(htmltools::tags$div(
-          class = "muted",
-          style = "font-size:12px",
-          "Pick a group column with at least two levels."
-        ))
-      }
-      keep <- function(current, fallback) {
-        current <- shiny::isolate(current)
-        if (is.null(current) || !current %in% lv) fallback else current
-      }
-      htmltools::tagList(
-        shiny::selectInput(session$ns("control"),
-                           label = "Control", choices = lv,
-                           selected = keep(input$control, lv[1L])),
-        shiny::selectInput(session$ns("case"),
-                           label = "Case", choices = lv,
-                           selected = keep(input$case, lv[min(2L, length(lv))]))
-      )
-    })
-
-    output$ui_covariates <- shiny::renderUI({
-      a <- active()
-      meta <- a$input$meta_df
-      gc <- input$group_col %||% ""
-      cands <- setdiff(names(meta), c(gc, "sample_id"))
-      shiny::selectizeInput(
-        session$ns("covariates"),
-        label    = NULL,
-        choices  = cands,
-        multiple = TRUE,
-        selected = NULL,
-        options  = list(placeholder = "optional, e.g. age")
-      )
-    })
+    # The Parameters card: layer, method, contrast, covariates
+    # (mod_diff_params.R).
+    params <- diff_params_server(input, output, session, current_project, preferred_layer)
+    active             <- params$active
+    default_contrast   <- params$default_contrast
+    continuous_cols    <- params$continuous_cols
+    design_mode        <- params$design_mode
+    pairing_candidates <- params$pairing_candidates
+    levels_            <- params$levels_
 
     # Diff bundle: demo fallback when no project; otherwise gated
     # behind the Re-run button. We also auto-run once on first
@@ -222,71 +80,119 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # changes only take effect on Re-run.
     diff_bundle <- shiny::reactiveVal(NULL)
     diff_error  <- shiny::reactiveVal(NULL)
+    running     <- shiny::reactiveVal(FALSE)
+    # Every run and every reset takes a new number. A result that comes
+    # back under an older number is about a layer or a project that is
+    # no longer on screen, and is dropped instead of shown as current.
+    diff_epoch  <- run_epoch()
+    anova_epoch <- run_epoch()
+
+    # The button says what it will do, and cannot be pressed twice while
+    # a run is in flight.
+    set_busy <- function(busy) {
+      running(busy)
+      tryCatch(
+        if (busy) shinyjs::disable("rerun") else shinyjs::enable("rerun"),
+        error = function(e) NULL)
+    }
+
+    # The global test's result, held here because a change of layer or
+    # project resets it along with the comparisons (mod_diff_anova.R).
+    anova_bundle <- shiny::reactiveVal(NULL)
+    anova_error <- shiny::reactiveVal(NULL)
+    anova_running <- shiny::reactiveVal(FALSE)
+
+    # ---- which contrast is on screen ---------------------------------
+    comparisons <- shiny::reactive({
+      b <- diff_bundle()
+      if (!omicsCore::is_analysis_bundle(b)) return(character(0))
+      omicsCore::diff_comparisons(b)
+    })
+
+    output$ui_comparison <- shiny::renderUI({
+      cmp <- comparisons()
+      if (length(cmp) < 2L) return(NULL)
+      sel <- shiny::isolate(input$comparison)
+      if (is.null(sel) || !sel %in% cmp) {
+        sel <- diff_bundle()$params$shown_comparison %||% cmp[[1L]]
+        if (!sel %in% cmp) sel <- cmp[[1L]]
+      }
+      shiny::selectInput(session$ns("comparison"), label = "Showing",
+                         choices = stats::setNames(cmp, gsub("_vs_", " vs ", cmp)),
+                         selected = sel)
+    })
+
+    # One contrast, shaped exactly like a single-contrast run. Everything
+    # below -- the volcano, the table, Enrichment, Integration, the
+    # report -- reads this, so none of them needs to know that several
+    # contrasts were fitted.
+    shown_bundle <- shiny::reactive({
+      b <- diff_bundle()
+      if (!omicsCore::is_analysis_bundle(b)) return(b)
+      cmp <- comparisons()
+      if (length(cmp) < 2L) return(b)
+      sel <- input$comparison
+      if (is.null(sel) || !sel %in% cmp) sel <- cmp[[1L]]
+      omicsCore::select_comparison(b, sel)
+    })
 
     # The layer this result was computed on has been replaced, so the
     # result is no longer about anything in the project. NULL is the
     # module's own start-up state, so this only rewinds it.
     shiny::observeEvent(invalidate(), {
+      diff_epoch$bump()
+      anova_epoch$bump()
       diff_bundle(NULL)
       diff_error(NULL)
+      anova_bundle(NULL)
     }, ignoreInit = TRUE)
 
-    do_run <- function() {
-      a <- active()
-      if (is.null(a$input)) {
-        diff_error("This project has no experiments to analyse.")
-        return(invisible())
-      }
+    # The settings a result answers. Read with the same fallbacks do_run()
+    # uses, so a control that has not rendered yet counts as its default
+    # and the comparison below does not flag a result as out of date
+    # merely because the page is still drawing.
+    settings_now <- shiny::reactive({
       d <- default_contrast()
-      method     <- input$method %||% "auto"
-      # Fall back to the derived default, not to nothing: on the first
-      # run the controls have not been rendered yet, and refusing then
-      # put an error on a view the user had only just opened.
-      group_col  <- input$group_col %||% d$group_col
-      control    <- input$control   %||% d$control
-      case       <- input$case      %||% d$case
-      covariates <- input$covariates
-      if (is.null(group_col) || is.null(control) || is.null(case) ||
-          identical(control, case)) {
-        diff_error("Pick a group column with distinct Control and Case levels.")
-        return(invisible())
+      mode <- design_mode()
+      common <- list(layer = input$layer %||% "", mode = mode,
+                     method = input$method %||% "auto",
+                     covariates = sort(as.character(input$covariates)))
+      if (identical(mode, "continuous")) {
+        return(c(common, list(
+          col = input$continuous_col %||% continuous_cols()[1L] %||% "",
+          model = input$continuous_model %||% "linear")))
       }
-      run_async(
-        # Detached, so the worker receives the input and the six
-        # parameters rather than this module's whole scope. Defined
-        # inline it carried the previous bundle, the project and the
-        # demo fixtures with it -- 527 MB of "globals", which future
-        # refused to export, from inside an observer, which greyed the
-        # page.
-        detached_call(
-          function() {
-            omicsCore::run_diff(
-              input         = inp,
-              method        = method,
-              analysis_type = "group",
-              group_col     = group_col,
-              control_group = control,
-              case_group    = case,
-              covariates    = covariates
-            )
-          },
-          inp        = a$input,
-          method     = method,
-          group_col  = group_col,
-          control    = control,
-          case       = case,
-          covariates = if (length(covariates)) covariates else NULL
-        ),
-        on_success = function(bundle) {
-          diff_error(NULL)
-          diff_bundle(bundle)
-        },
-        on_error = function(msg) {
-          diff_error(msg)
-        },
-        message = "Running differential analysis..."
-      )
-    }
+      control <- input$control %||% d$control
+      cmode <- input$contrast_mode %||% "control"
+      custom <- if (identical(cmode, "custom")) {
+        x <- trimws(strsplit(input$custom_contrasts %||% "", "\n")[[1L]])
+        x[nzchar(x)]
+      }
+      c(common, list(
+        group_col = input$group_col %||% d$group_col %||% "",
+        control = control %||% "",
+        case = sort(setdiff(input$case %||% d$case, control)),
+        paired = input$paired_col %||% "",
+        contrast_mode = cmode, custom = custom))
+    })
+    # What the result on screen was computed with, or, for a result a
+    # project brought back, the controls as they stood when it was shown.
+    ran_with <- shiny::reactiveVal(NULL)
+    # The controls moved since the result was computed: the volcano and
+    # the table still answer the old question until Re-run is pressed,
+    # and nothing on screen said so.
+    settings_changed <- shiny::reactive({
+      !is.null(diff_bundle()) && !is.null(ran_with()) &&
+        !identical(settings_now(), ran_with())
+    })
+
+    # What Re-run does, by groups or along a continuous variable
+    # (mod_diff_run.R).
+    runner <- diff_run_server(input, output, session, active, default_contrast,
+                              design_mode, continuous_cols, settings_now, set_busy,
+                              diff_epoch, diff_error, ran_with, diff_bundle)
+    do_run         <- runner$do_run
+    run_continuous <- runner$run_continuous
 
     # Run once, when the view first settles, so the user lands on a
     # populated volcano rather than an empty panel.
@@ -312,9 +218,48 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # screen would say so. Keyed on input$layer rather than on active(),
     # which also invalidates when the control below it re-renders.
     shiny::observeEvent(input$layer, {
+      # The switch a restore made itself, to the restored result's layer.
+      if (isTRUE(skip_layer_clear)) {
+        skip_layer_clear <<- FALSE
+        return()
+      }
+      # The control's first value, or a switch back to the layer the
+      # result is about: nothing to clear.
+      b <- diff_bundle()
+      proj <- current_project() %||% example_project()
+      if (!is.null(b) && identical(omicsCore::bundle_layer(proj, b), input$layer)) return()
+      diff_epoch$bump()
+      anova_epoch$bump()
       diff_bundle(NULL)
       diff_error(NULL)
+      anova_bundle(NULL)
     }, ignoreInit = TRUE)
+
+    # A project opened or restored brings its results: the view shows the
+    # saved comparison (and global test) on the layer it was computed
+    # on, instead of "no result yet" beside a Workflow card that says
+    # Differential is done. After the generation bump (priority -5), so
+    # the clearing it causes does not undo this.
+    shiny::observeEvent(current_project(), {
+      proj <- current_project()
+      b <- proj$bundles$diff
+      if (is.null(proj) || is.null(b) || !is.null(diff_bundle())) return()
+      tag <- omicsCore::bundle_layer(proj, b)
+      if (is.na(tag)) return()
+      preferred_layer(tag)
+      if (!is.null(input$layer) && !identical(input$layer, tag)) {
+        skip_layer_clear <<- TRUE
+        shiny::updateSelectInput(session, "layer", selected = tag)
+      }
+      diff_epoch$bump()
+      diff_error(NULL)
+      ran_with(shiny::isolate(settings_now()))
+      diff_bundle(b)
+      a <- proj$bundles$anova
+      if (!is.null(a) && identical(omicsCore::bundle_layer(proj, a), tag)) {
+        anova_bundle(a)
+      }
+    }, priority = -5, ignoreNULL = TRUE)
 
     # Re-run button is the user-driven path. bindEvent semantics
     # via observeEvent: any change to the controls *not* gated on
@@ -342,193 +287,153 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     p_col   <- shiny::reactive(
       if (identical(input$p_kind %||% "adj", "raw")) "p_value" else "adj_p_value")
     p_label <- shiny::reactive(
-      if (identical(input$p_kind %||% "adj", "raw")) "p" else "adj.P")
+      if (identical(input$p_kind %||% "adj", "raw")) "p" else "adjusted p")
 
     marked <- shiny::reactive({
-      shiny::req(diff_bundle())
-      df <- diff_bundle()$results$diff_result_df
+      shiny::req(shown_bundle())
+      df <- shown_bundle()$results$diff_result_df
       pv <- df[[p_col()]]
       df$is_significant <- !is.na(pv) &
                            !is.na(df$effect) &
                            pv < fdr_cut_d() &
-                           abs(df$effect) > fc_cut_d()
+                           abs(df$effect) >= fc_cut_d()
       df
     })
 
-    output$header <- shiny::renderUI({
-      a <- active()
-      b <- diff_bundle()
-      source_note <- htmltools::tags$span(
-        class = "muted",
-        if (a$is_demo) "demo project (built-in)"
-        else sprintf("layer = %s", a$tag)
-      )
+    # The feature a row of the table or a point of the volcano selected
+    # (its feature id), for the Selected feature and Heatmap cards.
+    selected_feature <- shiny::reactiveVal(NULL)
 
-      # Before the first result there is nothing to summarise. Three em
-      # dashes separated by middots said that in a way that read as
-      # damage rather than as an empty state, which is how it was
-      # reported.
-      if (is.null(b)) {
-        return(view_header(
-          title    = "Differential",
-          subtitle = htmltools::tagList(
-            htmltools::tags$span(class = "muted", "no result yet"),
-            htmltools::HTML(" &middot; "),
-            source_note
-          )
-        ))
+    # The header, the notices, the stat cards, the volcano and the hit
+    # table (mod_diff_results.R).
+    results <- diff_results_server(input, output, session, navigate, active, shown_bundle,
+                                   diff_bundle, diff_error, comparisons, settings_changed,
+                                   marked, p_col, p_label, fdr_cut_d, fc_cut_d,
+                                   selected = selected_feature)
+
+    # The selected feature by group, and the heatmap of the top hits
+    # (mod_diff_detail.R).
+    detail <- diff_detail_server(input, output, session, active, shown_bundle, marked,
+                                 selected = selected_feature)
+
+    # ---- several contrasts side by side ------------------------------
+    contrasts <- diff_contrasts_server(input, output, session, diff_bundle,
+                                       comparisons, fdr_cut_d, fc_cut_d)
+    contrast_summary_df <- contrasts$summary
+
+    # ---- each figure as a file (plot_download.R) ------------------------
+    # Named for the project, the figure and the comparison on screen (the
+    # layer, for the figures that span every comparison). None for the
+    # demo project, whose data are not anyone's.
+    diff_file <- function(what, by = c("comparison", "layer")) {
+      by <- match.arg(by)
+      function() {
+        c(plot_download_project(current_project()), what,
+          if (by == "comparison") shown_bundle()$params$comparison %||% active()$tag
+          else active()$tag)
       }
+    }
+    not_demo <- function(ready) shiny::reactive(!isTRUE(active()$is_demo) && ready())
+    # The volcano is only checked for a result: building the figure to
+    # find out would draw 60,000 points for a button.
+    plot_download_server("volcano_download", results$volcano_plot, diff_file("volcano"),
+                         width_in = 7, height_in = 5.5,
+                         available = not_demo(function()
+                           omicsCore::is_analysis_bundle(shown_bundle())))
+    plot_download_server(
+      "feature_plot_download", detail$feature_plot,
+      function() {
+        row <- tryCatch(marked()[match(selected_feature(), marked()$feature_id), , drop = FALSE],
+                        error = function(e) NULL)
+        c(plot_download_project(current_project()),
+          if (!is.null(row) && nrow(row)) feature_display_name(row) else "feature",
+          shown_bundle()$params$comparison %||% active()$tag)
+      },
+      width_in = 5, height_in = 4,
+      available = not_demo(function() plot_ready(detail$feature_plot)))
+    # As tall as the card draws it for its rows, at the card's 96 px an inch.
+    # Offered without drawing it (the card draws only once scrolled to);
+    # the file is drawn when asked for.
+    plot_download_server("heatmap_download", detail$heatmap_plot, diff_file("heatmap"),
+                         width_in = 8,
+                         height_in = function()
+                           heatmap_height(length(detail$heatmap_hits()$ids)) / PLOT_RES,
+                         available = not_demo(detail$heatmap_available))
+    plot_download_server("contrast_plot_download", contrasts$contrast_plot,
+                         diff_file("hits_per_comparison", "layer"),
+                         width_in = 7,
+                         height_in = function()
+                           (160 + label_rows_px(comparisons(), 20L)) / PLOT_RES,
+                         available = not_demo(function() plot_ready(contrasts$contrast_plot)),
+                         label = "Download the hits per comparison")
+    plot_download_server("overlap_plot_download", contrasts$overlap_plot,
+                         function() diff_file(switch(input$overlap_dir %||% "any",
+                                                     up = "overlap_up", down = "overlap_down",
+                                                     "overlap"), "layer")(),
+                         width_in = 7,
+                         height_in = function()
+                           (270 + label_rows_px(comparisons(), 10L)) / PLOT_RES,
+                         available = not_demo(function() plot_ready(contrasts$overlap_plot)),
+                         label = "Download the overlap figure")
 
-      comparison <- b$params$comparison %||%
-        sprintf("%s vs %s",
-                b$params$case_group %||% input$case %||% "case",
-                b$params$control_group %||% input$control %||% "control")
-      view_header(
-        title    = "Differential",
-        subtitle = htmltools::tagList(
-          diff_omics_display(b$input_info$omics_type),
-          htmltools::HTML(" &middot; "),
-          comparison,
-          htmltools::HTML(" &middot; "),
-          b$params$method,
-          htmltools::HTML(" &middot; "),
-          source_note
-        )
-      )
+    # ---- global test across all groups -------------------------------
+    anova_hits <- diff_anova_server(input, output, session, active, default_contrast,
+                                    levels_, anova_bundle, anova_error, anova_running,
+                                    anova_epoch, p_col, p_label, fdr_cut_d)
+
+    # Every feature of every comparison, as CSV or Excel (mod_diff_results.R).
+    diff_downloads_server(input, output, session, active, diff_bundle, p_col,
+                          fdr_cut_d, fc_cut_d)
+
+    output$run_button <- shiny::renderUI({
+      btn <- shiny::actionButton(
+        session$ns("rerun"),
+        if (is.null(diff_bundle())) "Run analysis" else "Re-run",
+        icon = shiny::icon("play"),
+        class = "btn btn-primary", style = "width:100%")
+      # Re-rendered enabled while a run was still going (the label
+      # changes when a result lands or is cleared), which let a second
+      # run start alongside the first.
+      if (shiny::isolate(running())) btn <- htmltools::tagAppendAttributes(btn, disabled = NA)
+      btn
     })
 
-    output$notices <- shiny::renderUI({
-      err <- diff_error()
-      missing_engines <- diff_missing_engines()
-      tagged <- htmltools::tagList()
-      if (!is.null(err)) {
-        tagged <- htmltools::tagAppendChild(
-          tagged,
-          notice(title  = "run_diff failed",
-                 detail = err,
-                 kind   = "warn")
-        )
-      }
-      if (length(missing_engines)) {
-        tagged <- htmltools::tagAppendChild(
-          tagged,
-          notice(
-            title  = "Some engines are unavailable",
-            detail = sprintf(
-              "Not installed: %s. Install with `omicsCore::install_optional()`.",
-              paste(missing_engines, collapse = ", ")
-            ),
-            kind = "info"
-          )
-        )
-      }
-      tagged
-    })
+    if (is.function(navigate)) {
+      shiny::observeEvent(input$go_enrich, navigate("enrich"))
+    }
 
-    output$stats <- shiny::renderUI({
-      b <- diff_bundle()
-      if (is.null(b)) return(NULL)
-      df <- marked()
-      sig <- df[df$is_significant, , drop = FALSE]
-      up_n   <- sum(sig$effect > 0, na.rm = TRUE)
-      down_n <- sum(sig$effect < 0, na.rm = TRUE)
-      top    <- if (nrow(sig) > 0L) sig[which.max(abs(sig$effect)), ] else NULL
-      top_value <- if (is.null(top)) "\u2014" else as.character(top$feature_symbol[1L])
-      top_trend <- if (is.null(top)) "no features pass thresholds"
-                   else sprintf("effect %+.2f \u00B7 %s %.2g",
-                                top$effect[1L], p_label(), top[[p_col()]][1L])
-      htmltools::tags$div(
-        class = "stat-grid",
-        stat_card(
-          label = "Tested features",
-          value = format(nrow(df), big.mark = ","),
-          trend = sprintf("%s, %s",
-                          b$params$method,
-                          b$params$comparison %||% "\u2014"),
-          mono  = TRUE
-        ),
-        stat_card(
-          label  = sprintf("Up in %s", input$case %||% "case"),
-          value  = up_n,
-          trend  = sprintf("effect > %.2f \u00B7 %s < %.3f",
-                           fc_cut_d(), p_label(), fdr_cut_d()),
-          accent = "up"
-        ),
-        stat_card(
-          label  = sprintf("Down in %s", input$case %||% "case"),
-          value  = down_n,
-          trend  = sprintf("effect < -%.2f \u00B7 %s < %.3f",
-                           fc_cut_d(), p_label(), fdr_cut_d()),
-          accent = "down"
-        ),
-        stat_card(
-          label = "Top hit",
-          value = top_value,
-          trend = top_trend,
-          mono  = TRUE
-        )
-      )
-    })
-
-    output$volcano <- plotly::renderPlotly({
-      b <- diff_bundle()
-      shiny::req(b)
-      # Deliberately not given the slider values. The volcano is drawn
-      # at plot_volcano()'s own defaults, which is what an exported
-      # report and an exported script also produce -- so the figure a
-      # reader is shown is the figure they can reproduce, and a
-      # screenshot does not depend on where a control happened to be.
-      #
-      # The sliders still drive the hit table and the stat cards, where
-      # sweeping a threshold is the useful thing to do; the figure is
-      # the stable reference next to them.
-      p <- omicsCore::plot_volcano(
-        b,
-        top_n = if (isTRUE(input$label_top)) 20L else 0L
-      )
-      plotly::ggplotly(p) |>
-        plotly::config(displaylogo = FALSE,
-                       modeBarButtonsToRemove = c("lasso2d", "select2d"))
-    })
-
-    output$hits <- DT::renderDT({
-      df <- marked()
-      sig <- df[df$is_significant, , drop = FALSE]
-      sig <- sig[order(-abs(sig$effect)), , drop = FALSE]
-      out <- data.frame(
-        Feature   = sig$feature_symbol,
-        Effect    = round(sig$effect, 3),
-        `adj.P`   = signif(sig$adj_p_value, 3),
-        Direction = ifelse(sig$effect > 0, "up", "down"),
-        check.names = FALSE,
-        stringsAsFactors = FALSE
-      )
-      DT::datatable(
-        out,
-        rownames  = FALSE,
-        selection = "single",
-        options   = list(
-          pageLength = 10,
-          dom        = "ftip",
-          scrollX    = TRUE,
-          columnDefs = list(list(className = "dt-right", targets = 1:2))
-        )
-      )
-    }, server = TRUE)
-
-    # The bundle *and* the thresholds it is read at. Enrichment used to
-    # take only the bundle and apply its own defaults -- adjusted p at
-    # 0.05, no fold-change bound -- so the gene list it enriched was a
-    # different set from the hits shown here, and neither view said so.
-    # A user with a hundred hits by raw p got an enrichment over however
-    # many passed adj.P, which can be none.
     list(
-      bundle = shiny::reactive(diff_bundle()),
+      bundle = shown_bundle,
+      # Every contrast of the last run, for anything that wants them all.
+      all_bundle = shiny::reactive(diff_bundle()),
+      # What the project keeps: every contrast, and which one the other
+      # views were shown -- so the report covers them all and the script
+      # can take the same one out for the steps that used it.
+      project_bundle = shiny::reactive({
+        b <- diff_bundle()
+        if (!omicsCore::is_analysis_bundle(b)) return(b)
+        # The thresholds the hits were read at, for the report: it said
+        # "adjusted p < 0.05" whatever the user had chosen.
+        b$params$display_thresholds <- list(
+          p_cutoff = fdr_cut_d(),
+          p_preference = if (identical(input$p_kind %||% "adj", "raw")) "raw" else "adjusted",
+          effect_cutoff = fc_cut_d())
+        if (length(comparisons()) >= 2L) b$params$shown_comparison <- shown_bundle()$params$comparison
+        b
+      }),
+      # The global test, kept with the project like the comparisons.
+      anova = shiny::reactive(anova_bundle()),
       # The layer this ran on. The bundle does not carry it -- a project
       # layer tag is an app concept, not something run_diff() knows --
       # and Enrichment needs it to say which layer its pathways came
       # from rather than leaving the reader to assume.
       layer = shiny::reactive(active()$tag),
+      # The bundle *and* the thresholds it is read at. Enrichment used to
+      # take only the bundle and apply its own defaults -- adjusted p at
+      # 0.05, no fold-change bound -- so the gene list it enriched was a
+      # different set from the hits shown here, and neither view said so.
+      # A user with a hundred hits by raw p got an enrichment over however
+      # many passed adj.P, which can be none.
       thresholds = shiny::reactive(list(
         p_cutoff      = fdr_cut_d(),
         p_preference  = if (identical(input$p_kind %||% "adj", "raw")) "raw"
@@ -543,183 +448,14 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
 
 utils::globalVariables(".data")
 
-`%||%` <- function(a, b) if (is.null(a)) b else a
-
-# Which Bioconductor diff backends aren't installed in this R
-# session. Returned as a character vector for the notices strip.
-# DESeq2 / edgeR / limma are the ones run_diff() can dispatch to.
-diff_missing_engines <- function() {
-  engines <- c(limma = "limma", DESeq2 = "DESeq2", edgeR = "edgeR")
-  missing <- vapply(engines, function(pkg) !has_pkg(pkg), logical(1))
-  names(engines)[missing]
-}
-
-diff_omics_display <- function(t) {
-  switch(t %||% "",
-         proteomics = "Proteomics",
-         rnaseq     = "RNA-seq",
-         "\u2014")
-}
-
-diff_params_card <- function(ns) {
-  bslib::card(
-    bslib::card_header(
-      htmltools::tags$h3(class = "card-title", "Parameters"),
-      htmltools::tags$span(class = "card-sub",
-                           "design + thresholds")
-    ),
-    bslib::card_body(
-      htmltools::tags$div(
-        class = "param-stack",
-        param_group(
-          "Layer",
-          # Which engines are on offer follows from this: deseq2 and
-          # edger need rnaseq raw counts, so without a way to change
-          # layer they were unreachable.
-          shiny::uiOutput(ns("ui_layer"))
-        ),
-        param_group(
-          "Method",
-          # Rendered server-side: which engines are valid depends on the
-          # active layer's assay, and offering an invalid one produces a
-          # complete, plausible, meaningless result table.
-          shiny::uiOutput(ns("ui_method")),
-          shiny::uiOutput(ns("method_note"))
-        ),
-        param_group(
-          "Contrast",
-          shiny::uiOutput(ns("ui_group_col")),
-          shiny::uiOutput(ns("ui_contrast"))
-        ),
-        param_group(
-          "Covariates",
-          shiny::uiOutput(ns("ui_covariates"))
-        ),
-        param_group(
-          "Thresholds",
-          # Which p to threshold on is the user's call, not ours. An
-          # exploratory screen on 50 proteins and a confirmatory one on
-          # 20,000 genes want different answers, and forcing adj.P made
-          # the first look empty.
-          shiny::radioButtons(
-            ns("p_kind"), label = "Significance on",
-            choices = c("adjusted p" = "adj", "raw p" = "raw"),
-            selected = "adj", inline = TRUE
-          ),
-          shiny::sliderInput(
-            ns("fdr_cut"), label = "p cutoff",
-            min = 0, max = 0.2, value = 0.05, step = 0.005
-          ),
-          # A box, not a slider. The slider stepped 0.05, which cannot
-          # express log2(1.2) = 0.263 -- so the fold change most often
-          # wanted here was one of the few the control could not reach.
-          shiny::numericInput(
-            ns("fc_cut"), label = "|log2FC| cutoff",
-            value = round(log2(1.2), 3), min = 0, max = 10, step = 0.05
-          ),
-          htmltools::tags$div(
-            class = "muted", style = "font-size:11.5px;margin-top:-6px",
-            sprintf("%.3f = %.2gx fold change", log2(1.2), 1.2)
-          ),
-          shinyWidgets::materialSwitch(
-            ns("label_top"), label = "Label top 20",
-            value = FALSE, status = "primary", right = TRUE
-          )
-        ),
-        htmltools::tags$div(
-          style = "margin-top:8px",
-          shiny::actionButton(
-            ns("rerun"), "Re-run",
-            class = "btn btn-primary",
-            style = "width:100%"
-          )
-        )
-      )
-    )
-  )
-}
-
-diff_volcano_card <- function(ns) {
-  bslib::card(
-    bslib::card_header(
-      htmltools::tags$h3(class = "card-title", "Volcano"),
-      # Says plainly that the thresholds do not reach this figure. The
-      # cut it was drawn at is in the plot's own caption, so a
-      # screenshot carries it too.
-      htmltools::tags$span(
-        class = "card-sub",
-        "fixed thresholds \u00B7 sliders filter the table below")
-    ),
-    bslib::card_body(
-      plotly::plotlyOutput(ns("volcano"), height = "360px"),
-      htmltools::tags$div(
-        class = "legend",
-        legend_swatch("significant", omics_colors$up),
-        legend_swatch("ns", omics_colors$ns),
-        htmltools::tags$span(class = "muted",
-                             style = "font-size:12px",
-                             "dashed lines mirror the slider thresholds")
-      )
-    )
-  )
-}
-
-diff_hits_card <- function(ns) {
-  bslib::card(
-    bslib::card_header(
-      htmltools::tags$h3(class = "card-title", "Top hits"),
-      htmltools::tags$span(class = "card-sub",
-                           "ranked by |effect| within current thresholds")
-    ),
-    bslib::card_body(
-      DT::DTOutput(ns("hits"))
-    )
-  )
-}
-
-# Which layer the view lands on when the user has not chosen one:
-# proteomics if present, else the first.
-default_layer_tag <- function(experiments) {
-  if (!length(experiments)) return(NULL)
-  types <- vapply(experiments, function(e) e$omics_type %||% "", character(1))
-  i <- which(types == "proteomics")
-  names(experiments)[if (length(i)) i[1L] else 1L]
-}
-
-# Columns of `meta_df` that could name a contrast, best first.
-#
-# The old rule was "not numeric, and at least two distinct values",
-# which a sample identifier satisfies perfectly: one level per sample.
-# On a real workbook the first such column was `label`, whose values are
-# the sample names, so the view defaulted to a contrast of one sample
-# against one other. limma cannot fit that -- no residual degrees of
-# freedom -- and reported it as "Partial NA coefficients for 2294
-# probe(s)" and an empty result, which is not a sentence anyone can act
-# on.
-#
-# The real requirement is replication: every level needs at least two
-# samples, or the level cannot be tested. That single condition
-# excludes identifiers exactly, without having to guess from names.
-GROUP_COL_HINTS <- c("group", "condition", "treatment", "arm", "status")
-
-grouping_candidates <- function(meta, min_per_level = 2L) {
-  if (is.null(meta) || !ncol(meta)) return(character(0))
-  usable <- vapply(names(meta), function(nm) {
-    col <- meta[[nm]]
-    if (is.numeric(col)) return(FALSE)
-    counts <- table(as.character(col), useNA = "no")
-    length(counts) >= 2L && min(counts) >= min_per_level
-  }, logical(1))
-  cands <- names(meta)[usable]
-  if (!length(cands)) return(character(0))
-
-  # Fewest levels first: a two-level column is the contrast someone
-  # almost always means. Conventional names win over the count, since a
-  # column called `condition` is a stated intent and a level count is an
-  # inference.
-  n_levels <- vapply(cands, function(nm) {
-    length(unique(stats::na.omit(as.character(meta[[nm]]))))
-  }, integer(1))
-  hinted <- tolower(cands) %in% GROUP_COL_HINTS
-  cands[order(!hinted, n_levels)]
+# Results carry the name of the layer they were computed on: a project
+# can hold two proteomics layers, and matching a result to its layer by
+# omics type picked the first of them. The demo's layers are not the
+# user's, so its results carry none.
+with_layer <- function(bundle, active) {
+  if (omicsCore::is_analysis_bundle(bundle) && !isTRUE(active$is_demo) &&
+      length(active$tag) == 1L) {
+    bundle$input_info$layer <- active$tag
+  }
+  bundle
 }

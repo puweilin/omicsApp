@@ -121,7 +121,7 @@ test_that("example_integration_tables() returns the expected list", {
   expect_true(all(conc$quadrant %in%
                   c("up_up", "down_down", "up_down", "down_up", "ns")))
   # The seeded signal in features 1-15 / 16-30 must surface as the
-  # dominant concordant quadrants — the dual-volcano / scatter rely on
+  # dominant concordant quadrants — the scatter / top-hits cards rely on
   # this for visual interpretability.
   expect_gte(sum(conc$quadrant == "up_up"),     5L)
   expect_gte(sum(conc$quadrant == "down_down"), 5L)

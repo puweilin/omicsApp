@@ -90,6 +90,7 @@ light_calls <- list(
   select_complete_cases = list(omics_input = prot, feature_missing_cutoff = 0.5),
   drop_meta_na = list(omics_input = prot, cols = "group"),
   run_qc = list(input = prot),
+  qc_cleaned_input = list(bundle = qcb, input = prot),
   qc_missingness = list(input = prot),
   qc_outliers = list(input = prot),
   qc_depth = list(input = rna),
@@ -136,8 +137,16 @@ light_calls <- list(
   is_omics_project = list(x = proj),
   is_import_report = list(x = new_import_report())
 )
+if (requireNamespace("SummarizedExperiment", quietly = TRUE)) {
+  light_calls$read_summarized_experiment <- list(
+    x = SummarizedExperiment::SummarizedExperiment(list(counts = rna$expr_mat),
+                                                   colData = rna$meta_df))
+}
 
 test_that("no public function answers a wrong argument with an internal error", {
+  # export_script() and friends write to `path = "x"`; keep that out of
+  # the test directory.
+  withr::local_dir(withr::local_tempdir())
   offences <- sweep_contract(light_calls)
   expect_identical(offences, character(0))
 })
@@ -145,6 +154,11 @@ test_that("no public function answers a wrong argument with an internal error", 
 test_that("the file-writing functions hold the same line", {
   skip_if_not_installed("openxlsx")
   dir <- withr::local_tempdir()
+  # The sweep hands `path` and `dir` the string "x" among its wrong
+  # values, and a writer that accepts it writes there. In the temp dir,
+  # not the test directory: the run used to leave `x` files behind that
+  # were then committed.
+  withr::local_dir(dir)
   xlsx <- file.path(dir, "prot.xlsx")
   openxlsx::write.xlsx(list(
     expression = data.frame(feature_id = rownames(prot$expr_mat), prot$expr_mat,
@@ -153,9 +167,14 @@ test_that("the file-writing functions hold the same line", {
     features = prot$feature_df), xlsx)
   omp <- file.path(dir, "p.omp")
   save_project(proj, omp)
+  quant <- file.path(dir, "s1.quant.sf")
+  utils::write.table(data.frame(Name = paste0("T", 1:5), Length = 1000, EffectiveLength = 850,
+                                TPM = 2e5, NumReads = 1:5 + 0.5),
+                     quant, sep = "\t", quote = FALSE, row.names = FALSE)
   offences <- sweep_contract(list(
     read_omics = list(path = xlsx, omics_type = "proteomics",
                       assay_type = "normalized_intensity"),
+    read_quant_files = list(paths = quant),
     export_bundle = list(bundle = db, dir = file.path(dir, "bundle"), formats = "tsv"),
     save_project = list(project = proj, path = file.path(dir, "q.omp"), overwrite = TRUE),
     load_project = list(path = omp)
@@ -164,12 +183,17 @@ test_that("the file-writing functions hold the same line", {
 })
 
 # The engines that take seconds per call, and every argument of every
-# function. Run with OMICSCORE_FUZZ_TESTS=1.
+# function. Run with OMICSCORE_FUZZ_TESTS=1; the nightly workflow
+# (.github/workflows/nightly.yaml) does. Empty, 0, false or no is off.
 test_that("the heavy engines hold the same line", {
-  skip_if(!nzchar(Sys.getenv("OMICSCORE_FUZZ_TESTS", "")),
+  skip_if(tolower(Sys.getenv("OMICSCORE_FUZZ_TESTS", "")) %in% c("", "0", "false", "no"),
           "set OMICSCORE_FUZZ_TESTS=1 to sweep the heavy engines")
   skip_if_not_installed("clusterProfiler")
   skip_if_not_installed("edgeR")
+  # The sweep hands export_report() a path of "x", which it honours by
+  # writing x.html into the working directory -- the package's tests/
+  # folder, unless the sweep runs somewhere disposable.
+  withr::local_dir(withr::local_tempdir())
   dbe <- run_diff(rna, method = "edger", analysis_type = "group", group_col = "group",
                   control_group = "G1", case_group = "G2")
   enr <- run_enrichment(db, type = "ora", database = "hallmark")

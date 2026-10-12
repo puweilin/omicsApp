@@ -4,7 +4,7 @@
 \alias{plot_gsea}
 \title{GSEA running-score plot}
 \usage{
-plot_gsea(bundle, pathway_id, database = NULL)
+plot_gsea(bundle, pathway_id, database = NULL, diff_bundle = NULL)
 }
 \arguments{
 \item{bundle}{An \code{\link[=is_analysis_bundle]{analysis_bundle}} produced by
@@ -15,26 +15,43 @@ table) or pathway name.}
 
 \item{database}{Database key. Required when the bundle holds multiple
 databases; ignored when there's only one.}
+
+\item{diff_bundle}{Optional: the differential bundle the enrichment
+was run on. Used only when \code{bundle} does not keep its GSEA objects.}
 }
 \value{
 A \code{ggplot} object.
 }
 \description{
-Plots the \code{clusterProfiler::gseaplot2()} running-score curve for a single
-pathway in a GSEA enrichment bundle. Requires the \code{enrichplot}
-Bioconductor package.
+The running enrichment score of one pathway in a GSEA result: the
+genes ranked from most up to most down along x, a tick for each gene
+of the pathway in a band under the curve, and the curve climbing at
+each tick and falling between them. Its peak (marked) is the
+enrichment score: a peak near the left means the pathway's genes
+gather among the most up-regulated, a trough near the right among the
+most down-regulated.
+}
+\details{
+The ranking and the gene sets are read from the clusterProfiler object
+the run keeps (\code{results$enrich_object}). A bundle without it is drawn
+from the differential result it was run on, passed as \code{diff_bundle}:
+the ranking is rebuilt as \code{\link[=run_enrichment]{run_enrichment()}} builds it and the gene
+set read again from the database.
 }
 \seealso{
-Other enrich: 
-\code{\link{filter_enrich_results}()},
-\code{\link{geneset_cache_status}()},
-\code{\link{hgnc_map_provenance}()},
-\code{\link{list_gene_sets}()},
-\code{\link{map_ensembl_symbols}()},
-\code{\link{plot_enrichment}()},
-\code{\link{plot_gsva_heatmap}()},
-\code{\link{refresh_geneset_cache}()},
-\code{\link{run_enrichment}()},
-\code{\link{run_gsva}()}
+Other enrich:
+\code{\link[=compare_enrichment]{compare_enrichment()}},
+\code{\link[=enrichment_species]{enrichment_species()}},
+\code{\link[=filter_enrich_results]{filter_enrich_results()}},
+\code{\link[=geneset_cache_status]{geneset_cache_status()}},
+\code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}},
+\code{\link[=list_gene_sets]{list_gene_sets()}},
+\code{\link[=map_ensembl_symbols]{map_ensembl_symbols()}},
+\code{\link[=plot_enrichment]{plot_enrichment()}},
+\code{\link[=plot_enrichment_comparison]{plot_enrichment_comparison()}},
+\code{\link[=plot_gsva_heatmap]{plot_gsva_heatmap()}},
+\code{\link[=refresh_geneset_cache]{refresh_geneset_cache()}},
+\code{\link[=run_enrichment]{run_enrichment()}},
+\code{\link[=run_gsva]{run_gsva()}}
 }
 \concept{enrich}

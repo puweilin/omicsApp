@@ -29,12 +29,14 @@ CRAN_PKGS <- c(
   "shinyWidgets", "shinyjs", "promises", "future",
   "tibble", "dplyr", "stringr", "readxl", "openxlsx", "jsonlite", "scales",
   "rlang", "msigdbr", "qs2",
-  "ggrepel", "patchwork", "circlize", "here", "knitr", "rmarkdown",
-  "imputeLCMD", "ActivePathways", "pkgload"
+  "ggrepel", "patchwork", "circlize", "knitr", "rmarkdown",
+  "imputeLCMD", "ActivePathways", "pkgload", "data.table", "openssl",
+  "babelgene", "ragg", "svglite"
 )
 BIOC_PKGS <- c(
-  "limma", "clusterProfiler", "DESeq2", "edgeR", "S4Vectors", "enrichplot",
-  "fgsea", "GSVA", "ComplexHeatmap", "impute", "pcaMethods", "vsn"
+  "limma", "clusterProfiler", "DESeq2", "edgeR", "S4Vectors",
+  "fgsea", "GSVA", "ComplexHeatmap", "impute", "pcaMethods", "vsn", "BiocParallel",
+  "SummarizedExperiment"
 )
 
 # Versions the image depends on for reasons that are not obvious from the

@@ -153,14 +153,32 @@ sample_pairing_preview <- function(project, tag_a, tag_b) {
   # from their shape -- each step down is a weaker claim about two
   # samples being the same person, and the view labels which one was
   # used so a reader can judge it.
-  link <- project$sample_link
-  source <- "linked"
-  if (is.null(link) || nrow(link) == 0L) {
-    link <- derive_sample_link(project)
-    source <- "donor"
+  #
+  # A source that says nothing about *these two* layers is skipped rather
+  # than taken as the answer: a project with three layers can carry a
+  # saved link for proteomics/RNA-seq only, and that must not hide the
+  # donor column the metabolomics layer shares with RNA-seq.
+  pair_from_link <- function(link) {
+    if (is.null(link) || nrow(link) == 0L) return(NULL)
+    la <- link[link$tag == tag_a, c("sample_id", "donor_id"), drop = FALSE]
+    lb <- link[link$tag == tag_b, c("sample_id", "donor_id"), drop = FALSE]
+    if (nrow(la) == 0L || nrow(lb) == 0L) return(NULL)
+    merged <- merge(la, lb, by = "donor_id", suffixes = c("_a", "_b"))
+    merged <- merged[merged$sample_id_a %in% a & merged$sample_id_b %in% b, ,
+                     drop = FALSE]
+    if (nrow(merged) == 0L) return(NULL)
+    merged <- merged[order(merged$donor_id, merged$sample_id_a,
+                           merged$sample_id_b), , drop = FALSE]
+    merged
   }
 
-  if (is.null(link) || nrow(link) == 0L) {
+  merged <- pair_from_link(project$sample_link)
+  source <- "linked"
+  if (is.null(merged)) {
+    merged <- pair_from_link(derive_sample_link(project))
+    source <- "donor"
+  }
+  if (is.null(merged)) {
     shared <- intersect(a, b)
     if (length(shared) > 0L) {
       return(list(
@@ -169,18 +187,11 @@ sample_pairing_preview <- function(project, tag_a, tag_b) {
         source = "sample_id"
       ))
     }
-    link <- suggest_sample_link(project, tag_a, tag_b)
+    merged <- pair_from_link(suggest_sample_link(project, tag_a, tag_b))
     source <- "suggested"
   }
 
-  if (is.null(link) || nrow(link) == 0L) return(empty("none"))
-
-  la <- link[link$tag == tag_a, c("sample_id", "donor_id"), drop = FALSE]
-  lb <- link[link$tag == tag_b, c("sample_id", "donor_id"), drop = FALSE]
-  merged <- merge(la, lb, by = "donor_id", suffixes = c("_a", "_b"))
-  merged <- merged[merged$sample_id_a %in% a & merged$sample_id_b %in% b, ,
-                   drop = FALSE]
-  if (nrow(merged) == 0L) return(empty(source))
+  if (is.null(merged)) return(empty("none"))
 
   list(
     pairs = data.frame(donor_id = merged$donor_id,

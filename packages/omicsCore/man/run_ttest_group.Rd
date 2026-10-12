@@ -10,7 +10,8 @@ run_ttest_group(
   control_group,
   case_group,
   var_equal = FALSE,
-  paired_col = NULL
+  paired_col = NULL,
+  incomplete_pairs = c("error", "drop")
 )
 }
 \arguments{
@@ -26,6 +27,14 @@ run_ttest_group(
 (Welch).}
 
 \item{paired_col}{Optional pairing column for paired t-test.}
+
+\item{incomplete_pairs}{What a paired test does with a pair that lacks a
+sample in one of the two groups (or has two in one): \code{"error"} (the
+default, for a single comparison) refuses the design; \code{"drop"} leaves
+such pairs out and tests the complete ones, which is how \code{\link[=run_diff]{run_diff()}}
+runs each comparison when several treatment groups share a control and
+not every subject received every treatment. At least two complete
+pairs are needed either way.}
 }
 \value{
 List with \code{results_raw}, \code{results_std}, \code{model_object} (\code{NULL}),

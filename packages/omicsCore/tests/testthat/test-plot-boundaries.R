@@ -65,11 +65,15 @@ test_that("NULL thresholds fall back to the analysis's own mask", {
   b <- pb_diff()
   b$results$diff_result_df$is_significant <- rep(c(TRUE, FALSE), length.out =
                                                    nrow(b$results$diff_result_df))
-  built <- ggplot2::ggplot_build(
-    plot_volcano(b, p_threshold = NULL, effect_threshold = NULL))$data[[1]]
-  # Both classes present: the stored mask was honoured rather than every
-  # point being swept into one colour.
-  expect_equal(length(unique(built$colour)), 2L)
+  # The grey cloud and the hits are two layers (grey drawn first).
+  p <- plot_volcano(b, p_threshold = NULL, effect_threshold = NULL)
+  is_pt <- vapply(p$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1))
+  built <- data.frame(colour = unlist(lapply(ggplot2::ggplot_build(p)$data[is_pt],
+                                             function(d) d$colour)))
+  # Hits and non-hits both present: the stored mask was honoured rather
+  # than every point being swept into one colour.
+  expect_gt(length(unique(built$colour)), 1L)
+  expect_true(omics_colors$ns %in% built$colour)
 })
 
 test_that("a threshold nothing passes colours nothing significant", {
@@ -221,9 +225,9 @@ test_that("the figure states the cut it was drawn at", {
   cap <- function(p) ggplot2::ggplot_build(p)$plot$labels$caption
   # A screenshot outlives the session that produced it, so the cut has
   # to travel with the picture.
-  expect_match(cap(plot_volcano(b)), "adj_p_value < 0.05", fixed = TRUE)
+  expect_match(cap(plot_volcano(b)), "adjusted p < 0.05", fixed = TRUE)
   expect_match(cap(plot_volcano(b, effect_threshold = 1.5)),
-               "|effect| > 1.5", fixed = TRUE)
+               "|log2FC| >= 1.5", fixed = TRUE)
   expect_match(cap(plot_volcano(b, p_threshold = NULL,
                                 effect_threshold = NULL)),
                "as recorded", fixed = TRUE)
@@ -260,7 +264,7 @@ test_that("the MA plot decides significance the same way the volcano does", {
   # disagreeing about the same data.
   expect_equal(unname(counts[["significant"]]), n_sig)
   expect_match(ggplot2::ggplot_build(plot_ma(b))$plot$labels$caption,
-               "adj_p_value < 0.05", fixed = TRUE)
+               "adjusted p < 0.05", fixed = TRUE)
 })
 
 test_that("the MA plot honours a supplied threshold", {

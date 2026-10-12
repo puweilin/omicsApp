@@ -46,7 +46,7 @@ warm <- local({
         run_enrichment(db, type = "ora", database = "hallmark")
         run_enrichment(db, type = "gsea", database = "hallmark")
       }
-      if (has("GSVA")) run_gsva(prot, database = "hallmark")
+      if (has("GSVA") && has("msigdbr")) run_gsva(prot, database = "hallmark")
     }))
     invisible()
   }
@@ -87,7 +87,7 @@ test_that("a seeded stream is where the caller left it", {
     expect_stream_untouched(
       suppressWarnings(run_enrichment(db, type = "gsea", database = "hallmark")), "gsea")
   }
-  if (has("GSVA")) expect_stream_untouched(run_gsva(prot, database = "hallmark"), "gsva")
+  if (has("GSVA") && has("msigdbr")) expect_stream_untouched(run_gsva(prot, database = "hallmark"), "gsva")
   if (has("imputeLCMD")) {
     expect_stream_untouched(run_qc(prot, impute_method = "MinProb"), "MinProb imputation")
   }
@@ -232,7 +232,15 @@ test_that("nothing else is left behind by a full pipeline", {
   # rendered its intermediates beside the template instead.
   new_tmp <- setdiff(after$tmp, before$tmp)
   foreign <- new_tmp[!startsWith(new_tmp, basename(mine))]
-  expect_identical(foreign, character(0), label = "temp files left by the pipeline")
+  # Say what they hold: a bare "file1a2b3c" names no culprit.
+  peek <- vapply(foreign, function(f) {
+    p <- file.path(tempdir(), f)
+    head <- tryCatch(readBin(p, "raw", 120L), error = function(e) raw(0))
+    txt <- rawToChar(head[head >= as.raw(32) & head < as.raw(127)])
+    sprintf("%s (%s bytes): %s", f, file.size(p), txt)
+  }, character(1))
+  expect_identical(foreign, character(0), label = "temp files left by the pipeline",
+                   info = paste(peek, collapse = "\n"))
 })
 
 test_that("the report renders nothing beside its template", {
@@ -250,8 +258,23 @@ test_that("the report renders nothing beside its template", {
 })
 
 test_that("package code seeds the stream only where it puts it back", {
-  r_dir <- if (dir.exists(file.path("..", "..", "R"))) file.path("..", "..", "R") else NULL
-  skip_if(is.null(r_dir), "package source is not beside the tests")
+  # Beside the tests in the source tree; under R CMD check the tests run
+  # from a copy with no R/ next to them, so CI names the checkout in
+  # OMICSAPP_REPO_ROOT (see test-deploy-contract.R in omicsApp). Set, it
+  # must hold the sources -- a skip there would hide the check again.
+  # covr runs them from the installed package, whose R/ exists but
+  # holds no sources, so "beside" means a directory with .R files in it.
+  repo <- Sys.getenv("OMICSAPP_REPO_ROOT", "")
+  has_sources <- function(d) dir.exists(d) && length(list.files(d, pattern = "\\.R$")) > 0L
+  r_dir <- file.path("..", "..", "R")
+  if (!has_sources(r_dir) && nzchar(repo)) {
+    r_dir <- file.path(repo, "packages", "omicsCore", "R")
+    if (!dir.exists(r_dir)) {
+      stop("OMICSAPP_REPO_ROOT is set to '", repo, "', but it has no packages/omicsCore/R.",
+           call. = FALSE)
+    }
+  }
+  skip_if_not(has_sources(r_dir), "package source is not beside the tests")
   files <- list.files(r_dir, pattern = "\\.R$", full.names = TRUE)
   seeders <- Filter(function(f) {
     code <- grep("^\\s*#", readLines(f, warn = FALSE), value = TRUE, invert = TRUE)

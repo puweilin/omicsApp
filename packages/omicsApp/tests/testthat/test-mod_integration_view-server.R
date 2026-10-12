@@ -3,7 +3,7 @@
 # Three scenarios:
 #   1. NULL project + NULL diff_bundle → demo fixture; can_run() is FALSE.
 #   2. Project with one experiment + a diff_bundle → can_run() is FALSE
-#      (needs >=2 experiments) and the demo fixture is used.
+#      (needs >=2 experiments); the view says why and shows no demo.
 #   3. Project with two experiments where the secondary's meta_df has
 #      the same group_col / control / case levels → can_run() is TRUE
 #      and run_integration(concordance) populates `integration_bundle()`.
@@ -25,7 +25,27 @@ test_that("integration view falls back to demo when prerequisites are absent", {
   )
 })
 
-test_that("integration view stays on demo when project has only one experiment", {
+test_that("a concordance result shows the scatter and the top-hits cards, not the old dual volcano", {
+  current_project <- shiny::reactiveVal(NULL)
+  diff_bundle <- shiny::reactiveVal(NULL)
+  shiny::testServer(
+    integration_view_server,
+    args = list(current_project = current_project,
+                diff_bundle     = diff_bundle),
+    {
+      session$setInputs(rerun = 0)
+      html <- paste(as.character(output$results$html), collapse = "")
+      expect_match(html, "Top hits in both layers", fixed = TRUE)
+      expect_match(html, session$ns("top_hits"), fixed = TRUE)
+      expect_match(html, session$ns("scatter"), fixed = TRUE)
+      expect_no_match(html, "volcano", ignore.case = TRUE)
+      expect_match(output$scatter$src, "^data:image/png")
+      expect_match(output$top_hits$src, "^data:image/png")
+    }
+  )
+})
+
+test_that("integration view with a one-layer project says so instead of showing the demo", {
   skip_if_not_installed("openxlsx")
   skip_if_not_installed("readxl")
   xlsx <- tempfile(fileext = ".xlsx")
@@ -44,9 +64,15 @@ test_that("integration view stays on demo when project has only one experiment",
                 diff_bundle     = diff_bundle),
     {
       session$setInputs(rerun = 0)
-      expect_true(isTRUE(is_demo()))
+      # A user's project never gets the demo's numbers: they would read
+      # as results about the user's data.
+      expect_false(isTRUE(is_demo()))
+      expect_null(integration_bundle())
       info <- can_run()
       expect_false(isTRUE(info$ok))
+      expect_identical(info$reason, "layers")
+      expect_match(paste(as.character(output$notices), collapse = ""),
+                   "two layers")
     }
   )
 })

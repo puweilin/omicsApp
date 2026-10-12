@@ -10,3 +10,4 @@ deploy/nginx/omicsapp.conf
 deploy/keycloak/docker-compose.yml
 deploy/keycloak/omicsapp-realm.json
 deploy/shinyproxy/application.yml
+deploy/backup.env

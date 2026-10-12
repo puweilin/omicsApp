@@ -34,22 +34,41 @@ A \code{ggplot} object.
 \description{
 Visualises the standardized enrichment table produced by
 \code{\link[=run_enrichment]{run_enrichment()}}. The \code{"dot"} view draws a dotplot of the top \code{top_n}
-pathways per database (size = overlap, color = adjusted p-value); the
-\code{"bar"} view draws a horizontal bar chart of the same selection. For
+pathways per database: for ORA, x is the share of each pathway's genes
+found in the gene list and point size the number found; for GSEA, x is
+the NES and point size the gene set size. Colour is -log10 of the
+chosen p-value, capped so that one extreme pathway does not wash out
+the rest: values above the cap take the top colour, and the top
+legend label is marked as "at least" that value. The
+\code{"bar"} view draws a horizontal bar chart of the same selection, bar
+length -log10 p, coloured by gene list (ORA: up red, down blue) or by
+the sign of the NES (GSEA); a bar more than three times the longest
+ordinary one is cut short, marked with a break and labelled with its
+true value. For
 GSEA bundles a \code{"gsea_dot"} view is available that splits pathways by
 direction (up / down).
 }
+\details{
+An ORA run with up- and down-regulated genes tested separately (the
+default of \code{\link[=run_enrichment]{run_enrichment()}}) is drawn with one panel per gene list,
+headed "Up-regulated genes" and "Down-regulated genes", and \code{top_n}
+is shared between the two lists of a database (alternating best of
+each), so neither direction crowds the other out.
+}
 \seealso{
-Other enrich: 
-\code{\link{filter_enrich_results}()},
-\code{\link{geneset_cache_status}()},
-\code{\link{hgnc_map_provenance}()},
-\code{\link{list_gene_sets}()},
-\code{\link{map_ensembl_symbols}()},
-\code{\link{plot_gsea}()},
-\code{\link{plot_gsva_heatmap}()},
-\code{\link{refresh_geneset_cache}()},
-\code{\link{run_enrichment}()},
-\code{\link{run_gsva}()}
+Other enrich:
+\code{\link[=compare_enrichment]{compare_enrichment()}},
+\code{\link[=enrichment_species]{enrichment_species()}},
+\code{\link[=filter_enrich_results]{filter_enrich_results()}},
+\code{\link[=geneset_cache_status]{geneset_cache_status()}},
+\code{\link[=hgnc_map_provenance]{hgnc_map_provenance()}},
+\code{\link[=list_gene_sets]{list_gene_sets()}},
+\code{\link[=map_ensembl_symbols]{map_ensembl_symbols()}},
+\code{\link[=plot_enrichment_comparison]{plot_enrichment_comparison()}},
+\code{\link[=plot_gsea]{plot_gsea()}},
+\code{\link[=plot_gsva_heatmap]{plot_gsva_heatmap()}},
+\code{\link[=refresh_geneset_cache]{refresh_geneset_cache()}},
+\code{\link[=run_enrichment]{run_enrichment()}},
+\code{\link[=run_gsva]{run_gsva()}}
 }
 \concept{enrich}

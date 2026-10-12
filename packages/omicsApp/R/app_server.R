@@ -35,6 +35,17 @@ app_server <- function(input, output, session) {
   shiny::observeEvent(input$nav_integration, set_view("integration"))
   shiny::observeEvent(input$nav_report,      set_view("report"))
 
+  # Which views the user has opened, kept with the project so the
+  # Workflow card ticks a step only once it has been looked at.
+  shiny::observeEvent(current_view(), {
+    proj <- shiny::isolate(current_project())
+    v <- current_view()
+    if (!is.null(proj) && !is.null(proj$visited_steps) && !v %in% proj$visited_steps) {
+      proj$visited_steps <- c(proj$visited_steps, v)
+      current_project(proj)
+    }
+  }, ignoreInit = TRUE, priority = 5L)
+
   shiny::observeEvent(current_view(), {
     v <- current_view()
     shiny::updateTabsetPanel(session, "view", selected = v)
@@ -73,7 +84,7 @@ app_server <- function(input, output, session) {
       icon,
       htmltools::tags$div(
         htmltools::tags$span(class = "label-sm", "Project"),
-        htmltools::tags$span(name)
+        htmltools::tags$span(class = "project-name", title = name, name)
       )
     )
   })
@@ -88,27 +99,46 @@ app_server <- function(input, output, session) {
                       on_view_layer = function(tag) {
                         requested_layer(tag)
                         set_view("qc")
+                      },
+                      navigate = set_view,
+                      # A new project replaces everything the views hold,
+                      # even when its layers come from the same files.
+                      replace_project = function(p) {
+                        layer_generation(shiny::isolate(layer_generation()) + 1L)
+                        current_project(p)
                       })
   imported_input <- import_view_server("import",
-                        current_project = current_project)
+                        current_project = current_project,
+                        navigate = set_view)
   qc_bundle <- qc_view_server("qc", current_project = current_project,
                               invalidate = layer_generation,
-                              requested_layer = requested_layer)
+                              requested_layer = requested_layer,
+                              navigate = set_view)
   diff_view <- diff_view_server("diff", current_project = current_project,
-                                invalidate = layer_generation)
+                                invalidate = layer_generation,
+                                navigate = set_view)
   diff_bundle <- diff_view$bundle
   # Enrichment reads the same thresholds the hit table is read at.
   # Without this it applied its own -- adjusted p at 0.05, no
   # fold-change bound -- and enriched a different set of genes from the
   # ones on screen, silently.
-  enrich_bundle <- enrich_view_server("enrich", diff_bundle = diff_bundle,
+  enrich_view <- enrich_view_server("enrich", diff_bundle = diff_bundle,
+                                      diff_all = diff_view$all_bundle,
                                       diff_thresholds = diff_view$thresholds,
                                       diff_layer = diff_view$layer,
-                                      invalidate = layer_generation)
+                                      invalidate = layer_generation,
+                                      navigate = set_view,
+                                      current_project = current_project)
+  enrich_bundle <- enrich_view$bundle
+  # Integration repeats the diff's contrast on the partner layer, on the
+  # layer the diff actually ran on, at the thresholds its hits are read at.
   integration_bundle <- integration_view_server("integration",
                           current_project = current_project,
                           diff_bundle     = diff_bundle,
-                          invalidate      = layer_generation)
+                          invalidate      = layer_generation,
+                          diff_layer      = diff_view$layer,
+                          diff_thresholds = diff_view$thresholds,
+                          navigate        = set_view)
   report_view_server("report", current_project = current_project)
 
   # ---- which data the views' results belong to -------------------------
@@ -173,8 +203,12 @@ app_server <- function(input, output, session) {
     gen <- layer_generation()
     views <- list(
       qc          = qc_bundle(),
-      diff        = diff_bundle(),
+      # Every comparison of the run; the views downstream get the one on
+      # screen through `diff_bundle`.
+      diff        = diff_view$project_bundle(),
+      anova       = diff_view$anova(),
       enrich      = enrich_bundle(),
+      enrich_compare = enrich_view$compare(),
       integration = integration_bundle()
     )
     b <- proj$bundles %||% list()
@@ -195,9 +229,9 @@ app_server <- function(input, output, session) {
   }, priority = -10L)
 
   # Every time the Import view confirms a fresh omics_input, fold it
-  # into the project under a tag derived from its omics_type. Repeated
-  # imports of the same omics_type replace the existing layer; new
-  # omics_types extend the project. The Project view re-renders
+  # into the project under the layer name chosen there. A name already in
+  # the project replaces that layer; a new name (a second proteomics
+  # batch, say) extends the project. The Project view re-renders
   # automatically because it observes `current_project`.
   #
   # `priority = 10` ensures this fires before the bundle-attach observer
@@ -207,16 +241,20 @@ app_server <- function(input, output, session) {
     inp <- imported_input()
     if (is.null(inp)) return()
     proj <- current_project()
-    tag <- inp$omics_type %||% "experiment"
+    # The name the user gave the layer in the Import view (the omics type
+    # unless they changed it); carried on the input only to get here.
+    tag <- inp$layer_tag %||% inp$omics_type %||% "experiment"
+    inp$layer_tag <- NULL
     if (is.null(proj)) {
       proj <- omicsCore::omics_project(
         name        = "User project",
         experiments = stats::setNames(list(inp), tag)
       )
       proj$bundles <- list()
+      proj$visited_steps <- "import"
     } else {
       # `add_experiment()` rejects duplicate tags, so drop any
-      # existing layer of this omics_type first. Bundles computed on
+      # existing layer of this name first. Bundles computed on
       # the replaced layer are also dropped since their input is now
       # gone — leaving them around shows stale results in the report.
       #
@@ -225,8 +263,9 @@ app_server <- function(input, output, session) {
       # observer would put it straight back. Bumping the generation is
       # what actually tells them to let go.
       if (tag %in% omicsCore::experiment_tags(proj)) {
+        # Only this layer's results go; another layer's stay with it.
+        if (!is.null(proj$bundles)) proj$bundles <- drop_layer_bundles(proj$bundles, tag, proj)
         proj <- omicsCore::remove_experiment(proj, tag)
-        if (!is.null(proj$bundles)) proj$bundles <- list()
         layer_generation(shiny::isolate(layer_generation()) + 1L)
       }
       proj <- omicsCore::add_experiment(proj, name = tag, input = inp)
@@ -246,9 +285,6 @@ app_server <- function(input, output, session) {
   # above, so an observer firing on the same flush as a finished bundle
   # would read the project from before that bundle was folded in, and
   # persist a snapshot missing the very result that triggered it.
-  wire_autosave(current_project)
+  # Under this session's own id, so a second tab does not overwrite it.
+  wire_autosave(current_project, id = session_autosave_id(session))
 }
-
-# ---- internal helpers ------------------------------------------------
-
-`%||%` <- function(a, b) if (is.null(a)) b else a

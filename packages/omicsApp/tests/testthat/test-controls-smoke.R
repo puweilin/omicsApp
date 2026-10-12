@@ -158,7 +158,12 @@ test_that("the report buttons are live exactly when they can work", {
   shiny::testServer(report_view_server,
                     args = list(current_project = shiny::reactiveVal(sm_project())), {
     html <- paste(as.character(output$header), collapse = "")
-    expect_no_match(html, "pointer-events:none")
+    # HTML is live; PDF only where LaTeX is installed.
+    btns <- regmatches(html, gregexpr("<a [^>]*>", html))[[1L]]
+    expect_no_match(grep("download_html", btns, value = TRUE), "pointer-events:none")
+    pdf <- grep("download_pdf", btns, value = TRUE)
+    if (have_latex()) expect_no_match(pdf, "pointer-events:none")
+    else expect_match(pdf, "LaTeX")
   })
 })
 
@@ -224,14 +229,14 @@ test_that("the imputation control reaches run_qc and changes the result", {
     session$flushReact()
     b <- last_bundle()
     expect_identical(b$params$impute_method, "none")
-    expect_true(anyNA(b$results$cleaned_input$expr_mat))
+    expect_true(anyNA(omicsCore::qc_cleaned_input(b, current_project()$experiments$prot)$expr_mat))
 
     session$setInputs(impute_method = "MinDet")
     session$flushReact()
     b <- last_bundle()
     expect_identical(b$params$impute_method, "MinDet")
     # The point of the control: the NAs are gone afterwards.
-    expect_false(anyNA(b$results$cleaned_input$expr_mat))
+    expect_false(anyNA(omicsCore::qc_cleaned_input(b, current_project()$experiments$prot)$expr_mat))
   })
 })
 

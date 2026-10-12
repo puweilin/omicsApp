@@ -9,7 +9,15 @@
 # steps: system deps, then CRAN, then Bioconductor, then the gene-set
 # prewarm, and only then the two packages, which change every commit.
 
-FROM bioconductor/bioconductor_docker:RELEASE_3_20
+# The base image by digest as well as tag. The tag is for the reader; the
+# digest is what Docker pulls, so a rebuild next year starts from the
+# bytes this one did rather than from whatever the tag points at by then.
+# deploy/scripts/pin_base_digests.sh resolves it and records it in
+# deploy/docker/base-digests.lock; test-deploy-contract.R fails if the two
+# disagree. Override for an experiment, not for a deployment:
+#   docker build --build-arg BASE_IMAGE=bioconductor/bioconductor_docker:RELEASE_3_21 ...
+ARG BASE_IMAGE=bioconductor/bioconductor_docker:RELEASE_3_20@sha256:5053f59de1c1a79b5a05d820ba722bae62ded0c1042e547189aa0226f111ea7e
+FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.source="https://github.com/puweilin/omicsApp"
 LABEL org.opencontainers.image.description="Multi-omics analysis web app (omicsCore + omicsApp)"
@@ -63,8 +71,9 @@ RUN R -q -e 'pkgs <- c( \
       "shinyWidgets","shinyjs","promises","future", \
       "tibble","dplyr","stringr","readxl","openxlsx","jsonlite","scales", \
       "rlang","msigdbr","qs2", \
-      "ggrepel","patchwork","circlize","here","knitr","rmarkdown", \
-      "imputeLCMD","ActivePathways","pkgload"); \
+      "ggrepel","patchwork","circlize","knitr","rmarkdown", \
+      "imputeLCMD","ActivePathways","pkgload","data.table","openssl","babelgene", \
+      "ragg","svglite"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("CRAN packages failed to install: ", \
@@ -91,8 +100,9 @@ RUN R -q -e 'pkgs <- c( \
 # Override BIOC_MIRROR to build somewhere the upstream is fast:
 #   docker build --build-arg BIOC_MIRROR=https://bioconductor.org ...
 #
-# 12 packages pull in 168: clusterProfiler alone accounts for 120,
-# enrichplot 118 and GSVA 101, overlapping heavily. That closure, all
+# 12 packages pull in 168: clusterProfiler alone accounts for 120
+# (enrichplot among them, which it imports; the app no longer calls it)
+# and GSVA 101, overlapping heavily. That closure, all
 # built from source because p3m carries no Bioconductor binaries, is
 # what the 30-45 minutes here is.
 #
@@ -122,7 +132,7 @@ RUN R -q -e 'pkgs <- c("S4Vectors","limma","impute","pcaMethods","edgeR", \
                                 paste(missing, collapse = ", "))'
 
 # 3b. 23 more, and the first heavy C++ builds (BiocParallel, Rhdf5lib).
-RUN R -q -e 'pkgs <- c("fgsea","DESeq2"); \
+RUN R -q -e 'pkgs <- c("fgsea","DESeq2","BiocParallel","SummarizedExperiment"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("Bioconductor 3b failed: ", \
@@ -130,7 +140,7 @@ RUN R -q -e 'pkgs <- c("fgsea","DESeq2"); \
 
 # 3c. The long tail: 62 packages, most of the time, and the whole
 # clusterProfiler/enrichplot/ggtree chain.
-RUN R -q -e 'pkgs <- c("GSVA","enrichplot","clusterProfiler"); \
+RUN R -q -e 'pkgs <- c("GSVA","clusterProfiler"); \
       install.packages(pkgs, Ncpus = parallel::detectCores()); \
       missing <- setdiff(pkgs, rownames(installed.packages())); \
       if (length(missing)) stop("Bioconductor 3c failed: ", \
@@ -236,9 +246,53 @@ RUN printf '%s\n' \
       cat(paste0("  ", v, " = ", got), sep = "\n"); \
       if (!all(got == "1")) stop("Renviron.site override did not take effect")'
 
+# A workbook's unpacked size times ~16 is what readxl needs in memory: a
+# 62 MB .xlsx that unpacks to 497 MB peaked at 8.2 GB and would be killed
+# in this container. 300 MB unpacked (~5 GB peak) is the most that fits;
+# bigger matrices import as CSV, which needs about 1 GB.
+# Written where setup_repos.R wrote the repositories (R_PROFILE wins over
+# etc/Rprofile.site when the base image sets it).
+RUN R -q -e 'p <- Sys.getenv("R_PROFILE", unset = file.path(R.home("etc"), "Rprofile.site")); \
+      cat("\noptions(omicsCore.max_unpacked_mb = 300)\n", file = p, append = TRUE)' \
+ && R -q --no-echo -e 'stopifnot(identical(getOption("omicsCore.max_unpacked_mb"), 300))'
+
+# No way up from the app's user. ShinyProxy cannot pass --cap-drop or
+# --security-opt no-new-privileges to the containers it starts (see the
+# confinement note in application.yml), so the image makes them moot
+# instead: the process runs unprivileged, and with every setuid/setgid
+# bit and file capability removed there is no binary left that would
+# hand it root or a capability -- su, passwd, mount, ping and friends
+# become ordinary programs. The check after it fails the build if any
+# survived.
+#
+# bash with pipefail from here on, so a failure inside a pipeline fails
+# the layer instead of being hidden by the last command's status. Set
+# this late rather than at the top: SHELL is part of every later RUN's
+# cache key, and moving it up would rebuild the hour of Bioconductor
+# layers above for no change in what they do. getcap's own status is
+# deliberately ignored -- walking / it meets files it cannot read, and
+# what matters is that every capability it did list is removed and that
+# the check after it finds no setuid/setgid file left.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod ug-s {} + \
+ && if command -v getcap >/dev/null 2>&1; then \
+      { getcap -r / 2>/dev/null || true; } | awk '{print $1}' | xargs -r setcap -r; fi \
+ && left="$(find / -xdev -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null)" \
+ && if [ -n "$left" ]; then echo "setuid/setgid files remain: $left"; exit 1; fi
+
 USER omics
 WORKDIR /home/omics
 EXPOSE 3838
 
 # host must be 0.0.0.0 for ShinyProxy to reach the container.
-CMD ["R", "-q", "-e", "omicsApp::launch(host = '0.0.0.0', port = 3838, launch.browser = FALSE, workers = 2)"]
+#
+# Through bash for one line before R: a cap on how many processes the
+# app's user may run, in place of the --pids-limit ShinyProxy cannot set.
+# A fork bomb -- or a runaway parallel back-end -- then fails to fork
+# rather than exhausting the host's process table. The limit is per uid
+# (RLIMIT_NPROC), and every user's container runs as the same uid, so it
+# is set well above what one session needs (R, two workers and their
+# threads stay under 200) and can be raised with OMICSAPP_MAX_PROCS in
+# container-env. If the daemon's hard limit is lower, the soft limit
+# cannot be raised to it; the app then starts under the hard one.
+CMD ["bash", "-c", "ulimit -S -u \"${OMICSAPP_MAX_PROCS:-2048}\" 2>/dev/null; exec R -q -e \"omicsApp::launch(host = '0.0.0.0', port = 3838, launch.browser = FALSE, workers = 2)\""]

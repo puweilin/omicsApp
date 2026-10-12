@@ -22,10 +22,10 @@ test_that("the missing-rate slider changes what the demo keeps", {
   # features a 50% cutoff keeps.
   shiny::testServer(qc_view_server, args = list(), {
     session$setInputs(missing_threshold = 0.5, outlier_method = "iqr")
-    kept_loose <- nrow(last_bundle()$results$cleaned_input$expr_mat)
+    kept_loose <- nrow(omicsCore::qc_cleaned_input(last_bundle(), example_qc_input())$expr_mat)
 
     session$setInputs(missing_threshold = 0.02)
-    kept_tight <- nrow(last_bundle()$results$cleaned_input$expr_mat)
+    kept_tight <- nrow(omicsCore::qc_cleaned_input(last_bundle(), example_qc_input())$expr_mat)
 
     expect_lt(kept_tight, kept_loose)
   })

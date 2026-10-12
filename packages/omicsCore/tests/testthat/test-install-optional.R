@@ -56,3 +56,14 @@ test_that("new_analysis_bundle() returns a valid bundle", {
   expect_equal(b$analysis_name, "demo")
   expect_s3_class(b$artifacts, "data.frame")
 })
+
+test_that("every group a missing-package message names holds that package", {
+  # The gates send users to a group; the package they lack must be in it.
+  expect_true("limma" %in% omicsCore:::OPTIONAL_GROUPS$proteomics)
+  expect_true(all(c("clusterProfiler", "msigdbr") %in% omicsCore:::OPTIONAL_GROUPS$enrichment))
+  expect_true(all(c("DESeq2", "edgeR") %in% omicsCore:::OPTIONAL_GROUPS$rnaseq))
+  # And every grouped package is one the package declares.
+  d <- read.dcf(system.file("DESCRIPTION", package = "omicsCore"))
+  declared <- trimws(gsub("\\(.*\\)", "", unlist(strsplit(paste(d[1, c("Imports", "Suggests")], collapse = ","), ","))))
+  expect_length(setdiff(unlist(omicsCore:::OPTIONAL_GROUPS), declared), 0L)
+})

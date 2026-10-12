@@ -70,8 +70,17 @@ pca_over_samples <- function(mat) {
   if (ncol(mat) < 2L) {
     stop("Need at least 2 samples for PCA.", call. = FALSE)
   }
+  # The QC outlier check and the QC PCA panel fit the same PCA on the same
+  # matrix, and recolouring the panel fitted it again: remembered by the
+  # matrix's content (the last few), it is computed once.
+  key <- rlang::hash(mat)
+  hit <- .pca_cache[[key]]
+  if (!is.null(hit)) return(hit)
   kept <- drop_constant_features(mat)
   pca <- stats::prcomp(t(kept), scale. = TRUE)
   attr(pca, "n_dropped") <- attr(kept, "n_dropped")
+  if (length(ls(.pca_cache)) >= 4L) rm(list = ls(.pca_cache), envir = .pca_cache)
+  assign(key, pca, envir = .pca_cache)
   pca
 }
+.pca_cache <- new.env(parent = emptyenv())

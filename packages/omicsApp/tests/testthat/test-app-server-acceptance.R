@@ -53,7 +53,7 @@ run_diff_in_app <- function(session, click) {
 # renders of the same figure differ only there.
 strip_ids <- function(json) gsub("file[0-9a-f]{6,}", "ID", as.character(json))
 
-autosaved <- function(dir) omicsCore::load_project(file.path(dir, "_autosave.omp"))
+autosaved <- function(dir) omicsCore::load_project(autosave_file(dir))
 
 # ---- rows 1-3: import, re-import, replace --------------------------------
 
@@ -63,7 +63,7 @@ test_that("upload and confirm: the project appears, and is on disk before anythi
   file_a <- workbook(1)
   shiny::testServer(app_server, {
     expect_null(current_project())
-    expect_false(file.exists(file.path(store, "_autosave.omp")))
+    expect_false(file.exists(autosave_file(store)))
 
     upload(session, file_a, "cohort_a.xlsx")
     session$setInputs(`import-confirm` = 1)
@@ -74,7 +74,7 @@ test_that("upload and confirm: the project appears, and is on disk before anythi
     expect_identical(dim(proj$experiments$proteomics$expr_mat), c(40L, 8L))
 
     # Row 9 of the table: the store carries the snapshot and the upload
-    expect_true(file.exists(file.path(store, "_autosave.omp")))
+    expect_true(file.exists(autosave_file(store)))
     expect_identical(names(autosaved(store)$experiments), "proteomics")
     raw <- list.files(file.path(store, "raw"))
     expect_length(raw, 1L)
@@ -139,7 +139,7 @@ test_that("uploading a different file asks, and confirming clears the analyses",
 
 # ---- rows 4-5: the differential view and its sliders ----------------------
 
-test_that("the volcano is two-coloured at a stated cut, and the sliders do not touch it", {
+test_that("the volcano is drawn at the stated cut, and follows the sliders with the table", {
   skip_if_no_xlsx()
   store <- local_store()
   file_a <- workbook(1)
@@ -152,12 +152,14 @@ test_that("the volcano is two-coloured at a stated cut, and the sliders do not t
     # The hit table is served server-side, so its JSON is only a handle;
     # the stat cards next to it carry the counts the sliders change.
     hits_before <- strip_ids(output$`diff-stats`)
-    # Drawn at the default cut: the dashed line sits at -log10(0.05).
-    # (ggplotly does not carry the caption over, so the line is the
-    # evidence of the threshold the figure was drawn at.)
-    expect_match(volcano_before, "yintercept: 1.30103", fixed = TRUE)
-    expect_match(volcano_before, "-log10(adj_p_value)", fixed = TRUE)
+    # Drawn at the cut the controls start at: the dashed p line sits at
+    # -log10(0.05), and the card says so in words (ggplotly does not
+    # carry the caption over).
+    # (The hover shows the gene, so the line is found by its y.)
+    expect_match(volcano_before, '"y":[1.30102999566398', fixed = TRUE)
+    expect_match(volcano_before, "-log10(adjusted p)", fixed = TRUE)
     expect_identical(diff_view$thresholds()$p_cutoff, 0.05)
+    expect_match(output$`diff-volcano_cut`, "significant = adjusted p < 0.05", fixed = TRUE)
 
     # Open the thresholds right up
     session$setInputs(`diff-fdr_cut` = 0.9, `diff-fc_cut` = 0)
@@ -168,13 +170,19 @@ test_that("the volcano is two-coloured at a stated cut, and the sliders do not t
     volcano_after <- strip_ids(output$`diff-volcano`)
     hits_after <- strip_ids(output$`diff-stats`)
     expect_false(identical(hits_before, hits_after))
-    expect_identical(volcano_before, volcano_after)
+    # The figure moved with the table: its p line is now at -log10(0.9),
+    # and the card names the new cut -- the two cannot disagree.
+    expect_false(identical(volcano_before, volcano_after))
+    expect_match(volcano_after, sprintf('"y":[%s', substr(format(-log10(0.9), digits = 15), 1, 12)),
+                 fixed = TRUE)
+    expect_identical(output$`diff-volcano_cut`, "significant = adjusted p < 0.9")
   })
 })
 
 test_that("enrichment reads the thresholds the hit table is read at", {
   skip_if_no_xlsx()
   skip_if_not_installed("clusterProfiler")
+  skip_if_not_installed("msigdbr")
   store <- local_store()
   file_a <- workbook(1)
   shiny::testServer(app_server, {

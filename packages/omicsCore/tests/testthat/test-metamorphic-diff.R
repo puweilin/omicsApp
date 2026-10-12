@@ -235,7 +235,8 @@ test_that("GSEA ignores the feature thresholds ORA obeys", {
   expect_equal(strict$p_value, plain$p_value)
 
   ora <- function(...) {
-    run_enrichment(b, type = "ora", database = "hallmark", ...)$results$enrich_object[["both__hallmark"]]@gene
+    run_enrichment(b, type = "ora", database = "hallmark", direction = "both",
+                   ...)$results$enrich_object[["both__hallmark"]]@gene
   }
   loose <- ora(p_cutoff = 0.5, effect_cutoff = 0)
   tight <- ora(p_cutoff = 0.5, effect_cutoff = 1)

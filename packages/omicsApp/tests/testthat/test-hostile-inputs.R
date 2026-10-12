@@ -152,7 +152,7 @@ test_that("confirming with nothing uploaded, and restoring with nothing saved, a
     session$setInputs(`project-restore_autosave` = 1)
     session$setInputs(`enrich-database` = "hallmark", `enrich-type` = "ora", `enrich-rerun` = 1)
     expect_null(current_project())
-    expect_false(file.exists(file.path(store, "_autosave.omp")))
+    expect_false(file.exists(autosave_file(store)))
   })
 })
 
@@ -184,7 +184,7 @@ test_that("a hostile project name is stored under a safe slug and shown as text"
     session$setInputs(`project-save_name` = "<script>alert(1)</script> cohort",
                       `project-save_project` = 1)
     saved <- list.files(store, pattern = "\\.omp$")
-    saved <- saved[saved != "_autosave.omp"]
+    saved <- saved[!grepl("^_autosave", saved)]
     expect_length(saved, 1L)
     expect_false(grepl("[<>]", saved))
     body <- as.character(output[["project-body"]]$html)

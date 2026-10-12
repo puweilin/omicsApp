@@ -54,7 +54,8 @@ test_that("qc_outliers iqr method flags extreme samples", {
 test_that("qc_outliers pca runs and returns z-scores", {
   x <- make_qc_input(missing_frac = 0)
   res <- qc_outliers(x, method = "pca", sd_threshold = 3)
-  expect_named(res, c("method", "stats", "flagged_samples"))
+  # Plus a `note`: with this few samples a z of 3 is out of reach.
+  expect_true(all(c("method", "stats", "flagged_samples") %in% names(res)))
   expect_true(all(c("PC1", "PC2", "z_pc1", "z_pc2", "is_outlier") %in%
                   colnames(res$stats)))
 })
@@ -115,17 +116,18 @@ test_that("run_qc returns an analysis_bundle with the expected slots", {
               outlier_method = "iqr", outlier_sd_threshold = 3)
   expect_true(is_analysis_bundle(b))
   expect_equal(b$analysis_name, "run_qc")
-  expect_named(b$results, c("qc_summary", "cleaned_input"))
-  expect_true(is_omics_input(b$results$cleaned_input))
+  expect_named(b$results, c("qc_summary", "cleaning", "plot_data"))
+  expect_true(is_omics_input(qc_cleaned_input(b, x)))
 })
 
-test_that("run_qc removes flagged samples and features", {
+test_that("run_qc removes flagged samples, when asked, and features", {
   x <- make_qc_input(missing_frac = 0)
   x$expr_mat[1, ] <- NA              # feature -> 100% missing
   x$expr_mat[, 1] <- x$expr_mat[, 1] + 100  # sample -> extreme
   b <- run_qc(x, missing_threshold = 0.5,
-              outlier_method = "iqr", outlier_sd_threshold = 1.5)
-  cleaned <- b$results$cleaned_input
+              outlier_method = "iqr", outlier_sd_threshold = 1.5,
+              remove_outliers = TRUE)
+  cleaned <- qc_cleaned_input(b, x)
   expect_false("g1" %in% rownames(cleaned$expr_mat))
   expect_false("s1" %in% colnames(cleaned$expr_mat))
 })
@@ -135,8 +137,8 @@ test_that("run_qc with impute_method='min' fills NAs in cleaned input", {
   b <- run_qc(x, missing_threshold = 1,             # keep all features
               outlier_method = "none",
               impute_method = "min")
-  expect_false(anyNA(b$results$cleaned_input$expr_mat))
-  expect_true(!is.null(b$results$cleaned_input$raw_mat))
+  expect_false(anyNA(qc_cleaned_input(b, x)$expr_mat))
+  expect_true(!is.null(qc_cleaned_input(b, x)$raw_mat))
 })
 
 test_that("run_qc errors when filters wipe out the input", {

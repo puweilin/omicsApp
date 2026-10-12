@@ -218,9 +218,11 @@ test_that("active_pathways returns the integration schema when installed", {
   expect_true(is_analysis_bundle(b))
   df <- b$results$integration_df
   check_integration_result_schema(df)
-  # If any pathways come back, direction should be shared/unique.
+  # If any pathways come back, direction is the way they went and
+  # evidence which layers found them.
   if (nrow(df) > 0L) {
-    expect_true(all(df$direction %in% c("shared", "unique")))
+    expect_true(all(df$direction %in% c("up", "down", "mixed", NA)))
+    expect_true(all(df$evidence %in% c("shared", "unique", "combined")))
   }
 })
 
@@ -233,13 +235,17 @@ test_that("plot_integration scatter view works for correlation", {
   expect_s3_class(gg, "ggplot")
 })
 
-test_that("plot_integration dual_volcano + quadrant work for concordance", {
+test_that("plot_integration's concordance views draw; dual_volcano still does, with a warning", {
   p <- make_integration_project()
   diffs <- build_integration_diff_bundles(p)
   b <- run_integration(p, method = "concordance",
                        experiments = c("proteo", "rna"),
                        diff_bundles = diffs)
-  expect_s3_class(plot_integration(b, view = "dual_volcano"), "ggplot")
+  expect_warning(g <- plot_integration(b, view = "dual_volcano"),
+                 class = "deprecatedWarning")
+  expect_s3_class(g, "ggplot")
+  expect_s3_class(plot_integration(b, view = "effect_pair"), "ggplot")
+  expect_s3_class(plot_integration(b, view = "top_hits"), "ggplot")
   expect_s3_class(plot_integration(b, view = "quadrant"), "ggplot")
 })
 
@@ -247,6 +253,7 @@ test_that("plot_integration rejects view/method mismatches", {
   p <- make_integration_project()
   b <- run_integration(p, method = "correlation")
   expect_error(plot_integration(b, view = "dual_volcano"), "concordance")
+  expect_error(plot_integration(b, view = "top_hits"), "concordance")
   expect_error(plot_integration(b, view = "quadrant"), "concordance")
   expect_error(plot_integration(b, view = "dotplot"), "active_pathways")
 })

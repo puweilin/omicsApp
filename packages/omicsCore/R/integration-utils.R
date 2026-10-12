@@ -2,8 +2,8 @@
 # join strategies are supported:
 #
 #   * feature-level: join on `feature_symbol` (or `feature_id`) across the
-#     two layers. Used by correlation + concordance, since the unit of
-#     analysis is a feature pair.
+#     two layers, or on a stated `feature_link` table. Used by every
+#     method; see integration-feature-link.R.
 #   * sample-level: align samples across layers either via the project
 #     `sample_link$donor_id` map, or by direct sample-ID matching if the
 #     two layers share IDs. Used by correlation.
@@ -36,82 +36,114 @@ resolve_experiment_pair <- function(project, experiments) {
 }
 
 # Build a sample mapping data.frame between two experiments. Returns a
-# `data.frame` with columns `<tag_a>`, `<tag_b>`, `donor_id`. If a
-# project-level `sample_link` is present it is used; otherwise direct
-# matches on `sample_id` are emitted.
+# `data.frame` with columns `donor_id`, `<tag_a>`, `<tag_b>`.
+#
+# Resolved exactly as the Integration view previews it
+# (`sample_pairing_preview()`): a saved `sample_link`, then a donor column
+# in both layers, then sample ids that match outright. A pairing that is
+# only *guessed* from the shape of the ids is never used here -- it has
+# to be accepted (saved as a `sample_link`) first. The two used to
+# disagree: the view announced "12 pairs, from the donor column" and the
+# run then failed with "No shared sample IDs", because this function only
+# knew about a saved link and identical ids.
+#
+# A donor with more than one sample in a layer (technical replicates,
+# several time points) cannot be paired one-to-one. Such donors keep
+# their first sample in each layer; the number dropped is carried on the
+# result as attribute `n_ambiguous` so the caller can report it rather
+# than silently correlating one person's samples against themselves.
 build_sample_pairs <- function(project, tag_a, tag_b) {
-  input_a <- project$experiments[[tag_a]]
-  input_b <- project$experiments[[tag_b]]
-  samp_a <- colnames(input_a$expr_mat)
-  samp_b <- colnames(input_b$expr_mat)
-
-  if (!is.null(project$sample_link) && nrow(project$sample_link) > 0L) {
-    sl <- project$sample_link
-    a <- sl[sl$tag == tag_a, c("sample_id", "donor_id"), drop = FALSE]
-    b <- sl[sl$tag == tag_b, c("sample_id", "donor_id"), drop = FALSE]
-    pairs <- merge(a, b, by = "donor_id", suffixes = c("_a", "_b"))
-    pairs <- pairs[pairs$sample_id_a %in% samp_a &
-                     pairs$sample_id_b %in% samp_b, , drop = FALSE]
-    out <- data.frame(
-      donor_id = pairs$donor_id,
-      a = pairs$sample_id_a,
-      b = pairs$sample_id_b,
-      stringsAsFactors = FALSE
-    )
-  } else {
-    shared <- intersect(samp_a, samp_b)
-    if (length(shared) == 0L) {
-      stop("No shared sample IDs between '", tag_a, "' and '", tag_b,
-           "', and no `sample_link` is set on the project.")
-    }
-    out <- data.frame(
-      donor_id = shared,
-      a = shared,
-      b = shared,
-      stringsAsFactors = FALSE
-    )
+  prev <- sample_pairing_preview(project, tag_a, tag_b)
+  if (identical(prev$source, "suggested")) {
+    stop("The samples of '", tag_a, "' and '", tag_b, "' are only paired by ",
+         "a guess from their ids. Accept the pairing (save it as the ",
+         "project's `sample_link`) or add a donor column to both layers.",
+         call. = FALSE)
   }
+  pairs <- prev$pairs
+  if (nrow(pairs) == 0L) {
+    stop("No sample pairing between '", tag_a, "' and '", tag_b, "': ",
+         "no `sample_link` covers both layers, no donor column is shared, ",
+         "and no sample ids match.", call. = FALSE)
+  }
+  ambiguous <- duplicated(pairs$donor_id) | duplicated(pairs$a) |
+    duplicated(pairs$b)
+  n_ambiguous <- sum(ambiguous)
+  pairs <- pairs[!ambiguous, , drop = FALSE]
+  out <- data.frame(
+    donor_id = pairs$donor_id,
+    a = pairs$a,
+    b = pairs$b,
+    stringsAsFactors = FALSE
+  )
   names(out)[2:3] <- c(tag_a, tag_b)
+  rownames(out) <- NULL
+  attr(out, "source") <- prev$source
+  attr(out, "n_ambiguous") <- n_ambiguous
   out
 }
 
-# Build a feature mapping between two experiments. Returns a data.frame
-# with columns `feature_a`, `feature_b`, `feature_symbol`, `feature_id`.
-# Uses `feature_symbol` first (since cross-omics integration is typically
-# gene-symbol space), falling back to `feature_id`.
-build_feature_pairs <- function(project, tag_a, tag_b, by = "feature_symbol") {
-  input_a <- project$experiments[[tag_a]]
-  input_b <- project$experiments[[tag_b]]
-  feat_a <- input_a$feature_df
-  feat_b <- input_b$feature_df
-  if (!by %in% colnames(feat_a) || !by %in% colnames(feat_b)) {
+# Case- and whitespace-insensitive join key. RNA and protein tables of one
+# study routinely disagree on nothing but case (`Tp53` / `TP53`,
+# UniProt gene names vs Ensembl symbols) or carry a trailing space from a
+# spreadsheet; neither is a different gene.
+integration_join_key <- function(x) {
+  x <- toupper(trimws(as.character(x)))
+  x[!is.na(x) & !nzchar(x)] <- NA_character_
+  x
+}
+
+# Differential backends label a group contrast `up` / `down` and a
+# continuous one `positive` / `negative`. The concordance quadrants are
+# about sign, so both vocabularies mean the same thing here; anything
+# else (`ns`, a zero effect, NA) has no sign.
+direction_sign <- function(direction, effect = NULL) {
+  d <- tolower(as.character(direction))
+  out <- rep(NA_character_, length(d))
+  out[d %in% c("up", "positive")] <- "up"
+  out[d %in% c("down", "negative")] <- "down"
+  if (!is.null(effect)) {
+    miss <- is.na(out) & !is.na(effect) & !(d %in% "ns")
+    out[miss & effect > 0] <- "up"
+    out[miss & effect < 0] <- "down"
+  }
+  out
+}
+
+# Pair the features of two experiments for correlation. Returns a
+# data.frame with one row per pair: `feature_id` (unique; the gene where
+# it has one pair), `feature_symbol`, `feature_a`, `feature_b`, and
+# attribute `info` with the pairing counts. Every feature is kept: two
+# proteins of one gene are two pairs (see integration-feature-link.R).
+# `link` is the resolved feature link (resolve_feature_link()), or NULL
+# to match `by`.
+build_feature_pairs <- function(project, tag_a, tag_b, by = "feature_symbol",
+                                link = NULL) {
+  feat_a <- project$experiments[[tag_a]]$feature_df
+  feat_b <- project$experiments[[tag_b]]$feature_df
+  # With a link, a layer may carry no symbols at all (a protein table of
+  # accessions): the link says what each feature is.
+  if (is.null(link) && (!by %in% colnames(feat_a) || !by %in% colnames(feat_b))) {
     stop("`", by, "` must be a column in both experiments' `feature_df`.")
   }
-  a <- data.frame(
-    feature_a = feat_a$feature_id,
-    key = feat_a[[by]],
-    stringsAsFactors = FALSE
-  )
-  b <- data.frame(
-    feature_b = feat_b$feature_id,
-    key = feat_b[[by]],
-    stringsAsFactors = FALSE
-  )
-  a <- a[!is.na(a$key) & nzchar(a$key), , drop = FALSE]
-  b <- b[!is.na(b$key) & nzchar(b$key), , drop = FALSE]
-  a <- a[!duplicated(a$key), , drop = FALSE]
-  b <- b[!duplicated(b$key), , drop = FALSE]
-  pairs <- merge(a, b, by = "key")
+  pairs <- link_features(feat_a$feature_id, feat_a[[by]],
+                         feat_b$feature_id, feat_b[[by]], link = link)
   if (nrow(pairs) == 0L) {
-    stop("No shared `", by, "` features between '", tag_a, "' and '", tag_b, "'.")
+    if (is.null(link)) {
+      stop("No shared `", by, "` features between '", tag_a, "' and '", tag_b, "'.")
+    }
+    stop("No features of '", tag_a, "' and '", tag_b, "' are paired by the ",
+         "feature link.", call. = FALSE)
   }
-  data.frame(
-    feature_id = pairs$key,
-    feature_symbol = pairs$key,
+  out <- data.frame(
+    feature_id = pairs$feature_id,
+    feature_symbol = pairs$label,
     feature_a = pairs$feature_a,
     feature_b = pairs$feature_b,
     stringsAsFactors = FALSE
   )
+  attr(out, "info") <- attr(pairs, "info")
+  out
 }
 
 # Validate and coerce a `diff_bundles` argument: must be a named list keyed

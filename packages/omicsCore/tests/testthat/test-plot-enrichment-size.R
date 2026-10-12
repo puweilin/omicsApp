@@ -58,7 +58,7 @@ test_that("the size legend is named for the column actually mapped", {
                    "set size")
   expect_identical(size_scale_name(plot_enrich_dot(enrich_df(c(15, 9, 22, 7, 5)),
                                                    "p_value")),
-                   "overlap")
+                   "genes in list")
 })
 
 test_that("no size scale is added when nothing can be mapped to it", {

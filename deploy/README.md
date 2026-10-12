@@ -30,13 +30,24 @@ memory cannot take anyone else down with it.
 | `scripts/render.sh` | Writes the four files that carry that address from their `.template` neighbours. |
 | `rsync.exclude` | What step 0's `rsync --delete` must leave alone on the server: the secrets, `host.env`, and the rendered files. |
 | `shinyproxy/application.yml.template` | Rendered to `application.yml`; copy that to the server and fill in the client secret. |
-| `nginx/omicsapp.conf.template` | Reverse proxy: TLS, the WebSocket headers Shiny needs, and Keycloak at `/auth`. Rendered to `omicsapp.conf`. |
+| `nginx/omicsapp.conf.template` | Reverse proxy: TLS, the WebSocket headers Shiny needs, Keycloak at `/auth`, security headers and rate limits. Rendered to `omicsapp.conf`. |
 | `nginx/nginx-limits.conf` | systemd drop-in raising nginx's file-descriptor limit. |
 | `keycloak/` | The identity provider: compose file and realm definition (both rendered from `.template`), and its own README. |
-| `cron/omicsapp-backup` | Nightly backup of the work **and** the account database. |
-| `scripts/build_image.sh` | Wrapper that gets the build context right. |
+| `cron/omicsapp-backup` | Runs the nightly backup and the weekly restore drill. |
+| `scripts/backup.sh` | Dated, checksummed snapshots of the work, the account database and the configuration; copied off the host; alerts on failure. |
+| `scripts/restore_check.sh` | Restore drill: backup age, checksums, the account dump restored into a scratch database, a project opened. |
+| `backup.env.template` | Backup settings (remote host, alert hook, retention). Copy to `/etc/omicsapp/backup.env`. |
+| `scripts/build_image.sh` | Builds the image from the right context and tags it `<version>-<commit>`, a name that is never reused. |
+| `scripts/rollback.sh` | Switches the image ShinyProxy starts and restarts it — for going back, and for going live. |
+| `scripts/pin_base_digests.sh` | Resolves the third-party base images to digests and records them in `docker/base-digests.lock`. |
+| `docker/base-digests.lock` | The digest each pinned image was resolved to; the contract test holds the Dockerfile and compose file to it. |
+| `scripts/egress.sh` | Firewall rules that stop app containers opening any connection. |
+| `systemd/omicsapp-egress.service` | Re-applies those rules at boot. |
+| `docker/daemon.json` | Docker daemon settings: log rotation and no-new-privileges for every container (host-wide — read [Hardening](#hardening-once-it-works) first). |
+| `logrotate/omicsapp` | Rotation for the per-session app logs and the cron jobs' logs. |
 | `scripts/add_user.sh` | Creates an account in Keycloak and its storage directory, in that order. |
 | `scripts/list_users.sh` | Maps the UUID directory names back to people. |
+| `upgrade-checklist-1.0.md` | Step-by-step checklist (in Chinese) for a server still on `omicsapp:1.0`: backups and the restore drill, per-session logs, the signing key, loopback-only session ports. |
 
 ## The one thing every deployment sets
 
@@ -64,6 +75,15 @@ change of address — then re-copy the nginx site, bring Keycloak up again
 with the new compose file, and re-import the realm, because the address
 is baked into all three.
 
+`host.env` carries one optional second setting, `ADMIN_ALLOW_CIDR`: the
+addresses allowed to reach the administrative pages through nginx
+(Keycloak's admin console and master realm, ShinyProxy's `/admin`).
+Empty, it is the server itself — `127.0.0.1`, `::1` and `OMICSAPP_HOST`.
+See [The admin console is not on the LAN](#the-admin-console-is-not-on-the-lan).
+A third, `RATE_LIMIT_EXEMPT_CIDR`, lists the addresses nginx's rate
+limits do not count, with the same default; see
+[Security headers and rate limits](#security-headers-and-rate-limits).
+
 Everything else below is the same on any machine.
 
 ## First deployment
@@ -81,6 +101,7 @@ checked out is what ships.
 ```bash
 git checkout main
 git status --short   # must be empty, or the image matches no commit
+git rev-parse HEAD > REVISION   # the commit, for the image tag (gitignored)
 ```
 
 **Getting it onto the server.** There are no git credentials there, so
@@ -90,6 +111,10 @@ this is a copy from the machine you work on, not a `git pull`:
 rsync -avz --delete --exclude-from=deploy/rsync.exclude \
   ~/SciProject/CHISSS/omicsApp/ <user>@<server-ip>:~/omicsApp/
 ```
+
+`REVISION` travels with the copy because `.git` does not: it is how
+`build_image.sh` on the server knows which commit it is building, and so
+what to call the image (step 3).
 
 Both flags earn their place. `--delete` is what removes a script that
 was deleted upstream — otherwise it lingers on the server and someone
@@ -195,11 +220,39 @@ where all 228 packages existed still died 20 minutes in, on
 `CRAN_SNAPSHOT`, `BIOC_MIRROR`, the Bioconductor release, or either
 package list.
 
+The base image is pinned by **digest**, not only by tag: `ARG
+BASE_IMAGE=bioconductor/bioconductor_docker:RELEASE_3_20@sha256:...` in
+the Dockerfile, and `postgres:16@sha256:...` in the Keycloak compose
+file. A tag is a name its owner can move; a digest names the bytes, so a
+rebuild next year starts from the image this one was tested on.
+`deploy/scripts/pin_base_digests.sh` asks the registries and rewrites
+both, with the record in `deploy/docker/base-digests.lock`;
+`test-deploy-contract.R` fails if a reference and the lock disagree, and
+warns about any image with no recorded digest. Re-run it when you
+*choose* to take an update — a Postgres security release, a rebuilt
+base — then rebuild and test as for any change.
+
+> **TODO — Keycloak's digest.** `quay.io/keycloak/keycloak:26.7.3` is
+> still pinned by tag only: quay.io could not be reached when the others
+> were recorded. Run `deploy/scripts/pin_base_digests.sh` once from a
+> machine that can reach quay.io and commit the result; the contract
+> test warns until then.
+
 ### 3. Build (30-60 minutes)
 
 ```bash
-deploy/scripts/build_image.sh omicsapp:1.0
+deploy/scripts/build_image.sh
+# -> Built omicsapp:0.0.0.9000-1a2b3c4d5e6f
 ```
+
+The tag is `<omicsApp version>-<first 12 characters of the commit>`, and
+it is never reused: building a commit that already has an image stops
+rather than overwrite it, and uncommitted changes get a `-dirty.<time>`
+suffix so an image that matches no commit cannot pass for one that
+does. That is what makes [rolling back](#rolling-back) possible —
+yesterday's image is still on the host under its own name. Extra
+arguments add aliases (`build_image.sh omicsapp:1.0`); `latest` is
+refused, because it names whatever was built last.
 
 A failure part way through is not a restart: Docker caches each layer,
 so a fix re-runs only from the layer that failed. The Bioconductor and
@@ -212,7 +265,8 @@ This separates "does the app work" from "is ShinyProxy configured
 right". Debugging both at once is what makes a deployment take a day.
 
 ```bash
-docker run --rm -p 3838:3838 -e OMICSAPP_DATA_DIR=/tmp/data omicsapp:1.0
+TAG=omicsapp:0.0.0.9000-1a2b3c4d5e6f      # what build_image.sh printed
+docker run --rm -p 3838:3838 -e OMICSAPP_DATA_DIR=/tmp/data "$TAG"
 ```
 
 Open `http://<host>:3838` and confirm all seven views render and the
@@ -222,7 +276,7 @@ that fail silently rather than loudly:
 ```bash
 # Gene-set cache is in the image. Missing, the app still works -- it
 # just pays ~10s on every user's first enrichment, forever.
-docker run --rm omicsapp:1.0 \
+docker run --rm "$TAG" \
   R -q -e 'cat(length(list.files(Sys.getenv("OMICSCORE_GENESET_CACHE"))), "cached tables\n")'
 # expect 14
 
@@ -235,7 +289,7 @@ docker run --rm omicsapp:1.0 \
 # `R -e` session that never calls it reports `sequential` whatever the
 # image contains. That check can only ever fail, which makes it a check
 # people learn to ignore.
-docker run --rm omicsapp:1.0 \
+docker run --rm "$TAG" \
   R -q -e 'cat("supportsMulticore:", future::supportsMulticore(), "\n")'
 # expect TRUE
 ```
@@ -250,7 +304,16 @@ docker run --rm omicsapp:1.0 \
 # credentials. Neither container needs Docker DNS for anything else:
 # ShinyProxy reaches apps through a published port.
 docker network create sp-net
-docker network create omicsapp-net
+# A fixed bridge name, so the egress rules below can name it and still
+# match after the network is recreated.
+docker network create -o com.docker.network.bridge.name=br-omicsapp omicsapp-net
+
+# App containers answer ShinyProxy and open nothing themselves -- not the
+# internet, not the LAN, not Keycloak or its database, not the host's own
+# services. See "Hardening" for why, and how to check.
+sudo deploy/scripts/egress.sh apply
+sudo cp deploy/systemd/omicsapp-egress.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now omicsapp-egress
 
 sudo mkdir -p /srv/omicsapp/users            # /srv is the HDD
 sudo deploy/scripts/add_user.sh you@example.com   # once per person
@@ -277,7 +340,19 @@ sudo chmod 600 /etc/shinyproxy/application.yml
 # Spring stack trace, and exits 0 -- which systemd reports as
 # "Deactivated successfully".
 sudo chown shinyproxy:shinyproxy /etc/shinyproxy/application.yml
+
+# Where ShinyProxy writes each app session's output (container-log-path),
+# and its rotation.
+sudo install -d -o shinyproxy -g shinyproxy -m 750 /var/log/shinyproxy/containers
+sudo cp deploy/logrotate/omicsapp /etc/logrotate.d/omicsapp
+
+# The image users get: the tag build_image.sh printed (step 3).
+sudo sed -i -E "s|^([[:space:]]*container-image:[[:space:]]*).*|\1$TAG|" /etc/shinyproxy/application.yml
 ```
+
+Later image changes — upgrades and rollbacks alike — go through
+`deploy/scripts/rollback.sh`, which also restarts ShinyProxy; this once
+it is not running yet.
 
 No passwords go in this file. It names Keycloak's endpoints and carries
 one client secret, which you paste in after starting Keycloak — the
@@ -339,6 +414,28 @@ sudo ufw allow from <lan-cidr> to any port 80 proto tcp
 `restart`, not `reload`, for that first one: a reload keeps the running
 master, and the master is what holds the old limit.
 
+Then check the admin pages are closed to the LAN — from your
+workstation, not the server:
+
+```bash
+curl -sk -o /dev/null -w '%{http_code}\n' https://<server-ip>/auth/admin/          # 403
+curl -sk -o /dev/null -w '%{http_code}\n' https://<server-ip>/auth/realms/master/  # 403
+curl -sk -o /dev/null -w '%{http_code}\n' https://<server-ip>/auth/realms/omicsapp/account  # 200 or 302
+```
+
+And that the security headers arrive, once each:
+
+```bash
+curl -skI https://<server-ip>/ | grep -iE 'strict-transport|x-frame|x-content-type|referrer|permissions|content-security'
+# Strict-Transport-Security: max-age=31536000
+# X-Content-Type-Options: nosniff
+# X-Frame-Options: SAMEORIGIN
+# Referrer-Policy: same-origin
+# Permissions-Policy: camera=(), ...
+# Content-Security-Policy: frame-ancestors 'self'; object-src 'none'; base-uri 'self'
+# Content-Security-Policy-Report-Only: default-src 'self'; ...
+```
+
 `<lan-cidr>` is the network's real prefix, read from `ip -br addr` on
 the host rather than assumed. A rule written as a `/24` on a `/21`
 admits a quarter of the building and refuses the rest, and it stays
@@ -368,8 +465,8 @@ Walk one real dataset through, checking each line:
 | Upload, confirm import | Project appears |
 | Re-upload the **same** file | "already loaded" — nothing is cleared |
 | Upload a **different** file | Dialog naming the analyses that will be cleared |
-| Run QC and a differential analysis | Volcano is two-coloured; caption reads `adj_p_value < 0.05` |
-| Drag the FDR slider | Hit table changes, **volcano does not** |
+| Run QC and a differential analysis | Volcano shows up in red, down in blue; card reads "significant = adjusted p < 0.05 and \|log2FC\| ≥ 0.263" |
+| Drag the FDR slider | Hit table, stat cards and volcano all change together; the card's line states the new cut |
 | Report view | "Analysis code" shows the calls; downloads as `.R` |
 | Project view, Save as | Appears under "My projects" |
 | Close the tab, log back in | "Restore last session" works |
@@ -547,6 +644,8 @@ than into the container.
 | `OMICSCORE_GENESET_CACHE` | `/opt/genesets` | Pre-built gene-set tables (MSigDB at build time, current KEGG after a refresh — see Operations). A missing or unreadable cache costs ~10s on first enrichment, never a wrong answer. |
 | `OMICSCORE_GENESET_TTL_DAYS` | `30` | Age at which a **live-sourced** KEGG cache re-fetches itself from KEGG REST on next use. `0` disables. Prewarmed MSigDB tables never trigger network calls. |
 | `OMP_NUM_THREADS` | `1` | One BLAS thread per worker. |
+| `OMICSAPP_SIGNING_KEY` | unset | Key the store signs project files with. Unset, each user's store generates one and keeps it as `.omicsapp-signing-key`. See [Project files are signed](#project-files-are-signed). |
+| `OMICSAPP_MAX_PROCS` | `2048` | Soft cap on processes for the app's uid (`ulimit -u`), standing in for `--pids-limit`. Per uid, shared by every user's container. |
 
 ## Operations
 
@@ -555,56 +654,87 @@ attack, and `.omp` files are the irreplaceable part: a raw upload can
 usually be exported from the instrument again, the analysis parameters
 encoded in a project cannot.
 
-The data is on the HDD, so the backup goes to the **SSD** — a different
-physical disk, which is the point. There is ample room: 75 GB a year
-against 4 TB.
+`deploy/scripts/backup.sh` does the whole job; the header of the script
+says what it keeps and why. In short, every night it writes a **dated
+snapshot** of:
 
-**Two directories, not one.** `users/` is the work; `keycloak-db/` is
-the accounts. Without the second, a restore gives you every file and
-nobody who can log in to reach it — and the directory names are UUIDs,
-so there is no way to work out whose is whose after the fact.
+* `/srv/omicsapp/users/` — the work;
+* the Keycloak account database, as a `pg_dump` that is checked before it
+  replaces anything (and the database files as a fallback). Without it a
+  restore gives you every file and nobody who can log in to reach it —
+  the directory names are UUIDs, so there is no way to work out whose is
+  whose after the fact;
+* the live ShinyProxy configuration (`/etc/shinyproxy/application.yml`,
+  which alone holds the client secret and `OMICSAPP_SIGNING_KEY`) and
+  the rendered configuration (nginx, Keycloak `.env` and realm, `host.env`), the TLS certificate and key, the cron files and
+  the refreshed gene-set cache — what it takes to stand the service up
+  again, plus `/etc/docker/daemon.json`, the logrotate file and the
+  egress unit;
+* the logs (`LOG_PATHS`): ShinyProxy's own and every app session's
+  (`/var/log/shinyproxy`), nginx's, and these jobs' — so the record of
+  what happened survives the disk it was written on;
+* `MANIFEST.sha256` (every file's checksum) and `IMAGE` (the digest and
+  tag of the image ShinyProxy is configured to run, read from
+  `application.yml`).
+
+Each user's directory also holds the store's signing key
+(`.omicsapp-signing-key`) when `OMICSAPP_SIGNING_KEY` is not set, so the
+snapshot of `users/` carries what is needed to open its projects.
+
+Unchanged files are hard links to the previous snapshot, so a night costs
+only what changed. Snapshots are kept for 14 days, then one per week for
+8 weeks. With `BACKUP_REMOTE` set they are also copied, with their
+history, to **another machine** — without it the backup shares the
+host's fate (fire, theft, an OS reinstall). Any failure is sent to
+`ALERT_WEBHOOK` and/or `ALERT_EMAIL` and logged; the script exits
+non-zero and the earlier snapshots are untouched.
 
 ```bash
-sudo mkdir -p /backup/omicsapp
-sudo rsync -a --delete /srv/omicsapp/users/       /backup/omicsapp/users/
-sudo rsync -a --delete /srv/omicsapp/keycloak-db/ /backup/omicsapp/keycloak-db/
-```
-
-The schedule is a file in the repository rather than something to
-transcribe:
-
-```bash
+sudo mkdir -p /etc/omicsapp /backup/omicsapp
+sudo cp deploy/backup.env.template /etc/omicsapp/backup.env
+sudo chmod 600 /etc/omicsapp/backup.env
+sudo $EDITOR /etc/omicsapp/backup.env       # BACKUP_REMOTE, ALERT_WEBHOOK, ...
+sudo deploy/scripts/backup.sh               # once by hand: it should end with "done"
 sudo cp deploy/cron/omicsapp-backup /etc/cron.d/omicsapp-backup
 sudo chmod 644 /etc/cron.d/omicsapp-backup
 ```
 
-It takes a `pg_dump` of the account database as well as copying the
-files. Copying Postgres' files while it is running gives you something
-that may need crash recovery to open; the dump gives you something that
-restores. The dumps are named by day of week, so seven of them rotate
-themselves — a single overwritten file would propagate a corruption on
-the first night nobody noticed.
+The cron file expects the deployed checkout at `/opt/omicsApp` (set
+`REPO_DIR` and the paths in the cron file if it is elsewhere). For
+`BACKUP_REMOTE`, give root an ssh key the other machine accepts — cron
+cannot answer a password prompt.
 
 `chmod 644` is not decoration: cron silently ignores a file in
 `/etc/cron.d` that is group- or world-writable, so a stricter-looking
 mode gets you no backups and no error.
 
-Check it ran, the morning after:
+**The restore drill.** A backup that has never been restored is a hope.
+Every Sunday the cron file runs `deploy/scripts/restore_check.sh`, which
+alerts when the newest backup is more than 36 hours old, verifies the
+checksums, restores the Keycloak dump into a throwaway Postgres container
+and counts the accounts, opens a random project with the image's own
+`load_project()`, and checks that the remote copy has the latest snapshot.
+Run it by hand after setting up, and after any change to the server:
 
 ```bash
-ls -l /backup/omicsapp/ /backup/omicsapp/users/ | head
+sudo deploy/scripts/restore_check.sh        # ends with "all checks passed"
 ```
 
-Two things this does not cover, so decide about them explicitly:
+**Restoring.** Stop ShinyProxy and Keycloak, then from the snapshot you
+want (`/backup/omicsapp/latest` or a dated one under `snapshots/`):
 
-* **An OS reinstall wipes the SSD, and the backup with it.** The data
-  itself survives on the HDD, which is why it is there — but you would
-  be running without a backup until the SSD is repopulated. Copy
-  `/backup` somewhere else before reinstalling.
-* **`--delete` mirrors deletions.** A file removed on Monday is gone
-  from the backup on Tuesday. That is a mirror, not history; if you want
-  to recover a project someone deleted last week, use a snapshotting
-  filesystem or `rsync --link-dest` rotations instead.
+```bash
+S=/backup/omicsapp/latest
+(cd "$S" && sha256sum --quiet -c MANIFEST.sha256)          # nothing printed = intact
+sudo rsync -a "$S/users/" /srv/omicsapp/users/
+docker compose -f deploy/keycloak/docker-compose.yml up -d keycloak-db
+gunzip -c "$S/keycloak.sql.gz" | docker exec -i keycloak-db psql -U keycloak keycloak
+# configuration, if the host itself was lost:
+ls "$S/config"     # deploy/... files and host/etc/... (certificate, cron)
+```
+
+Hard-linked snapshots share unchanged files, so never edit a file inside
+a snapshot: copy it out first.
 
 **Keeping KEGG current.** The image bakes the MSigDB tables in, and the
 `kegg` table among them is the 2011 `KEGG_LEGACY` snapshot (186 human
@@ -616,7 +746,7 @@ schedule:
 
 ```bash
 # one-time: seed the volume, then mount it in application.yml with
-#   container-volumes: [ ..., "/srv/omicsapp/genesets:/opt/genesets" ]
+#   container-volumes: [ ..., "/srv/omicsapp/genesets:/opt/genesets:ro" ]
 mkdir -p /srv/omicsapp/genesets
 docker run --rm -v /srv/omicsapp/genesets:/opt/genesets omicsapp:1.0 \
   R -q -e 'for (org in c("Hs","Mm")) omicsCore::refresh_geneset_cache(organism = org, force = TRUE)'
@@ -626,6 +756,12 @@ docker run --rm -v /srv/omicsapp/genesets:/opt/genesets omicsapp:1.0 \
 # /etc/cron.d/omicsapp-genesets — monthly, 03:00 on the 1st
 0 3 1 * * root docker run --rm -v /srv/omicsapp/genesets:/opt/genesets omicsapp:1.0 R -q -e 'for (org in c("Hs","Mm")) omicsCore::refresh_geneset_cache(organism = org, force = TRUE)' >> /var/log/omicsapp-genesets.log 2>&1
 ```
+
+(Use the tag ShinyProxy runs — `grep container-image
+/etc/shinyproxy/application.yml` — in place of `omicsapp:1.0`.) These
+runs are on Docker's default network, not `omicsapp-net`, which is why
+they can reach KEGG while the app containers cannot; the app's
+`OMICSCORE_GENESET_TTL_DAYS: "0"` in `application.yml` stops it trying.
 
 The mount shadows the baked copy, which is why the seed run writes all
 databases, not just KEGG. A failed fetch keeps the previous file, so
@@ -640,13 +776,109 @@ deployment-local data, never as something to publish or commit.
 cached, so a rebuild is a couple of minutes rather than an hour.
 
 ```bash
-deploy/scripts/build_image.sh omicsapp:1.1
-# then update container-image in application.yml and restart ShinyProxy
+git rev-parse HEAD > REVISION && rsync ...      # on your machine, as in step 0
+deploy/scripts/build_image.sh                   # on the server
+sudo deploy/scripts/rollback.sh <the tag it printed>
 ```
 
-**Where the logs are.** ShinyProxy writes to
-`/var/log/shinyproxy/shinyproxy.log`; a container's own R output is in
-`docker logs <container>`.
+### Rolling back
+
+Every build keeps its own tag, `<version>-<commit>`, and `rollback.sh`
+puts any of them live:
+
+```bash
+sudo deploy/scripts/rollback.sh --list     # images on this host, the one running, recent switches
+sudo deploy/scripts/rollback.sh omicsapp:0.0.0.9000-1a2b3c4d5e6f
+```
+
+It refuses an image that is not on the host, copies `application.yml`
+to `application.yml.bak-<time>`, rewrites its `container-image:` line,
+appends `<time> <old> -> <new>` to `/etc/shinyproxy/image-history`,
+restarts ShinyProxy and waits for it to answer. Restarting ends every
+running session — the app autosaves, so users reload and restore — so
+it asks first; `--yes` skips the question. Going live with a new build
+is the same command, which is why the old tag is always one
+`--list` away.
+
+What keeps the old images there: nothing deletes them but you. Do not
+run `docker image prune -a` on this host — between sessions no
+container uses the app image, so it counts as unused and goes.
+`docker save` the ones you want to keep beyond the disk (see
+[Reinstalling the host](#reinstalling-the-host)); `rollback.sh` tells
+you to `docker load` one that is missing.
+
+Projects need no rollback of their own. A file written by a newer
+release opens in an older one: the signature trailer is invisible to a
+release that predates it, and `schema_version` stays at `1.x` for as
+long as older readers can cope (each `.omp` also records an integer
+`format_version`, and `load_project()` upgrades older files through
+registered migrations). One wrinkle, rolling *forward* again past the
+release that introduced signing: projects the older release saved in
+the meantime are unsigned, and the store now refuses them. Let it adopt
+them by re-running its one-time check (next section):
+
+```bash
+sudo rm /srv/omicsapp/users/*/.omicsapp-signatures
+```
+
+### Project files are signed
+
+The app opens only project files it wrote. A `.omp` is a serialised R
+object, and reading one builds whatever it describes, so a file put in
+someone's directory by anything other than the app — a copied-in file, a
+restore from a doubtful source, another process on the host — is a way
+to run code as that user. Every project and autosave the store writes
+ends in an HMAC-SHA256 signature, which is checked *before* the file is
+read; an unsigned or altered file is refused with "was not saved by this
+app" or "has been changed since this app saved it".
+
+**The key.** Set `OMICSAPP_SIGNING_KEY` under `container-env` in
+`application.yml` (the commented line is there), on the server only,
+like the client secret:
+
+```bash
+openssl rand -hex 32
+```
+
+Unset, each user's store generates its own key on first use and keeps
+it in `/srv/omicsapp/users/<sub>/.omicsapp-signing-key` (mode 600). That
+works, but the key then sits beside the files it protects, so anything
+that can write there can read it too; the setting is the stronger
+arrangement. Switching to it later is safe: on its next use a store
+re-signs its files under the new key and deletes the old key file.
+Removing the setting again is not — the stores would generate fresh keys
+and refuse their own files until it is put back.
+
+**Existing stores.** The first time a store is used by a release with
+signing, it signs every existing unsigned project and snapshot that
+passes a structure check — data only, no functions, environments,
+external pointers or unexpected classes — and writes
+`.omicsapp-signatures` to record that the check ran. The project bytes
+are not rewritten, only signed. A file that fails the check is left
+alone, refused when opened, and named in the container log
+(`/var/log/shinyproxy/containers/`). After that one run, an unsigned
+file is refused: the store did not write it. Delete
+`.omicsapp-signatures` to run the check again, e.g. after a rollback.
+
+There is no other way into the app for a project file: it opens projects
+only from the user's own store, never from an upload.
+
+### Where the logs are
+
+All on the host, all rotated, all in the backup:
+
+| What | Where | Rotated by |
+|---|---|---|
+| ShinyProxy | `/var/log/shinyproxy/shinyproxy.log` | Spring Boot itself (`logging.logback.rollingpolicy` in `application.yml`): 10 MB files, 30 days, 1 GB cap |
+| Each app session's R output | `/var/log/shinyproxy/containers/` (`proxy.container-log-path`) | `deploy/logrotate/omicsapp` |
+| nginx | `/var/log/nginx/omicsapp.{access,error}.log` | the distribution's logrotate |
+| Keycloak and Postgres | `docker logs keycloak` / `keycloak-db` | the compose file's `logging:` (local driver, 5 × 10 MB) |
+| Backup and restore drill, gene-set refresh | `/var/log/omicsapp-backup.log`, `/var/log/omicsapp-genesets.log` | `deploy/logrotate/omicsapp` |
+
+The per-session files matter more than they look: ShinyProxy removes a
+container when its session ends, and `docker logs` goes with it, so
+without `container-log-path` the R error behind "it crashed yesterday"
+no longer exists anywhere.
 
 ## Reinstalling the host
 
@@ -699,7 +931,7 @@ What to preserve, in order of how much it hurts to lose:
 | | Where | Note |
 |---|---|---|
 | User data | `/srv/omicsapp/users` | On the HDD; do not format that disk |
-| ShinyProxy config | `/etc/shinyproxy/application.yml` | Contains password hashes — copy with mode 600 |
+| ShinyProxy config | `/etc/shinyproxy/application.yml` | Contains the client secret and, if set, `OMICSAPP_SIGNING_KEY` — copy with mode 600. Without that key the projects will not open |
 | The image | `docker save` | Rebuildable, but that is an hour |
 | nginx site | `/etc/nginx/sites-available/omicsapp` | Rendered from `nginx/omicsapp.conf.template` and `host.env` |
 | The code | — | On GitHub; nothing to do |
@@ -759,3 +991,225 @@ Those two are what a compromise in one of the image's 224 R packages
 would run into. Keep them, and rebuild the image periodically so those
 packages get their patches — dependencies age whether or not anyone is
 watching.
+
+### The admin console is not on the LAN
+
+nginx serves Keycloak's admin console and admin API (`/auth/admin/`),
+the master realm its administrator signs in through
+(`/auth/realms/master/`), Keycloak's health and metrics paths,
+ShinyProxy's admin page (`/admin`) and Spring's actuator paths only to
+the addresses in `ADMIN_ALLOW_CIDR` (`deploy/host.env`); everyone else
+gets 403. Users never need any of them — their own account page,
+`/auth/realms/omicsapp/account`, stays open. The check uses nginx's
+normalised path, the same one it forwards, so `/auth//admin` or
+`/auth/%61dmin` cannot get past it. Keycloak (8180), ShinyProxy (8081)
+and its actuator (9091) listen on 127.0.0.1 only, so nginx is the only
+way to them from the network.
+
+The default list is the server itself. To use the console:
+
+* **through the server** — `ssh -D 1080 <you>@<server>`, set the
+  browser's SOCKS proxy to `localhost:1080`, and open
+  `https://<server>/auth/admin/`. The request then comes from the
+  server's own address, which is on the list. Nothing to change;
+* **from a fixed workstation** — add its address to `host.env`
+  (`ADMIN_ALLOW_CIDR="127.0.0.1 ::1 <server-ip> <workstation-ip>"`),
+  re-run `render.sh`, re-copy the nginx site and `sudo nginx -t && sudo
+  systemctl reload nginx`.
+
+`add_user.sh` and `list_users.sh` talk to Keycloak on 127.0.0.1:8180
+directly and are unaffected.
+
+### Security headers and rate limits
+
+nginx adds these to every HTTPS response, error pages included
+(`nginx/omicsapp.conf.template` explains each in place):
+
+| Header | Value | Why |
+|---|---|---|
+| `Strict-Transport-Security` | `max-age=31536000` | After one visit the browser goes straight to `https://` for a year. No `includeSubDomains` (the server does not own its parent domain's other names) and no `preload` (months to undo). Browsers ignore it on a bare IP address and over a certificate they were told to accept, so on a LAN with a self-signed certificate it does nothing until a real certificate is in place. |
+| `X-Content-Type-Options` | `nosniff` | A file is only ever run as what the server said it is. |
+| `X-Frame-Options` | `SAMEORIGIN` | ShinyProxy shows the app in an iframe of its own page on the same origin; no other site may frame it. |
+| `Referrer-Policy` | `same-origin` | Links out of the app (a pathway database, say) do not carry the app's internal URLs with them. |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=()` | Nothing here uses them. |
+| `Content-Security-Policy` | `frame-ancestors 'self'; object-src 'none'; base-uri 'self'` | Enforced: the part known to be safe for Shiny and ShinyProxy. |
+| `Content-Security-Policy-Report-Only` | `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; ...` | **Not enforced** — see below. |
+
+ShinyProxy and Keycloak send some of these themselves, with other
+values (both send HSTS with `includeSubDomains`; Spring's default
+framing rule is `DENY`). nginx hides theirs and sends its own, so the
+browser sees each header once. Under `/auth/` it leaves Keycloak's
+`X-Frame-Options`, `Content-Security-Policy` and `Referrer-Policy` alone:
+Keycloak tunes those per realm (*Realm settings → Security defenses*)
+to what its login pages and admin console need.
+
+**The full Content-Security-Policy is report-only.** Shiny needs inline
+scripts and styles, the table and plot widgets evaluate JavaScript from
+strings, and ShinyProxy's own pages carry inline script, so a policy
+that allows all of that is still not proven to allow everything — and
+an enforced policy that misses one thing gives a page that loads and
+then does nothing. In report-only mode the browser blocks nothing and
+writes what it *would* have blocked to the developer console
+(F12 → Console, "Content-Security-Policy-Report-Only"). To enforce it:
+go through a full session — sign in, import, run each analysis, open
+and download a report, sign out — with the console open; if nothing is
+reported, rename `Content-Security-Policy-Report-Only` to
+`Content-Security-Policy` in the template (merging it with the
+enforced one), re-render, re-copy the site and reload nginx.
+
+Rate limits, per client address, answered with `429` when spent:
+
+| Budget | What | Rate | Burst |
+|---|---|---|---|
+| `omicsapp_login` | Keycloak's password form (`/auth/realms/*/login-actions/`) and token endpoint | 10 a minute | 10 |
+| `omicsapp_general` | every other request | 20 a second | 200, no delay |
+
+A person signing in uses two or three login requests; opening the app
+fetches a few dozen files at once, which the burst absorbs. Keycloak's
+own brute-force lockout (`bruteForceProtected` in the realm) still
+applies on top — that one is per account, this one per address.
+
+Two things are never counted:
+
+* **Shiny's WebSocket.** It is one request that then carries the whole
+  session, so its traffic is not counted anyway; the upgrade itself is
+  exempt too, so a tab reconnecting in a loop after a network blip does
+  not spend its user's budget and grey out the app with a 429 nobody
+  sees.
+* **The server itself.** ShinyProxy fetches every user's tokens from
+  Keycloak through nginx (its `token-url` is the public address), from
+  the server's own address. Counted, that one address would lock
+  everyone out of signing in together. The list is
+  `RATE_LIMIT_EXEMPT_CIDR` in `host.env`; empty, it is `127.0.0.1`,
+  `::1` and `OMICSAPP_HOST`. If `OMICSAPP_HOST` is a name that resolves
+  differently on the server than for users, put the server's real
+  address there.
+
+Users behind one NAT share one budget. At this deployment's size that
+is still far from the limit; if 429s ever appear in
+`/var/log/nginx/omicsapp.error.log` ("limiting requests") during normal
+use, raise the burst in the template rather than exempting the NAT,
+which would exempt everyone behind it.
+
+### What confines an app container
+
+| | How | Where |
+|---|---|---|
+| Memory, CPU | `container-memory-limit: 6g`, `container-cpu-limit: 2` | `application.yml` |
+| No privileged mode | `container-privileged: false` | `application.yml` |
+| Ports on loopback only | `proxy.docker.target-bind-ip: 127.0.0.1` | `application.yml` |
+| No outbound connections | `omicsapp-net` + `scripts/egress.sh` (below) | step 5 |
+| No capabilities, no privilege gain | runs as an unprivileged user; the image strips every setuid/setgid bit and file capability, and the build fails if one survives | `docker/Dockerfile` |
+| Process cap | `ulimit -u ${OMICSAPP_MAX_PROCS:-2048}` before R starts | `docker/Dockerfile` (`CMD`) |
+| no-new-privileges, log rotation | daemon-wide defaults | `docker/daemon.json` (below) |
+| Read-only root filesystem | not available through ShinyProxy; CI runs the image with `--read-only` and tmpfs `/tmp`, `/home/omics`, `/data` (the last two owned by the app user, as a writable home must be) so it is known to work | `.github/workflows/production-image.yaml` |
+
+The gaps are ShinyProxy's, not choices: its Docker backend (3.2.x,
+`ContainerSpec`/`DockerEngineBackend` in containerproxy) passes memory
+and CPU limits and requests, networks, DNS, volumes, environment,
+labels, `privileged`, `docker-ipc`, `docker-runtime`, `docker-user`,
+`docker-group-add` and device requests — and nothing for `--cap-drop`,
+`--security-opt`, `--read-only`, `--pids-limit` or `--tmpfs`. Keys for
+those in `application.yml` would look like hardening and do nothing, so
+the table above puts each protection where it can actually take effect.
+The process cap is per uid rather than per container (every user's
+container runs as uid 1001), which is why it is generous.
+
+The Keycloak containers, which compose starts, get the real thing:
+`no-new-privileges`, `cap_drop: [ALL]` (Postgres keeps the five its
+entrypoint needs to set up its directory and drop to `postgres`),
+`pids_limit`, `mem_limit`, `cpus`, rotated logs, and a read-only root
+for Postgres with tmpfs for its socket and `/tmp`. Keycloak's own root
+stays writable: `start` re-augments the server when its build options
+differ from the image's. Apply with `docker compose up -d` in
+`deploy/keycloak/`.
+
+**Docker daemon defaults.** `deploy/docker/daemon.json` sets the `local`
+log driver with rotation (5 × 10 MB per container) and
+`no-new-privileges` for every new container. It is host-wide: on this
+shared machine it applies to colleagues' containers too, and
+no-new-privileges breaks any of theirs that relies on `sudo` or another
+setuid program inside. Ask first; drop that line if anyone needs it.
+Merge it into an existing `/etc/docker/daemon.json` rather than
+overwriting, then:
+
+```bash
+sudo systemctl restart docker     # stops every container on the host
+```
+
+Containers created before the restart keep their old settings until
+recreated (`docker compose up -d --force-recreate` for Keycloak).
+
+### App containers cannot reach the network
+
+They need nothing outbound: gene sets come from the image or the
+pre-warmed volume, and ShinyProxy is the one that connects *in*. So
+`deploy/scripts/egress.sh` drops every new connection a container on
+`omicsapp-net` opens — in Docker's `DOCKER-USER` chain (the internet, the
+LAN, other Docker networks, Keycloak and its database included) and in
+`INPUT` (the host's own services: sshd, nginx, a colleague's :8080).
+Replies to ShinyProxy's connections are not new connections, so the app
+is unaffected. `omicsapp-egress.service` puts the rules back after a
+reboot.
+
+Not `docker network create --internal`, which would be simpler: an
+internal network has no published ports, and a published port is how a
+ShinyProxy running on the host reaches its containers.
+
+Check it, with a session running:
+
+```bash
+sudo deploy/scripts/egress.sh check
+docker run --rm --network omicsapp-net "$TAG" \
+  R -q -e 'tryCatch({readLines(url("https://cran.r-project.org"), 1); cat("OPEN\n")}, error = function(e) cat("blocked\n"))'
+# expect: blocked
+```
+
+With Docker's opt-in nftables firewall backend there is no
+`DOCKER-USER` chain; the script says so, and the equivalent rule goes
+into Docker's nftables setup instead.
+
+## What CI checks
+
+Everything in this directory is checked on every push, to any branch,
+and on every pull request — not only on `main`. The workflows are in
+`.github/workflows/`:
+
+| Workflow | What | Blocking |
+|---|---|---|
+| `R-CMD-check.yaml` | `R CMD check --as-cran` on Ubuntu with R release and the previous R minor (both packages) and on macOS with R release (omicsCore); then the tests that read the repository rather than the installed package, run from the source tree | yes |
+| `production-image.yaml` | Builds `docker/Dockerfile`, smoke-tests it confined, runs both suites inside it (R 4.4.2, Bioconductor 3.20, the pinned CRAN snapshot) | yes |
+| `lint.yaml` | `shellcheck` on `scripts/*.sh`; `hadolint` on the Dockerfile (ignored rules and their reasons in `.hadolint.yaml` at the repository root); `actionlint` on the workflows; every action pinned to a commit SHA; `lintr` on both packages | all but `lintr` |
+| `coverage.yaml` | omicsCore's test coverage: a per-file table on the run's summary page and `coverage.xml` (Cobertura) as an artifact. No secrets, no threshold | no |
+| `nightly.yaml` | 02:37 UTC and on demand: the performance budget (`OMICSCORE_PERF_TESTS=1`) and the heavy-engine fuzz sweep (`OMICSCORE_FUZZ_TESTS=1`) | — |
+
+**The deploy contract runs under check.** `test-deploy-contract.R`
+(in omicsApp) reads this directory, and the hygiene tests read the
+package sources; R CMD check runs tests from a copy in
+`<pkg>.Rcheck/`, where neither is beside them, so they used to skip on
+every CI run. CI sets `OMICSAPP_REPO_ROOT` to the checkout and they run;
+set to a path without the repository, it is an error rather than a
+skip. Unset — an install from a tarball, CRAN-style — they still skip
+cleanly. `.github/scripts/run-source-tests.R` runs the remaining
+source-reading tests from the source tree and fails if any of them
+skipped for want of it. To run the contract locally:
+
+```bash
+Rscript -e 'devtools::load_all("packages/omicsApp"); testthat::test_file("packages/omicsApp/tests/testthat/test-deploy-contract.R")'
+```
+
+**lintr reports but does not fail yet.** It had never been run over this
+code, so its first runs list a backlog, not regressions; the findings
+appear as annotations on a pull request's changed lines. `.lintr` at the
+repository root allows 120-character lines and turns off the linters
+that disagree with the existing style or need the package loaded
+(object names, object usage, indentation, commented code). Once the
+backlog is cleared, set `LINTR_ERROR_ON_LINT: "true"` in `lint.yaml`.
+
+**Actions are pinned to commit SHAs**, with the release in a comment
+(`actions/checkout@<sha> # v4.4.0`): a tag can be moved to other code, a
+SHA cannot. Dependabot (`.github/dependabot.yml`) proposes updates
+monthly, SHA and comment together. `.github/scripts/pin-actions.sh`
+checks that each SHA is what its tag says; `--update` re-pins from the
+tags. The linters themselves are fixed versions checked against
+recorded SHA-256 sums (`.github/scripts/install-lint-tools.sh`).

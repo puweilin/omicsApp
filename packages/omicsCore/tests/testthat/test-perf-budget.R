@@ -14,8 +14,11 @@
 # The ceilings are loose -- about three times what a 2023 laptop needs
 # -- so they catch a change of algorithm, not a busy machine.
 
+# The nightly workflow (.github/workflows/nightly.yaml) sets it. Any
+# value but empty, 0, false or no switches it on, so a job can turn it
+# off with OMICSCORE_PERF_TESTS=0 rather than having to unset it.
 skip_unless_perf <- function() {
-  skip_if(!nzchar(Sys.getenv("OMICSCORE_PERF_TESTS", "")),
+  skip_if(tolower(Sys.getenv("OMICSCORE_PERF_TESTS", "")) %in% c("", "0", "false", "no"),
           "set OMICSCORE_PERF_TESTS=1 to run the performance budget")
 }
 
