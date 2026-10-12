@@ -143,7 +143,7 @@ wrap_one_label <- function(s, width, max_lines) {
   lines <- c(lines, cur)
   if (length(lines) > max_lines) {
     lines <- lines[seq_len(max_lines)]
-    lines[max_lines] <- paste0(lines[max_lines], "…")
+    lines[max_lines] <- paste0(lines[max_lines], "\u2026")
   }
   paste(lines, collapse = "\n")
 }

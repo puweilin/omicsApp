@@ -81,10 +81,10 @@ resolve_enrich_p_col <- function(enrich_df, p_preference) {
 ora_list_caption <- function(params) {
   if (!identical(params$type, "ora") || is.null(params$direction)) return("")
   switch(params$direction,
-         separate = " · up- and down-regulated genes tested separately",
-         up = " · up-regulated genes",
-         down = " · down-regulated genes",
-         both = " · up and down pooled",
+         separate = " \u00B7 up- and down-regulated genes tested separately",
+         up = " \u00B7 up-regulated genes",
+         down = " \u00B7 down-regulated genes",
+         both = " \u00B7 up and down pooled",
          "")
 }
 

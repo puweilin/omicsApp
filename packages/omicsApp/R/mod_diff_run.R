@@ -147,3 +147,6 @@ diff_run_server <- function(input, output, session, active, default_contrast,
 
   list(do_run = do_run, run_continuous = run_continuous)
 }
+
+# Supplied to detached_call() by name and evaluated in the worker.
+utils::globalVariables("inp")

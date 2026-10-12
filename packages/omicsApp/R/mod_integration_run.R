@@ -278,3 +278,6 @@ match_partner_col <- function(col, partner) {
   if (!is.null(d$group_col) && d$group_col %in% nms) return(d$group_col)
   NULL
 }
+
+# Supplied to detached_call() by name and evaluated in the worker.
+utils::globalVariables("ap_org")

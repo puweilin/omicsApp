@@ -418,7 +418,7 @@ enrich_params_card <- function(ns) {
 
 # Supplied to the worker function's environment by detached_call(), which
 # codetools cannot see.
-utils::globalVariables("bundle")
+utils::globalVariables(c("bundle", "org"))
 
 # The Direction control, in plain words. "both" keeps its old meaning --
 # up and down pooled -- so a project saved before "separate" existed

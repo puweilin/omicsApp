@@ -201,7 +201,7 @@ plot_hover_card <- function(text, event, width = NA_real_, height = NA_real_) {
 
 hover_num <- function(x, digits = 2L) {
   x <- suppressWarnings(as.numeric(x))
-  if (!length(x) || is.na(x[[1L]])) return("—")
+  if (!length(x) || is.na(x[[1L]])) return("\u2014")
   # round() first: -0.03 at one digit is "0.0", not "-0.0".
   x <- round(x[[1L]], digits) + 0
   formatC(x, format = "f", digits = digits)
@@ -211,7 +211,7 @@ hover_num <- function(x, digits = 2L) {
 # as in the result tables.
 hover_p <- function(p) {
   p <- suppressWarnings(as.numeric(p))
-  if (!length(p) || is.na(p[[1L]])) return("—")
+  if (!length(p) || is.na(p[[1L]])) return("\u2014")
   p <- p[[1L]]
   if (p < 1e-3) formatC(p, format = "e", digits = 1L)
   else format(signif(p, 2L), scientific = FALSE)
@@ -227,7 +227,7 @@ pca_hover_text <- function(row, p) {
   rows <- character(0)
   if (!is.null(group_col) && group_col %in% names(row)) {
     g <- as.character(row[[group_col]][[1L]])
-    rows[[group_col]] <- if (is.na(g)) "—" else g
+    rows[[group_col]] <- if (is.na(g)) "\u2014" else g
   }
   rows[["PC1"]] <- hover_num(row$PC1, 1L)
   rows[["PC2"]] <- hover_num(row$PC2, 1L)
@@ -277,7 +277,7 @@ effect_pair_hover_text <- function(row, p) {
   note <- if (is.na(cls) || identical(cls, "background")) {
     "not a hit in both layers"
   } else {
-    paste("hit in both layers ·", hover_legend_word(p, cls))
+    paste("hit in both layers \u00B7", hover_legend_word(p, cls))
   }
   list(title = hover_feature_name(row, p), rows = rows, note = note)
 }
@@ -331,7 +331,7 @@ active_pathways_hover_text <- function(row, p) {
 # pointed at, and with no spaces it broke mid-word on a phone.
 hover_pathway_name <- function(x) {
   x <- as.character(x)
-  if (is.na(x)) return("—")
+  if (is.na(x)) return("\u2014")
   pretty <- tryCatch(utils::getFromNamespace("prettify_gene_set_name", "omicsCore"),
                      error = function(e) function(x) trimws(gsub("_", " ", x, fixed = TRUE)))
   pretty(x)

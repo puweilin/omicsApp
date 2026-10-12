@@ -127,3 +127,6 @@ diff_anova_server <- function(input, output, session, active, default_contrast, 
 
   anova_hits
 }
+
+# Supplied to detached_call() by name and evaluated in the worker.
+utils::globalVariables("inp")

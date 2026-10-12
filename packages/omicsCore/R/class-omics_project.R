@@ -213,6 +213,7 @@ validate_sample_link <- function(sample_link, tags) {
 #' inp <- omics_input(
 #'   matrix(rnorm(40, 20), 10, dimnames = list(paste0("P", 1:10), paste0("S", 1:4))),
 #'   data.frame(group = c("a", "a", "b", "b"), row.names = paste0("S", 1:4)),
+#'   data.frame(feature_id = paste0("P", 1:10), row.names = paste0("P", 1:10)),
 #'   omics_type = "proteomics", assay_type = "normalized_intensity")
 #' proj <- omics_project("demo", list(batch1 = inp))
 #' b <- new_analysis_bundle("run_qc", input_info = list(omics_type = "proteomics",

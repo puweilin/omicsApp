@@ -437,7 +437,7 @@ plot_heatmap_ggplot <- function(mat, labels = rownames(mat), title = NULL,
 
   # Row names to the left of the tiles. Long ones are cut: a 40-character
   # identifier took half a phone's width.
-  short <- ifelse(nchar(labels) > 20L, paste0(substr(labels, 1L, 19L), "…"), labels)
+  short <- ifelse(nchar(labels) > 20L, paste0(substr(labels, 1L, 19L), "\u2026"), labels)
   named <- if (show_rownames) rep(TRUE, n_row) else highlight
   row_txt <- data.frame(y = ypos[named], text = short[named],
                         face = ifelse(highlight[named], "bold", "plain"))
