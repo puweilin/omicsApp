@@ -99,6 +99,22 @@ test_that("run_gsva() refuses without GSVA and says which group installs it", {
   expect_match(err, "install_optional('enrichment')", fixed = TRUE)
 })
 
+test_that("GSVA and gene-set listing need msigdbr, not clusterProfiler", {
+  skip_if_not_installed("GSVA")
+  skip_if_not_installed("msigdbr")
+  absent("clusterProfiler")
+  # ORA and GSEA run through clusterProfiler; scoring and listing read
+  # MSigDB alone, and used to refuse where clusterProfiler had no build.
+  expect_gt(nrow(list_gene_sets("hallmark")), 0L)
+  b <- suppressWarnings(run_gsva(realistic_input(), database = "hallmark"))
+  expect_identical(b$analysis_name, "run_gsva")
+  absent("clusterProfiler", "msigdbr")
+  err <- tryCatch(run_gsva(tiny_input(), database = "hallmark"),
+                  error = function(e) conditionMessage(e))
+  expect_match(err, "msigdbr", fixed = TRUE)
+  expect_no_match(err, "clusterProfiler", fixed = TRUE)
+})
+
 test_that("normalize_omics() refuses without vsn", {
   absent("vsn")
   inp <- tiny_input()

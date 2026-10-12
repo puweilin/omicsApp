@@ -94,3 +94,5 @@ First versioned release.
   report figure heights follow their content; enrichment dot plot keys
   under the panel; readable ActivePathways and correlation plots.
   `enrichplot` is no longer a suggested package.
+* `run_gsva()` and `list_gene_sets()` need `msigdbr` only, no longer
+  `clusterProfiler`, so GSVA works where clusterProfiler has no build.

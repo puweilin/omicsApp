@@ -167,10 +167,12 @@ test_that("a result saved with its cleaned input still opens, plots and rebuilds
   expect_identical(qc_cleaned_input(qc), qc$results$cleaned_input)
   expect_identical(qc_cleaned_input(qc, proj$experiments$proteomics),
                    qc$results$cleaned_input)
-  # Run again today, the same data gives the same cleaned input
+  # Run again today, the same data gives the same cleaned input -- to
+  # floating point: the fixture was written on x86_64, and arm64's fused
+  # multiply-add moves the imputed values in the 15th digit.
   again <- run_qc(proj$experiments$proteomics)
-  expect_identical(qc_cleaned_input(again, proj$experiments$proteomics),
-                   qc$results$cleaned_input)
+  expect_equal(qc_cleaned_input(again, proj$experiments$proteomics),
+               qc$results$cleaned_input)
   expect_no_error(parse(text = export_script(proj)))
 })
 

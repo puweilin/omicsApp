@@ -106,7 +106,7 @@ run_gsva <- function(
 
   resolved_database <- NA_character_
   if (is.null(gene_sets)) {
-    ensure_enrichment_deps()
+    ensure_enrichment_deps(engine = FALSE)
     resolved_database <- normalize_enrich_database(database)
     # Unfiltered here: the size that matters is the size among the
     # measured genes, which GSVA's own minSize/maxSize test. Filtering on

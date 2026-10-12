@@ -132,8 +132,11 @@ normalize_enrich_database <- function(database) {
   key
 }
 
-ensure_enrichment_deps <- function(extras = character(0)) {
-  needed <- c("clusterProfiler", "msigdbr", extras)
+# ORA and GSEA run through clusterProfiler; reading gene sets (GSVA,
+# list_gene_sets()) needs msigdbr alone, so those callers pass
+# `engine = FALSE` and work where clusterProfiler is not installed.
+ensure_enrichment_deps <- function(extras = character(0), engine = TRUE) {
+  needed <- c(if (engine) "clusterProfiler", "msigdbr", extras)
   missing <- needed[!vapply(needed, is_installed, logical(1))]
   if (length(missing) > 0L) {
     stop(
@@ -434,7 +437,7 @@ build_term_tables_uncached <- function(database, organism) {
 # Used by GSVA.
 get_gene_set_list <- function(database, organism = "Hs",
                               min_size = 10L, max_size = 500L) {
-  ensure_enrichment_deps()
+  ensure_enrichment_deps(engine = FALSE)
   df <- fetch_msigdbr_table(database, organism)
   gene_col <- if ("gene_symbol" %in% colnames(df)) "gene_symbol" else "human_gene_symbol"
   keep <- !is.na(df[[gene_col]]) & !is.na(df$gs_name)
@@ -472,7 +475,7 @@ get_gene_set_list <- function(database, organism = "Hs",
 #'   list_gene_sets("go_bp", organism = "Hs")
 #' }
 list_gene_sets <- function(database, organism = "Hs") {
-  ensure_enrichment_deps()
+  ensure_enrichment_deps(engine = FALSE)
   database <- normalize_enrich_database(database)
   organism <- normalize_organism(organism)
 

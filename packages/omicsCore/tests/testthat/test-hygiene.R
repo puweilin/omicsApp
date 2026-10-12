@@ -46,7 +46,7 @@ warm <- local({
         run_enrichment(db, type = "ora", database = "hallmark")
         run_enrichment(db, type = "gsea", database = "hallmark")
       }
-      if (has("GSVA")) run_gsva(prot, database = "hallmark")
+      if (has("GSVA") && has("msigdbr")) run_gsva(prot, database = "hallmark")
     }))
     invisible()
   }
@@ -87,7 +87,7 @@ test_that("a seeded stream is where the caller left it", {
     expect_stream_untouched(
       suppressWarnings(run_enrichment(db, type = "gsea", database = "hallmark")), "gsea")
   }
-  if (has("GSVA")) expect_stream_untouched(run_gsva(prot, database = "hallmark"), "gsva")
+  if (has("GSVA") && has("msigdbr")) expect_stream_untouched(run_gsva(prot, database = "hallmark"), "gsva")
   if (has("imputeLCMD")) {
     expect_stream_untouched(run_qc(prot, impute_method = "MinProb"), "MinProb imputation")
   }
@@ -232,7 +232,15 @@ test_that("nothing else is left behind by a full pipeline", {
   # rendered its intermediates beside the template instead.
   new_tmp <- setdiff(after$tmp, before$tmp)
   foreign <- new_tmp[!startsWith(new_tmp, basename(mine))]
-  expect_identical(foreign, character(0), label = "temp files left by the pipeline")
+  # Say what they hold: a bare "file1a2b3c" names no culprit.
+  peek <- vapply(foreign, function(f) {
+    p <- file.path(tempdir(), f)
+    head <- tryCatch(readBin(p, "raw", 120L), error = function(e) raw(0))
+    txt <- rawToChar(head[head >= as.raw(32) & head < as.raw(127)])
+    sprintf("%s (%s bytes): %s", f, file.size(p), txt)
+  }, character(1))
+  expect_identical(foreign, character(0), label = "temp files left by the pipeline",
+                   info = paste(peek, collapse = "\n"))
 })
 
 test_that("the report renders nothing beside its template", {
