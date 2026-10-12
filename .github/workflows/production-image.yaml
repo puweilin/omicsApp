@@ -104,15 +104,25 @@ jobs:
             --read-only --tmpfs /tmp:rw,exec,size=1g --tmpfs /home/omics --tmpfs /data \
             --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 \
             --memory 6g --cpus 2 "$IMAGE"
+          # Whatever happens, say how the container ended and what it
+          # printed: a failed curl alone names no cause.
+          report() {
+            docker inspect smoke --format \
+              'container: status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}' || true
+            docker logs smoke 2>&1 | tail -n 200 || true
+            docker rm -f smoke >/dev/null 2>&1 || true
+          }
+          trap report EXIT
           for i in $(seq 1 60); do
-            if curl -fsS -o /dev/null http://127.0.0.1:3838/; then
+            if curl -fsS -o /dev/null http://127.0.0.1:3838/ 2>/dev/null; then
               echo "up after ${i}s"; break
+            fi
+            if [ "$(docker inspect smoke --format '{{.State.Running}}')" != "true" ]; then
+              echo "the container exited before it served the app"; exit 1
             fi
             sleep 1
           done
           curl -fsS http://127.0.0.1:3838/ | grep -qi "omics"
-          docker logs smoke
-          docker rm -f smoke
 
       # The packages' tests against the libraries in the image. Test-only
       # packages come from the image's own pinned repositories, so they
