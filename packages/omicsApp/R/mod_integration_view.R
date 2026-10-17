@@ -271,7 +271,7 @@ integration_view_server <- function(id,
       if (!omicsCore::result_inputs_current(saved$provenance_binding, proj)) return()
       is_demo(FALSE)
       integration_bundle(saved)
-    }, priority = -20L, ignoreInit = TRUE)
+    }, priority = -20L, ignoreInit = FALSE)
 
     # Set only by the user, and only for the model it was set against, so
     # accepting an unadjusted second layer once does not silently persist

@@ -40,6 +40,7 @@ kegg_org_code <- function(organism) {
 # Single seam for the network: every KEGG request goes through here so
 # tests can mock one binding. `path` is the REST path, e.g. "/list/hsa".
 kegg_rest_table <- function(path) {
+  if (geneset_offline()) stop("Offline mode: KEGG downloads are disabled.", call. = FALSE)
   utils::read.delim(
     paste0(KEGG_REST_BASE, path),
     header = FALSE, sep = "\t", quote = "", comment.char = "",
@@ -140,6 +141,7 @@ is_live_kegg_table <- function(df) {
 # table never touches the network. Failure returns the stale table -- stale
 # costs freshness, never the run.
 maybe_refresh_kegg_cache <- function(cached, organism) {
+  if (geneset_offline()) return(cached)
   if (!is_live_kegg_table(cached)) return(cached)
   ttl <- geneset_ttl_days()
   if (ttl <= 0) return(cached)
@@ -210,6 +212,10 @@ refresh_geneset_cache <- function(
   force = FALSE,
   quiet = FALSE
 ) {
+  if (geneset_offline()) {
+    stop("Offline mode: gene-set refresh is disabled. Use omicsDesk::import_geneset_cache()",
+         " or restart with online = TRUE.", call. = FALSE)
+  }
   organism <- normalize_organism(organism)
   databases <- unique(vapply(databases, normalize_enrich_database, character(1L)))
   if (length(databases) == 0L) {

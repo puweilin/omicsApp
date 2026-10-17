@@ -246,6 +246,48 @@ test_that("opening a project shows the differential it was saved with", {
     got <- session$getReturned()$bundle()
     expect_false(is.null(got), info = "the saved result was not restored")
     expect_equal(got$params$comparison, "B_vs_A")
+    # Browser controls bind after the result has arrived. The first layer
+    # value is initialization, and must not erase the restored result.
+    session$setInputs(layer = "prot")
+    session$flushReact()
+    expect_equal(session$getReturned()$bundle()$params$comparison, "B_vs_A")
+  })
+})
+
+test_that("restoring waits for its layer binding, then a user layer change clears it", {
+  p <- ra_project()
+  p$experiments$other <- ra_input(seed = 4)
+  saved <- ra_result(p, tag = "other", params = list(method = "limma", comparison = "saved"))
+  p$bundles <- list(diff = saved)
+  proj <- shiny::reactiveVal(NULL)
+  act <- shiny::reactiveVal(0L)
+  shiny::testServer(diff_view_server,
+                    args = list(current_project = proj, activation = act), {
+    session$flushReact()
+    proj(p)
+    act(1L)
+    session$flushReact()
+    # A late value from the demo's dropdown can precede the new binding.
+    session$setInputs(layer = "prot")
+    expect_equal(session$getReturned()$bundle()$params$comparison, "saved")
+    session$setInputs(layer = "other")
+    expect_equal(session$getReturned()$bundle()$params$comparison, "saved")
+    session$setInputs(layer = "prot")
+    expect_null(session$getReturned()$bundle())
+  })
+})
+
+test_that("a project loaded before the first observer flush restores its result", {
+  p <- ra_project()
+  saved <- ra_result(p, params = list(method = "limma", comparison = "startup"))
+  p$bundles <- list(diff = saved)
+  shiny::testServer(diff_view_server,
+                    args = list(current_project = shiny::reactiveVal(p),
+                                activation = shiny::reactiveVal(1L)), {
+    session$flushReact()
+    expect_equal(session$getReturned()$bundle()$params$comparison, "startup")
+    session$setInputs(layer = "prot")
+    expect_equal(session$getReturned()$bundle()$params$comparison, "startup")
   })
 })
 

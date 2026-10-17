@@ -80,9 +80,31 @@ ensure_enrichment_deps <- function(extras = character(0)) {
 # ---- session memoisation ------------------------------------------------
 
 .omicsCore_enrich_cache <- new.env(parent = emptyenv())
+.omicsCore_enrich_cache_identity <- new.env(parent = emptyenv())
+
+geneset_offline <- function() {
+  tolower(Sys.getenv("OMICSCORE_OFFLINE", "")) %in% c("1", "true", "yes")
+}
+
+# Identity includes the directory and contents: importing a table or switching
+# projects must not keep serving a table memoised from a different cache.
+geneset_cache_identity <- function(key) {
+  parts <- strsplit(key, "::", fixed = TRUE)[[1L]]
+  if (length(parts) != 3L) return(NULL)
+  dir <- geneset_cache_dir(write = FALSE)
+  path <- if (is.null(dir)) "" else geneset_cache_file(dir, parts[[2L]], parts[[3L]])
+  list(path = if (nzchar(path)) normalizePath(path, mustWork = FALSE) else "",
+       md5 = if (nzchar(path) && file.exists(path)) unname(tools::md5sum(path)) else "",
+       offline = geneset_offline())
+}
 
 cache_get <- function(key) {
   if (!exists(key, envir = .omicsCore_enrich_cache, inherits = FALSE)) {
+    return(NULL)
+  }
+  identity <- .omicsCore_enrich_cache_identity[[key]]
+  if (!identical(identity, geneset_cache_identity(key))) {
+    cache_drop(key)
     return(NULL)
   }
   get(key, envir = .omicsCore_enrich_cache, inherits = FALSE)
@@ -90,12 +112,16 @@ cache_get <- function(key) {
 
 cache_set <- function(key, value) {
   assign(key, value, envir = .omicsCore_enrich_cache)
+  assign(key, geneset_cache_identity(key), envir = .omicsCore_enrich_cache_identity)
   invisible(value)
 }
 
 cache_drop <- function(key) {
   if (exists(key, envir = .omicsCore_enrich_cache, inherits = FALSE)) {
     rm(list = key, envir = .omicsCore_enrich_cache)
+  }
+  if (exists(key, envir = .omicsCore_enrich_cache_identity, inherits = FALSE)) {
+    rm(list = key, envir = .omicsCore_enrich_cache_identity)
   }
   invisible(NULL)
 }
@@ -196,6 +222,10 @@ legacy_subcollection <- function(subcollection) {
 }
 
 fetch_msigdbr_raw <- function(database, organism) {
+  if (geneset_offline()) {
+    stop("Offline mode: no readable gene-set cache for '", database, "' (", organism,
+         "). Import or repair the local gene-set table before retrying.", call. = FALSE)
+  }
   cfg <- DB_MSIGDBR_MAP[[database]]
   msig_args <- names(formals(msigdbr::msigdbr))
 

@@ -121,7 +121,7 @@ export_report <- function(
   }, add = TRUE)
 
   output_format <- switch(format,
-    html = rmarkdown::html_document(self_contained = TRUE),
+    html = rmarkdown::html_document(self_contained = TRUE, mathjax = NULL),
     pdf  = pdf_output_format(scratch)
   )
 

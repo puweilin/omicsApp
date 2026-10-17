@@ -85,7 +85,7 @@ enrich_view_server <- function(id, diff_bundle = shiny::reactiveVal(NULL),
       if (!omicsCore::result_inputs_current(saved$provenance_binding, proj)) return()
       is_demo(FALSE)
       enrich_bundle(saved)
-    }, priority = -20L, ignoreInit = TRUE)
+    }, priority = -20L, ignoreInit = FALSE)
 
     # One number per view, bumped when a run starts and checked when it
     # comes back. Pressing Run again while the previous run is still out

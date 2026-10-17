@@ -45,6 +45,19 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                              activation = shiny::reactiveVal(0L)) {
   shiny::moduleServer(id, function(input, output, session) {
 
+    # A restored result can arrive before the browser binds its layer
+    # dropdown. Keep that handshake separate from a user changing layers.
+    restoring_layer <- shiny::reactiveVal(NULL)
+    diff_bundle <- shiny::reactiveVal(NULL)
+    diff_error <- shiny::reactiveVal(NULL)
+    restored_params <- shiny::reactive({
+      b <- diff_bundle()
+      if (is.null(b$provenance_binding)) return(list())
+      tag <- restoring_layer() %||% input$layer
+      if (!is.null(tag) && !identical(names(b$provenance_binding$inputs), tag)) return(list())
+      b$params %||% list()
+    })
+
     # Active experiment: whichever layer the user picked, else
     # proteomics, else the first of any kind.
     #
@@ -67,7 +80,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (length(exps) == 0L) {
         return(list(input = NULL, tag = NULL, is_demo = TRUE))
       }
-      want <- input$layer
+      want <- restoring_layer() %||% input$layer
       tag <- if (!is.null(want) && want %in% names(exps)) {
         want
       } else {
@@ -92,7 +105,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # writes it. Reading it here closed the loop: re-rendering the
       # control re-sent its value, which invalidated active(), which
       # re-rendered the control.
-      sel <- shiny::isolate(input$layer)
+      sel <- restoring_layer() %||% shiny::isolate(input$layer)
       if (is.null(sel) || !sel %in% tags_avail) {
         sel <- default_layer_tag(proj$experiments)
       }
@@ -112,8 +125,12 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       a <- active()
       inp <- a$input
       choices <- omicsCore::applicable_diff_methods(inp)
+      selected <- if (!is.null(restoring_layer())) restored_params()$method else shiny::isolate(input$method)
+      selected <- selected %||% restored_params()$method %||% "auto"
+      if (!is.character(selected) || length(selected) != 1L || is.na(selected) ||
+          !selected %in% choices) selected <- "auto"
       shiny::selectInput(session$ns("method"), label = NULL,
-                         choices = choices, selected = "auto")
+                         choices = choices, selected = selected)
     })
 
     output$method_note <- shiny::renderUI({
@@ -215,7 +232,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       # layer or the project changes, and re-rendering with the default
       # threw away their choice -- they selected condition / G1 / G2,
       # ran it, and the control came back reading `label`.
-      sel <- shiny::isolate(input$group_col)
+      sel <- if (!is.null(restoring_layer())) restored_params()$group_col else shiny::isolate(input$group_col)
+      sel <- sel %||% restored_params()$group_col
       if (is.null(sel) || !sel %in% d$candidates) sel <- d$group_col
       shiny::selectInput(session$ns("group_col"),
                          label    = "Group column",
@@ -254,7 +272,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     levels_ <- shiny::reactive({
       a <- active()
       meta <- a$input$meta_df
-      gc <- input$group_col %||% default_contrast()$group_col
+      gc <- if (!is.null(restoring_layer())) restored_params()$group_col else input$group_col
+      gc <- gc %||% restored_params()$group_col %||% default_contrast()$group_col
       if (is.null(gc) || !(gc %in% names(meta))) return(character(0))
       sort(unique(as.character(stats::na.omit(meta[[gc]]))))
     })
@@ -271,17 +290,18 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
           "Pick a group column with at least two levels."
         ))
       }
-      keep <- function(current, fallback) {
-        current <- shiny::isolate(current)
+      keep <- function(current, saved, fallback) {
+        current <- if (!is.null(restoring_layer())) saved else shiny::isolate(current)
+        current <- current %||% saved
         if (is.null(current) || !current %in% lv) fallback else current
       }
       htmltools::tagList(
         shiny::selectInput(session$ns("control"),
                            label = "Control", choices = lv,
-                           selected = keep(input$control, lv[1L])),
+                           selected = keep(input$control, restored_params()$control_group, lv[1L])),
         shiny::selectInput(session$ns("case"),
                            label = "Case", choices = lv,
-                           selected = keep(input$case, lv[min(2L, length(lv))]))
+                           selected = keep(input$case, restored_params()$case_group, lv[min(2L, length(lv))]))
       )
     })
 
@@ -289,7 +309,8 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # dropdown may say "auto", and auto resolves to something specific.
     resolved_method <- shiny::reactive({
       a <- active()
-      m <- input$method %||% "auto"
+      m <- if (!is.null(restoring_layer())) restored_params()$method else input$method
+      m <- m %||% restored_params()$method %||% "auto"
       if (!identical(m, "auto") || is.null(a$input)) return(m)
       # applicable_diff_methods() puts auto first; the one after it is what
       # auto would pick for this layer.
@@ -312,12 +333,16 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       meta <- a$input$meta_df
       gc <- input$group_col %||% ""
       cands <- setdiff(names(meta), c(gc, "sample_id"))
+      chosen <- shiny::isolate(input$covariates)
+      if (!is.null(restoring_layer()) || !"covariates" %in% shiny::isolate(names(input))) {
+        chosen <- restored_params()$covariates
+      }
       shiny::selectizeInput(
         session$ns("covariates"),
         label    = NULL,
         choices  = cands,
         multiple = TRUE,
-        selected = NULL,
+        selected = intersect(chosen %||% character(0), cands),
         options  = list(placeholder = "optional, e.g. age")
       )
     })
@@ -327,13 +352,11 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # mount when a real project is present, so the user lands on
     # a populated volcano without a Re-run click. After that,
     # changes only take effect on Re-run.
-    diff_bundle <- shiny::reactiveVal(NULL)
-    diff_error  <- shiny::reactiveVal(NULL)
-
     # The layer this result was computed on has been replaced, so the
     # result is no longer about anything in the project. NULL is the
     # module's own start-up state, so this only rewinds it.
     shiny::observeEvent(invalidate(), {
+      restoring_layer(NULL)
       diff_bundle(NULL)
       diff_error(NULL)
     }, ignoreInit = TRUE)
@@ -355,6 +378,9 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (!omicsCore::result_inputs_current(saved$provenance_binding, proj)) return()
       diff_error(NULL)
       diff_bundle(saved)
+      tag <- names(saved$provenance_binding$inputs)[[1L]]
+      restoring_layer(tag)
+      shiny::updateSelectInput(session, "layer", selected = tag)
       # And the controls, so the panel describes the result it is showing
       # rather than the defaults. A page that shows one contrast above
       # settings for another invites re-running the wrong thing.
@@ -374,7 +400,7 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (!is.null(p$covariates)) {
         shiny::updateSelectizeInput(session, "covariates", selected = p$covariates)
       }
-    }, priority = -20L, ignoreInit = TRUE)
+    }, priority = -20L, ignoreInit = FALSE)
 
     # One number per view, bumped when a run starts and checked when it
     # comes back. Pressing Run again while the previous run is still out
@@ -506,6 +532,16 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # screen would say so. Keyed on input$layer rather than on active(),
     # which also invalidates when the control below it re-renders.
     shiny::observeEvent(input$layer, {
+      pending <- restoring_layer()
+      if (!is.null(pending)) {
+        if (identical(input$layer, pending)) restoring_layer(NULL)
+        return()
+      }
+      b <- diff_bundle()
+      proj <- current_project()
+      if (!is.null(b$provenance_binding) && !is.null(proj) &&
+          identical(names(b$provenance_binding$inputs), input$layer) &&
+          omicsCore::result_inputs_current(b$provenance_binding, proj)) return()
       diff_bundle(NULL)
       diff_error(NULL)
     }, ignoreInit = TRUE)
