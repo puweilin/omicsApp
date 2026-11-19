@@ -206,10 +206,18 @@ project_saved_server <- function(input, output, session, current_project, set_pr
   # after the project has been changed in-session.
   shiny::observe({
     if (!is.null(current_project())) return()
-    proj <- tryCatch(store_read_autosave(), error = function(e) NULL)
+    startup <- getOption("omicsApp.project")
+    proj <- tryCatch(
+      if (is.null(startup)) store_read_autosave()
+      else omicsCore::load_project(startup, untrusted = TRUE),
+      error = function(e) {
+        if (!is.null(startup)) shiny::showNotification(conditionMessage(e), type = "error")
+        NULL
+      })
     if (is.null(proj)) return()
     current_project(proj)
-    shiny::showNotification("Restored your last session.", type = "message")
+    shiny::showNotification(if (is.null(startup)) "Restored your last session."
+                           else "Opened the selected project.", type = "message")
   }) |> shiny::bindEvent(TRUE, once = TRUE, ignoreInit = FALSE)
   invisible()
 }

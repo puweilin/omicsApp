@@ -311,7 +311,7 @@ project_from_envelope <- function(envelope, path, untrusted = FALSE) {
   if (!is_omics_project(project)) {
     stop("Loaded payload is not an `omics_project`.")
   }
-  project
+  migrate_desktop_qc(project)
 }
 
 #' Save an omics_project to disk

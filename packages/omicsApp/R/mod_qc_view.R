@@ -22,6 +22,7 @@ qc_view_ui <- function(id) {
   htmltools::tagList(
     shiny::uiOutput(ns("header")),
     qc_controls_card(ns),
+    shiny::uiOutput(ns("apply_controls")),
     shiny::uiOutput(ns("notices")),
     shiny::uiOutput(ns("stats")),
     htmltools::tags$div(
@@ -109,6 +110,9 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       if (length(exps) == 0L) {
         return(list(input = NULL, tag = NULL, is_demo = TRUE))
       }
+      exps <- stats::setNames(lapply(names(exps), function(tag) {
+        omicsCore::qc_baseline_input(proj, tag)
+      }), names(exps))
       # The picker wins when it names a layer that exists: it is the one
       # the user is looking at. requested_layer() is how another view
       # hands over ("show me this one"), and it seeds the picker rather
@@ -151,6 +155,17 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # plots stay visible.
     last_bundle <- shiny::reactiveVal(NULL)
     last_error  <- shiny::reactiveVal(NULL)
+    output$apply_controls <- shiny::renderUI({
+      if (is.null(current_project()) || is.null(last_bundle()) || !is.null(last_error())) return(NULL)
+      htmltools::tags$div(class = "mb-3",
+        shiny::actionButton(session$ns("apply_to_downstream"), "Apply to downstream",
+                            class = "btn btn-primary"),
+        htmltools::tags$span(" Apply these filters and imputation to differential and integration analyses."))
+    })
+    shiny::observeEvent(input$apply_to_downstream, {
+      shiny::req(current_project(), last_bundle(), is.null(last_error()))
+      current_project(omicsCore::apply_qc(current_project(), active()$tag, last_bundle()))
+    }, ignoreInit = TRUE)
     # What the result on screen was computed from (see qc_request()). A
     # change to the project that leaves it alone -- another view's result
     # being attached -- is not a reason to run QC again.
@@ -251,7 +266,10 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       proj <- current_project()
       saved <- proj$bundles$qc
       if (!omicsCore::is_analysis_bundle(saved) || identical(saved, last_bundle())) return()
-      tag <- qc_bundle_layer(proj$experiments, saved)
+      baselines <- stats::setNames(lapply(names(proj$experiments), function(tag) {
+        omicsCore::qc_baseline_input(proj, tag)
+      }), names(proj$experiments))
+      tag <- qc_bundle_layer(baselines, saved)
       if (is.null(tag)) return()
       p <- saved$params
       saved_vals <- list(
@@ -269,7 +287,7 @@ qc_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
                   missing_filter = input$missing_filter,
                   missing_group_col = input$missing_group_col)[names(saved_vals)]
       restore(list(
-        bundle = saved, tag = tag, input = proj$experiments[[tag]],
+        bundle = saved, tag = tag, input = baselines[[tag]],
         params = qc_request_params(p$missing_threshold, p$outlier_method,
                                    p$impute_method, p$missing_filter %||% "global",
                                    p$group_col),

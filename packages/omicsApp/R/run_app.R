@@ -52,7 +52,8 @@ launch <- function(port = NULL,
 
   # Pass project path via options (read by inst/app/app.R)
   if (!is.null(project)) {
-    options(omicsApp.project = normalizePath(project, mustWork = TRUE))
+    old_project <- options(omicsApp.project = normalizePath(project, mustWork = TRUE))
+    on.exit(options(old_project), add = TRUE)
   }
 
   if (!is.numeric(max_upload_mb) || length(max_upload_mb) != 1L ||

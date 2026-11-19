@@ -96,3 +96,11 @@ First versioned release.
   `enrichplot` is no longer a suggested package.
 * `run_gsva()` and `list_gene_sets()` need `msigdbr` only, no longer
   `clusterProfiler`, so GSVA works where clusterProfiler has no build.
+
+## Shared desktop compatibility
+
+* Offline mode refuses cache misses and live refreshes before network access;
+  raw and derived caches track file contents and offline state.
+* `apply_qc()` applies cleaning to the project's experiments while
+  `qc_baseline_input()` retains the imported layer. Exported scripts replay
+  the applied cleaning; matching 0.1 desktop preprocessing migrates on load.

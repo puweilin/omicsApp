@@ -335,6 +335,7 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
           lines <- c(lines, dc$lines)
           notes <- c(notes, dc$notes)
         }
+        lines <- c(lines, applied_qc_script_lines(exp, var))
         next
       }
       src <- exp$source_path %||% NA_character_
@@ -404,6 +405,7 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
         lines <- c(lines, dc$lines)
         notes <- c(notes, dc$notes)
       }
+      lines <- c(lines, applied_qc_script_lines(exp, var))
     }
   }
 
@@ -436,6 +438,8 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
 
   input_for <- function(key) {
     tag <- resolve_tag(project, bundles[[key]])
+    if (identical(key, "qc") && !is.null(tag) &&
+        !is.null(experiments[[tag]]$applied_qc)) return(paste0(input_vars[[tag]], "_before_qc"))
     if (is.null(tag)) "input" else input_vars[[tag]] %||% "input"
   }
 
@@ -618,4 +622,14 @@ export_script <- function(project, path = NULL, include_plots = TRUE) {
     return(invisible(lines))
   }
   lines
+}
+
+# Replay applied cleaning before any downstream analysis uses this input.
+applied_qc_script_lines <- function(input, variable) {
+  if (is.null(input$applied_qc)) return(character())
+  call <- render_call("run_qc", variable, input$applied_qc,
+                      script_arg_names(run_qc), assign_to = paste0(variable, "_qc"))
+  c("# QC explicitly applied to downstream analyses:",
+    sprintf("%s_before_qc <- %s", variable, variable), call$lines,
+    sprintf("%s <- qc_cleaned_input(%s_qc, %s)", variable, variable, variable))
 }

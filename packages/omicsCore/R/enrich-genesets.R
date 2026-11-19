@@ -151,9 +151,24 @@ ensure_enrichment_deps <- function(extras = character(0), engine = TRUE) {
 # ---- session memoisation ------------------------------------------------
 
 .omicsCore_enrich_cache <- new.env(parent = emptyenv())
+.omicsCore_enrich_identity <- new.env(parent = emptyenv())
+
+geneset_offline <- function() {
+  tolower(Sys.getenv("OMICSCORE_OFFLINE", "")) %in% c("1", "true", "yes")
+}
+
+memo_source_signature <- function(key) {
+  parts <- strsplit(key, "::", fixed = TRUE)[[1L]]
+  if (length(parts) != 3L || !identical(parts[[1L]], "msig")) return(NULL)
+  geneset_source_signature(parts[[2L]], parts[[3L]])
+}
 
 cache_get <- function(key) {
   if (!exists(key, envir = .omicsCore_enrich_cache, inherits = FALSE)) {
+    return(NULL)
+  }
+  if (!identical(.omicsCore_enrich_identity[[key]], memo_source_signature(key))) {
+    cache_drop(key)
     return(NULL)
   }
   get(key, envir = .omicsCore_enrich_cache, inherits = FALSE)
@@ -161,6 +176,7 @@ cache_get <- function(key) {
 
 cache_set <- function(key, value) {
   assign(key, value, envir = .omicsCore_enrich_cache)
+  assign(key, memo_source_signature(key), envir = .omicsCore_enrich_identity)
   drop_term_tables_for(key)
   invisible(value)
 }
@@ -168,6 +184,9 @@ cache_set <- function(key, value) {
 cache_drop <- function(key) {
   if (exists(key, envir = .omicsCore_enrich_cache, inherits = FALSE)) {
     rm(list = key, envir = .omicsCore_enrich_cache)
+  }
+  if (exists(key, envir = .omicsCore_enrich_identity, inherits = FALSE)) {
+    rm(list = key, envir = .omicsCore_enrich_identity)
   }
   drop_term_tables_for(key)
   invisible(NULL)
@@ -186,15 +205,15 @@ geneset_source_signature <- function(database, organism) {
     path <- geneset_cache_file(dir, database, organism)
     info <- file.info(path, extra_cols = FALSE)
     if (!is.na(info$size)) {
-      return(sprintf("file:%s:%.6f:%.0f", normalizePath(path, mustWork = FALSE),
-                     as.numeric(info$mtime), info$size))
+      return(paste("file", normalizePath(path, mustWork = FALSE),
+                   unname(tools::md5sum(path)), geneset_offline(), sep = ":"))
     }
   }
   # msigdbr 10 keeps its data in msigdbdf, which updates on its own.
   versions <- vapply(c("msigdbr", "msigdbdf"), function(pkg) {
     if (is_installed(pkg)) as.character(utils::packageVersion(pkg)) else "-"
   }, character(1L))
-  paste0("msigdbr:", paste(versions, collapse = ":"))
+  paste0("msigdbr:", paste(versions, collapse = ":"), ":", geneset_offline())
 }
 
 # ---- built term tables ------------------------------------------------
@@ -357,6 +376,10 @@ legacy_subcollection <- function(subcollection) {
 }
 
 fetch_msigdbr_raw <- function(database, organism) {
+  if (geneset_offline()) {
+    stop("Offline mode: no readable gene-set cache for '", database, "' (", organism,
+         "). Import or repair the local gene-set table before retrying.", call. = FALSE)
+  }
   cfg <- DB_MSIGDBR_MAP[[database]]
   msig_args <- names(formals(msigdbr::msigdbr))
 

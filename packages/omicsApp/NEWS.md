@@ -60,3 +60,11 @@ First versioned release. Highlights since the development snapshots:
   Card titles replace in-plot titles; phone layouts for the PCA key and
   the overlap plot; the heatmap is drawn when scrolled into view.
   Figure files carry the date; SVGs use svglite when installed.
+
+## Shared desktop compatibility
+
+* QC retains Apply to downstream across the 0.2 baseline update, including
+  recalculation from the imported layer after changing a filter.
+* Restored differential results populate the saved method, design, comparisons
+  and covariates. An explicit launch(project =) opens that file and restores
+  the calling session's option on exit.

@@ -62,10 +62,30 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
     # The layer a restored result was computed on, until the control exists.
     preferred_layer <- shiny::reactiveVal(NULL)
     skip_layer_clear <- FALSE
+    restored_controls <- shiny::reactiveVal(NULL)
+    pick <- function(name, value) {
+      r <- restored_controls()
+      if (is.null(r) || !name %in% names(r$saved)) return(value)
+      if (is.null(value) || identical(value, r$old[[name]])) r$saved[[name]] else value
+    }
+    shiny::observe({
+      r <- restored_controls()
+      if (is.null(r)) return()
+      settled <- vapply(names(r$saved), function(nm) {
+        value <- input[[nm]]
+        identical(value, r$saved[[nm]]) ||
+          (!is.null(value) && !identical(value, r$old[[nm]]))
+      }, logical(1))
+      if (any(settled)) {
+        r$saved <- r$saved[!settled]
+        r$old <- r$old[!settled]
+        restored_controls(if (length(r$saved)) r else NULL)
+      }
+    })
 
     # The Parameters card: layer, method, contrast, covariates
     # (mod_diff_params.R).
-    params <- diff_params_server(input, output, session, current_project, preferred_layer)
+    params <- diff_params_server(input, output, session, current_project, preferred_layer, pick)
     active             <- params$active
     default_contrast   <- params$default_contrast
     continuous_cols    <- params$continuous_cols
@@ -155,24 +175,24 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       d <- default_contrast()
       mode <- design_mode()
       common <- list(layer = input$layer %||% "", mode = mode,
-                     method = input$method %||% "auto",
-                     covariates = sort(as.character(input$covariates)))
+                     method = pick("method", input$method) %||% "auto",
+                     covariates = sort(as.character(pick("covariates", input$covariates))))
       if (identical(mode, "continuous")) {
         return(c(common, list(
-          col = input$continuous_col %||% continuous_cols()[1L] %||% "",
-          model = input$continuous_model %||% "linear")))
+          col = pick("continuous_col", input$continuous_col) %||% continuous_cols()[1L] %||% "",
+          model = pick("continuous_model", input$continuous_model) %||% "linear")))
       }
-      control <- input$control %||% d$control
-      cmode <- input$contrast_mode %||% "control"
+      control <- pick("control", input$control) %||% d$control
+      cmode <- pick("contrast_mode", input$contrast_mode) %||% "control"
       custom <- if (identical(cmode, "custom")) {
-        x <- trimws(strsplit(input$custom_contrasts %||% "", "\n")[[1L]])
+        x <- trimws(strsplit(pick("custom_contrasts", input$custom_contrasts) %||% "", "\n")[[1L]])
         x[nzchar(x)]
       }
       c(common, list(
-        group_col = input$group_col %||% d$group_col %||% "",
+        group_col = pick("group_col", input$group_col) %||% d$group_col %||% "",
         control = control %||% "",
-        case = sort(setdiff(input$case %||% d$case, control)),
-        paired = input$paired_col %||% "",
+        case = sort(setdiff(pick("case", input$case) %||% d$case, control)),
+        paired = pick("paired_col", input$paired_col) %||% "",
         contrast_mode = cmode, custom = custom))
     })
     # What the result on screen was computed with, or, for a result a
@@ -253,6 +273,9 @@ diff_view_server <- function(id, current_project = shiny::reactiveVal(NULL),
       }
       diff_epoch$bump()
       diff_error(NULL)
+      vals <- diff_restored_values(b$params)
+      restored_controls(list(saved = vals, old = shiny::isolate(lapply(names(vals), function(nm) input[[nm]])) |>
+                               stats::setNames(names(vals))))
       ran_with(shiny::isolate(settings_now()))
       diff_bundle(b)
       a <- proj$bundles$anova
@@ -458,4 +481,19 @@ with_layer <- function(bundle, active) {
     bundle$input_info$layer <- active$tag
   }
   bundle
+}
+
+# Saved engine parameters expressed in the controls, including multi-comparison
+# and continuous designs. renderUI uses these until the browser has received
+# them, then the user's subsequent edits take precedence.
+diff_restored_values <- function(p) {
+  values <- list(method = p$method, group_col = p$group_col,
+                 control = p$control_group, case = p$case_group,
+                 covariates = p$covariates %||% character(0),
+                 paired_col = p$paired_col %||% "",
+                 design_mode = if (identical(p$analysis_type, "continuous")) "continuous" else "groups",
+                 continuous_col = p$continuous_col, continuous_model = p$model %||% "linear",
+                 contrast_mode = if (length(p$contrasts)) "custom" else "control",
+                 custom_contrasts = if (length(p$contrasts)) paste(p$contrasts, collapse = "\n") else "")
+  values[!vapply(values, is.null, logical(1))]
 }

@@ -10,7 +10,8 @@
 # Builds the layer, method, contrast and covariate controls, and returns
 # the reactives the rest of the view reads: the active layer, the default
 # contrast, the design mode, and the levels of the chosen group column.
-diff_params_server <- function(input, output, session, current_project, preferred_layer) {
+diff_params_server <- function(input, output, session, current_project, preferred_layer,
+                               pick = function(name, value) value) {
   # Active experiment: whichever layer the user picked, else
   # proteomics, else the first of any kind.
   #
@@ -74,7 +75,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
     # Keep the user's pick. active() changes whenever the project does
     # -- including when a finished run is attached to it -- so the
     # control re-rendered after every run and snapped back to "auto".
-    sel <- shiny::isolate(input$method)
+    sel <- pick("method", shiny::isolate(input$method))
     if (is.null(sel) || !sel %in% choices) sel <- "auto"
     shiny::selectInput(session$ns("method"),
                        label = htmltools::tags$span(class = "visually-hidden-label", "Method"),
@@ -101,7 +102,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
   #
   # do_run() fires once as soon as active() settles, and at that
   # moment the controls do not exist yet: they are renderUI output,
-  # and Shiny has not been round the loop. Reading input$group_col
+  # and Shiny has not been round the loop. Reading pick("group_col", input$group_col)
   # there gets NULL, which used to surface as "Pick a group column
   # with distinct Control and Case levels" on a view the user had
   # only just opened. Deriving the default in one place means the
@@ -157,7 +158,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
       sum(!is.na(v)) >= 4L && length(unique(stats::na.omit(v))) >= 3L
     }, logical(1))]
   })
-  design_mode <- shiny::reactive(input$design_mode %||% "groups")
+  design_mode <- shiny::reactive(pick("design_mode", input$design_mode) %||% "groups")
   # A trend's effect is a slope, not a fold change; the cutoff says so.
   shiny::observeEvent(design_mode(), {
     shiny::updateNumericInput(
@@ -170,14 +171,14 @@ diff_params_server <- function(input, output, session, current_project, preferre
     shiny::radioButtons(session$ns("design_mode"), label = "Compare",
                         choices = c("groups" = "groups",
                                     "a continuous variable" = "continuous"),
-                        selected = shiny::isolate(input$design_mode) %||% "groups",
+                        selected = pick("design_mode", shiny::isolate(input$design_mode)) %||% "groups",
                         inline = TRUE)
   })
 
   output$ui_continuous <- shiny::renderUI({
     if (!identical(design_mode(), "continuous")) return(NULL)
     cols <- continuous_cols()
-    sel <- shiny::isolate(input$continuous_col)
+    sel <- pick("continuous_col", shiny::isolate(input$continuous_col))
     if (is.null(sel) || !sel %in% cols) sel <- cols[[1L]]
     htmltools::tagList(
       shiny::selectInput(session$ns("continuous_col"), "Variable (dose, time, age...)",
@@ -185,7 +186,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
       shiny::radioButtons(session$ns("continuous_model"), label = "Model",
                           choices = c("linear trend" = "linear",
                                       "any smooth change (spline)" = "spline"),
-                          selected = shiny::isolate(input$continuous_model) %||% "linear",
+                          selected = pick("continuous_model", shiny::isolate(input$continuous_model)) %||% "linear",
                           inline = TRUE),
       htmltools::tags$div(
         class = "muted", style = "font-size:11.5px;margin-top:-6px",
@@ -201,7 +202,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
   # a before/after design analysed unpaired found nothing at all.
   pairing_candidates <- shiny::reactive({
     meta <- active()$input$meta_df
-    gc <- input$group_col %||% default_contrast()$group_col
+    gc <- pick("group_col", input$group_col) %||% default_contrast()$group_col
     if (is.null(meta) || is.null(gc) || !gc %in% names(meta)) return(character(0))
     g <- as.character(meta[[gc]])
     names(meta)[vapply(names(meta), function(nm) {
@@ -222,7 +223,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
     if (identical(design_mode(), "continuous")) return(NULL)
     cands <- pairing_candidates()
     if (!length(cands)) return(NULL)
-    sel <- shiny::isolate(input$paired_col)
+    sel <- pick("paired_col", shiny::isolate(input$paired_col))
     if (is.null(sel) || !sel %in% c("", cands)) {
       hinted <- cands[grepl(PAIRING_COL_HINTS, tolower(cands))]
       sel <- if (length(hinted)) hinted[[1L]] else ""
@@ -248,7 +249,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
     # layer or the project changes, and re-rendering with the default
     # threw away their choice -- they selected condition / G1 / G2,
     # ran it, and the control came back reading `label`.
-    sel <- shiny::isolate(input$group_col)
+    sel <- pick("group_col", shiny::isolate(input$group_col))
     if (is.null(sel) || !sel %in% d$candidates) sel <- d$group_col
     shiny::selectInput(session$ns("group_col"),
                        label    = "Group column",
@@ -260,7 +261,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
   levels_ <- shiny::reactive({
     a <- active()
     meta <- a$input$meta_df
-    gc <- input$group_col %||% default_contrast()$group_col
+    gc <- pick("group_col", input$group_col) %||% default_contrast()$group_col
     if (is.null(gc) || !(gc %in% names(meta))) return(character(0))
     sort(unique(as.character(stats::na.omit(meta[[gc]]))))
   })
@@ -276,20 +277,20 @@ diff_params_server <- function(input, output, session, current_project, preferre
       ))
     }
     keep <- function(current, fallback) {
-      current <- shiny::isolate(current)
+      current <- force(current)
       current <- current[current %in% lv]
       if (!length(current)) fallback else current
     }
     d <- default_contrast()
     meta <- active()$input$meta_df
-    gc_now <- input$group_col %||% d$group_col
+    gc_now <- pick("group_col", input$group_col) %||% d$group_col
     n_per <- table(as.character(meta[[gc_now]]))
     small <- lv[n_per[lv] < 3L]
-    ctrl <- keep(input$control,
+    ctrl <- keep(pick("control", shiny::isolate(input$control)),
                  if (!is.null(d$control) && d$control %in% lv &&
-                     identical(input$group_col %||% d$group_col, d$group_col))
+                     identical(pick("group_col", input$group_col) %||% d$group_col, d$group_col))
                    d$control else default_control_level(lv))[1L]
-    mode <- shiny::isolate(input$contrast_mode) %||% "control"
+    mode <- pick("contrast_mode", shiny::isolate(input$contrast_mode)) %||% "control"
     htmltools::tagList(
       # Three designs, one fit each: every treatment against the control
       # (the common case), every pair of groups, or comparisons written
@@ -313,7 +314,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
           label = if (length(lv) > 2L) "Compare against control (one or more)" else "Case",
           # The control is not something to compare with itself.
           choices = setdiff(lv, ctrl), multiple = TRUE,
-          selected = setdiff(keep(input$case, setdiff(lv[n_per[lv] >= 2L], ctrl)), ctrl),
+          selected = setdiff(keep(pick("case", shiny::isolate(input$case)), setdiff(lv[n_per[lv] >= 2L], ctrl)), ctrl),
           options = list(plugins = list("remove_button")))
       ),
       if (length(small)) {
@@ -327,7 +328,7 @@ diff_params_server <- function(input, output, session, current_project, preferre
         shiny::textAreaInput(
           session$ns("custom_contrasts"),
           label = "Comparisons, one per line",
-          value = shiny::isolate(input$custom_contrasts) %||% "",
+          value = pick("custom_contrasts", shiny::isolate(input$custom_contrasts)) %||% "",
           placeholder = paste(
             c(paste(contrast_token(lv[3L]), "-", contrast_token(lv[2L])),
               sprintf("(%s + %s)/2 - %s", contrast_token(lv[2L]),
@@ -349,24 +350,24 @@ diff_params_server <- function(input, output, session, current_project, preferre
 
   # The control is not a case: keep the case list free of it when the
   # reference changes.
-  shiny::observeEvent(input$control, {
+  shiny::observeEvent(pick("control", input$control), {
     lv <- levels_()
-    shiny::updateSelectizeInput(session, "case", choices = setdiff(lv, input$control),
-                                selected = setdiff(input$case, input$control))
+    shiny::updateSelectizeInput(session, "case", choices = setdiff(lv, pick("control", input$control)),
+                                selected = setdiff(pick("case", input$case), pick("control", input$control)))
   }, ignoreInit = TRUE)
 
   output$ui_covariates <- shiny::renderUI({
     a <- active()
     meta <- a$input$meta_df
-    if (identical(input$method, "ttest")) {
+    if (identical(pick("method", input$method), "ttest")) {
       return(htmltools::tags$div(class = "muted", style = "font-size:12px",
                                  "The t-test does not adjust for covariates; choose limma or lm to add them."))
     }
-    gc <- if (identical(design_mode(), "continuous")) input$continuous_col %||% ""
-          else input$group_col %||% ""
-    cands <- setdiff(names(meta), c(gc, "sample_id", input$paired_col))
+    gc <- if (identical(design_mode(), "continuous")) pick("continuous_col", input$continuous_col) %||% ""
+          else pick("group_col", input$group_col) %||% ""
+    cands <- setdiff(names(meta), c(gc, "sample_id", pick("paired_col", input$paired_col)))
     # Kept across re-renders, for the reason given at ui_method.
-    sel <- intersect(shiny::isolate(input$covariates), cands)
+    sel <- intersect(pick("covariates", shiny::isolate(input$covariates)), cands)
     shiny::selectizeInput(
       session$ns("covariates"),
       label    = NULL,
